@@ -929,50 +929,61 @@ const getTempoVMText = (p) => {
 };
 
 // ==========================================
-  // FUNÇÕES PARA LIMPAR A HEMODIÁLISE (VERSÃO FORÇA BRUTA)
+  // FUNÇÕES PARA LIMPAR A HEMODIÁLISE (PADRÃO BALANÇO HÍDRICO)
   // ==========================================
-  const limparHDMedica = () => {
-    const confirmar = window.confirm("ATENÇÃO: Deseja apagar toda a Prescrição Médica e a Evolução da Nefrologia?");
-    if (!confirmar) return;
+  const limparHDMedica = (e) => {
+    if (e) e.preventDefault();
+    if (!window.confirm("ATENÇÃO: Deseja apagar toda a Prescrição Médica e a Evolução da Nefrologia?")) return;
 
-    setPatients((prev) => 
-      prev.map((paciente, index) => {
-        if (index === activeTab) {
-          return {
-            ...paciente,
-            hd_prescricao: {}, // Zera toda a prescrição médica
-            hd_anotacoes: {
-              ...(paciente.hd_anotacoes || {}),
-              nefro_texto: "" // Zera apenas a evolução do médico
-            }
-          };
-        }
-        return paciente;
-      })
-    );
+    // Faz a cópia oficial igual ao Balanço Hídrico
+    const up = [...patients];
+    const p = { ...up[activeTab] };
+
+    // Zera a prescrição com o objeto padrão vazio
+    p.hd_prescricao = {
+      duracao: "", temperatura: "", uf: "", anticoagulacao: "", priming: "",
+      sodio: "", fluxo_sangue: "", fluxo_dialisato: "", dialisador: "", obs: "",
+      nefro: "", tec_nefro: "", plant_m: "", plant_t: "", plant_n: ""
+    };
+
+    // Zera só a evolução do médico
+    if (!p.hd_anotacoes) p.hd_anotacoes = {};
+    p.hd_anotacoes.nefro_texto = "";
+
+    // Atualiza a tela e SALVA NO FIREBASE (A Mágica!)
+    up[activeTab] = p;
+    setPatients(up);
+    save(p); 
   };
 
-  const limparHDTecnico = () => {
-    const confirmar = window.confirm("ATENÇÃO: Deseja apagar todos os Controles, Balanço, Acessos e Insumos da enfermagem?");
-    if (!confirmar) return;
+  const limparHDTecnico = (e) => {
+    if (e) e.preventDefault();
+    if (!window.confirm("ATENÇÃO: Deseja apagar todos os Controles, Balanço, Acessos e Insumos da enfermagem?")) return;
 
-    setPatients((prev) => 
-      prev.map((paciente, index) => {
-        if (index === activeTab) {
-          return {
-            ...paciente,
-            hd_monitoramento: {}, // Zera a tabela de horários
-            hd_balanco: {},       // Zera Entradas e Saídas
-            hd_acesso: {},        // Zera Curativos, FAV, Cateter
-            hd_insumos: {},       // Zera Insumos
-            hd_anotacoes: {
-              nefro_texto: paciente.hd_anotacoes?.nefro_texto || "" // Mantém o médico, zera o técnico
-            }
-          };
-        }
-        return paciente;
-      })
-    );
+    // Faz a cópia oficial igual ao Balanço Hídrico
+    const up = [...patients];
+    const p = { ...up[activeTab] };
+
+    // Zera tudo do técnico usando os objetos padrões vazios
+    p.hd_monitoramento = {};
+    p.hd_balanco = { entradas: "", final: "" };
+    p.hd_acesso = {
+      fav_local: "", fremito: "", puncao: "", cateter_tipo: "", cateter_local: "",
+      insercao: "", previo: "", fluxo: "", curativo: [], intercorrencias: ""
+    };
+    p.hd_insumos = {};
+
+    // Mantém o texto do médico, mas limpa as anotações do técnico
+    if (!p.hd_anotacoes) p.hd_anotacoes = {};
+    p.hd_anotacoes.inicio = "";
+    p.hd_anotacoes.termino = "";
+    p.hd_anotacoes.texto = "";
+    p.hd_anotacoes.tecnico = "";
+
+    // Atualiza a tela e SALVA NO FIREBASE (A Mágica!)
+    up[activeTab] = p;
+    setPatients(up);
+    save(p);
   };
 
 const defaultPatient = (id) => ({
@@ -2821,6 +2832,44 @@ Estado mental: ${getLabel(
     ) {
       const up = [...patients];
       up[activeTab].physio = defaultPatient(activeTab).physio;
+      setPatients(up);
+      save(up[activeTab]);
+    }
+  };
+
+  // ==========================================
+  // FUNÇÕES PARA LIMPAR A HEMODIÁLISE (PADRÃO OFICIAL DO SISTEMA)
+  // ==========================================
+  const resetHDMedica = () => {
+    if (window.confirm("ATENÇÃO: Deseja apagar a Prescrição Médica e a Evolução?")) {
+      const up = [...patients];
+      // Puxa o padrão vazio oficial do sistema
+      up[activeTab].hd_prescricao = defaultPatient(activeTab).hd_prescricao;
+      
+      if (up[activeTab].hd_anotacoes) {
+        up[activeTab].hd_anotacoes.nefro_texto = "";
+      }
+      setPatients(up);
+      save(up[activeTab]);
+    }
+  };
+
+  const resetHDTecnico = () => {
+    if (window.confirm("ATENÇÃO: Deseja apagar Controles, Balanço e Insumos?")) {
+      const up = [...patients];
+      const def = defaultPatient(activeTab); // Padrão vazio oficial
+      
+      up[activeTab].hd_monitoramento = def.hd_monitoramento;
+      up[activeTab].hd_balanco = def.hd_balanco;
+      up[activeTab].hd_acesso = def.hd_acesso;
+      up[activeTab].hd_insumos = def.hd_insumos;
+      
+      if (up[activeTab].hd_anotacoes) {
+        up[activeTab].hd_anotacoes.inicio = "";
+        up[activeTab].hd_anotacoes.termino = "";
+        up[activeTab].hd_anotacoes.texto = "";
+        up[activeTab].hd_anotacoes.tecnico = "";
+      }
       setPatients(up);
       save(up[activeTab]);
     }
@@ -6590,12 +6639,13 @@ Estado mental: ${getLabel(
                       PRESCRIÇÃO MÉDICA DE HEMODIÁLISE
                      </h4>
                      <button
-                       onClick={limparHDMedica}
-                       className="print:hidden text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm"
-                       title="Apagar todos os campos médicos"
-                     >
-                       Limpar Prescrição
-                     </button>
+    type="button"
+    onClick={() => resetHDMedica()}
+    className="print:hidden text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm"
+    title="Apagar todos os campos médicos"
+  >
+    Limpar Prescrição
+  </button>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 print:grid-cols-5 gap-4 print:gap-x-2 print:gap-y-1 text-xs print:text-[9px]">
                       <div>
@@ -6870,12 +6920,13 @@ Estado mental: ${getLabel(
       CONTROLES E ANOTAÇÕES DA ENFERMAGEM
     </h4>
     <button
-      onClick={limparHDTecnico}
-      className="text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm"
-      title="Apagar monitoramento, balanço, acessos e insumos"
-    >
-      Limpar Tudo (Técnico)
-    </button>
+    type="button"
+    onClick={() => resetHDTecnico()}
+    className="print:hidden text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm"
+    title="Apagar monitoramento, balanço, acessos e insumos"
+  >
+    Limpar Tudo (Técnico)
+  </button>
   </div>
   <div className="overflow-x-auto border rounded-xl print:border-none print:mt-2">
                       <table className="w-full text-xs text-center border-collapse table-fixed">
