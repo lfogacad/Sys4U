@@ -888,35 +888,37 @@ const calculateSAPS3Score = (patient) => {
   return { score, prob, details };
 };
 
-// --- NOVA LÓGICA DO TEMPO DE VM ---
+// --- NOVA LÓGICA DO TEMPO DE VM (SIMPLIFICADA PELA DATA) ---
 const getTempoVMText = (p) => {
   if (!p.physio) return "-";
-  let acum = safeNumber(p.physio.diasAcumuladosVM);
-  let isVM = p.physio.suporte === "VM";
 
-  if (isVM) {
-    let start = p.physio.vmLastStart;
-    if (!start && !acum && p.dataIntubacao) start = p.dataIntubacao;
-    else if (!start) start = getManausDateStr();
+  // Se existe uma data de intubação preenchida, é ela quem manda!
+  if (p.dataIntubacao) {
+    const start = parseLocalDate(p.dataIntubacao);
+    
+    // Se tiver data de extubação, para de contar nela. Se não, conta até hoje.
+    const end = p.dataExtubacao
+      ? parseLocalDate(p.dataExtubacao)
+      : parseLocalDate(getManausDateStr());
 
-    const a = parseLocalDate(start);
-    const b = parseLocalDate(getManausDateStr());
-    const diff = Math.max(0, Math.floor((b - a) / 86400000));
-    let total = acum + diff + 1;
-    return `D${total}`;
-  } else {
-    if (acum > 0) return `${acum} d (Pausado)`;
+    // Faz a diferença matemática em dias
+    const diff = Math.max(0, Math.floor((end - start) / 86400000));
 
-    if (p.dataIntubacao) {
-      const start = parseLocalDate(p.dataIntubacao);
-      const end = p.dataExtubacao
-        ? parseLocalDate(p.dataExtubacao)
-        : parseLocalDate(getManausDateStr());
-      const diff = Math.max(0, Math.floor((end - start) / 86400000));
-      return p.dataExtubacao ? `${diff + 1} d (Extubado)` : `D${diff + 1}`;
+    // 1. Se já tem data de extubação
+    if (p.dataExtubacao) {
+      return `${diff + 1} d (Extubado)`;
     }
-    return "-";
+
+    // 2. Se mudou para VNI ou Cateter, mas não preencheu a extubação ainda
+    if (p.physio.suporte !== "VM") {
+      return `${diff + 1} d (Pausado/Desmame)`;
+    }
+
+    // 3. O fluxo normal (Está em VM e a data de intubação é a base)
+    return `D${diff + 1}`;
   }
+
+  return "-"; // Se não tem data nenhuma, fica vazio
 };
 
 const defaultPatient = (id) => ({
@@ -4682,20 +4684,15 @@ Estado mental: ${getLabel(
                           <Wind size={16} /> Suporte Ventilatório
                         </h4>
                         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
-                          <label className="font-bold text-slate-500 uppercase">
-                            Dias Acumulados em VM:
+                        <label className="text-sm font-semibold text-gray-700">
+                            Tempo de VM:
                           </label>
                           <input
-                            type="number"
-                            className="w-16 p-1 border rounded text-center font-bold text-cyan-700 outline-none"
-                            value={currentPatient.physio?.diasAcumuladosVM || 0}
-                            onChange={(e) =>
-                              updateNested(
-                                "physio",
-                                "diasAcumuladosVM",
-                                parseInt(e.target.value) || 0
-                              )
-                            }
+                            type="text"
+                            readOnly
+                            className="w-24 p-1 border border-gray-300 bg-gray-200 text-center font-bold text-red-600 rounded cursor-not-allowed"
+                            value={getTempoVMText(currentPatient)}
+                            title="Calculado automaticamente pela Data de Intubação"
                           />
                         </div>
                       </div>
