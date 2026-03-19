@@ -108,7 +108,7 @@ const firebaseConfig = {
 };
 
 // Se hospedar externamente, coloque a sua API Key do Google AI Studio aqui dentro. No Canvas, deixe vazio.
-const apiKey = "import.meta.env.VITE_GEMINI_API_KEY";
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 let app, auth, db;
 let firebaseError = null;
