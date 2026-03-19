@@ -888,37 +888,44 @@ const calculateSAPS3Score = (patient) => {
   return { score, prob, details };
 };
 
-// --- NOVA LÓGICA DO TEMPO DE VM (SIMPLIFICADA PELA DATA) ---
+// --- LÓGICA DE VM TURBINADA (COM REINTUBAÇÃO) ---
 const getTempoVMText = (p) => {
   if (!p.physio) return "-";
 
-  // Se existe uma data de intubação preenchida, é ela quem manda!
-  if (p.dataIntubacao) {
-    const start = parseLocalDate(p.dataIntubacao);
-    
-    // Se tiver data de extubação, para de contar nela. Se não, conta até hoje.
-    const end = p.dataExtubacao
-      ? parseLocalDate(p.dataExtubacao)
-      : parseLocalDate(getManausDateStr());
+  // Puxa os dias de outras intubações ou outro hospital (se houver)
+  const diasPrevios = p.physio.diasAcumuladosVM ? parseInt(p.physio.diasAcumuladosVM) : 0;
 
-    // Faz a diferença matemática em dias
-    const diff = Math.max(0, Math.floor((end - start) / 86400000));
-
-    // 1. Se já tem data de extubação
-    if (p.dataExtubacao) {
-      return `${diff + 1} d (Extubado)`;
-    }
-
-    // 2. Se mudou para VNI ou Cateter, mas não preencheu a extubação ainda
-    if (p.physio.suporte !== "VM") {
-      return `${diff + 1} d (Pausado/Desmame)`;
-    }
-
-    // 3. O fluxo normal (Está em VM e a data de intubação é a base)
-    return `D${diff + 1}`;
+  // Se não tem data de intubação preenchida, mostra só os prévios
+  if (!p.dataIntubacao) {
+    return diasPrevios > 0 ? `${diasPrevios} d (Prévios)` : "-";
   }
 
-  return "-"; // Se não tem data nenhuma, fica vazio
+  const start = parseLocalDate(p.dataIntubacao);
+  const end = p.dataExtubacao
+    ? parseLocalDate(p.dataExtubacao)
+    : parseLocalDate(getManausDateStr());
+
+  const diff = Math.max(0, Math.floor((end - start) / 86400000));
+  const tempoAtual = diff + 1;
+  const tempoTotal = diasPrevios + tempoAtual; // Soma tudo!
+
+  // 1. Se está extubado agora
+  if (p.dataExtubacao) {
+    return `${tempoTotal} d (Extubado)`;
+  }
+
+  // 2. Se mudou para VNI ou Cateter
+  if (p.physio.suporte !== "VM") {
+    return `${tempoTotal} d (Pausado/Desmame)`;
+  }
+
+  // 3. Se está em VM e tem dias de uma intubação anterior (Reintubado!)
+  if (diasPrevios > 0) {
+    return `D${tempoTotal} (D${tempoAtual} da Reintubação)`;
+  }
+
+  // 4. Fluxo normal (Primeira intubação)
+  return `D${tempoTotal}`;
 };
 
 const defaultPatient = (id) => ({
@@ -4683,18 +4690,34 @@ Estado mental: ${getLabel(
                         <h4 className="font-bold text-cyan-800 flex items-center gap-2">
                           <Wind size={16} /> Suporte Ventilatório
                         </h4>
-                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
-                        <label className="text-sm font-semibold text-gray-700">
-                            Tempo de VM:
-                          </label>
-                          <input
-                            type="text"
-                            readOnly
-                            className="w-24 p-1 border border-gray-300 bg-gray-200 text-center font-bold text-red-600 rounded cursor-not-allowed"
-                            value={getTempoVMText(currentPatient)}
-                            title="Calculado automaticamente pela Data de Intubação"
-                          />
-                        </div>
+                        <div className="flex items-center gap-4 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
+  <div className="flex flex-col">
+    <label className="text-xs font-semibold text-gray-700 mb-1">
+      Dias Prévios (Reintubação):
+    </label>
+    <input
+      type="number"
+      className="w-full p-1 border border-cyan-300 rounded text-center font-bold text-cyan-700 outline-none focus:ring-2 focus:ring-cyan-500"
+      value={currentPatient.physio?.diasAcumuladosVM || ""}
+      onChange={(e) =>
+        updateNested("physio", "diasAcumuladosVM", parseInt(e.target.value) || 0)
+      }
+      placeholder="Ex: 5"
+    />
+  </div>
+  <div className="flex flex-col">
+    <label className="text-xs font-semibold text-gray-700 mb-1">
+      Tempo Total de VM:
+    </label>
+    <input
+      type="text"
+      readOnly
+      className="w-full p-1 border border-gray-300 bg-gray-200 text-center font-bold text-red-600 rounded cursor-not-allowed"
+      value={getTempoVMText(currentPatient)}
+      title="Soma automática dos dias prévios com a intubação atual"
+    />
+  </div>
+</div>
                       </div>
 
                       <select
