@@ -928,6 +928,53 @@ const getTempoVMText = (p) => {
   return `D${tempoTotal}`;
 };
 
+// ==========================================
+  // FUNÇÕES PARA LIMPAR A HEMODIÁLISE (VERSÃO FORÇA BRUTA)
+  // ==========================================
+  const limparHDMedica = () => {
+    const confirmar = window.confirm("ATENÇÃO: Deseja apagar toda a Prescrição Médica e a Evolução da Nefrologia?");
+    if (!confirmar) return;
+
+    setPatients((prev) => 
+      prev.map((paciente, index) => {
+        if (index === activeTab) {
+          return {
+            ...paciente,
+            hd_prescricao: {}, // Zera toda a prescrição médica
+            hd_anotacoes: {
+              ...(paciente.hd_anotacoes || {}),
+              nefro_texto: "" // Zera apenas a evolução do médico
+            }
+          };
+        }
+        return paciente;
+      })
+    );
+  };
+
+  const limparHDTecnico = () => {
+    const confirmar = window.confirm("ATENÇÃO: Deseja apagar todos os Controles, Balanço, Acessos e Insumos da enfermagem?");
+    if (!confirmar) return;
+
+    setPatients((prev) => 
+      prev.map((paciente, index) => {
+        if (index === activeTab) {
+          return {
+            ...paciente,
+            hd_monitoramento: {}, // Zera a tabela de horários
+            hd_balanco: {},       // Zera Entradas e Saídas
+            hd_acesso: {},        // Zera Curativos, FAV, Cateter
+            hd_insumos: {},       // Zera Insumos
+            hd_anotacoes: {
+              nefro_texto: paciente.hd_anotacoes?.nefro_texto || "" // Mantém o médico, zera o técnico
+            }
+          };
+        }
+        return paciente;
+      })
+    );
+  };
+
 const defaultPatient = (id) => ({
   id,
   leito: id + 1,
@@ -6538,9 +6585,18 @@ Estado mental: ${getLabel(
                     disabled={!isDocRole}
                     className="p-4 border rounded-xl bg-blue-50/30 print:border print:p-1 min-w-0 m-0 print:mb-1"
                   >
-                    <h4 className="font-bold text-blue-800 mb-3 print:mb-1 text-sm section-title">
+                    <div className="flex justify-between items-center mb-3 print:mb-1">
+                     <h4 className="font-bold text-blue-800 text-sm section-title m-0">
                       PRESCRIÇÃO MÉDICA DE HEMODIÁLISE
-                    </h4>
+                     </h4>
+                     <button
+                       onClick={limparHDMedica}
+                       className="print:hidden text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm"
+                       title="Apagar todos os campos médicos"
+                     >
+                       Limpar Prescrição
+                     </button>
+                    </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 print:grid-cols-5 gap-4 print:gap-x-2 print:gap-y-1 text-xs print:text-[9px]">
                       <div>
                         <label className="font-bold text-slate-500 print:text-black">
@@ -6805,11 +6861,23 @@ Estado mental: ${getLabel(
                   </fieldset>
 
                   {/* SECÇÃO 2: MONITORAMENTO HORÁRIO */}
-                  <fieldset
-                    disabled={!isNursingRole}
-                    className="min-w-0 border-0 p-0 m-0"
-                  >
-                    <div className="overflow-x-auto border rounded-xl print:border-none print:mt-2">
+<fieldset
+  disabled={!isNursingRole}
+  className="min-w-0 border-0 p-0 m-0 mt-4"
+>
+  <div className="flex justify-between items-center mb-2 print:hidden">
+    <h4 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+      CONTROLES E ANOTAÇÕES DA ENFERMAGEM
+    </h4>
+    <button
+      onClick={limparHDTecnico}
+      className="text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm"
+      title="Apagar monitoramento, balanço, acessos e insumos"
+    >
+      Limpar Tudo (Técnico)
+    </button>
+  </div>
+  <div className="overflow-x-auto border rounded-xl print:border-none print:mt-2">
                       <table className="w-full text-xs text-center border-collapse table-fixed">
                         <thead>
                           <tr className="bg-slate-200">
