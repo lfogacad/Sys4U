@@ -251,6 +251,15 @@ const HD_SUPPLIES = [
 ];
 
 // --- LISTAS ---
+const CARACTERISTICAS_DIURESE = [
+  "Clara",
+  "Amarelo Cítrico",
+  "Concentrada",
+  "Turva",
+  "Colúria",
+  "Hematúria",
+  "Piúria"
+];
 const OPCOES_DVA = [
   "Noradrenalina",
   "Vasopressina",
@@ -2908,6 +2917,7 @@ Estado mental: ${getLabel(
     const vomito = p.nutri?.vomito ? "SIM" : "NÃO";
     const diarreia = p.nutri?.diarreia ? "SIM" : "NÃO";
     const diureseTotal = p.bh?.bh?.losses?.["Diurese (Total Coletado)"] || "NT";
+    const diureseAspecto = p.enfermagem?.diureseCaracteristica || "NT";
 
     const dispositivos = [
       ...(p.physio?.suporte === "VM" && p.physio?.totNumero ? [`- Tubo Orotraqueal (TOT) #${p.physio.totNumero} (Fixação: ${p.physio.totRima}cm)`] : []),
@@ -2926,7 +2936,7 @@ DADOS DO PACIENTE:
 - RESPIRATÓRIO: Suporte: ${suporteVM}, FiO2: ${fiO2}%, PEEP: ${peep} cmH2O. Secreção: ${secrecao}.
 - CARDIO: DVA: ${dva}.
 - GASTRO/NUTRI: Via: ${nutriVia}, Dieta: ${nutriDieta}, Vômito: ${vomito}, Diarréia: ${diarreia}.
-- GENI: SVD: ${p.enfermagem?.svd ? "SIM" : "NÃO"}, Diurese Total: ${diureseTotal}.
+- GENI: SVD: ${p.enfermagem?.svd ? "SIM" : "NÃO"}, Diurese Total: ${diureseTotal}, Aspecto da Diurese: ${diureseAspecto}.
 DISPOSITIVOS EM USO:
 ${dispositivos.length > 0 ? dispositivos.join("\n") : "- Nenhum."}
 
@@ -4679,7 +4689,11 @@ DISPOSITIVOS EM USO:
                             </div>
                           </div>
                         </div>
-                        <div className="grid md:grid-cols-3 gap-4">
+                        {/* AQUI MUDAMOS DE 3 PARA 4 COLUNAS */}
+                        {/* AQUI MUDAMOS DE 3 PARA 4 COLUNAS */}
+                        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          
+                          {/* CAIXINHA 1: SVD */}
                           <div>
                             <label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-1">
                               <input
@@ -4717,6 +4731,31 @@ DISPOSITIVOS EM USO:
                               }
                             />
                           </div>
+                          
+                          {/* CAIXINHA 2: ASPECTO DA DIURESE (NOVO!) */}
+                          <div>
+                            <label className="text-xs font-bold text-gray-500 mb-1 block">
+                              Aspecto da Diurese
+                            </label>
+                            <select
+                              className="w-full p-2 border rounded bg-white"
+                              value={currentPatient.enfermagem?.diureseCaracteristica || ""}
+                              onChange={(e) =>
+                                updateNested(
+                                  "enfermagem",
+                                  "diureseCaracteristica",
+                                  e.target.value
+                                )
+                              }
+                            >
+                              <option value="">Selecione...</option>
+                              {CARACTERISTICAS_DIURESE.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* CAIXINHA 3: SNE */}
                           <div>
                             <label className="text-xs font-bold text-gray-500 mb-1 block">
                               SNE (Fixação cm / Data)
@@ -4748,6 +4787,8 @@ DISPOSITIVOS EM USO:
                               />
                             </div>
                           </div>
+
+                          {/* CAIXINHA 4: DRENOS */}
                           <div>
                             <label className="text-xs font-bold text-gray-500 mb-1 block">
                               Drenos (Tipo/Característica)
@@ -4764,6 +4805,7 @@ DISPOSITIVOS EM USO:
                               }
                             />
                           </div>
+                          
                         </div>
                       </div>
 
