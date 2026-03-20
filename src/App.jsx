@@ -1660,17 +1660,17 @@ const App = () => {
 
   const [showNursingModal, setShowNursingModal] = useState(false);
   const [nursingData, setNursingData] = useState({});
-
+  const [isGeneratingNursingAI, setIsGeneratingNursingAI] = useState(false);
   const [showSapsDetailsModal, setShowSapsDetailsModal] = useState(null);
 
   const [patients, setPatients] = useState(
-    Array(10)
+    Array(11)
       .fill(null)
       .map((_, i) => defaultPatient(i))
   );
 
   const rawPatient = patients[activeTab] || defaultPatient(0);
-  const currentPatient = ensureBHStructure(rawPatient);
+  const currentPatient = ensureBHStructure(rawPatient); 
 
   // VARIÁVEIS DO BALANÇO (ATUAL OU ANTERIOR)
   const displayedBH =
@@ -2120,7 +2120,8 @@ const App = () => {
       let ch = false;
       snap.forEach((d) => {
         const dt = d.data();
-        if (dt.id >= 0 && dt.id < 10) {
+        // A MÁGICA AQUI: Mudamos de < 10 para < 11 para incluir o Leito Teste!
+        if (dt.id >= 0 && dt.id < 11) {
           const sp = mergePatientData(defaultPatient(dt.id), dt);
           up[dt.id] = syncLabsFromHistory(sp);
           ch = true;
@@ -2883,6 +2884,117 @@ Estado mental: ${getLabel(
     setIsGeneratingAI(false);
   };
 
+// ==========================================
+  // IA DA ENFERMAGEM (PROMPT E API)
+  // ==========================================
+  const buildNursingAIPrompt = (p) => {
+    const vitals = p.bh?.vitals && Object.values(p.bh.vitals).length > 0
+        ? Object.values(p.bh.vitals).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+        : { "PAS": "NT", "PAD": "NT", "FC (bpm)": "NT", "FR (irpm)": "NT", "SpO2 (%)": "NT", "Temp (ºC)": "NT" };
+    
+    const glasgowAO = p.neuro?.glasgowAO ? parseInt(p.neuro.glasgowAO) : 0;
+    const glasgowRV = p.neuro?.glasgowRV?.startsWith("T") ? 1 : (parseInt(p.neuro?.glasgowRV) || 0);
+    const glasgowRM = p.neuro?.glasgowRM ? parseInt(p.neuro.glasgowRM) : 0;
+    const glasgowTotal = (glasgowAO + glasgowRV + glasgowRM) || "NT";
+    const rass = p.neuro?.rass || "NT";
+    const sedacao = p.neuro?.sedacao ? `SIM (${p.neuro?.drogasSedacao?.join(", ") || "N/A"})` : "NÃO";
+    const suporteVM = p.physio?.suporte || "Ar Ambiente";
+    const fiO2 = p.physio?.fiO2 || "NT";
+    const peep = p.physio?.peep || "NT";
+    const secrecao = p.physio?.secrecao ? `SIM (${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"})` : "NÃO";
+    const dva = p.cardio?.dva ? `SIM (${p.cardio?.drogasDVA?.join(", ") || "N/A"})` : "NÃO";
+    const nutriVia = p.nutri?.via || "NT";
+    const nutriDieta = p.nutri?.tipoDieta || "NT";
+    const vomito = p.nutri?.vomito ? "SIM" : "NÃO";
+    const diarreia = p.nutri?.diarreia ? "SIM" : "NÃO";
+    const diureseTotal = p.bh?.bh?.losses?.["Diurese (Total Coletado)"] || "NT";
+
+    const dispositivos = [
+      ...(p.physio?.suporte === "VM" && p.physio?.totNumero ? [`- Tubo Orotraqueal (TOT) #${p.physio.totNumero} (Fixação: ${p.physio.totRima}cm)`] : []),
+      ...(p.enfermagem?.cvcLocal ? [`- Cateter Venoso Central (CVC) em ${p.enfermagem.cvcLocal}`] : []),
+      ...(p.enfermagem?.avpLocal ? [`- Acesso Venoso Periférico (AVP) em ${p.enfermagem.avpLocal}`] : []),
+      ...(p.enfermagem?.svd ? [`- Sonda Vesical de Demora (SVD)`] : []),
+      ...(p.enfermagem?.sneData ? [`- Sonda Nasoenteral (SNE) ${p.enfermagem.sneCm ? `a ${p.enfermagem.sneCm}cm` : ""}`] : []),
+      ...(p.enfermagem?.drenoTipo ? [`- Dreno ${p.enfermagem.drenoTipo}`] : []),
+    ].filter(Boolean);
+
+    return `
+DADOS DO PACIENTE:
+- Nome: ${p.nome}
+- SINAIS VITAIS: PA: ${vitals["PAS"]}/${vitals["PAD"]}, FC: ${vitals["FC (bpm)"]} bpm, FR: ${vitals["FR (irpm)"]} irpm, SpO2: ${vitals["SpO2 (%)"]}%, Temp: ${vitals["Temp (ºC)"]}°C.
+- NEURO: Sedação: ${sedacao}, Glasgow (Total: ${glasgowTotal}), RASS: ${rass}.
+- RESPIRATÓRIO: Suporte: ${suporteVM}, FiO2: ${fiO2}%, PEEP: ${peep} cmH2O. Secreção: ${secrecao}.
+- CARDIO: DVA: ${dva}.
+- GASTRO/NUTRI: Via: ${nutriVia}, Dieta: ${nutriDieta}, Vômito: ${vomito}, Diarréia: ${diarreia}.
+- GENI: SVD: ${p.enfermagem?.svd ? "SIM" : "NÃO"}, Diurese Total: ${diureseTotal}.
+DISPOSITIVOS EM USO:
+${dispositivos.length > 0 ? dispositivos.join("\n") : "- Nenhum."}
+
+INSTRUÇÕES PARA A IA (Enfermeiro da UTI):
+Escreva a AVALIAÇÃO DE ENFERMAGEM para evolução do plantão baseada nos dados acima. Use linguagem técnica e formal (ex: REG, expansibilidade torácica simétrica, eupneica, anictérica). 
+Se um dado for NT (Não testado) ou N/A, omita-o da descrição.
+FORMATO OBRIGATÓRIO:
+AVALIAÇÃO ENFERMAGEM:
+SISTEMA NEUROLOGICO : [Texto]
+SISTEMA RESPIRATÓRIO: [Texto]
+SISTEMA CARDIOVASCULAR: [Texto]
+SISTEMA DIGESTÓRIO: [Texto]
+SISTEMA GENITURINARIO : [Texto]
+DISPOSITIVOS EM USO:
+[Lista de dispositivos]`;
+  };
+
+  const generateNursingAI_Evolution = async () => {
+    if (!currentPatient) return;
+    if (isGeneratingNursingAI) return;
+    if (!window.confirm("A Inteligência Artificial irá escrever a evolução baseada nos dados clínicos. Isso apagará o texto existente. Continuar?")) return;
+
+    setIsGeneratingNursingAI(true);
+    let success = false;
+    let lastError = "";
+
+    try {
+      const promptText = buildNursingAIPrompt(currentPatient);
+      const modelsToTry = ["gemini-2.5-flash-preview-09-2025", "gemini-2.5-flash", "gemini-1.5-flash"];
+
+      for (const model of modelsToTry) {
+        try {
+          const currentKey = apiKey || window.apiKey || "";
+          const r = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] }),
+            }
+          );
+          const d = await r.json();
+          if (d.error) {
+            lastError = d.error.message;
+            if (d.error.code === 400 || d.error.code === 403) break;
+            if (lastError.includes("not found") || d.error.code === 404) continue;
+            break;
+          }
+          
+          const aiResponse = d.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (aiResponse) {
+            updateNested("enfermagem", "anotacoes", aiResponse);
+            save(currentPatient);
+          }
+          success = true;
+          break;
+        } catch (e) {
+          lastError = e.message;
+        }
+      }
+      if (!success) alert(`Erro IA: ${lastError}`);
+    } catch (e) {
+      alert("Não foi possível gerar a evolução por IA no momento.");
+    } finally {
+      setIsGeneratingNursingAI(false);
+    }
+  };  
+
   const resetPhysio = () => {
     if (
       window.confirm(
@@ -2964,6 +3076,8 @@ Estado mental: ${getLabel(
     userProfile?.role === "Técnico em Enfermagem" ||
     userProfile?.role === "Gestor" ||
     userProfile?.role === "Administrador";
+  
+  const isAdmin = userProfile?.role === "Administrador";
 
   const isEditable = (() => {
     if (isDocRole) return true;
@@ -3251,21 +3365,29 @@ Estado mental: ${getLabel(
 
       <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0 print:p-0">
         <div className="bg-white p-2 rounded-2xl shadow-lg mb-4 flex overflow-x-auto gap-2 scrollbar-hide print:hidden">
-          {patients.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setActiveTab(p.id)}
-              className={`flex-shrink-0 w-12 h-14 rounded-xl font-bold text-sm transition-all ${
-                activeTab === p.id
-                  ? "bg-blue-600 text-white shadow-md"
-                  : "bg-white text-slate-500 hover:bg-slate-50"
-              }`}
-            >
-              <span className="text-[10px] opacity-70 font-normal">Leito</span>
-              <br />
-              {p.leito}
-            </button>
-          ))}
+        <div className="bg-white p-2 rounded-2xl shadow-lg mb-4 flex overflow-x-auto gap-2 scrollbar-hide print:hidden">
+          {patients.map((p) => {
+            // TRAVA DE SEGURANÇA DO LEITO 11 (SANDBOX)
+            // IMPORTANTE: Troque 'isAdmin' pela variável que você usa para identificar o administrador
+            if (p.leito === 11 && !isAdmin) return null;
+
+            return (
+              <button
+                key={p.id}
+                onClick={() => setActiveTab(p.id)}
+                className={`flex-shrink-0 w-12 h-14 rounded-xl font-bold text-sm transition-all ${
+                  activeTab === p.id
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+              >
+                <span className="text-[10px] opacity-70 font-normal">Leito</span>
+                <br />
+                {p.leito}
+              </button>
+            );
+          })}
+        </div>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-6 print:hidden">
@@ -3412,54 +3534,56 @@ Estado mental: ${getLabel(
                         </tr>
                       </thead>
                       <tbody>
-                        {patients.map((p) => {
-                          if (!p.nome) return null;
-                          const saps = calculateSAPS3Score(p);
-                          return (
-                            <tr
-                              key={p.id}
-                              className="border-b last:border-0 hover:bg-slate-50 transition-colors"
-                            >
-                              <td className="p-3 text-center font-bold text-slate-400 bg-slate-50">
-                                {p.leito}
-                              </td>
-                              <td className="p-3 font-bold text-blue-700">
-                                {p.nome}
-                              </td>
-                              <td className="p-3 text-center">
-                                {getDaysD1(p.dataInternacao)}
-                              </td>
-                              <td className="p-3 text-center font-bold text-slate-700">
-                                <button
-                                  onClick={() =>
-                                    setShowSapsDetailsModal({
-                                      patientName: p.nome,
-                                      saps,
-                                    })
-                                  }
-                                  className="flex items-center justify-center gap-1 mx-auto hover:text-purple-600 transition-colors px-2 py-1 rounded hover:bg-purple-50"
-                                  title="Ver detalhes da pontuação"
-                                >
-                                  {saps.score}{" "}
-                                  <FileText
-                                    size={14}
-                                    className="text-slate-400 hover:text-purple-500"
-                                  />
-                                </button>
-                              </td>
-                              <td className="p-3 text-center font-bold text-red-600 bg-red-50/50">
-                                {saps.prob}%
-                              </td>
-                              <td className="p-3 text-center font-medium text-cyan-700">
-                                {getTempoVMText(p)}
-                              </td>
-                              <td className="p-3 text-center font-medium">
-                                {calculateDiurese12hMlKgH(p)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {!patients.some((p) => p.nome) && (
+                        {patients
+                          .filter((p) => p.leito !== 11) // PASSO 4: O filtro mágico que esconde o leito de teste!
+                          .map((p) => {
+                            if (!p.nome) return null;
+                            const saps = calculateSAPS3Score(p);
+                            return (
+                              <tr
+                                key={p.id}
+                                className="border-b last:border-0 hover:bg-slate-50 transition-colors"
+                              >
+                                <td className="p-3 text-center font-bold text-slate-400 bg-slate-50">
+                                  {p.leito}
+                                </td>
+                                <td className="p-3 font-bold text-blue-700">
+                                  {p.nome}
+                                </td>
+                                <td className="p-3 text-center">
+                                  {getDaysD1(p.dataInternacao)}
+                                </td>
+                                <td className="p-3 text-center font-bold text-slate-700">
+                                  <button
+                                    onClick={() =>
+                                      setShowSapsDetailsModal({
+                                        patientName: p.nome,
+                                        saps,
+                                      })
+                                    }
+                                    className="flex items-center justify-center gap-1 mx-auto hover:text-purple-600 transition-colors px-2 py-1 rounded hover:bg-purple-50"
+                                    title="Ver detalhes da pontuação"
+                                  >
+                                    {saps.score}{" "}
+                                    <FileText
+                                      size={14}
+                                      className="text-slate-400 hover:text-purple-500"
+                                    />
+                                  </button>
+                                </td>
+                                <td className="p-3 text-center font-bold text-red-600 bg-red-50/50">
+                                  {saps.prob}%
+                                </td>
+                                <td className="p-3 text-center font-medium text-cyan-700">
+                                  {getTempoVMText(p)}
+                                </td>
+                                <td className="p-3 text-center font-medium">
+                                  {calculateDiurese12hMlKgH(p)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        {!patients.filter((p) => p.leito !== 11).some((p) => p.nome) && (
                           <tr>
                             <td
                               colSpan={7}
@@ -4691,13 +4815,36 @@ Estado mental: ${getLabel(
                         </div>
                       </div>
 
-                      <div className="p-4 bg-white border rounded-xl">
-                        <h4 className="font-bold text-slate-700 mb-2">
-                          Anotações de Enfermagem
-                        </h4>
+                      <div className="p-4 bg-white border rounded-xl shadow-sm mt-4">
+                        <div className="flex justify-between items-center mb-2">
+                          <h4 className="font-bold text-slate-700 flex items-center gap-2">
+                            <Edit3 size={16} className="text-slate-400" /> Evolução de Enfermagem (Privativo)
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={generateNursingAI_Evolution}
+                            disabled={!isNursingRole || isGeneratingNursingAI}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden ${
+                              isGeneratingNursingAI
+                                ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                            } ${!isNursingRole ? "opacity-50 cursor-not-allowed" : ""}`}
+                            title="Usar Inteligência Artificial para gerar evolução"
+                          >
+                            {isGeneratingNursingAI ? (
+                              <>
+                                <Loader2 className="animate-spin" size={14} /> Gerando...
+                              </>
+                            ) : (
+                              <>
+                                <BrainCircuit size={14} /> Evolução por IA
+                              </>
+                            )}
+                          </button>
+                        </div>
                         <textarea
-                          className="w-full p-3 border rounded-lg h-32 text-sm"
-                          placeholder="Ocorrências do plantão, intercorrências..."
+                          className="w-full p-3 border rounded-lg h-64 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-slate-50 focus:bg-white transition-colors whitespace-pre-wrap"
+                          placeholder="Clique no botão acima para gerar a evolução baseada nos dados clínicos, ou digite aqui..."
                           value={currentPatient.enfermagem?.anotacoes || ""}
                           onChange={(e) =>
                             updateNested(
@@ -6690,7 +6837,7 @@ Estado mental: ${getLabel(
 
                   {/* SECÇÃO 1: PRESCRIÇÃO MÉDICA */}
                   <fieldset
-                    disabled={!isDocRole}
+                    disabled={!isDocRole && currentPatient?.leito !== 11}
                     className="p-4 border rounded-xl bg-blue-50/30 print:border print:p-1 min-w-0 m-0 print:mb-1"
                   >
                     <div className="flex justify-between items-center mb-3 print:mb-1">
@@ -6971,7 +7118,7 @@ Estado mental: ${getLabel(
 
                   {/* SECÇÃO 2: MONITORAMENTO HORÁRIO */}
 <fieldset
-  disabled={!isNursingRole}
+  disabled={!isNursingRole && currentPatient?.leito !== 11}
   className="min-w-0 border-0 p-0 m-0 mt-4"
 >
   <div className="flex justify-between items-center mb-2 print:hidden">
@@ -7032,7 +7179,7 @@ Estado mental: ${getLabel(
 
                   {/* LINHA DE ENTRADAS, UF REALIZADA E BH FINAL */}
                   <fieldset
-                    disabled={!isNursingRole}
+                    disabled={!isNursingRole && currentPatient?.leito !== 11}
                     className="grid grid-cols-3 gap-4 print:gap-2 print:my-1 mt-4"
                   >
                     {/* ENTRADAS (Automático) */}
@@ -7093,7 +7240,7 @@ Estado mental: ${getLabel(
 
                   {/* SECÇÃO 3 E 4: ACESSO VASCULAR E INSUMOS LADO A LADO NA IMPRESSÃO */}
                   <fieldset
-                    disabled={!isNursingRole}
+                    disabled={!isNursingRole && currentPatient?.leito !== 11}
                     className="grid md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-2"
                   >
                     {/* ACESSO VASCULAR */}
@@ -7435,7 +7582,7 @@ Estado mental: ${getLabel(
 
                   {/* SECÇÃO 5: ANOTAÇÕES DA NEFROLOGIA (NÃO IMPRIME) */}
                   <fieldset
-                    disabled={!isDocRole}
+                    disabled={!isDocRole && currentPatient?.leito !== 11}
                     className="mt-4 p-4 border rounded-xl bg-white shadow-sm print:hidden"
                   >
                     <h4 className="font-bold text-blue-800 mb-2 text-sm flex items-center gap-2">
