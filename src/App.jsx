@@ -904,43 +904,60 @@ const calculateSAPS3Score = (patient) => {
   return { score, prob, details };
 };
 
-// --- LÓGICA DE VM TURBINADA (COM REINTUBAÇÃO) ---
+// --- LÓGICA DE VM TURBINADA (COM REINTUBAÇÃO, TQT E DECANULAÇÃO) ---
 const getTempoVMText = (p) => {
   if (!p.physio) return "-";
 
-  // Puxa os dias de outras intubações ou outro hospital (se houver)
+  // Puxa os dias prévios (se houver)
   const diasPrevios = p.physio.diasAcumuladosVM ? parseInt(p.physio.diasAcumuladosVM) : 0;
 
-  // Se não tem data de intubação preenchida, mostra só os prévios
   if (!p.dataIntubacao) {
     return diasPrevios > 0 ? `${diasPrevios} d (Prévios)` : "-";
   }
 
   const start = parseLocalDate(p.dataIntubacao);
-  const end = p.dataExtubacao
-    ? parseLocalDate(p.dataExtubacao)
-    : parseLocalDate(getManausDateStr());
+  
+  // A MÁGICA ESTÁ AQUI: Descobrir quando o relógio deve parar
+  let endStr = getManausDateStr(); // Por padrão, o relógio corre até HOJE
+  
+  if (p.dataDecanulacao) {
+    endStr = p.dataDecanulacao; // Se foi decanulado, o relógio para no dia da decanulação
+  } else if (p.dataExtubacao && !p.dataTQT) {
+    endStr = p.dataExtubacao;   // Se foi extubado E NÃO TEM TQT, o relógio para na extubação
+  }
+  // Repare: Se ele tem Extubação MAS TEM TQT, o relógio ignora a extubação e continua rodando até hoje!
 
+  const end = parseLocalDate(endStr);
   const diff = Math.max(0, Math.floor((end - start) / 86400000));
   const tempoAtual = diff + 1;
-  const tempoTotal = diasPrevios + tempoAtual; // Soma tudo!
+  const tempoTotal = diasPrevios + tempoAtual;
 
-  // 1. Se está extubado agora
+  // 1. Decanulado (Sucesso absoluto)
+  if (p.dataDecanulacao) {
+    return `${tempoTotal} d (Decanulado)`;
+  }
+
+  // 2. Tem TQT (Continua contando os dias até hoje)
+  if (p.dataTQT) {
+    return `${tempoTotal} d (TQT)`;
+  }
+
+  // 3. Apenas Extubado (Sem TQT, relógio parado na data da extubação)
   if (p.dataExtubacao) {
     return `${tempoTotal} d (Extubado)`;
   }
 
-  // 2. Se mudou para VNI ou Cateter
+  // 4. Se mudou para VNI ou Cateter (Fora da VM, mas sem extubação preenchida)
   if (p.physio.suporte !== "VM") {
     return `${tempoTotal} d (Pausado/Desmame)`;
   }
 
-  // 3. Se está em VM e tem dias de uma intubação anterior (Reintubado!)
+  // 5. Se está em VM e tem dias de uma intubação anterior (Reintubado)
   if (diasPrevios > 0) {
     return `D${tempoTotal} (D${tempoAtual} da Reintubação)`;
   }
 
-  // 4. Fluxo normal (Primeira intubação)
+  // 6. Fluxo normal (Primeira intubação, rodando até hoje)
   return `D${tempoTotal}`;
 };
 
