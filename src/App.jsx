@@ -490,9 +490,25 @@ const MORSE_OPTIONS = {
 
 const safeNumber = (val) => {
   if (val === null || val === undefined || val === "") return 0;
-  const cleaned = String(val)
+  let str = String(val).trim();
+  
+  // Se tem ponto E vírgula (ex: 15.000,50), remove o ponto de milhar.
+  if (str.includes('.') && str.includes(',')) {
+    str = str.replace(/\./g, '');
+  } 
+  // Se só tem ponto e termina com exatos 3 dígitos (ex: 15.000), remove o ponto assumindo ser milhar.
+  else if (str.includes('.') && !str.includes(',')) {
+    const parts = str.split('.');
+    if (parts[parts.length - 1].length === 3) {
+      str = str.replace(/\./g, '');
+    }
+  }
+  
+  // Substitui a vírgula por ponto (para o decimal) e limpa letras
+  const cleaned = str
     .replace(",", ".")
     .replace(/[^\d.-]/g, "");
+    
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : parsed;
 };
