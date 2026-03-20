@@ -3425,7 +3425,7 @@ Estado mental: ${getLabel(
               )}
 
               {viewMode === "overview" && (
-                <div className="space-y-6 animate-fadeIn">
+                <div className="space-y-6 animate-fadeIn text-left">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2">
                       <Activity className="text-blue-500" /> Resumo do Plantão
@@ -3513,7 +3513,7 @@ Estado mental: ${getLabel(
                       História Clínica
                     </button>
                     {historyOpen && (
-                      <div className="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-lg text-sm text-slate-700 whitespace-pre-wrap min-h-[60px]">
+                      <div className="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-lg text-sm text-slate-700 whitespace-pre-wrap min-h-[60px] text-left">
                         {currentPatient.historiaClinica ||
                           "Nenhuma história clínica registrada."}
                       </div>
@@ -3852,7 +3852,7 @@ Estado mental: ${getLabel(
                           placeholder="Digite aqui..."
                         />
                       ) : (
-                        <p className="text-sm whitespace-pre-wrap min-h-[50px]">
+                        <p className="text-sm whitespace-pre-wrap min-h-[50px] text-left">
                           {currentPatient.anotacoes || "Sem pendências."}
                         </p>
                       )}
