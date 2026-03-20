@@ -986,6 +986,32 @@ const getTempoVMText = (p) => {
     save(p);
   };
 
+// ==========================================
+  // CÁLCULOS AUTOMÁTICOS DA HEMODIÁLISE
+  // ==========================================
+  const calcularHDEntradas = (p) => {
+    if (!p || !p.hd_monitoramento) return 0;
+    let total = 0;
+    
+    // Varre todas as horas preenchidas e soma SF e GH
+    Object.values(p.hd_monitoramento).forEach((hora) => {
+      const sf = parseFloat(hora.sf?.toString().replace(",", ".")) || 0;
+      const gh = parseFloat(hora.gh?.toString().replace(",", ".")) || 0;
+      total += (sf + gh);
+    });
+    
+    return total;
+  };
+
+  const calcularHDBalancoFinal = (p) => {
+    const entradas = calcularHDEntradas(p);
+    // Puxa o valor da UF REALIZADA preenchida pela enfermagem!
+    const ufRealizada = parseFloat(p?.hd_balanco?.uf_realizada?.toString().replace(",", ".")) || 0;
+    
+    // O Balanço Final da diálise é o que Entrou menos o que Saiu de fato
+    return entradas - ufRealizada; 
+  };
+
 const defaultPatient = (id) => ({
   id,
   leito: id + 1,
@@ -6930,24 +6956,17 @@ Estado mental: ${getLabel(
   </div>
   <div className="overflow-x-auto border rounded-xl print:border-none print:mt-2">
                       <table className="w-full text-xs text-center border-collapse table-fixed">
-                        <thead>
+                      <thead>
                           <tr className="bg-slate-200">
-                            <th className="p-2 print:p-0.5 border w-12 font-bold">
-                              HORÁRIO
-                            </th>
+                            <th className="p-2 print:p-0.5 border w-12 font-bold">HORÁRIO</th>
                             <th className="p-2 print:p-0.5 border">PA</th>
                             <th className="p-2 print:p-0.5 border">PAM</th>
                             <th className="p-2 print:p-0.5 border">FC</th>
-                            <th className="p-2 print:p-0.5 border">GLICEMIA</th>
-                            <th className="p-2 print:p-0.5 border">
-                              Insulina R
-                            </th>
-                            <th className="p-2 print:p-0.5 border">
-                              Noradrenalina
-                            </th>
-                            <th className="p-2 print:p-0.5 border">
-                              S.F. 0,9%
-                            </th>
+                            <th className="p-2 print:p-0.5 border">Glic.</th>
+                            <th className="p-2 print:p-0.5 border">Ins. R</th>
+                            <th className="p-2 print:p-0.5 border">Nora</th>
+                            <th className="p-2 print:p-0.5 border">S.F. 0,9%</th>
+                            <th className="p-2 print:p-0.5 border text-blue-700">GH 50%</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -6957,38 +6976,17 @@ Estado mental: ${getLabel(
                                 {time}
                               </td>
                               {[
-                                "pa",
-                                "pam",
-                                "fc",
-                                "glic",
-                                "ins",
-                                "nora",
-                                "sf",
+                                "pa", "pam", "fc", "glic", "ins", "nora", "sf", "gh"
                               ].map((campo) => (
-                                <td
-                                  key={campo}
-                                  className="p-0 border print:overflow-visible"
-                                >
+                                <td key={campo} className="p-0 border print:overflow-visible">
                                   <input
                                     type="text"
                                     className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1 print:hidden"
-                                    value={
-                                      currentPatient.hd_monitoramento?.[time]?.[
-                                        campo
-                                      ] || ""
-                                    }
-                                    onChange={(e) =>
-                                      updateHDMonitoramento(
-                                        time,
-                                        campo,
-                                        e.target.value
-                                      )
-                                    }
+                                    value={currentPatient.hd_monitoramento?.[time]?.[campo] || ""}
+                                    onChange={(e) => updateHDMonitoramento(time, campo, e.target.value)}
                                   />
                                   <span className="hidden print:block text-center text-[8px] w-full align-middle">
-                                    {currentPatient.hd_monitoramento?.[time]?.[
-                                      campo
-                                    ] || ""}
+                                    {currentPatient.hd_monitoramento?.[time]?.[campo] || ""}
                                   </span>
                                 </td>
                               ))}
@@ -6999,41 +6997,60 @@ Estado mental: ${getLabel(
                     </div>
                   </fieldset>
 
-                  {/* LINHA DE ENTRADAS E SAÍDAS */}
+                  {/* LINHA DE ENTRADAS, UF REALIZADA E BH FINAL */}
                   <fieldset
                     disabled={!isNursingRole}
-                    className="grid grid-cols-2 gap-4 print:gap-2 print:my-1"
+                    className="grid grid-cols-3 gap-4 print:gap-2 print:my-1 mt-4"
                   >
-                    <div className="flex items-center gap-2 bg-green-50 print:bg-white p-2 print:p-0.5 rounded border border-green-200 print:border-black">
+                    {/* ENTRADAS (Automático) */}
+                    <div className="flex flex-col items-center justify-center bg-green-50 print:bg-white p-2 print:p-0.5 rounded border border-green-200 print:border-black">
                       <span className="font-bold text-green-800 print:text-black text-xs print:text-[10px]">
-                        ENTRADAS:
+                        ENTRADAS
                       </span>
                       <input
                         type="text"
-                        className="w-full bg-transparent border-b border-green-300 print:hidden outline-none text-sm text-center"
-                        value={currentPatient.hd_balanco?.entradas || ""}
-                        onChange={(e) =>
-                          updateHDBalanco("entradas", e.target.value)
-                        }
-                      />
-                      <span className="hidden print:inline-block text-[10px] w-full text-center">
-                        {currentPatient.hd_balanco?.entradas || ""}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 bg-blue-50 print:bg-white p-2 print:p-0.5 rounded border border-blue-200 print:border-black">
-                      <span className="font-bold text-blue-800 print:text-black text-xs print:text-[10px]">
-                        BH FINAL:
-                      </span>
-                      <input
-                        type="text"
-                        className="w-full bg-transparent border-b border-blue-300 print:hidden outline-none text-sm text-center font-bold"
-                        value={currentPatient.hd_balanco?.final || ""}
-                        onChange={(e) =>
-                          updateHDBalanco("final", e.target.value)
-                        }
+                        readOnly
+                        className="w-full bg-transparent border-none print:hidden outline-none text-base text-center font-bold text-green-700 cursor-not-allowed"
+                        value={calcularHDEntradas(currentPatient)}
+                        title="Soma automática das colunas S.F. 0,9% e GH 50%"
                       />
                       <span className="hidden print:inline-block text-[10px] w-full text-center font-bold">
-                        {currentPatient.hd_balanco?.final || ""}
+                        {calcularHDEntradas(currentPatient)}
+                      </span>
+                    </div>
+
+                    {/* UF REALIZADA (Digitado pelo Técnico) */}
+                    <div className="flex flex-col items-center justify-center bg-orange-50 print:bg-white p-2 print:p-0.5 rounded border border-orange-200 print:border-black shadow-sm">
+                      <span className="font-bold text-orange-800 print:text-black text-xs print:text-[10px]">
+                        UF REALIZADA
+                      </span>
+                      <input
+                        type="number"
+                        className="w-full bg-white border border-orange-300 print:hidden outline-none text-base text-center font-bold text-orange-700 rounded mt-1 p-1 focus:ring-2 focus:ring-orange-400"
+                        value={currentPatient.hd_balanco?.uf_realizada || ""}
+                        onChange={(e) => updateHDBalanco("uf_realizada", e.target.value)}
+                        placeholder="Ex: 2000"
+                        title="Ultrafiltração efetivamente realizada pela enfermagem"
+                      />
+                      <span className="hidden print:inline-block text-[10px] w-full text-center font-bold">
+                        {currentPatient.hd_balanco?.uf_realizada || ""}
+                      </span>
+                    </div>
+
+                    {/* BH FINAL (Automático) */}
+                    <div className="flex flex-col items-center justify-center bg-blue-50 print:bg-white p-2 print:p-0.5 rounded border border-blue-200 print:border-black">
+                      <span className="font-bold text-blue-800 print:text-black text-xs print:text-[10px]">
+                        BH FINAL
+                      </span>
+                      <input
+                        type="text"
+                        readOnly
+                        className="w-full bg-transparent border-none print:hidden outline-none text-base text-center font-bold text-blue-700 cursor-not-allowed"
+                        value={calcularHDBalancoFinal(currentPatient)}
+                        title="Entradas Totais subtraídas da UF Realizada"
+                      />
+                      <span className="hidden print:inline-block text-[10px] w-full text-center font-bold">
+                        {calcularHDBalancoFinal(currentPatient)}
                       </span>
                     </div>
                   </fieldset>
