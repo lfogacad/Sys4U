@@ -2919,6 +2919,10 @@ Estado mental: ${getLabel(
     const diureseTotal = p.bh?.bh?.losses?.["Diurese (Total Coletado)"] || "NT";
     const diureseAspecto = p.enfermagem?.diureseCaracteristica || "NT";
 
+    // DADOS NOVOS DE PELE E CURATIVOS:
+    const lesoes = p.enfermagem?.lesaoLocal || "Pele íntegra / Sem lesões relatadas";
+    const curativos = p.enfermagem?.curativoTipo ? `${p.enfermagem.curativoTipo} (Data: ${p.enfermagem.curativoData || "NT"})` : "Nenhum curativo registrado";
+
     const dispositivos = [
       ...(p.physio?.suporte === "VM" && p.physio?.totNumero ? [`- Tubo Orotraqueal (TOT) #${p.physio.totNumero} (Fixação: ${p.physio.totRima}cm)`] : []),
       ...(p.enfermagem?.cvcLocal ? [`- Cateter Venoso Central (CVC) em ${p.enfermagem.cvcLocal}`] : []),
@@ -2937,6 +2941,7 @@ DADOS DO PACIENTE:
 - CARDIO: DVA: ${dva}.
 - GASTRO/NUTRI: Via: ${nutriVia}, Dieta: ${nutriDieta}, Vômito: ${vomito}, Diarréia: ${diarreia}.
 - GENI: SVD: ${p.enfermagem?.svd ? "SIM" : "NÃO"}, Diurese Total: ${diureseTotal}, Aspecto da Diurese: ${diureseAspecto}.
+- PELE: Lesões: ${lesoes}. Curativos: ${curativos}.
 DISPOSITIVOS EM USO:
 ${dispositivos.length > 0 ? dispositivos.join("\n") : "- Nenhum."}
 
@@ -2950,6 +2955,7 @@ SISTEMA RESPIRATÓRIO: [Texto]
 SISTEMA CARDIOVASCULAR: [Texto]
 SISTEMA DIGESTÓRIO: [Texto]
 SISTEMA GENITURINARIO : [Texto]
+SISTEMA TEGUMENTAR: [Texto detalhando lesões, curativos ou pele íntegra]
 DISPOSITIVOS EM USO:
 [Lista de dispositivos]`;
   };
