@@ -2810,7 +2810,8 @@ Estado mental: ${getLabel(
     const tempText = tempMax > 0 ? `Máx BH: ${tempMax}ºC` : "Afebril no BH";
 
     // --- NOVA LÓGICA DE TENDÊNCIA DA NORADRENALINA (MÉDICO) ---
-    let noraTrend = "Sem uso atual de Noradrenalina no BH.";
+    let hemodinamicaStatus = "Estável hemodinamicamente (sem uso de DVA)";
+    
     if (currentPatient.bh?.gains) {
       let noraVals = [];
       BH_HOURS.forEach((h) => {
@@ -2820,13 +2821,25 @@ Estado mental: ${getLabel(
           if (!isNaN(num)) noraVals.push(num);
         }
       });
-      if (noraVals.length > 1) {
-        const last = noraVals[noraVals.length - 1];
-        const prev = noraVals[noraVals.length - 2];
-        if (last > prev) noraTrend = `Taxa em ASCENSÃO (de ${prev} para ${last} ml/h). OBRIGATÓRIO CONCLUIR: Paciente com Instabilidade Hemodinâmica.`;
-        else noraTrend = `Taxa ESTÁVEL/QUEDA (de ${prev} para ${last} ml/h). OBRIGATÓRIO CONCLUIR: Paciente Compensado Hemodinamicamente.`;
-      } else if (noraVals.length === 1 && noraVals[0] > 0) {
-        noraTrend = `Taxa ESTÁVEL (${noraVals[0]} ml/h). OBRIGATÓRIO CONCLUIR: Paciente Compensado Hemodinamicamente.`;
+      
+      if (noraVals.length > 0) {
+        // Pega apenas os últimos 3 horários registrados
+        const last3 = noraVals.slice(-3);
+        let instavel = false;
+        
+        if (last3.length === 1) {
+          instavel = false; // Só 1 registro, assumimos compensado
+        } else if (last3.length === 2) {
+          instavel = last3[1] > last3[0]; // Aumentou no último em relação ao anterior
+        } else if (last3.length >= 3) {
+          // Instável se o último for maior que o penúltimo, 
+          // OU se manteve alto após ter subido no antepenúltimo.
+          instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
+        }
+        
+        hemodinamicaStatus = instavel 
+          ? "com Instabilidade Hemodinâmica" 
+          : "Compensado hemodinamicamente";
       }
     }
     // --------------------------------------------------------
@@ -2839,28 +2852,14 @@ Estado mental: ${getLabel(
       Siga ESTRITAMENTE a seguinte ordem estruturada, em formato de texto corrido ou parágrafos (jargão médico):
       1. Nível de consciência: ${neuroText}
       2. Sedação: ${sedativosText}
-      3. Suporte ventilatório: ${currentPatient.physio.suporte || "ND"} (${
-      currentPatient.physio.parametro || "ND"
-    })
-      4. Hemodinâmica: DVA ${currentPatient.cardio.dva ? "Sim" : "Não"} (${
-      renderValue(currentPatient.cardio.drogasDVA) || "Nenhuma"
-    }). Sinais: ${pressaoText}, ${fcText}. NORADRENALINA: ${noraTrend} -> OBRIGATÓRIO: Descreva expressamente se o paciente está INSTÁVEL ou COMPENSADO baseado unicamente na regra da noradrenalina fornecida.
+      3. Suporte ventilatório: ${currentPatient.physio.suporte || "ND"} (${currentPatient.physio.parametro || "ND"})
+      4. Hemodinâmica: Sinais: ${pressaoText}, ${fcText}. OBRIGATÓRIO: Descreva o status do paciente EXATAMENTE como "${hemodinamicaStatus}". É estritamente PROIBIDO mencionar doses, ml/h ou o comportamento da infusão da noradrenalina no texto.
       5. Antibióticos: ${atbsText}
-      6. Função renal/Diurese: ${calculateDiurese12hMlKgH(
-        currentPatient
-      )} ml/kg/h (12h), ClCr ${calculateCreatinineClearance(
-      currentPatient
-    )} ml/min
+      6. Função renal/Diurese: ${calculateDiurese12hMlKgH(currentPatient)} ml/kg/h (12h), ClCr ${calculateCreatinineClearance(currentPatient)} ml/min
       7. Infeccioso/Laboratorial: Temp ${tempText}, Leucócitos ${hemogramaText}
-      8. Dieta: Via ${currentPatient.nutri.via || "ND"}, Fórmula ${
-      currentPatient.nutri.tipoDieta || "ND"
-    } a ${currentPatient.nutri.vazao || "ND"} ml/h
-      9. Glicemia: Dados do BH: ${hgtText}. -> OBRIGATÓRIO: Avalie os dados e descreva expressamente se houve episódios de hipoglicemia, hiperglicemia ou se manteve bom controle glicêmico.
-      10. Trato Gastrointestinal: Evacuação ${calculateEvacDays(
-        currentPatient.gastro?.dataUltimaEvacuacao
-      )}, Vômitos ${currentPatient.nutri.vomito ? "Sim" : "Não"}, Diarreia ${
-      currentPatient.nutri.diarreia ? "Sim" : "Não"
-    }
+      8. Dieta: Via ${currentPatient.nutri.via || "ND"}, Fórmula ${currentPatient.nutri.tipoDieta || "ND"} a ${currentPatient.nutri.vazao || "ND"} ml/h
+      9. Glicemia: Dados do BH: ${hgtText}. -> OBRIGATÓRIO: Avalie e descreva se houve hipoglicemia, hiperglicemia ou bom controle glicêmico.
+      10. Trato Gastrointestinal: Evacuação ${calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao)}, Vômitos ${currentPatient.nutri.vomito ? "Sim" : "Não"}, Diarreia ${currentPatient.nutri.diarreia ? "Sim" : "Não"}
       
       NÃO inclua informações sobre FASTHUG ou profilaxias.`;
 
@@ -2950,7 +2949,8 @@ Estado mental: ${getLabel(
     const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
 
     // --- NOVA LÓGICA DE TENDÊNCIA DA NORADRENALINA (ENFERMAGEM) ---
-    let noraTrend = "Sem uso de Noradrenalina.";
+    let hemodinamicaStatus = "Estável hemodinamicamente (sem uso de DVA)";
+    
     if (p.bh?.gains) {
       let noraVals = [];
       if (typeof BH_HOURS !== 'undefined') {
@@ -2962,13 +2962,22 @@ Estado mental: ${getLabel(
           }
         });
       }
-      if (noraVals.length > 1) {
-        const last = noraVals[noraVals.length - 1];
-        const prev = noraVals[noraVals.length - 2];
-        if (last > prev) noraTrend = `ASCENSÃO (de ${prev} para ${last} ml/h) -> INSTÁVEL HEMODINAMICAMENTE.`;
-        else noraTrend = `ESTÁVEL/QUEDA (de ${prev} para ${last} ml/h) -> COMPENSADO HEMODINAMICAMENTE.`;
-      } else if (noraVals.length === 1 && noraVals[0] > 0) {
-        noraTrend = `ESTÁVEL (${noraVals[0]} ml/h) -> COMPENSADO HEMODINAMICAMENTE.`;
+      
+      if (noraVals.length > 0) {
+        const last3 = noraVals.slice(-3);
+        let instavel = false;
+        
+        if (last3.length === 1) {
+          instavel = false;
+        } else if (last3.length === 2) {
+          instavel = last3[1] > last3[0];
+        } else if (last3.length >= 3) {
+          instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
+        }
+        
+        hemodinamicaStatus = instavel 
+          ? "com Instabilidade Hemodinâmica" 
+          : "Compensado hemodinamicamente";
       }
     }
     // ------------------------------------------------
@@ -2988,7 +2997,7 @@ DADOS DO PACIENTE:
 - SINAIS VITAIS: PA: ${vitals["PAS"]}/${vitals["PAD"]}, FC: ${vitals["FC (bpm)"]} bpm, FR: ${vitals["FR (irpm)"]} irpm, SpO2: ${vitals["SpO2 (%)"]}%, Temp: ${vitals["Temp (ºC)"]}°C.
 - NEURO: Sedação: ${sedacao}, Glasgow (Total: ${glasgowTotal}), RASS: ${rass}.
 - RESPIRATÓRIO: Suporte: ${suporteVM}, FiO2: ${fiO2}%, PEEP: ${peep} cmH2O. Secreção: ${secrecao}.
-- CARDIO: DVA: ${dva}. NORADRENALINA NO BH: ${noraTrend}
+- CARDIO: DVA: ${dva}. STATUS HEMODINÂMICO: ${hemodinamicaStatus}
 - GASTRO/NUTRI: Via: ${nutriVia}, Dieta: ${nutriDieta}, Vômito: ${vomito}, Diarréia: ${diarreia}.
 - GENI: SVD: ${p.enfermagem?.svd ? "SIM" : "NÃO"}, Diurese Total: ${diureseTotal}, Aspecto da Diurese: ${diureseAspecto}.
 - PELE: Lesões: ${lesoes}. Curativos: ${curativos}.
@@ -3001,7 +3010,7 @@ FORMATO OBRIGATÓRIO:
 AVALIAÇÃO ENFERMAGEM:
 SISTEMA NEUROLOGICO : [Texto]
 SISTEMA RESPIRATÓRIO: [Texto]
-SISTEMA CARDIOVASCULAR: [Texto. É OBRIGATÓRIO escrever se o paciente está INSTÁVEL ou COMPENSADO baseado na regra da Noradrenalina]
+SISTEMA CARDIOVASCULAR: [Texto. É OBRIGATÓRIO descrever o paciente como "${hemodinamicaStatus}". É estritamente PROIBIDO mencionar taxas, doses ou o comportamento numérico da infusão da noradrenalina]
 SISTEMA DIGESTÓRIO: [Texto]
 SISTEMA GENITURINARIO : [Texto]
 SISTEMA TEGUMENTAR: [Texto]
