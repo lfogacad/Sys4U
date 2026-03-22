@@ -2919,9 +2919,13 @@ Estado mental: ${getLabel(
     const diureseTotal = p.bh?.bh?.losses?.["Diurese (Total Coletado)"] || "NT";
     const diureseAspecto = p.enfermagem?.diureseCaracteristica || "NT";
 
-    // DADOS NOVOS DE PELE E CURATIVOS:
+    // DADOS DE PELE E CURATIVOS:
     const lesoes = p.enfermagem?.lesaoLocal || "Pele íntegra / Sem lesões relatadas";
     const curativos = p.enfermagem?.curativoTipo ? `${p.enfermagem.curativoTipo} (Data: ${p.enfermagem.curativoData || "NT"})` : "Nenhum curativo registrado";
+
+    // INTERCORRÊNCIAS E CONDUTAS (Os campos novos!):
+    const intercorrencias = p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.";
+    const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
 
     const dispositivos = [
       ...(p.physio?.suporte === "VM" && p.physio?.totNumero ? [`- Tubo Orotraqueal (TOT) #${p.physio.totNumero} (Fixação: ${p.physio.totRima}cm)`] : []),
@@ -2946,8 +2950,7 @@ DISPOSITIVOS EM USO:
 ${dispositivos.length > 0 ? dispositivos.join("\n") : "- Nenhum."}
 
 INSTRUÇÕES PARA A IA (Enfermeiro da UTI):
-Escreva a AVALIAÇÃO DE ENFERMAGEM para evolução do plantão baseada nos dados acima. Use linguagem técnica e formal (ex: REG, expansibilidade torácica simétrica, eupneica, anictérica). 
-Se um dado for NT (Não testado) ou N/A, omita-o da descrição.
+Escreva a AVALIAÇÃO DE ENFERMAGEM para evolução do plantão baseada nos dados acima. Use linguagem técnica e formal. 
 FORMATO OBRIGATÓRIO:
 AVALIAÇÃO ENFERMAGEM:
 SISTEMA NEUROLOGICO : [Texto]
@@ -2955,9 +2958,13 @@ SISTEMA RESPIRATÓRIO: [Texto]
 SISTEMA CARDIOVASCULAR: [Texto]
 SISTEMA DIGESTÓRIO: [Texto]
 SISTEMA GENITURINARIO : [Texto]
-SISTEMA TEGUMENTAR: [Texto detalhando lesões, curativos ou pele íntegra]
+SISTEMA TEGUMENTAR: [Texto]
 DISPOSITIVOS EM USO:
-[Lista de dispositivos]`;
+[Lista de dispositivos]
+INTERCORRÊNCIAS:
+${intercorrencias}
+CONDUTAS:
+${condutas}`;
   };
 
   const generateNursingAI_Evolution = async () => {
@@ -4863,6 +4870,38 @@ DISPOSITIVOS EM USO:
                         </div>
                       </div>
 
+                      {/* ========================================== */}
+                      {/* NOVOS CAMPOS: INTERCORRÊNCIAS E CONDUTAS */}
+                      {/* ========================================== */}
+                      <div className="grid md:grid-cols-2 gap-4 mt-4">
+                        <div className="p-4 bg-white border rounded-xl shadow-sm">
+                          <h4 className="font-bold text-slate-700 mb-2 text-sm flex items-center gap-2">
+                            <AlertCircle size={16} className="text-orange-500" /> Intercorrências
+                          </h4>
+                          <textarea
+                            className="w-full p-3 border rounded-lg h-24 text-sm outline-none focus:ring-2 focus:ring-orange-100 bg-slate-50 focus:bg-white transition-colors whitespace-pre-wrap"
+                            placeholder="Relate as intercorrências do plantão aqui..."
+                            value={currentPatient.enfermagem?.intercorrencias || ""}
+                            onChange={(e) =>
+                              updateNested("enfermagem", "intercorrencias", e.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="p-4 bg-white border rounded-xl shadow-sm">
+                          <h4 className="font-bold text-slate-700 mb-2 text-sm flex items-center gap-2">
+                            <CheckCircle size={16} className="text-green-500" /> Condutas
+                          </h4>
+                          <textarea
+                            className="w-full p-3 border rounded-lg h-24 text-sm outline-none focus:ring-2 focus:ring-green-100 bg-slate-50 focus:bg-white transition-colors whitespace-pre-wrap"
+                            placeholder="Plano de cuidados e condutas tomadas..."
+                            value={currentPatient.enfermagem?.condutas || ""}
+                            onChange={(e) =>
+                              updateNested("enfermagem", "condutas", e.target.value)
+                            }
+                          />
+                        </div>
+                      </div>
+                      {/* ========================================== */}
                       <div className="p-4 bg-white border rounded-xl shadow-sm mt-4">
                         <div className="flex justify-between items-center mb-2">
                           <h4 className="font-bold text-slate-700 flex items-center gap-2">
