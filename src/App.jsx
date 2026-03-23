@@ -1688,12 +1688,46 @@ const App = () => {
       : currentPatient.bh;
   const bhTotals = calculateTotals(displayedBH);
 
-  // Lógica Colunas Gasometria Dinâmicas
+  // Lógica Colunas Gasometria Dinâmicas (Com Motor Cronológico)
   const gasoCols = [
     ...(currentPatient.customGasometriaCols || []),
     ...getLast10Days(),
   ];
-  const uniqueGasoCols = [...new Set(gasoCols)];
+  
+  const uniqueGasoCols = [...new Set(gasoCols)].sort((a, b) => {
+    const parseDateString = (str) => {
+      // 1. Se for o formato Padrão do sistema (Ex: 2026-03-23) -> Assume 00:00 do dia
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        return new Date(`${str}T00:00:00`).getTime();
+      }
+      
+      // 2. Se for o formato Customizado do usuário (Ex: 23/03 - 14h ou 23/03 - 14:30)
+      const matchDate = str.match(/^(\d{2})\/(\d{2})/);
+      if (matchDate) {
+        const day = parseInt(matchDate[1], 10);
+        const month = parseInt(matchDate[2], 10) - 1; // Mês no JS começa em 0
+        const year = new Date().getFullYear();
+        
+        // Busca a hora se o usuário digitou (Ex: 14h ou 14:30)
+        let hour = 23, min = 59; // Se digitar só o dia, joga pro final do dia para ficar junto
+        const matchTime = str.match(/(\d{2})h|(\d{2}):(\d{2})/);
+        if (matchTime) {
+          if (matchTime[1]) {
+            hour = parseInt(matchTime[1], 10); // Formato "14h"
+            min = 0;
+          } else {
+            hour = parseInt(matchTime[2], 10); // Formato "14:30"
+            min = parseInt(matchTime[3], 10);
+          }
+        }
+        return new Date(year, month, day, hour, min).getTime();
+      }
+      return 0; // Se for uma palavra aleatória, joga para o final da fila
+    };
+
+    // Ordenação Decrescente: Maior tempo (Mais novo) na esquerda, menor (Mais velho) na direita
+    return parseDateString(b) - parseDateString(a);
+  });
 
   useEffect(() => {
     try {
