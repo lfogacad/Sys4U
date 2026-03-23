@@ -2880,7 +2880,11 @@ Estado mental: ${getLabel(
     if (hb > 0 && hb < 7) labsAlterados.push("anemia (Hb < 7)");
     if (na > 0 && (na < 135 || na > 145)) labsAlterados.push("distúrbio de sódio");
     if (k > 0 && (k < 3.5 || k > 5.5)) labsAlterados.push("distúrbio de potássio");
-    const labsText = labsAlterados.length > 0 ? `Apresenta ${labsAlterados.join(", ")}.` : "Sem alterações críticas de Hb, Na ou K.";
+    
+    // O pulo do gato: Se não tiver alteração, a linha inteira fica invisível!
+    const labsText = labsAlterados.length > 0 
+      ? `\n      7. Laboratório Específico: Apresenta ${labsAlterados.join(", ")}.` 
+      : "";
 
     // Lógica da Noradrenalina (Estabilidade Hemodinâmica)
     let hemodinamicaStatus = "Estável hemodinamicamente (sem uso de DVA)";
@@ -2921,8 +2925,7 @@ Estado mental: ${getLabel(
       3. Hemodinâmica: STATUS OBRIGATÓRIO: ${hemodinamicaStatus}. (Mencione taquicardia/bradicardia ou hipotensão apenas se houver instabilidade no plantão).
       4. Infeccioso e Antibióticos: Paciente ${tempStatus}. Leucograma: ${leucoStatus}. Antibióticos em uso: ${atbsText}.
       5. Função Renal e Diurese: ${diureseStatus}. ${renalStatus}.
-      6. Trato Gastrointestinal / Dieta: Via ${currentPatient.nutri.via || "ND"}, Fórmula ${currentPatient.nutri.tipoDieta || "ND"}. Vômitos: ${currentPatient.nutri.vomito ? "Sim" : "Não"}, Diarreia: ${currentPatient.nutri.diarreia ? "Sim" : "Não"}. ${evacStatus}. Glicemia: ${glicemiaStatus}.
-      7. Laboratório Específico: ${labsText}`;
+      6. Trato Gastrointestinal / Dieta: Via ${currentPatient.nutri.via || "ND"}, Fórmula ${currentPatient.nutri.tipoDieta || "ND"}. Vômitos: ${currentPatient.nutri.vomito ? "Sim" : "Não"}, Diarreia: ${currentPatient.nutri.diarreia ? "Sim" : "Não"}. ${evacStatus}. Glicemia: ${glicemiaStatus}.${labsText}`;
 
     const modelsToTry = [
       "gemini-2.5-flash-preview-09-2025",
