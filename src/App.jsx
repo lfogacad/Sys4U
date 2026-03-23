@@ -2962,10 +2962,16 @@ Estado mental: ${getLabel(
     const glasgowTotal = (glasgowAO + glasgowRV + glasgowRM) || "NT";
     const rass = p.neuro?.rass || "NT";
     const sedacao = p.neuro?.sedacao ? `SIM (${p.neuro?.drogasSedacao?.join(", ") || "N/A"})` : "NÃO";
+    
+    // REGRA DO NEURO: Define se vai mandar RASS ou Glasgow
+    const neuroInfo = p.neuro?.sedacao 
+        ? `Sedação: ${sedacao}. RASS: ${rass}` 
+        : `Sem sedação contínua. Glasgow Total: ${glasgowTotal}`;
+
+    // REGRA RESPIRATÓRIA: Foram removidos a FiO2 e PEEP da visualização da IA para evitar que ela descreva parâmetros
     const suporteVM = p.physio?.suporte || "Ar Ambiente";
-    const fiO2 = p.physio?.fiO2 || "NT";
-    const peep = p.physio?.peep || "NT";
     const secrecao = p.physio?.secrecao ? `SIM (${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"})` : "NÃO";
+    
     const dva = p.cardio?.dva ? `SIM (${p.cardio?.drogasDVA?.join(", ") || "N/A"})` : "NÃO";
     const nutriVia = p.nutri?.via || "NT";
     const nutriDieta = p.nutri?.tipoDieta || "NT";
@@ -2974,17 +2980,13 @@ Estado mental: ${getLabel(
     const diureseTotal = p.bh?.bh?.losses?.["Diurese (Total Coletado)"] || "NT";
     const diureseAspecto = p.enfermagem?.diureseCaracteristica || "NT";
 
-    // DADOS DE PELE E CURATIVOS:
     const lesoes = p.enfermagem?.lesaoLocal || "Pele íntegra / Sem lesões relatadas";
     const curativos = p.enfermagem?.curativoTipo ? `${p.enfermagem.curativoTipo} (Data: ${p.enfermagem.curativoData || "NT"})` : "Nenhum curativo registrado";
 
-    // INTERCORRÊNCIAS E CONDUTAS:
     const intercorrencias = p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.";
     const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
 
-    // --- NOVA LÓGICA DE TENDÊNCIA DA NORADRENALINA (ENFERMAGEM) ---
     let hemodinamicaStatus = "Estável hemodinamicamente (sem uso de DVA)";
-    
     if (p.bh?.gains) {
       let noraVals = [];
       if (typeof BH_HOURS !== 'undefined') {
@@ -2996,11 +2998,9 @@ Estado mental: ${getLabel(
           }
         });
       }
-      
       if (noraVals.length > 0) {
         const last3 = noraVals.slice(-3);
         let instavel = false;
-        
         if (last3.length === 1) {
           instavel = false;
         } else if (last3.length === 2) {
@@ -3008,13 +3008,11 @@ Estado mental: ${getLabel(
         } else if (last3.length >= 3) {
           instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
         }
-        
         hemodinamicaStatus = instavel 
           ? "com Instabilidade Hemodinâmica" 
           : "Compensado hemodinamicamente";
       }
     }
-    // ------------------------------------------------
 
     const dispositivos = [
       ...(p.physio?.suporte === "VM" && p.physio?.totNumero ? [`- Tubo Orotraqueal (TOT) #${p.physio.totNumero} (Fixação: ${p.physio.totRima}cm)`] : []),
@@ -3029,8 +3027,8 @@ Estado mental: ${getLabel(
 DADOS DO PACIENTE:
 - Nome: ${p.nome}
 - SINAIS VITAIS: PA: ${vitals["PAS"]}/${vitals["PAD"]}, FC: ${vitals["FC (bpm)"]} bpm, FR: ${vitals["FR (irpm)"]} irpm, SpO2: ${vitals["SpO2 (%)"]}%, Temp: ${vitals["Temp (ºC)"]}°C.
-- NEURO: Sedação: ${sedacao}, Glasgow (Total: ${glasgowTotal}), RASS: ${rass}.
-- RESPIRATÓRIO: Suporte: ${suporteVM}, FiO2: ${fiO2}%, PEEP: ${peep} cmH2O. Secreção: ${secrecao}.
+- NEURO: ${neuroInfo}.
+- RESPIRATÓRIO: Suporte: ${suporteVM}. Secreção: ${secrecao}.
 - CARDIO: DVA: ${dva}. STATUS HEMODINÂMICO: ${hemodinamicaStatus}
 - GASTRO/NUTRI: Via: ${nutriVia}, Dieta: ${nutriDieta}, Vômito: ${vomito}, Diarréia: ${diarreia}.
 - GENI: SVD: ${p.enfermagem?.svd ? "SIM" : "NÃO"}, Diurese Total: ${diureseTotal}, Aspecto da Diurese: ${diureseAspecto}.
@@ -3040,16 +3038,24 @@ ${dispositivos.length > 0 ? dispositivos.join("\n") : "- Nenhum."}
 
 INSTRUÇÕES PARA A IA (Enfermeiro da UTI):
 Escreva a AVALIAÇÃO DE ENFERMAGEM para evolução do plantão baseada nos dados acima. Use linguagem técnica e formal. 
+
+REGRAS CRÍTICAS ESTRITAS:
+1. NÃO MENCIONE valores exatos numéricos de PA, FC, FR ou SpO2. Mencione apenas o padrão clínico (ex: normocárdico, taquicárdico, normotenso, eupneico) ou se houve alterações críticas no plantão.
+2. No Sistema Respiratório: NÃO MENCIONE o número do TOT, fixação ou parâmetros do ventilador (isso ficará na aba de dispositivos).
+3. No Sistema Cardiovascular: NÃO MENCIONE os locais de acesso venoso periférico ou central (AVP/CVC). É OBRIGATÓRIO descrever o paciente exatamente como "${hemodinamicaStatus}".
+4. No Sistema Neurológico: Mencione APENAS a escala fornecida no bloco de dados (RASS ou Glasgow), nunca as duas.
+5. Não cite doses ou volumes da Noradrenalina.
+
 FORMATO OBRIGATÓRIO:
 AVALIAÇÃO ENFERMAGEM:
-SISTEMA NEUROLOGICO : [Texto]
+SISTEMA NEUROLÓGICO : [Texto]
 SISTEMA RESPIRATÓRIO: [Texto]
-SISTEMA CARDIOVASCULAR: [Texto. É OBRIGATÓRIO descrever o paciente como "${hemodinamicaStatus}". É estritamente PROIBIDO mencionar taxas, doses ou o comportamento numérico da infusão da noradrenalina]
+SISTEMA CARDIOVASCULAR: [Texto]
 SISTEMA DIGESTÓRIO: [Texto]
-SISTEMA GENITURINARIO : [Texto]
+SISTEMA GENITURINÁRIO : [Texto]
 SISTEMA TEGUMENTAR: [Texto]
 DISPOSITIVOS EM USO:
-[Lista de dispositivos]
+[Exatamente a lista fornecida no bloco de dados, sem alterações]
 INTERCORRÊNCIAS:
 ${intercorrencias}
 CONDUTAS:
