@@ -4451,42 +4451,82 @@ ${condutas}`;
                         <Clock size={14} /> Histórico
                       </button>
                     </div>
-                    {currentPatient.antibiotics.map((atb, idx) => (
-                      <div key={idx} className="flex gap-2 mb-2">
-                        <input
-                          type="text"
-                          value={atb.name || ""}
-                          onChange={(e) =>
-                            updateAntibiotic(idx, "name", e.target.value)
-                          }
-                          placeholder={`ATB ${idx + 1}`}
-                          className="flex-1 p-2 rounded-lg border border-orange-200"
-                        />
-                        <input
-                          type="date"
-                          value={atb.date || ""}
-                          onChange={(e) =>
-                            updateAntibiotic(idx, "date", e.target.value)
-                          }
-                          className="w-32 p-2 rounded-lg border border-orange-200"
-                        />
-                        <div className="w-12 flex items-center justify-center font-bold text-orange-600 bg-white rounded-lg border border-orange-100">
-                          {getDaysD0(atb.date)}
+                    {currentPatient.antibiotics.map((atb, idx) => {
+                      // Verifica se já está fixado (pelo botão ou por ser dado antigo do BD)
+                      const isFixed = atb.locked || (atb.name && atb.date && atb.locked !== false);
+
+                      return (
+                        <div key={idx} className="flex gap-2 mb-2">
+                          {isFixed ? (
+                            <>
+                              {/* --- MODO FIXADO (SÓ LEITURA) --- */}
+                              <div className="flex-1 flex items-center px-3 py-2 bg-orange-100/50 border border-orange-200 rounded-lg text-orange-900 font-bold uppercase overflow-hidden shadow-sm">
+                                <Pill size={16} className="mr-2 text-orange-500 flex-shrink-0" />
+                                <span className="truncate">{atb.name}</span>
+                              </div>
+                              <div className="w-32 flex items-center justify-center px-2 py-2 bg-orange-50 border border-orange-200 rounded-lg text-sm font-bold text-orange-800 shadow-sm">
+                                {formatDateDDMM(atb.date)}
+                              </div>
+                              <div className="w-12 flex items-center justify-center font-bold text-orange-600 bg-white rounded-lg border border-orange-200 shadow-sm">
+                                {getDaysD0(atb.date)}
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  clearAntibiotic(idx);
+                                }}
+                                className={`flex items-center justify-center text-orange-400 hover:text-white hover:bg-red-500 transition-colors bg-white border border-orange-200 rounded-lg w-10 shadow-sm ${
+                                  !isEditable ? "hidden" : ""
+                                }`}
+                                title="Excluir e arquivar no histórico"
+                              >
+                                <X size={18} strokeWidth={3} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {/* --- MODO EDIÇÃO --- */}
+                              <input
+                                type="text"
+                                value={atb.name || ""}
+                                onChange={(e) =>
+                                  updateAntibiotic(idx, "name", e.target.value.toUpperCase())
+                                }
+                                placeholder={`Novo ATB ${idx + 1}`}
+                                className="flex-1 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 uppercase"
+                              />
+                              <input
+                                type="date"
+                                value={atb.date || ""}
+                                onChange={(e) =>
+                                  updateAntibiotic(idx, "date", e.target.value)
+                                }
+                                className="w-32 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700"
+                              />
+                              <div className="w-12 flex items-center justify-center font-bold text-orange-300 bg-slate-50 rounded-lg border border-orange-100">
+                                -
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  if (atb.name && atb.date) {
+                                    updateAntibiotic(idx, "locked", true);
+                                  } else {
+                                    alert("Preencha o Nome e a Data do antibiótico para fixá-lo!");
+                                  }
+                                }}
+                                className={`flex items-center justify-center text-green-600 hover:text-white hover:bg-green-500 transition-colors bg-green-50 border border-green-200 rounded-lg w-10 shadow-sm ${
+                                  !isEditable ? "hidden" : ""
+                                }`}
+                                title="Confirmar e Fixar Antibiótico"
+                              >
+                                <CheckCircle size={18} strokeWidth={2.5} />
+                              </button>
+                            </>
+                          )}
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            clearAntibiotic(idx);
-                          }}
-                          className={`text-orange-400 hover:text-red-500 ${
-                            !isEditable ? "hidden" : ""
-                          }`}
-                          title="Excluir e arquivar no histórico"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </fieldset>
               )}
