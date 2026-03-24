@@ -621,199 +621,142 @@ const renderValue = (val) => {
   return val;
 };
 
+// --- HELPER DE EXAMES PARA SAPS 3 ---
+const getPrimeiroExameSAPS = (patient, keyFull, keyShort) => {
+  const dataAdmissao = patient.dataInternacao;
+  if (dataAdmissao && patient.examHistory?.[dataAdmissao]?.[keyFull]) return safeNumber(patient.examHistory[dataAdmissao][keyFull]);
+  const datasHistorico = Object.keys(patient.examHistory || {}).sort();
+  for (let data of datasHistorico) {
+    if (data >= dataAdmissao && patient.examHistory[data][keyFull]) return safeNumber(patient.examHistory[data][keyFull]);
+  }
+  if (patient.labs?.dayBefore?.[keyShort]) return safeNumber(patient.labs.dayBefore[keyShort]);
+  if (patient.labs?.yesterday?.[keyShort]) return safeNumber(patient.labs.yesterday[keyShort]);
+  if (patient.labs?.today?.[keyShort]) return safeNumber(patient.labs.today[keyShort]);
+  return 0;
+};
+
+const getPrimeiraGasometriaSAPS = (patient, param) => {
+  const colunasGaso = Object.keys(patient.gasometriaHistory || {}).sort();
+  for (let col of colunasGaso) {
+    if (patient.gasometriaHistory[col][param]) return safeNumber(patient.gasometriaHistory[col][param]);
+  }
+  return null;
+};
+
+// --- CHANCELADOR DE PREENCHIMENTO ---
+const getMissingSAPS3 = (patient) => {
+  const missing = [];
+  const s3 = patient.saps3 || {};
+
+  if (!calculateAge(patient.dataNascimento)) missing.push("Idade (Admissão)");
+  if (!s3.diasHospital) missing.push("Dias Pré-UTI (Admissão)");
+  if (!s3.origemMapped) missing.push("Origem (Admissão)");
+  if (!s3.motivoAdmissao) missing.push("Tipo Admissão (Admissão)");
+  if (!s3.sistemaRazao) missing.push("Sistema/Razão (Admissão)");
+  if (!s3.infeccaoAdmissao) missing.push("Infecção Prévia (Admissão)");
+
+  if (calculateGlasgowTotal(patient) === 0) missing.push("Glasgow (Médico/Admissão)");
+
+  let hasVitals = false;
+  if (patient.bh?.vitals) {
+    Object.values(patient.bh.vitals).forEach(v => {
+      if (safeNumber(v["FC (bpm)"]) > 0 || safeNumber(v["PAS"]) > 0 || safeNumber(v["Temp (ºC)"]) > 0) hasVitals = true;
+    });
+  }
+  if (!hasVitals) missing.push("Sinais Vitais (Balanço)");
+
+  if (getPrimeiroExameSAPS(patient, "Bilirrubina Total", "") === 0) missing.push("Bilirrubina (Exames)");
+  if (getPrimeiroExameSAPS(patient, "Creatinina", "creat") === 0) missing.push("Creatinina (Exames)");
+  if (getPrimeiroExameSAPS(patient, "Leucócitos", "leuco") === 0) missing.push("Leucócitos (Exames)");
+  if (getPrimeiroExameSAPS(patient, "Plaquetas", "plaq") === 0) missing.push("Plaquetas (Exames)");
+
+  if (getPrimeiraGasometriaSAPS(patient, "pH") === null) missing.push("pH (Gasometria)");
+  if (getPrimeiraGasometriaSAPS(patient, "P/F") === null) missing.push("P/F (Gasometria)");
+
+  return missing;
+};
+
 // --- CÁLCULO SAPS 3 (ATUALIZADO CONFORME PLANILHA) ---
 const calculateSAPS3Score = (patient) => {
   if (!patient.nome) return { score: 0, prob: "---", details: [] };
+  
+  // TRAVA DE OURO: Se já foi calculado e salvo, retorna o valor gravado e ignora flutuações!
+  if (patient.saps3?.isLocked) {
+    return {
+      score: patient.saps3.lockedScore,
+      prob: patient.saps3.lockedProb,
+      details: patient.saps3.lockedDetails || []
+    };
+  }
+
   let score = 0;
   let details = [];
   const s3 = patient.saps3 || {};
 
   // 1. Idade
   const age = calculateAge(patient.dataNascimento) || 0;
-  if (age >= 80) {
-    score += 18;
-    details.push(`Idade ${age} anos: +18`);
-  } else if (age >= 70) {
-    score += 13;
-    details.push(`Idade ${age} anos: +13`);
-  } else if (age >= 60) {
-    score += 9;
-    details.push(`Idade ${age} anos: +9`);
-  } else if (age >= 40) {
-    score += 5;
-    details.push(`Idade ${age} anos: +5`);
-  }
+  if (age >= 80) { score += 18; details.push(`Idade ${age} anos: +18`); }
+  else if (age >= 70) { score += 13; details.push(`Idade ${age} anos: +13`); }
+  else if (age >= 60) { score += 9; details.push(`Idade ${age} anos: +9`); }
+  else if (age >= 40) { score += 5; details.push(`Idade ${age} anos: +5`); }
 
   // 2. Comorbidades e Imunossupressão
   const comorb = s3.comorbidades || [];
-  if (comorb.includes("Câncer Sólido")) {
-    score += 10;
-    details.push("Câncer Sólido: +10");
-  }
-  if (comorb.includes("Hemato-onco")) {
-    score += 12;
-    details.push("Hemato-onco: +12");
-  }
-  if (comorb.includes("Cirrose")) {
-    score += 10;
-    details.push("Cirrose: +10");
-  }
-  if (comorb.includes("AIDS")) {
-    score += 12;
-    details.push("AIDS: +12");
-  }
-  if (comorb.includes("IC NYHA IV")) {
-    score += 10;
-    details.push("IC NYHA IV: +10");
-  }
-
-  if (s3.imunossupressao) {
-    score += 3;
-    details.push("Imunossupressão: +3");
-  }
+  if (comorb.includes("Câncer Sólido")) { score += 10; details.push("Câncer Sólido: +10"); }
+  if (comorb.includes("Hemato-onco")) { score += 12; details.push("Hemato-onco: +12"); }
+  if (comorb.includes("Cirrose")) { score += 10; details.push("Cirrose: +10"); }
+  if (comorb.includes("AIDS")) { score += 12; details.push("AIDS: +12"); }
+  if (comorb.includes("IC NYHA IV")) { score += 10; details.push("IC NYHA IV: +10"); }
+  if (s3.imunossupressao) { score += 3; details.push("Imunossupressão: +3"); }
 
   // 3. Tempo de internação hospitalar pré-UTI
-  if (s3.diasHospital === "≥28 dias") {
-    score += 7;
-    details.push("Internação pré-UTI ≥ 28 dias: +7");
-  } else if (s3.diasHospital === "14 a 27 dias") {
-    score += 6;
-    details.push("Internação pré-UTI 14-27 dias: +6");
-  }
+  if (s3.diasHospital === "≥28 dias") { score += 7; details.push("Internação pré-UTI ≥ 28 dias: +7"); }
+  else if (s3.diasHospital === "14 a 27 dias") { score += 6; details.push("Internação pré-UTI 14-27 dias: +6"); }
 
   // 4. Local de Origem
-  if (s3.origemMapped === "Enfermarias") {
-    score += 6;
-    details.push("Origem (Enfermaria): +6");
-  } else if (s3.origemMapped === "Recuperação Pós-Anestésica") {
-    score += 2;
-    details.push("Origem (RPA): +2");
-  }
+  if (s3.origemMapped === "Enfermarias") { score += 6; details.push("Origem (Enfermaria): +6"); }
+  else if (s3.origemMapped === "Recuperação Pós-Anestésica") { score += 2; details.push("Origem (RPA): +2"); }
 
   // 5. Tipo de Admissão e Cirurgia Urgente
-  if (s3.motivoAdmissao === "Cirúrgica Eletiva") {
-    score -= 2;
-    details.push("Admissão Cirúrgica Eletiva: -2");
-  } else if (s3.motivoAdmissao === "Cirúrgica de Urgência") {
-    score += 2;
-    details.push("Admissão Cirúrgica Urgência: +2");
-  }
-
-  if (s3.cirurgiaUrgente) {
-    score += 5;
-    details.push("Cirurgia Urgente: +5");
-  }
+  if (s3.motivoAdmissao === "Cirúrgica Eletiva") { score -= 2; details.push("Admissão Cirúrgica Eletiva: -2"); }
+  else if (s3.motivoAdmissao === "Cirúrgica de Urgência") { score += 2; details.push("Admissão Cirúrgica Urgência: +2"); }
+  if (s3.cirurgiaUrgente) { score += 5; details.push("Cirurgia Urgente: +5"); }
 
   // 6. Infecção na admissão
   if (s3.infeccaoAdmissao === "Sim") {
-    score += 5;
-    details.push("Infecção Presente: +5");
-    if (s3.sitioInfeccao === "Respiratório") {
-      score += 6;
-      details.push("Sítio Infeccioso (Respiratório): +6");
-    } else if (s3.sitioInfeccao === "Outros focos") {
-      score += 3;
-      details.push("Sítio Infeccioso (Outro): +3");
-    }
+    score += 5; details.push("Infecção Presente: +5");
+    if (s3.sitioInfeccao === "Respiratório") { score += 6; details.push("Sítio Infeccioso (Respiratório): +6"); }
+    else if (s3.sitioInfeccao === "Outros focos") { score += 3; details.push("Sítio Infeccioso (Outro): +3"); }
   }
 
   // 7. Sistema / Razão da Admissão
   const razao = s3.sistemaRazao || "";
-  if (razao === "Gastrointestinal / Digestivo") {
-    score += 12;
-    details.push("Razão (Gastro/Digestivo): +12");
-  } else if (razao === "Cardiovascular" || razao === "Respiratório") {
-    score += 10;
-    details.push(`Razão (${razao}): +10`);
-  } else if (razao === "Geniturinário / Renal") {
-    score += 8;
-    details.push("Razão (Renal): +8");
-  } else if (razao === "Neurológico") {
-    score += 7;
-    details.push("Razão (Neurológico): +7");
-  } else if (razao === "Hematológico") {
-    score += 6;
-    details.push("Razão (Hematológico): +6");
-  } else if (
-    razao === "Trauma (Não-Neurológico)" ||
-    razao === "Outros / Diversos"
-  ) {
-    score += 5;
-    details.push(`Razão (${razao}): +5`);
-  } else if (razao === "Metabólico / Endócrino") {
-    score += 4;
-    details.push("Razão (Metabólico/Endócrino): +4");
-  }
-
-  // --- BUSCA DE DADOS INICIAIS (Primeiras 24/48h) ---
-  const dataAdmissao = patient.dataInternacao;
-
-  const getPrimeiroExame = (keyFull, keyShort) => {
-    if (dataAdmissao && patient.examHistory?.[dataAdmissao]?.[keyFull]) {
-      return safeNumber(patient.examHistory[dataAdmissao][keyFull]);
-    }
-    const datasHistorico = Object.keys(patient.examHistory || {}).sort();
-    for (let data of datasHistorico) {
-      if (data >= dataAdmissao && patient.examHistory[data][keyFull]) {
-        return safeNumber(patient.examHistory[data][keyFull]);
-      }
-    }
-    if (patient.labs?.dayBefore?.[keyShort])
-      return safeNumber(patient.labs.dayBefore[keyShort]);
-    if (patient.labs?.yesterday?.[keyShort])
-      return safeNumber(patient.labs.yesterday[keyShort]);
-    if (patient.labs?.today?.[keyShort])
-      return safeNumber(patient.labs.today[keyShort]);
-    return 0;
-  };
-
-  const getPrimeiraGasometria = (param) => {
-    const colunasGaso = Object.keys(patient.gasometriaHistory || {}).sort();
-    for (let col of colunasGaso) {
-      if (patient.gasometriaHistory[col][param]) {
-        return safeNumber(patient.gasometriaHistory[col][param]);
-      }
-    }
-    return null;
-  };
+  if (razao === "Gastrointestinal / Digestivo") { score += 12; details.push("Razão (Gastro/Digestivo): +12"); }
+  else if (razao === "Cardiovascular" || razao === "Respiratório") { score += 10; details.push(`Razão (${razao}): +10`); }
+  else if (razao === "Geniturinário / Renal") { score += 8; details.push("Razão (Renal): +8"); }
+  else if (razao === "Neurológico") { score += 7; details.push("Razão (Neurológico): +7"); }
+  else if (razao === "Hematológico") { score += 6; details.push("Razão (Hematológico): +6"); }
+  else if (razao === "Trauma (Não-Neurológico)" || razao === "Outros / Diversos") { score += 5; details.push(`Razão (${razao}): +5`); }
+  else if (razao === "Metabólico / Endócrino") { score += 4; details.push("Razão (Metabólico/Endócrino): +4"); }
 
   // 8. Glasgow
   const glasgow = calculateGlasgowTotal(patient);
   if (glasgow > 0) {
-    if (glasgow <= 6) {
-      score += 15;
-      details.push(`Glasgow (${glasgow}): +15`);
-    } else if (glasgow <= 12) {
-      score += 7;
-      details.push(`Glasgow (${glasgow}): +7`);
-    } else if (glasgow <= 14) {
-      score += 2;
-      details.push(`Glasgow (${glasgow}): +2`);
-    }
+    if (glasgow <= 6) { score += 15; details.push(`Glasgow (${glasgow}): +15`); }
+    else if (glasgow <= 12) { score += 7; details.push(`Glasgow (${glasgow}): +7`); }
+    else if (glasgow <= 14) { score += 2; details.push(`Glasgow (${glasgow}): +2`); }
   }
 
   // 9. Bilirrubina Total
-  const bil = getPrimeiroExame("Bilirrubina Total", "");
-  if (bil >= 6.0) {
-    score += 5;
-    details.push(`Bilirrubina Total (≥ 6.0): +5`);
-  } else if (bil >= 2.0) {
-    score += 4;
-    details.push(`Bilirrubina Total (2.0-5.9): +4`);
-  }
+  const bil = getPrimeiroExameSAPS(patient, "Bilirrubina Total", "");
+  if (bil >= 6.0) { score += 5; details.push(`Bilirrubina Total (≥ 6.0): +5`); }
+  else if (bil >= 2.0) { score += 4; details.push(`Bilirrubina Total (2.0-5.9): +4`); }
 
   // 10. Creatinina
-  const creat = getPrimeiroExame("Creatinina", "creat");
-  if (creat >= 3.5) {
-    score += 8;
-    details.push(`Creatinina (≥ 3.5): +8`);
-  } else if (creat >= 2.0) {
-    score += 7;
-    details.push(`Creatinina (2.0-3.4): +7`);
-  } else if (creat >= 1.2) {
-    score += 2;
-    details.push(`Creatinina (1.2-1.9): +2`);
-  }
+  const creat = getPrimeiroExameSAPS(patient, "Creatinina", "creat");
+  if (creat >= 3.5) { score += 8; details.push(`Creatinina (≥ 3.5): +8`); }
+  else if (creat >= 2.0) { score += 7; details.push(`Creatinina (2.0-3.4): +7`); }
+  else if (creat >= 1.2) { score += 2; details.push(`Creatinina (1.2-1.9): +2`); }
 
   // 11. Frequência Cardíaca
   let fcMax = 0;
@@ -823,43 +766,25 @@ const calculateSAPS3Score = (patient) => {
       if (fc > fcMax) fcMax = fc;
     });
   }
-  if (fcMax >= 160) {
-    score += 7;
-    details.push(`Frequência Cardíaca (≥ 160): +7`);
-  } else if (fcMax >= 120) {
-    score += 5;
-    details.push(`Frequência Cardíaca (120-159): +5`);
-  }
+  if (fcMax >= 160) { score += 7; details.push(`Frequência Cardíaca (≥ 160): +7`); }
+  else if (fcMax >= 120) { score += 5; details.push(`Frequência Cardíaca (120-159): +5`); }
 
   // 12. Leucócitos
-  const leuco = getPrimeiroExame("Leucócitos", "leuco");
+  const leuco = getPrimeiroExameSAPS(patient, "Leucócitos", "leuco");
   if (leuco > 0) {
-    if (leuco < 4000) {
-      score += 5;
-      details.push(`Leucócitos (< 4.000): +5`);
-    } else if (leuco >= 20000) {
-      score += 3;
-      details.push(`Leucócitos (≥ 20.000): +3`);
-    }
+    if (leuco < 4000) { score += 5; details.push(`Leucócitos (< 4.000): +5`); }
+    else if (leuco >= 20000) { score += 3; details.push(`Leucócitos (≥ 20.000): +3`); }
   }
 
   // 13. pH Arterial
-  const ph = getPrimeiraGasometria("pH");
-  if (ph !== null && ph > 0 && ph < 7.25) {
-    score += 3;
-    details.push(`pH Arterial (< 7.25): +3`);
-  }
+  const ph = getPrimeiraGasometriaSAPS(patient, "pH");
+  if (ph !== null && ph > 0 && ph < 7.25) { score += 3; details.push(`pH Arterial (< 7.25): +3`); }
 
   // 14. Plaquetas
-  const plaq = getPrimeiroExame("Plaquetas", "plaq");
+  const plaq = getPrimeiroExameSAPS(patient, "Plaquetas", "plaq");
   if (plaq > 0) {
-    if (plaq < 50000) {
-      score += 8;
-      details.push(`Plaquetas (< 50.000): +8`);
-    } else if (plaq < 100000) {
-      score += 5;
-      details.push(`Plaquetas (50.000-99.999): +5`);
-    }
+    if (plaq < 50000) { score += 8; details.push(`Plaquetas (< 50.000): +8`); }
+    else if (plaq < 100000) { score += 5; details.push(`Plaquetas (50.000-99.999): +5`); }
   }
 
   // 15. PA Sistólica
@@ -871,28 +796,16 @@ const calculateSAPS3Score = (patient) => {
     });
   }
   if (pasMin < 999) {
-    if (pasMin < 70) {
-      score += 11;
-      details.push(`PA Sistólica (< 70): +11`);
-    } else if (pasMin < 90) {
-      score += 5;
-      details.push(`PA Sistólica (70-89): +5`);
-    } else if (pasMin < 120) {
-      score += 2;
-      details.push(`PA Sistólica (90-119): +2`);
-    }
+    if (pasMin < 70) { score += 11; details.push(`PA Sistólica (< 70): +11`); }
+    else if (pasMin < 90) { score += 5; details.push(`PA Sistólica (70-89): +5`); }
+    else if (pasMin < 120) { score += 2; details.push(`PA Sistólica (90-119): +2`); }
   }
 
   // 16. PaO2 / FiO2
-  const pf = getPrimeiraGasometria("P/F");
+  const pf = getPrimeiraGasometriaSAPS(patient, "P/F");
   if (pf !== null && pf > 0) {
-    if (pf < 100) {
-      score += 11;
-      details.push(`PaO2/FiO2 (< 100): +11`);
-    } else if (pf < 250) {
-      score += 7;
-      details.push(`PaO2/FiO2 (100-249): +7`);
-    }
+    if (pf < 100) { score += 11; details.push(`PaO2/FiO2 (< 100): +11`); }
+    else if (pf < 250) { score += 7; details.push(`PaO2/FiO2 (100-249): +7`); }
   }
 
   // 17. Temperatura
@@ -903,12 +816,8 @@ const calculateSAPS3Score = (patient) => {
       if (t > 0 && t < tempMin) tempMin = t;
     });
   }
-  if (tempMin > 0 && tempMin < 35.0) {
-    score += 5;
-    details.push(`Temperatura (< 35.0ºC): +5`);
-  }
+  if (tempMin > 0 && tempMin < 35.0) { score += 5; details.push(`Temperatura (< 35.0ºC): +5`); }
 
-  // Cálculo da equação Logit (América Central e do Sul)
   const logit = -32.6659 + 7.3068 * Math.log(Math.max(score, 1) + 20.5958);
   const prob = ((Math.exp(logit) / (1 + Math.exp(logit))) * 100).toFixed(1);
 
@@ -2791,6 +2700,30 @@ Estado mental: ${getLabel(
     }
   };
 
+  const handleLockSAPS3 = () => {
+    const up = [...patients];
+    const p = up[activeTab];
+    const calc = calculateSAPS3Score(p);
+    if (!p.saps3) p.saps3 = {};
+    p.saps3.isLocked = true;
+    p.saps3.lockedScore = calc.score;
+    p.saps3.lockedProb = calc.prob;
+    p.saps3.lockedDetails = calc.details;
+    setPatients(up);
+    save(p);
+  };
+
+  const handleUnlockSAPS3 = () => {
+    if(!window.confirm("Atenção: Destravar o SAPS 3 fará com que a pontuação seja recalculada com os dados atuais de sinais e exames. Deseja continuar?")) return;
+    const up = [...patients];
+    const p = up[activeTab];
+    if (p.saps3) {
+      p.saps3.isLocked = false;
+    }
+    setPatients(up);
+    save(p);
+  };
+
   const generateAIEvolution = async () => {
     setIsGeneratingAI(true);
     let success = false;
@@ -3702,22 +3635,29 @@ ${condutas}`;
                                   {getDaysD1(p.dataInternacao)}
                                 </td>
                                 <td className="p-3 text-center font-bold text-slate-700">
-                                  <button
-                                    onClick={() =>
-                                      setShowSapsDetailsModal({
-                                        patientName: p.nome,
-                                        saps,
-                                      })
-                                    }
-                                    className="flex items-center justify-center gap-1 mx-auto hover:text-purple-600 transition-colors px-2 py-1 rounded hover:bg-purple-50"
-                                    title="Ver detalhes da pontuação"
-                                  >
-                                    {saps.score}{" "}
-                                    <FileText
-                                      size={14}
-                                      className="text-slate-400 hover:text-purple-500"
-                                    />
-                                  </button>
+                                  {p.saps3?.isLocked ? (
+                                    <button
+                                      onClick={() =>
+                                        setShowSapsDetailsModal({
+                                          patientName: p.nome,
+                                          saps,
+                                        })
+                                      }
+                                      className="flex items-center justify-center gap-1 mx-auto hover:text-purple-600 transition-colors px-2 py-1 rounded hover:bg-purple-50"
+                                      title="Ver detalhes da pontuação"
+                                    >
+                                      {saps.score}{" "}
+                                      <FileText
+                                        size={14}
+                                        className="text-slate-400 hover:text-purple-500"
+                                      />
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-1 rounded">PENDENTE</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center font-bold text-red-600 bg-red-50/50">
+                                  {p.saps3?.isLocked ? `${saps.prob}%` : "-"}
                                 </td>
                                 <td className="p-3 text-center font-bold text-red-600 bg-red-50/50">
                                   {saps.prob}%
@@ -3769,27 +3709,82 @@ ${condutas}`;
                   >
                     {/* CARTÃO SAPS 3 NOVO NA VISITA MULTI */}
                     <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 mb-4 shadow-sm">
-                      <h4 className="text-xs font-bold text-purple-800 uppercase flex items-center gap-2 mb-2">
-                        <Activity size={14} /> Índice de Gravidade (SAPS 3)
-                      </h4>
-                      <div className="flex gap-4 items-center">
-                        <div className="bg-white px-4 py-2 rounded-lg border border-purple-200">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase block">
-                            Pontuação
-                          </span>
-                          <span className="text-xl font-bold text-purple-700">
-                            {calculateSAPS3Score(currentPatient).score}
-                          </span>
-                        </div>
-                        <div className="bg-white px-4 py-2 rounded-lg border border-red-200">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase block">
-                            Mortalidade Esperada
-                          </span>
-                          <span className="text-xl font-bold text-red-600">
-                            {calculateSAPS3Score(currentPatient).prob}%
-                          </span>
-                        </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <h4 className="text-xs font-bold text-purple-800 uppercase flex items-center gap-2">
+                          <Activity size={14} /> Índice de Gravidade (SAPS 3)
+                        </h4>
+                        {currentPatient.saps3?.isLocked && isOverviewEditable && (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleUnlockSAPS3();
+                            }}
+                            className="text-[10px] bg-purple-200 text-purple-800 px-2 py-1 rounded hover:bg-purple-300 font-bold transition-colors"
+                          >
+                            Destravar
+                          </button>
+                        )}
                       </div>
+
+                      {currentPatient.saps3?.isLocked ? (
+                        <div className="flex gap-4 items-center">
+                          <div className="bg-white px-4 py-2 rounded-lg border border-purple-200">
+                            <span className="text-[10px] text-slate-500 font-bold uppercase block">
+                              Pontuação
+                            </span>
+                            <span className="text-xl font-bold text-purple-700">
+                              {currentPatient.saps3.lockedScore}
+                            </span>
+                          </div>
+                          <div className="bg-white px-4 py-2 rounded-lg border border-red-200">
+                            <span className="text-[10px] text-slate-500 font-bold uppercase block">
+                              Mortalidade Esperada
+                            </span>
+                            <span className="text-xl font-bold text-red-600">
+                              {currentPatient.saps3.lockedProb}%
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-white p-3 rounded-lg border border-purple-200">
+                          {(() => {
+                            const missing = getMissingSAPS3(currentPatient);
+                            const isReady = missing.length === 0;
+                            return (
+                              <div className="flex flex-col gap-2">
+                                {!isReady ? (
+                                  <>
+                                    <p className="text-xs font-bold text-slate-600">
+                                      Aguardando preenchimento nas primeiras 24h:
+                                    </p>
+                                    <p className="text-[10px] text-red-600 font-bold bg-red-50 p-2 rounded border border-red-100">
+                                      Faltam: {missing.join(", ")}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <p className="text-xs font-bold text-green-600 bg-green-50 p-2 rounded border border-green-100 text-center">
+                                    Todos os dados clínicos de admissão presentes!
+                                  </p>
+                                )}
+                                <button
+                                  disabled={!isReady || !isOverviewEditable}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleLockSAPS3();
+                                  }}
+                                  className={`py-2 rounded-lg text-xs font-bold text-white transition-colors ${
+                                    !isReady || !isOverviewEditable
+                                      ? "bg-slate-300 cursor-not-allowed"
+                                      : "bg-purple-600 hover:bg-purple-700 shadow-md"
+                                  }`}
+                                >
+                                  {isReady ? "Calcular e Salvar SAPS 3 Definitivo" : "Aguardando Requisitos..."}
+                                </button>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
