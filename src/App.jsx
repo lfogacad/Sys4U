@@ -2761,128 +2761,158 @@ Estado mental: ${getLabel(
       ? renderValue(currentPatient.neuro.drogasSedacao)
       : "Sem sedação contínua";
 
-    const vitals = currentPatient.bh?.vitals || {};
-    let tempMax = 0;
-    let spo2Min = 100;
-    let hgtVals = [];
-
-    Object.values(vitals).forEach((v) => {
-      if (v && v["Temp (ºC)"]) {
-        const t = safeNumber(v["Temp (ºC)"]);
-        if (t > tempMax) tempMax = t;
-      }
-      if (v && v["SpO2 (%)"]) {
-        const s = safeNumber(v["SpO2 (%)"]);
-        if (s > 0 && s < spo2Min) spo2Min = s;
-      }
-      if (v && v["HGT (mg/dL)"]) hgtVals.push(safeNumber(v["HGT (mg/dL)"]));
-    });
-
-    // Diagnósticos Clínicos Automatizados (Sem números)
-    const tempStatus = tempMax >= 37.8 ? "com pico febril" : "afebril";
-    const spo2Status = spo2Min <= 92 && spo2Min > 0 ? "baixa SpO2 (<92%)" : "boa SpO2";
-
-    // Glicemia
-    let glicemiaStatus = "sem controle glicêmico registrado";
-    if (hgtVals.length > 0) {
-      const minHgt = Math.min(...hgtVals.filter((n) => n > 0));
-      const maxHgt = Math.max(...hgtVals.filter((n) => n > 0));
-      if (minHgt > 0 && minHgt < 70) glicemiaStatus = "com episódios de hipoglicemia";
-      else if (maxHgt > 180) glicemiaStatus = "com episódios de hiperglicemia";
-      else glicemiaStatus = "com bom controle glicêmico";
-    }
-
-    // Leucócitos
-    const leucoVal = safeNumber(currentPatient.labs?.today?.leuco);
-    let leucoStatus = "sem leucograma recente";
-    if (leucoVal > 0) {
-      if (leucoVal < 4000) leucoStatus = "leucopenia";
-      else if (leucoVal > 11000) leucoStatus = "leucocitose";
-      else leucoStatus = "leucócitos normais";
-    }
-
-    // Diurese e Função Renal
-    const diureseNum = parseFloat(calculateDiurese12hMlKgH(currentPatient));
-    let diureseStatus = "débito urinário não quantificado";
-    if (!isNaN(diureseNum)) {
-      if (diureseNum < 0.5) diureseStatus = "débito urinário reduzido (oligúria)";
-      else if (diureseNum > 1.5) diureseStatus = "débito urinário aumentado (poliúria)";
-      else diureseStatus = "débito urinário adequado";
-    }
-
-    const crclNum = parseFloat(calculateCreatinineClearance(currentPatient));
-    let renalStatus = "função renal não avaliada";
-    if (!isNaN(crclNum)) {
-      if (crclNum < 60) renalStatus = "função renal comprometida";
-      else renalStatus = "função renal preservada";
-    }
-
-    // Alerta de Evacuação (> 2 dias)
-    const evacDaysStr = calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao);
-    let evacStatus = "";
-    if (evacDaysStr !== "Hoje" && evacDaysStr !== "1 dias" && evacDaysStr !== "2 dias" && evacDaysStr !== "D0" && evacDaysStr !== "-") {
-      evacStatus = `Atenção: Há mais de 2 dias sem evacuar (${evacDaysStr})`;
-    } else {
-      evacStatus = "Evacuação recente";
-    }
-
-    // Alterações Laboratoriais (Hb, Na, K)
-    const todayStr = getManausDateStr();
-    const exToday = currentPatient.examHistory?.[todayStr] || {};
-    const hb = safeNumber(exToday["Hemoglobina"]);
-    const na = safeNumber(currentPatient.labs?.today?.na);
-    const k = safeNumber(currentPatient.labs?.today?.k);
-    
-    let labsAlterados = [];
-    if (hb > 0 && hb < 7) labsAlterados.push("anemia (Hb < 7)");
-    if (na > 0 && (na < 135 || na > 145)) labsAlterados.push("distúrbio de sódio");
-    if (k > 0 && (k < 3.5 || k > 5.5)) labsAlterados.push("distúrbio de potássio");
-    
-    // O pulo do gato: Se não tiver alteração, a linha inteira fica invisível!
-    const labsText = labsAlterados.length > 0 
-      ? `\n      7. Laboratório Específico: Apresenta ${labsAlterados.join(", ")}.` 
-      : "";
-
-    // Lógica da Noradrenalina (Estabilidade Hemodinâmica)
-    let hemodinamicaStatus = "Estável hemodinamicamente (sem uso de DVA)";
-    if (currentPatient.bh?.gains) {
-      let noraVals = [];
-      BH_HOURS.forEach((h) => {
-        const v = currentPatient.bh.gains[h]?.["Noradrenalina"];
-        if (v !== undefined && v !== "") {
-          const num = parseFloat(String(v).replace(",", "."));
-          if (!isNaN(num)) noraVals.push(num);
+      const vitals = currentPatient.bh?.vitals || {};
+      let tempMax = 0;
+      let spo2Min = 100;
+      let hgtVals = [];
+      let fcMax = 0;
+      let fcMin = 999;
+      let pasMax = 0;
+      let pasMin = 999;
+  
+      Object.values(vitals).forEach((v) => {
+        if (v && v["Temp (ºC)"]) {
+          const t = safeNumber(v["Temp (ºC)"]);
+          if (t > tempMax) tempMax = t;
+        }
+        if (v && v["SpO2 (%)"]) {
+          const s = safeNumber(v["SpO2 (%)"]);
+          if (s > 0 && s < spo2Min) spo2Min = s;
+        }
+        if (v && v["HGT (mg/dL)"]) hgtVals.push(safeNumber(v["HGT (mg/dL)"]));
+        if (v && v["FC (bpm)"]) {
+          const fc = safeNumber(v["FC (bpm)"]);
+          if (fc > 0 && fc > fcMax) fcMax = fc;
+          if (fc > 0 && fc < fcMin) fcMin = fc;
+        }
+        if (v && v["PAS"]) {
+          const pas = safeNumber(v["PAS"]);
+          if (pas > 0 && pas > pasMax) pasMax = pas;
+          if (pas > 0 && pas < pasMin) pasMin = pas;
         }
       });
-      if (noraVals.length > 0) {
-        const last3 = noraVals.slice(-3);
-        let instavel = false;
-        if (last3.length === 1) instavel = false;
-        else if (last3.length === 2) instavel = last3[1] > last3[0];
-        else if (last3.length >= 3) instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
-        hemodinamicaStatus = instavel ? "Instável hemodinamicamente" : "Compensado hemodinamicamente";
+  
+      // 1. SINAIS VITAIS STATUS
+      const tempStatus = tempMax >= 37.8 ? "Febril" : "Afebril";
+      const spo2Status = (spo2Min <= 92 && spo2Min > 0) ? "com baixa SpO2" : "mantendo boa SpO2";
+  
+      let fcStatus = "eucárdico";
+      if (fcMax > 100) fcStatus = "taquicárdico";
+      else if (fcMin < 60 && fcMin > 0) fcStatus = "bradicárdico";
+  
+      let paStatus = "com bom controle pressórico";
+      if (pasMin < 90 && pasMin > 0) paStatus = "hipotenso";
+      else if (pasMax > 160) paStatus = "hipertenso";
+  
+      // 2. LABORATÓRIO E INFECÇÃO
+      const leucoVal = safeNumber(currentPatient.labs?.today?.leuco);
+      let leucoStatus = "leucometria normal";
+      if (leucoVal > 0) {
+        if (leucoVal < 4000) leucoStatus = "leucopenia";
+        else if (leucoVal > 11000) leucoStatus = "leucocitose";
       }
-    }
-
-    // Regra Neuro: Só RASS ou só Glasgow
-    const neuroText = currentPatient.neuro.sedacao
-      ? `RASS ${currentPatient.neuro.rass || "ND"}`
-      : `Glasgow ${calculateGlasgowTotal(currentPatient)}`;
-
-    const promptText = `Atue como um médico intensivista e escreva a evolução diária do paciente internado na UTI. 
-      Siga ESTRITAMENTE a seguinte ordem estruturada, em formato de texto corrido ou parágrafos (jargão médico):
+      const atbsFinal = atbsText === "Nenhum" ? "sem uso de antibióticos" : `em uso de ${atbsText}`;
+  
+      // 3. DIURESE E FUNÇÃO RENAL
+      const diureseNum = parseFloat(calculateDiurese12hMlKgH(currentPatient));
+      let diureseStatus = "Diurese não quantificada";
+      if (!isNaN(diureseNum)) {
+        if (diureseNum < 0.5) diureseStatus = "Baixa diurese";
+        else diureseStatus = "Boa diurese";
+      }
+  
+      const crclNum = parseFloat(calculateCreatinineClearance(currentPatient));
+      let renalStatus = "função renal não avaliada";
+      if (!isNaN(crclNum)) {
+        if (crclNum < 60) renalStatus = "função renal alterada";
+        else renalStatus = "função renal preservada";
+      }
+  
+      // 4. GASTROINTESTINAL
+      const evacDaysStr = calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao);
+      let evacStatus = "";
+      if (evacDaysStr !== "Hoje" && evacDaysStr !== "1 dias" && evacDaysStr !== "2 dias" && evacDaysStr !== "D0" && evacDaysStr !== "-") {
+        evacStatus = `Há mais de 2 dias sem evacuar (${evacDaysStr}).`;
+      }
+  
+      const vomito = currentPatient.nutri?.vomito;
+      const diarreia = currentPatient.nutri?.diarreia;
+      let tgiStatus = "sem episódios de vômito ou diarreia";
+      if (vomito && diarreia) tgiStatus = "com episódios de vômito e diarreia";
+      else if (vomito) tgiStatus = "com episódios de vômito";
+      else if (diarreia) tgiStatus = "com episódios de diarreia";
+  
+      const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
+  
+      // 5. ALTERAÇÕES LABORATORIAIS CRÍTICAS
+      const todayStr = getManausDateStr();
+      const exToday = currentPatient.examHistory?.[todayStr] || {};
+      const hb = safeNumber(exToday["Hemoglobina"]);
+      const na = safeNumber(currentPatient.labs?.today?.na);
+      const k = safeNumber(currentPatient.labs?.today?.k);
       
-      REGRAS CRÍTICAS DE REDAÇÃO:
-      - É EXPRESSAMENTE PROIBIDO incluir números ou valores absolutos de FC, FR, Temperatura, PA, SpO2, HGT, Hemoglobina, Sódio, Potássio ou Leucócitos.
-      - Use apenas a avaliação clínica fornecida (ex: normotenso, com pico febril, leucocitose).
-      - NÃO inclua informações sobre profilaxias ou FASTHUG.
+      let labsAlterados = [];
+      if (hb > 0 && hb < 7) labsAlterados.push("anemia (Hb < 7)");
+      if (na > 0 && (na < 135 || na > 145)) labsAlterados.push("distúrbio de sódio");
+      if (k > 0 && (k < 3.5 || k > 5.5)) labsAlterados.push("distúrbio de potássio");
       
-      1. Neurológico: Nível de consciência: ${neuroText}. Sedação: ${sedativosText}.
-      2. Respiratório: Suporte: ${currentPatient.physio.suporte || "Ar Ambiente"}. Mantendo ${spo2Status}. (Cite dispneia ou alterações de FR apenas se clinicamente relevante).
-      3. Hemodinâmica: STATUS OBRIGATÓRIO: ${hemodinamicaStatus}. (Mencione taquicardia/bradicardia ou hipotensão apenas se houver instabilidade no plantão).
-      4. Infeccioso e Antibióticos: Paciente ${tempStatus}. Leucograma: ${leucoStatus}. Antibióticos em uso: ${atbsText}.
-      5. Função Renal e Diurese: ${diureseStatus}. ${renalStatus}.
-      6. Trato Gastrointestinal / Dieta: Via ${currentPatient.nutri.via || "ND"}, Fórmula ${currentPatient.nutri.tipoDieta || "ND"}. Vômitos: ${currentPatient.nutri.vomito ? "Sim" : "Não"}, Diarreia: ${currentPatient.nutri.diarreia ? "Sim" : "Não"}. ${evacStatus}. Glicemia: ${glicemiaStatus}.${labsText}`;
+      const labsText = labsAlterados.length > 0 ? ` Paciente apresenta ${labsAlterados.join(", ")} no laboratório de hoje.` : "";
+  
+      // 6. HEMODINÂMICA E DVA
+      let hemodinamicaStatus = "Hemodinamicamente estável";
+      if (currentPatient.bh?.gains) {
+        let noraVals = [];
+        BH_HOURS.forEach((h) => {
+          const v = currentPatient.bh.gains[h]?.["Noradrenalina"];
+          if (v !== undefined && v !== "") {
+            const num = parseFloat(String(v).replace(",", "."));
+            if (!isNaN(num)) noraVals.push(num);
+          }
+        });
+        if (noraVals.length > 0) {
+          const last3 = noraVals.slice(-3);
+          let instavel = false;
+          if (last3.length === 1) instavel = false;
+          else if (last3.length === 2) instavel = last3[1] > last3[0];
+          else if (last3.length >= 3) instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
+          hemodinamicaStatus = instavel ? "Hemodinamicamente instável" : "Hemodinamicamente estável";
+        }
+      }
+  
+      const dva = currentPatient.cardio?.dva;
+      const drogasDvaList = currentPatient.cardio?.drogasDVA?.join(", ") || "";
+      const dvaText = dva ? `em uso de DVA (${drogasDvaList})` : "sem uso de DVA";
+  
+      // 7. RESPIRATÓRIO E SEDAÇÃO
+      const suporte = currentPatient.physio?.suporte || "ar ambiente";
+      const parametro = currentPatient.physio?.parametro || "";
+      let suporteText = "em ar ambiente";
+      if (suporte === "VM") suporteText = "em VM por TOT";
+      else if (suporte === "Cateter Nasal" || suporte === "Venturi" || suporte === "VNI" || suporte === "Tubo T") suporteText = `em uso de ${suporte} ${parametro}`;
+  
+      const sedacaoText = currentPatient.neuro?.sedacao ? "sedado" : "sem sedação";
+  
+      // --- MONTAGEM DO PROMPT ESTRITO ---
+      const promptText = `Atue como um médico intensivista e escreva a evolução diária do paciente internado na UTI. 
+        Siga ESTRITAMENTE a seguinte estrutura e ordem, formando parágrafos perfeitos e contínuos.
+        NÃO UTILIZE BULLET POINTS, NÚMEROS, OU TÍTULOS DE PARÁGRAFOS (como "Parágrafo 1", "Cardiovascular", etc). Escreva apenas o texto.
+  
+        [INÍCIO DO TEXTO]
+        Paciente em [REG ou MEG - decida pela gravidade global do caso], ${sedacaoText}, ${suporteText}, ${spo2Status}.
+        
+        ${hemodinamicaStatus}, ${dvaText}, ${fcStatus}, ${paStatus}.
+        
+        ${diureseStatus}, com ${renalStatus}.${labsText}
+        
+        ${tempStatus}, com ${leucoStatus}, ${atbsFinal}.
+        
+        Dieta ${viaDieta}, ${tgiStatus}. ${evacStatus}
+        [FIM DO TEXTO]
+        
+        REGRAS CRÍTICAS:
+        - Limite-se a conectar e organizar as frases fornecidas acima de forma culta e fluida.
+        - É EXPRESSAMENTE PROIBIDO adicionar jargões soltos fora deste formato.
+        - JAMAIS inclua valores absolutos de exames, pressão ou FC.`;
 
     const modelsToTry = [
       "gemini-2.5-flash-preview-09-2025",
