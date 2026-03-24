@@ -3515,7 +3515,6 @@ ${condutas}`;
 
       <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0 print:p-0">
         <div className="bg-white p-2 rounded-2xl shadow-lg mb-4 flex overflow-x-auto gap-2 scrollbar-hide print:hidden">
-        <div className="bg-white p-2 rounded-2xl shadow-lg mb-4 flex overflow-x-auto gap-2 scrollbar-hide print:hidden">
           {patients.map((p) => {
             // TRAVA DE SEGURANÇA DO LEITO 11 (SANDBOX)
             // IMPORTANTE: Troque 'isAdmin' pela variável que você usa para identificar o administrador
@@ -3537,7 +3536,6 @@ ${condutas}`;
               </button>
             );
           })}
-        </div>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-6 print:hidden">
