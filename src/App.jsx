@@ -3493,7 +3493,7 @@ ${condutas}`;
         >
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             {currentPatient.nome || "Leito Disponível"}
-            {currentPatient.nome && userProfile?.role === "Médico" && (
+            {currentPatient.nome && (userProfile?.role === "Médico" || isAdmin) && (
               <button
                 onClick={handleClearData}
                 className="text-gray-300 hover:text-red-500 ml-2 print:hidden"
