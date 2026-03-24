@@ -108,7 +108,9 @@ const firebaseConfig = {
 };
 
 // Se hospedar externamente, coloque a sua API Key do Google AI Studio aqui dentro. No Canvas, deixe vazio.
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const apiKeyMed = import.meta.env.VITE_GEMINI_API_KEY_MED;
+const apiKeyEnf = import.meta.env.VITE_GEMINI_API_KEY_ENF;
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY; // Mantém para o leitor de PDF
 
 let app, auth, db;
 let firebaseError = null;
@@ -2935,7 +2937,7 @@ Estado mental: ${getLabel(
 
     for (const model of modelsToTry) {
       try {
-        const currentKey = apiKey || window.apiKey || "";
+        const currentKey = apiKeyMed || apiKey || window.apiKey || "";
         const r = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
           {
@@ -3107,7 +3109,7 @@ ${condutas}`;
 
       for (const model of modelsToTry) {
         try {
-          const currentKey = apiKey || window.apiKey || "";
+          const currentKey = apiKeyEnf || apiKey || window.apiKey || "";
           const r = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
             {
