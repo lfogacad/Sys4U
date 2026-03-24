@@ -655,7 +655,14 @@ const getMissingSAPS3 = (patient) => {
   if (!s3.sistemaRazao) missing.push("Sistema/Razão (Admissão)");
   if (!s3.infeccaoAdmissao) missing.push("Infecção Prévia (Admissão)");
 
-  if (calculateGlasgowTotal(patient) === 0) missing.push("Glasgow (Médico/Admissão)");
+  const isSedatedMissing = patient.neuro?.sedacao === true || (patient.neuro?.rass && patient.neuro.rass !== "" && patient.neuro.rass !== "NT");
+  if (isSedatedMissing) {
+    const getValM = (s) => parseInt(s?.split(" ")[0]) || 0;
+    const basalTotalM = getValM(patient.neuro?.glasgowBasalAO) + (patient.neuro?.glasgowBasalRV?.startsWith("T") ? 1 : getValM(patient.neuro?.glasgowBasalRV)) + getValM(patient.neuro?.glasgowBasalRM);
+    if (basalTotalM === 0 && calculateGlasgowTotal(patient) === 0) missing.push("Glasgow Basal (Pré-Sedação)");
+  } else {
+    if (calculateGlasgowTotal(patient) === 0) missing.push("Glasgow Atual");
+  }
 
   let hasVitals = false;
   if (patient.bh?.vitals) {
@@ -739,8 +746,25 @@ const calculateSAPS3Score = (patient) => {
   else if (razao === "Trauma (Não-Neurológico)" || razao === "Outros / Diversos") { score += 5; details.push(`Razão (${razao}): +5`); }
   else if (razao === "Metabólico / Endócrino") { score += 4; details.push("Razão (Metabólico/Endócrino): +4"); }
 
-  // 8. Glasgow
-  const glasgow = calculateGlasgowTotal(patient);
+  // 8. Glasgow (Verifica Sedação e usa o Basal)
+  const isSedated = patient.neuro?.sedacao === true || (patient.neuro?.rass && patient.neuro.rass !== "" && patient.neuro.rass !== "NT");
+  let glasgow = 0;
+
+  if (isSedated) {
+    const getVal = (s) => parseInt(s?.split(" ")[0]) || 0;
+    const ao = getVal(patient.neuro?.glasgowBasalAO);
+    const rv = patient.neuro?.glasgowBasalRV?.startsWith("T") ? 1 : getVal(patient.neuro?.glasgowBasalRV);
+    const rm = getVal(patient.neuro?.glasgowBasalRM);
+    const basalTotal = ao + rv + rm;
+    
+    // Fallback: Se marcou sedado mas não preencheu o basal, cai para o atual para não zerar a pontuação
+    glasgow = basalTotal > 0 ? basalTotal : calculateGlasgowTotal(patient);
+    
+    if (basalTotal > 0) details.push(`Paciente Sedado -> Usando Glasgow Basal (${glasgow})`);
+  } else {
+    glasgow = calculateGlasgowTotal(patient);
+  }
+
   if (glasgow > 0) {
     if (glasgow <= 6) { score += 15; details.push(`Glasgow (${glasgow}): +15`); }
     else if (glasgow <= 12) { score += 7; details.push(`Glasgow (${glasgow}): +7`); }
@@ -2327,6 +2351,9 @@ const App = () => {
       ecg_ao: "",
       ecg_rv: "",
       ecg_rm: "",
+      ecg_basal_ao: "",
+      ecg_basal_rv: "",
+      ecg_basal_rm: "",
       rass: "",
       pupilas: "",
       dva: false,
@@ -2402,6 +2429,9 @@ const App = () => {
     r.neuro.glasgowAO = admissionData.ecg_ao;
     r.neuro.glasgowRV = admissionData.ecg_rv;
     r.neuro.glasgowRM = admissionData.ecg_rm;
+    r.neuro.glasgowBasalAO = admissionData.ecg_basal_ao;
+    r.neuro.glasgowBasalRV = admissionData.ecg_basal_rv;
+    r.neuro.glasgowBasalRM = admissionData.ecg_basal_rm;
     r.neuro.rass = admissionData.rass;
 
     r.cardio.dva = admissionData.dva;
@@ -2422,10 +2452,16 @@ const App = () => {
       comorbidades: admissionData.saps_comorbidades || [],
     };
 
+    // Lógica para montar a linha do Glasgow Basal no texto
+    const basalAo = parseInt(admissionData.ecg_basal_ao?.split(" ")[0]) || 0;
+    const basalRv = admissionData.ecg_basal_rv?.startsWith("T") ? 1 : (parseInt(admissionData.ecg_basal_rv?.split(" ")[0]) || 0);
+    const basalRm = parseInt(admissionData.ecg_basal_rm?.split(" ")[0]) || 0;
+    const totalBasal = (basalAo || basalRv || basalRm) ? (basalAo + basalRv + basalRm) : null;
+    
+    const basalText = (admissionData.rass && totalBasal !== null) ? `  |  ECG Pré-Sedação: ${totalBasal}` : "";
+
     const text = `ADMISSÃO NA UTI
-NOME: ${admissionData.nome?.toUpperCase() || "-"} (SEXO: ${
-      admissionData.sexo || "-"
-    })
+NOME: ${admissionData.nome?.toUpperCase() || "-"} (SEXO: ${admissionData.sexo || "-"})
 ORIGEM: ${admissionData.origem || "-"}
 
 HISTÓRIA CLÍNICA:
@@ -2437,26 +2473,12 @@ ACV: ${admissionData.exameACV || "-"}
 AR: ${admissionData.exameAR || "-"}
 ABD.: ${admissionData.exameABD || "-"}
 EXTREMIDADES: ${admissionData.exameExtremidades || "-"}
-NEURO: ${admissionData.exameNeuro || "-"}  |  ECG: ${ecgText}  |  RASS: ${
-      admissionData.rass || "-"
-    }
+NEURO: ${admissionData.exameNeuro || "-"}  |  ECG Atual: ${ecgText}  |  RASS: ${admissionData.rass || "-"}${basalText}
 PUPILAS: ${admissionData.pupilas || "-"}
 
 SUPORTE:
-SEDAÇÃO: ${
-      admissionData.sedacao
-        ? admissionData.drogasSedacao?.length > 0
-          ? admissionData.drogasSedacao.join(", ")
-          : "Sim (não especificadas)"
-        : "Não"
-    }
-DVA: ${
-      admissionData.dva
-        ? admissionData.drogasDVA?.length > 0
-          ? admissionData.drogasDVA.join(", ")
-          : "Sim (não especificadas)"
-        : "Não"
-    }
+SEDAÇÃO: ${admissionData.sedacao ? (admissionData.drogasSedacao?.length > 0 ? admissionData.drogasSedacao.join(", ") : "Sim (não especificadas)") : "Não"}
+DVA: ${admissionData.dva ? (admissionData.drogasDVA?.length > 0 ? admissionData.drogasDVA.join(", ") : "Sim (não especificadas)") : "Não"}
 
 MEDICAMENTOS DE USO HABITUAL:
 ${admissionData.medicamentos || "-"}
@@ -8919,6 +8941,41 @@ ${condutas}`;
                           <option key={r}>{r}</option>
                         ))}
                       </select>
+                      
+                      {/* A MÁGICA ACONTECE AQUI: Só aparece se o RASS for preenchido */}
+                      {admissionData.rass && (
+                        <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded-lg shadow-sm animate-fadeIn">
+                          <label className="text-[9px] font-bold text-purple-700 mb-1 block uppercase">
+                            Glasgow Pré-Sedação (SAPS 3)
+                          </label>
+                          <div className="grid grid-cols-3 gap-1">
+                            <select
+                              className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center"
+                              value={admissionData.ecg_basal_ao || ""}
+                              onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_ao: e.target.value })}
+                            >
+                              <option value="">AO</option>
+                              {GLASGOW_AO.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}
+                            </select>
+                            <select
+                              className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center"
+                              value={admissionData.ecg_basal_rv || ""}
+                              onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_rv: e.target.value })}
+                            >
+                              <option value="">RV</option>
+                              {GLASGOW_RV.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}
+                            </select>
+                            <select
+                              className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center"
+                              value={admissionData.ecg_basal_rm || ""}
+                              onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_rm: e.target.value })}
+                            >
+                              <option value="">RM</option>
+                              {GLASGOW_RM.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="sm:col-span-2">
                       <label className="text-[11px] font-bold text-indigo-500 mb-1 block">
