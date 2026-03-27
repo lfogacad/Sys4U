@@ -1673,7 +1673,7 @@ ${gasoText}
 
 --- SUPORTE VENTILATÓRIO ---
 Suporte Atual: ${physio.suporte || 'Ar Ambiente'}
-Tempo de VM: ${physio.diasAcumuladosVM ? `${physio.diasAcumuladosVM} dias prévios + atual` : 'Checar painel'}
+Tempo de VM: ${typeof getTempoVMText === 'function' ? getTempoVMText(p) : (p.physio?.tempoTotalVM || "Não calculado")}
 Parâmetros: ${paramText}
 Ajustes realizados: [ DIGITE AQUI OS AJUSTES REALIZADOS NO PLANTÃO ]
 
@@ -1696,7 +1696,7 @@ Condutas Fisioterapêuticas:
 ${physio.condutas || 'Sem condutas descritas.'}
 
 Planos e Metas (Próximo Plantão):
-${physio.planos || 'Sem planos descritos.'}
+${p.physio?.planoMetas || "Sem planos descritos."}
 `;
     
     setPhysioEvoText(textoGerado);
