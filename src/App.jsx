@@ -6147,7 +6147,7 @@ ${condutas}`;
                       </h4>
                       
                       {/* Grid dos 6 Sistemas - Espalhados horizontalmente no computador */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         {[
                           { id: "estadoGeral", label: "Estado Geral" },
                           { id: "sistemaNervoso", label: "Sistema Nervoso" },
