@@ -52,6 +52,8 @@ import {
   Move,
   List,
   Filter,
+  Copy,
+  Target,
 } from "lucide-react";
 
 // Importações do Firebase
@@ -319,7 +321,7 @@ const SUPORTE_RESP_OPTS = [
   "Máscara não reinalante",
   "VNI",
   "VM",
-  "Tubo T",
+  "Macronebulização por TQT",
 ];
 const MODOS_VM = ["PCV", "VCV", "PSV", "SIMV"];
 const ASPECTO_SECRECAO = ["Fluído", "Espesso", "Rolhas"];
@@ -1606,6 +1608,184 @@ const App = () => {
   const [nursingData, setNursingData] = useState({});
   const [isGeneratingNursingAI, setIsGeneratingNursingAI] = useState(false);
   const [showSapsDetailsModal, setShowSapsDetailsModal] = useState(null);
+  const [showPhysioModal, setShowPhysioModal] = useState(false);
+  const [showVmFlowsheet, setShowVmFlowsheet] = useState(false);
+  // Estados para o Modal da Evolução da Fisioterapia
+  const [showPhysioEvoModal, setShowPhysioEvoModal] = useState(false);
+  const [physioEvoText, setPhysioEvoText] = useState("");
+
+  // Função que compila todos os dados e gera o texto da evolução
+  const handleGeneratePhysioEvo = () => {
+    const p = currentPatient;
+    const physio = p.physio || {};
+    const med = p.medical || {};
+
+    // Função auxiliar para somar 7 dias à data de instalação
+    const add7Days = (dateStr) => {
+      if (!dateStr) return "___/___/___";
+      const d = new Date(dateStr + "T12:00:00");
+      d.setDate(d.getDate() + 7);
+      return d.toLocaleDateString('pt-BR');
+    };
+
+    // Puxa a última gasometria registrada da tabela (se houver)
+    let gasoText = "Nenhuma gasometria registrada no plantão atual.";
+    
+    // O seu sistema usa customGasometriaCols ou salva no gasometriaHistory
+    const gasoCols = p.customGasometriaCols || Object.keys(p.gasometriaHistory || {});
+    
+    if (gasoCols.length > 0) {
+      // Como o botão "+" (unshift) coloca a nova gasometria no início, pegamos a posição 0.
+      const ultimaGasoCol = p.customGasometriaCols ? gasoCols[0] : gasoCols[gasoCols.length - 1];
+      const gasoData = p.gasometriaHistory?.[ultimaGasoCol] || {};
+      
+      gasoText = `Referência: ${ultimaGasoCol}
+pH: ${gasoData['pH'] || '--'} | pCO2: ${gasoData['pCO2'] || '--'} | PaO2: ${gasoData['PaO2'] || gasoData['pO2'] || '--'} | HCO3: ${gasoData['HCO3'] || '--'} | BE: ${gasoData['BE'] || '--'} | SatO2: ${gasoData['SatO2'] || '--'}%`;
+      
+      // Se você tiver lactato na tabela, descomente a linha abaixo e apague a de cima:
+      // gasoText += ` | Lac: ${gasoData['Lactato'] || '--'}`;
+    }
+
+    // Monta a linha de parâmetros ventilatórios
+    let paramText = `Modo: ${physio.parametro || '--'} | PEEP: ${physio.peep || '--'} | FiO2: ${physio.fiO2 || '--'}%`;
+    if (physio.parametro === 'VCV') paramText += ` | Vt: ${physio.vt || '--'} ml`;
+    if (physio.parametro === 'PCV') paramText += ` | PC: ${physio.pc || '--'} cmH2O`;
+    if (physio.parametro === 'PSV') paramText += ` | PS: ${physio.ps || '--'} cmH2O`;
+
+    // Constrói o texto completo
+    const textoGerado = `EVOLUÇÃO FISIOTERAPÊUTICA
+
+--- HISTÓRIA E DIAGNÓSTICOS ---
+História Clínica: ${p.historiaClinica || med.historiaClinica || 'Não informada'}
+Diagnósticos Agudos: ${med.diagnosticosAgudos || 'Não informados'}
+Diagnósticos Crônicos: ${med.diagnosticosCronicos || 'Não informados'}
+
+--- AVALIAÇÃO POR SISTEMAS ---
+Neurológico: ${physio.sistemaNervoso || 'Sem alterações descritas'}
+Respiratório: ${physio.sistemaRespiratorio || 'Sem alterações descritas'}
+Cardiovascular: ${physio.sistemaCardiovascular || 'Sem alterações descritas'}
+Gastrointestinal/Abdome: ${physio.sistemaDigestivo || 'Sem alterações descritas'}
+Musculoesquelético: ${physio.sistemaMusculoesqueletico || 'Sem alterações descritas'}
+Estado Geral: ${physio.estadoGeral || 'Não descrito'}
+
+--- GASOMETRIA DO DIA ---
+${gasoText}
+
+--- SUPORTE VENTILATÓRIO ---
+Suporte Atual: ${physio.suporte || 'Ar Ambiente'}
+Tempo de VM: ${physio.diasAcumuladosVM ? `${physio.diasAcumuladosVM} dias prévios + atual` : 'Checar painel'}
+Parâmetros: ${paramText}
+Ajustes realizados: [ DIGITE AQUI OS AJUSTES REALIZADOS NO PLANTÃO ]
+
+Filtro HMEF:
+- Instalação: ${physio.dataTrocaHMEF ? new Date(physio.dataTrocaHMEF + "T12:00:00").toLocaleDateString('pt-BR') : '___/___/___'}
+- Troca Prevista (7 dias): ${add7Days(physio.dataTrocaHMEF)}
+
+Sistema Fechado de Aspiração (Trach Care):
+- Instalação: ${physio.dataTrocaSistemaFechado ? new Date(physio.dataTrocaSistemaFechado + "T12:00:00").toLocaleDateString('pt-BR') : '___/___/___'}
+- Troca Prevista (7 dias): ${add7Days(physio.dataTrocaSistemaFechado)}
+
+Pressão do Cuff (cmH2O):
+Manhã: ${physio.cuffM || '--'} | Tarde: ${physio.cuffT || '--'} | Noite: ${physio.cuffN || '--'}
+
+--- CONDUTAS E PLANOS ---
+Intercorrências:
+${physio.intercorrencias || 'Nenhuma intercorrência no plantão.'}
+
+Condutas Fisioterapêuticas:
+${physio.condutas || 'Sem condutas descritas.'}
+
+Planos e Metas (Próximo Plantão):
+${physio.planos || 'Sem planos descritos.'}
+`;
+    
+    setPhysioEvoText(textoGerado);
+    setShowPhysioEvoModal(true);
+  };
+
+  // Função que cria uma nova coluna no Mapa puxando os dados atuais/admissão
+  const handleAddVmEntry = () => {
+    const flowsheet = Array.isArray(currentPatient.physio?.vmFlowsheet) 
+      ? [...currentPatient.physio.vmFlowsheet] 
+      : [];
+      
+    const now = new Date();
+    const dataHora = `${now.toLocaleDateString('pt-BR')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    // --- IMPORTAÇÃO DIRETA DAS FUNÇÕES NATIVAS (Fonte Única de Verdade) ---
+    // Puxa o retorno exato das funções que você já utiliza no sistema
+    const diasUtiImportado = typeof getDaysD1 === 'function' ? getDaysD1(currentPatient.dataInternacao) : "";
+    const diasVmImportado = typeof getTempoVMText === 'function' ? getTempoVMText(currentPatient) : "";
+    // ----------------------------------------------------------------------
+
+    flowsheet.push({
+      id: Date.now().toString(),
+      dataHora: dataHora,
+      diasUti: diasUtiImportado,
+      diasVm: diasVmImportado,
+      cuffM: currentPatient.physio?.cuffM || "",
+      cuffT: currentPatient.physio?.cuffT || "",
+      cuffN: currentPatient.physio?.cuffN || "",
+      despertarS: false,
+      despertarN: false,
+      modo: currentPatient.physio?.parametro || "",
+      fio2: currentPatient.physio?.fiO2 || "",
+      pc: currentPatient.physio?.parametro === "PCV" ? currentPatient.physio?.pc : "",
+      vc: currentPatient.physio?.parametro === "VCV" ? currentPatient.physio?.vt : "",
+      vtPc: "",
+      ps: currentPatient.physio?.parametro === "PSV" ? currentPatient.physio?.ps : "",
+      vm: "",
+      fluxoInsp: "",
+      tInsp: "",
+      ie: "",
+      frSet: "",
+      frTotal: "",
+      peep: currentPatient.physio?.peep || "",
+      pPico: "",
+      pPlato: "",
+      dp: "",
+      cst: "",  
+      cdin: "", 
+      rva: "",
+      autoPeep: ""
+    });
+
+    // Salva a nova coluna no banco de dados do paciente
+    updateNested("physio", "vmFlowsheet", flowsheet);
+  };
+
+    // Função para atualizar uma célula específica da tabela E calcular DP/Compliância
+  const updateVmEntry = (index, field, value) => {
+    const flowsheet = [...(currentPatient.physio?.vmFlowsheet || [])];
+    let updatedEntry = { ...flowsheet[index], [field]: value };
+
+    // --- MÁGICA DOS CÁLCULOS AUTOMÁTICOS ---
+    const plato = parseFloat(updatedEntry.pPlato);
+    const peep = parseFloat(updatedEntry.peep);
+    const vt = parseFloat(updatedEntry.vcv) || parseFloat(updatedEntry.vtPc); 
+
+    if (!isNaN(plato) && !isNaN(peep)) {
+      const dpCalculada = plato - peep;
+      updatedEntry.dp = dpCalculada.toFixed(0); 
+
+      if (!isNaN(vt) && dpCalculada > 0) {
+        const cstCalculada = vt / dpCalculada;
+        updatedEntry.cStDin = cstCalculada.toFixed(1); 
+      } else {
+        updatedEntry.cStDin = updatedEntry.cStDin || ""; 
+      }
+    } else {
+      if (field === 'pPlato' || field === 'peep') {
+        updatedEntry.dp = "";
+        updatedEntry.cStDin = "";
+      }
+    }
+
+    flowsheet[index] = updatedEntry;
+    updateNested("physio", "vmFlowsheet", flowsheet);
+  };
+  const [physioData, setPhysioData] = useState({});
+  const [generatedPhysioText, setGeneratedPhysioText] = useState("");
 
   const [patients, setPatients] = useState(
     Array(11)
@@ -2692,6 +2872,224 @@ Estado mental: ${getLabel(
 
     setShowNursingModal(false);
     setGeneratedAdmissionText(text);
+  };
+
+  const handlePhysioAdmission = () => {
+    const p = patients[activeTab].physio || {};
+    setPhysioData({
+      estadoGeral: p.admissao_estadoGeral || "BEG/REG/MEG,\nLOTE, cooperativo, sem queixas sistêmicas no momento da avaliação.",
+      sistemaNervoso: p.admissao_sistemaNervoso || "Paciente sedado/sem sedação, sob protocolo de sedação contínua, em uso de xx em x ml/h e xx em x ml/h (BIC), RASS: xx/ escala de Coma de Glasgow: (AO: 4 – RV: 5 – RM:6) = 15T. Paciente consciente e orientado/ rebaixado. Pupilas: Isocóricas / anisocóricas, fotorreagentes / não fotorreagentes, simétricas ou assimétricas, reflexos preservados/ausentes.",
+      sistemaRespiratorio: p.admissao_sistemaRespiratorio || "Paciente em ventilação mecânica invasiva, TOT/TQT, N° x, rima x / oxigenoterapia / ar ambiente. Padrão respiratório eupneico/taquipneico/bradipneico. Apresenta expansibilidade torácica simétrica/assimétrica, com predomínio costal/abdominal/misto. Ausculta pulmonar: murmúrio vesicular presente/abolido/diminuído bilateralmente, com presença de estertores crepitantes/roncos/sibilos em bases/apex/hemitorax D ou E. Apresenta tosse eficaz/ineficaz/ausente, com presença/ausência de secreção traqueobrônquica, de aspecto fluido/espesso, coloração clara/amarelada/esverdeada/purulenta/sanguinolenta, em pequena/média/grande quantidade. Paciente com uso/não uso de musculatura acessória, sem sinais de desconforto respiratório/ com sinais de desconforto respiratório (batimento de asa de nariz, tiragem intercostal). SpO₂ mantida em torno de xx%, com suporte ventilatório adequado no momento.",
+      sistemaCardiovascular: p.admissao_sistemaCardiovascular || "Paciente sob monitorização cardíaca contínua, apresentando ritmo cardíaco regular/irregular. Estável/instável hemodinamicamente em uso/não uso de drogas vasoativas: xx em x ml/h (BIC) com FC em torno de x bpm,  PA: 95/76 mmHg, PAM: 98mmHg, Tº: 34.7°. Perfusão periférica adequada/reduzida, com extremidades aquecidas/frias, sem cianose, tempo de enchimento capilar </> 3 segundos. Presença/ausência de edema em membros inferiores/superiores (grau ___).",
+      sistemaDigestivo: p.admissao_sistemaDigestivo || "Paciente com abdômen plano/globoso/distendido/flácido/semigloboso, indolor/doloroso à palpação. Ruídos hidroaéreos presentes/diminuídos/ausentes. Em uso de dieta oral/enteral/parenteral, por via oral/sonda nasoenteral/nasogástrica/gastrostomia. Paciente com risco baixo/moderado/alto para broncoaspiração, anictérico.",
+      sistemaMusculoesqueletico: p.admissao_sistemaMusculoesqueletico || "Força muscular reduzida/preservada (avaliada quando possível). Tônus muscular normotônico/hipotônico/hipertônico. Amplitude de movimento preservada/reduzida em x. Presença de imobilidade no leito, com risco para fraqueza muscular adquirida na UTI. Sem/com sinais de retrações musculares. Independência prévia: x",
+      funcionalidade: p.admissao_funcionalidade || "Paciente dependente parcialmente/dependente/independente para mudanças de decúbito e atividades funcionais no leito. Não deambula. Apresenta limitações funcionais decorrentes do estado clínico atual/tempo de internação em UTI.",
+      mrcScore: p.mrcScore || "",
+      ims: p.icuMobilityScale || "",
+      gasoHora: "",
+      gaso_pH: "",
+      gaso_pCO2: "",
+      gaso_PaO2: "",
+      gaso_BE: "",
+      gaso_HCO3: "",
+      gaso_SatO2: "",
+      gaso_FiO2: "",
+      gaso_PF: "",
+      suporte: p.suporte || "",
+      parametro: p.parametro || "",
+      peep: p.peep || "",
+      fiO2: p.fiO2 || "",
+      volCorrente: p.volCorrente || "",
+      fr: p.fr || "",
+      tIns: p.tIns || "",
+      relIE: p.relIE || "",
+      filtroHMEF: p.filtroHMEF || false,
+      dataTrocaHMEF: p.dataTrocaHMEF || "",
+      sistemaFechado: p.sistemaFechado || false,
+      dataTrocaSistemaFechado: p.dataTrocaSistemaFechado || "",
+      cuff: p.cuff || "",
+      condutas: p.admissao_condutas || `CONDUTAS FISIOTERAPÊUTICAS:
+• Monitorização contínua de sinais vitais e vigilância respiratória;
+• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;
+• Avaliação de mecânica ventilatória e parâmetros do ventilador;
+• Ajuste e monitorização de parâmetros ventilatórios (desmame/correção assincronias/correção gasometria);
+• Higiene brônquica com vibração/compressão torácica/AFE/drenagem postural/estímulo de tosse/bag squeezing;
+• Aspiração de vias aéreas sistema aberto/fechado, com retirada de secreção [descrever];
+• Técnicas de reexpansão pulmonar com exercícios ventilatórios/EPAP/CPAP recrutamento;
+• Mobilização [passiva/ativo-assistida/ativa] de MMSS e MMII (3x10 repetições);
+• Sedestação no leito/à beira do leito/poltrona - ortostatismo/marcha assistida/deambulação;
+
+Paciente apresentou boa tolerância às manobras, sem intercorrências hemodinâmicas. Melhora discreta da expansibilidade torácica e redução de secreção espessa em vias aéreas. Mantida estabilidade dos sinais vitais durante todo atendimento.`,
+dataIntubacao: p.dataIntubacao || "",
+      numeroTOT: p.totNumero || "",
+      rimaFixacao: p.totRima || "",
+      // --- PUXANDO OS DADOS DA SECREÇÃO BASAL SALVA ---
+      secrecao: p.secrecao || false,
+      secrecaoAspecto: p.secrecaoAspecto || "",
+      secrecaoColoracao: p.secrecaoColoracao || "",
+      secrecaoQtd: p.secrecaoQtd || ""
+    });
+    setShowPhysioModal(true);
+  };
+
+  const handleFinalizePhysioAdmission = () => {
+    const up = [...patients];
+    const p = up[activeTab];
+    if (!p.physio) p.physio = {};
+    
+    p.physio.admissao_estadoGeral = physioData.estadoGeral;
+    p.physio.admissao_sistemaNervoso = physioData.sistemaNervoso;
+    p.physio.admissao_sistemaRespiratorio = physioData.sistemaRespiratorio;
+    p.physio.admissao_sistemaCardiovascular = physioData.sistemaCardiovascular;
+    p.physio.admissao_sistemaDigestivo = physioData.sistemaDigestivo;
+    p.physio.admissao_sistemaMusculoesqueletico = physioData.sistemaMusculoesqueletico;
+    p.physio.admissao_funcionalidade = physioData.funcionalidade;
+    
+    // Salva o MRC e o IMS no painel principal da fisio também!
+    p.physio.mrcScore = physioData.mrcScore;
+    p.physio.icuMobilityScale = physioData.ims;
+    p.physio.suporte = physioData.suporte;
+    p.physio.parametro = physioData.parametro;
+    p.physio.peep = physioData.peep;
+    p.physio.fiO2 = physioData.fiO2;
+    p.physio.volCorrente = physioData.volCorrente;
+    p.physio.fr = physioData.fr;
+    p.physio.tIns = physioData.tIns;
+    p.physio.relIE = physioData.relIE;
+    p.physio.filtroHMEF = physioData.filtroHMEF;
+    p.physio.dataTrocaHMEF = physioData.dataTrocaHMEF;
+    p.physio.sistemaFechado = physioData.sistemaFechado;
+    p.physio.dataTrocaSistemaFechado = physioData.dataTrocaSistemaFechado;
+    p.physio.cuff = physioData.cuff;
+    p.physio.admissao_condutas = physioData.condutas;
+    p.dataIntubacao = physioData.dataIntubacao; 
+    
+    p.physio.totNumero = physioData.numeroTOT;
+    p.physio.totRima = physioData.rimaFixacao;
+    // Transferindo a avaliação por sistemas da Admissão para o Dia a Dia
+    p.physio.estadoGeral = physioData.estadoGeral;
+    p.physio.sistemaNervoso = physioData.sistemaNervoso;
+    p.physio.sistemaRespiratorio = physioData.sistemaRespiratorio;
+    p.physio.sistemaCardiovascular = physioData.sistemaCardiovascular;
+    p.physio.sistemaDigestivo = physioData.sistemaDigestivo;
+    p.physio.sistemaMusculoesqueletico = physioData.sistemaMusculoesqueletico;
+    // --- TRANSFERINDO OS DADOS DA SECREÇÃO BASAL ---
+    p.physio.secrecao = physioData.secrecao;
+    p.physio.secrecaoAspecto = physioData.secrecaoAspecto;
+    p.physio.secrecaoColoracao = physioData.secrecaoColoracao;
+    p.physio.secrecaoQtd = physioData.secrecaoQtd;
+    
+    // --- MÁGICA DA GASOMETRIA AUTOMÁTICA ---
+    if (physioData.gasoHora) {
+      if (!p.gasometriaHistory) p.gasometriaHistory = {};
+      if (!p.customGasometriaCols) p.customGasometriaCols = [];
+      
+      const today = new Date();
+      const dd = String(today.getDate()).padStart(2, '0');
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const colName = `${dd}/${mm} - ${physioData.gasoHora}`;
+      
+      // Cria a coluna nova na tabela de Gasometria
+      if (!p.customGasometriaCols.includes(colName)) {
+        p.customGasometriaCols.unshift(colName);
+      }
+      
+      if (!p.gasometriaHistory[colName]) p.gasometriaHistory[colName] = {};
+      
+      // Injeta os valores
+      if (physioData.gaso_pH) p.gasometriaHistory[colName]["pH"] = physioData.gaso_pH;
+      if (physioData.gaso_pCO2) p.gasometriaHistory[colName]["pCO2"] = physioData.gaso_pCO2;
+      if (physioData.gaso_PaO2) p.gasometriaHistory[colName]["PaO2"] = physioData.gaso_PaO2;
+      if (physioData.gaso_BE) p.gasometriaHistory[colName]["BE"] = physioData.gaso_BE;
+      if (physioData.gaso_HCO3) p.gasometriaHistory[colName]["HCO3"] = physioData.gaso_HCO3;
+      if (physioData.gaso_SatO2) p.gasometriaHistory[colName]["SatO2"] = physioData.gaso_SatO2;
+      if (physioData.gaso_FiO2) p.gasometriaHistory[colName]["FiO2"] = physioData.gaso_FiO2;
+      if (physioData.gaso_PF) p.gasometriaHistory[colName]["P/F"] = physioData.gaso_PF;
+    }
+
+    setPatients(up);
+    save(p);
+
+    const mrcText = physioData.mrcScore ? `\nESCORE MRC: ${physioData.mrcScore}` : "";
+    const imsText = physioData.ims ? `\nICU MOBILITY SCALE (IMS): ${physioData.ims}` : "";
+    
+    let suporteText = "";
+    if (physioData.suporte) {
+      if (physioData.suporte === "VM") {
+        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | Vol. Corrente: ${physioData.volCorrente || "-"}ml | PEEP: ${physioData.peep || "-"} | FR: ${physioData.fr || "-"} | T.ins: ${physioData.tIns || "-"} | I:E: ${physioData.relIE || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
+      } else if (physioData.suporte === "VNI") {
+        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
+      } else if (physioData.suporte === "Venturi") {
+        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte} - FiO2: ${physioData.fiO2 || "-"}%`;
+      } else if (physioData.suporte === "Cateter Nasal" || physioData.suporte === "Máscara não reinalante" || physioData.suporte === "Tubo T") {
+        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte} - Fluxo: ${physioData.parametro || "-"} L/min`;
+      } else {
+        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}`;
+      }
+    }
+
+    let airwayText = "";
+    let itensAirway = [];
+    
+    // Injeta os dados do TOT se o paciente estiver em VM
+    if (physioData.suporte === "VM") {
+      if (physioData.dataIntubacao) itensAirway.push(`Intubação: ${physioData.dataIntubacao ? formatDateDDMM(physioData.dataIntubacao) : "-"}`);
+      if (physioData.numeroTOT) itensAirway.push(`TOT Nº: ${physioData.numeroTOT}`);
+      if (physioData.rimaFixacao) itensAirway.push(`Rima: ${physioData.rimaFixacao}cm`);
+    }
+    
+    if (physioData.cuff) itensAirway.push(`Cuff: ${physioData.cuff} cmH2O`);
+    if (physioData.filtroHMEF) itensAirway.push(`Filtro HMEF (Troca: ${physioData.dataTrocaHMEF ? formatDateDDMM(physioData.dataTrocaHMEF) : "Não informada"})`);
+    if (physioData.sistemaFechado) itensAirway.push(`Sist. Fechado de Aspiração (Troca: ${physioData.dataTrocaSistemaFechado ? formatDateDDMM(physioData.dataTrocaSistemaFechado) : "Não informada"})`);
+    
+    if (itensAirway.length > 0) {
+      airwayText = `\nVIA AÉREA E DISPOSITIVOS: ${itensAirway.join(" | ")}`;
+    }
+    
+    const gasoText = physioData.gasoHora ? `\n\nGASOMETRIA DE ADMISSÃO (${physioData.gasoHora}):\npH: ${physioData.gaso_pH || "-"} | pCO2: ${physioData.gaso_pCO2 || "-"} | PaO2: ${physioData.gaso_PaO2 || "-"} | BE: ${physioData.gaso_BE || "-"} | HCO3: ${physioData.gaso_HCO3 || "-"} | SatO2: ${physioData.gaso_SatO2 || "-"} | FiO2: ${physioData.gaso_FiO2 || "-"} | P/F: ${physioData.gaso_PF || "-"}` : "";
+
+    // --- BUSCANDO DADOS MÉDICOS DA ADMISSÃO ---
+    const historiaMedica = p.historia || "Não descrita no sistema.";
+    const diagAgudos = p.diagAgudos || "Não descritos no sistema.";
+    const diagCronicos = p.diagCronicos || "Não descritos no sistema.";
+
+    const text = `ADMISSÃO FISIOTERAPÊUTICA NA UTI
+NOME: ${p.nome?.toUpperCase() || "-"}
+
+HISTÓRIA CLÍNICA:
+${historiaMedica}
+
+DIAGNÓSTICOS AGUDOS:
+${diagAgudos}
+
+DIAGNÓSTICOS CRÔNICOS:
+${diagCronicos}
+
+ESTADO GERAL:
+${physioData.estadoGeral}
+
+SISTEMA NERVOSO:
+${physioData.sistemaNervoso}
+
+SISTEMA RESPIRATÓRIO:
+${physioData.sistemaRespiratorio}
+
+SISTEMA CARDIOVASCULAR:
+${physioData.sistemaCardiovascular}
+
+SISTEMA DIGESTIVO:
+${physioData.sistemaDigestivo}
+
+SISTEMA MUSCULOESQUELÉTICO:
+${physioData.sistemaMusculoesqueletico}
+
+FUNCIONALIDADE:
+${physioData.funcionalidade}${mrcText}${imsText}${suporteText}${airwayText}${gasoText}
+
+${physioData.condutas}`;
+
+    setShowPhysioModal(false);
+    setGeneratedPhysioText(text);
   };
 
   const copyToClipboardFallback = (text) => {
@@ -5162,6 +5560,21 @@ ${condutas}`;
               {/* --- PHYSIO --- */}
               {viewMode === "physio" && (
                 <div className="space-y-6 animate-fadeIn">
+
+                  {/* === BOTÃO DE ADMISSÃO FISIO QUE VOCÊ VAI COLAR === */}
+                  <div className="flex justify-end print:hidden">
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handlePhysioAdmission();
+                      }}
+                      className="bg-cyan-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-cyan-700 flex items-center gap-2 transition-colors shadow-sm"
+                    >
+                      <UserPlus size={16} /> Admissão Fisioterapêutica
+                    </button>
+                  </div>
+                  {/* === FIM DO BOTÃO === */}
+
                   <fieldset
                     disabled={!isEditable}
                     className="space-y-6 min-w-0 border-0 p-0 m-0"
@@ -5321,6 +5734,16 @@ ${condutas}`;
 </div>
                       </div>
 
+                      {/* BOTÃO DO MAPA DE VM - SÓ APARECE SE ESTIVER EM VM */}
+                  {currentPatient.physio?.suporte === "VM" && (
+                    <button
+                      onClick={() => setShowVmFlowsheet(true)}
+                      className="w-full mt-3 mb-4 p-2 bg-slate-800 text-white font-bold rounded-lg shadow flex justify-center items-center gap-2 hover:bg-slate-700 transition-colors uppercase text-xs"
+                    >
+                      <Wind size={16} className="text-cyan-400"/> Abrir Mapa de Ventilação Mecânica
+                    </button>
+                  )}
+
                       <select
                         className="w-full p-2 border rounded mb-4 font-bold"
                         value={currentPatient.physio?.suporte || ""}
@@ -5370,6 +5793,22 @@ ${condutas}`;
                           />
                         </div>
                       )}
+                      {currentPatient.physio?.suporte === "Macronebulização por TQT" && (
+                        <div className="mb-2">
+                          <label className="text-xs font-bold text-cyan-800">
+                            Fluxo (L/min) / FiO2 (%)
+                          </label>
+                          <input
+                            type="text"
+                            className="w-full p-2 border rounded"
+                            placeholder="Ex: 10 L/min - 40%"
+                            value={currentPatient.physio?.parametro || ""}
+                            onChange={(e) =>
+                              updateNested("physio", "parametro", e.target.value)
+                            }
+                          />
+                        </div>
+                      )}
                       {currentPatient.physio?.suporte === "VNI" && (
                         <div className="grid grid-cols-2 gap-4 mb-2">
                           <div>
@@ -5407,91 +5846,168 @@ ${condutas}`;
                         </div>
                       )}
                       {currentPatient.physio?.suporte === "VM" && (
-                        <div className="grid grid-cols-3 gap-4 mb-2">
-                          <div>
-                            <label className="text-xs font-bold">Modo</label>
-                            <select
-                              className="w-full p-2 border rounded"
-                              value={currentPatient.physio?.parametro || ""}
-                              onChange={(e) =>
-                                updateNested(
-                                  "physio",
-                                  "parametro",
-                                  e.target.value
-                                )
-                              }
-                            >
-                              <option value="">...</option>
-                              {MODOS_VM.map((m) => (
-                                <option key={m}>{m}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold">PEEP</label>
-                            <input
-                              type="number"
-                              className="w-full p-2 border rounded"
-                              value={currentPatient.physio?.peep || ""}
-                              onChange={(e) =>
-                                updateNested("physio", "peep", e.target.value)
-                              }
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold">
-                              FiO2 (%)
-                            </label>
-                            <input
-                              type="number"
-                              className="w-full p-2 border rounded"
-                              value={currentPatient.physio?.fiO2 || ""}
-                              onChange={(e) =>
-                                updateNested("physio", "fiO2", e.target.value)
-                              }
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
+    {/* 1. MODO VENTILATÓRIO */}
+    <div>
+      <label className="text-xs font-bold text-slate-700">Modo</label>
+      <select
+        className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200"
+        value={currentPatient.physio?.parametro || ""}
+        onChange={(e) => updateNested("physio", "parametro", e.target.value)}
+      >
+        <option value="">...</option>
+        {MODOS_VM.map((m) => (
+          <option key={m}>{m}</option>
+        ))}
+      </select>
+    </div>
+
+    {/* 2. CAMPO DINÂMICO (MÁGICA ACONTECENDO AQUI) */}
+    {currentPatient.physio?.parametro === "VCV" ? (
+      <div className="animate-fadeIn">
+        <label className="text-xs font-bold text-blue-700">Vt (ml)</label>
+        <input
+          type="number"
+          className="w-full p-2 border border-blue-200 rounded bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-400"
+          placeholder="Ex: 400"
+          value={currentPatient.physio?.vt || ""}
+          onChange={(e) => updateNested("physio", "vt", e.target.value)}
+        />
+      </div>
+    ) : currentPatient.physio?.parametro === "PCV" ? (
+      <div className="animate-fadeIn">
+        <label className="text-xs font-bold text-emerald-700">PC (cmH2O)</label>
+        <input
+          type="number"
+          className="w-full p-2 border border-emerald-200 rounded bg-emerald-50/30 outline-none focus:ring-2 focus:ring-emerald-400"
+          placeholder="Ex: 15"
+          value={currentPatient.physio?.pc || ""}
+          onChange={(e) => updateNested("physio", "pc", e.target.value)}
+        />
+      </div>
+    ) : currentPatient.physio?.parametro === "PSV" ? (
+      <div className="animate-fadeIn">
+        <label className="text-xs font-bold text-purple-700">PS (cmH2O)</label>
+        <input
+          type="number"
+          className="w-full p-2 border border-purple-200 rounded bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-400"
+          placeholder="Ex: 12"
+          value={currentPatient.physio?.ps || ""}
+          onChange={(e) => updateNested("physio", "ps", e.target.value)}
+        />
+      </div>
+    ) : (
+      /* Placeholder inativo se nenhum dos 3 modos principais estiver selecionado */
+      <div className="opacity-60 pointer-events-none">
+        <label className="text-xs font-bold text-slate-400">Parâmetro Alvo</label>
+        <input
+          type="text"
+          disabled
+          className="w-full p-2 border border-slate-200 rounded bg-slate-50"
+          placeholder="Aguardando Modo..."
+        />
+      </div>
+    )}
+
+    {/* 3. PEEP */}
+    <div>
+      <label className="text-xs font-bold text-slate-700">PEEP</label>
+      <input
+        type="number"
+        className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200"
+        value={currentPatient.physio?.peep || ""}
+        onChange={(e) => updateNested("physio", "peep", e.target.value)}
+      />
+    </div>
+
+    {/* 4. FiO2 */}
+    <div>
+      <label className="text-xs font-bold text-slate-700">FiO2 (%)</label>
+      <input
+        type="number"
+        className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200"
+        value={currentPatient.physio?.fiO2 || ""}
+        onChange={(e) => updateNested("physio", "fiO2", e.target.value)}
+      />
+    </div>
+  </div>
+)}
+</div>
 
                     <div className="grid md:grid-cols-2 gap-6">
                       <div className="p-4 border rounded-xl bg-white">
-                        <h4 className="font-bold text-slate-700 mb-2">
+                      <h4 className="font-bold text-slate-700 text-xs uppercase mb-2 flex items-center gap-2">
                           Via Aérea Artificial
                         </h4>
-                        <div className="grid grid-cols-3 gap-2">
-                          <input
-                            placeholder="TOT nº"
-                            className="p-2 border rounded"
-                            value={currentPatient.physio?.totNumero || ""}
-                            onChange={(e) =>
-                              updateNested(
-                                "physio",
-                                "totNumero",
-                                e.target.value
-                              )
-                            }
-                          />
-                          <input
-                            placeholder="Rima (cm)"
-                            className="p-2 border rounded"
-                            value={currentPatient.physio?.totRima || ""}
-                            onChange={(e) =>
-                              updateNested("physio", "totRima", e.target.value)
-                            }
-                          />
-                          <input
-                            placeholder="Cuff (cmH2O)"
-                            className="p-2 border rounded"
-                            value={currentPatient.physio?.cuff || ""}
-                            onChange={(e) =>
-                              updateNested("physio", "cuff", e.target.value)
-                            }
-                          />
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">
+                              TOT nº
+                            </label>
+                            <input
+                              type="number" step="0.5"
+                              placeholder="Ex: 8.0"
+                              className="w-full p-2 border rounded text-xs text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200"
+                              value={currentPatient.physio?.totNumero || ""}
+                              onChange={(e) =>
+                                updateNested("physio", "totNumero", e.target.value)
+                              }
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">
+                              Rima (cm)
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="Ex: 22"
+                              className="w-full p-2 border rounded text-xs text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200"
+                              value={currentPatient.physio?.totRima || ""}
+                              onChange={(e) =>
+                                updateNested("physio", "totRima", e.target.value)
+                              }
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block text-center" title="Pressão do Cuff: Manhã / Tarde / Noite">
+                              Cuff (M | T | N)
+                            </label>
+                            <div className="flex gap-1">
+                              <input
+                                type="number"
+                                placeholder="M"
+                                title="Manhã"
+                                className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200"
+                                value={currentPatient.physio?.cuffM || ""}
+                                onChange={(e) =>
+                                  updateNested("physio", "cuffM", e.target.value)
+                                }
+                              />
+                              <input
+                                type="number"
+                                placeholder="T"
+                                title="Tarde"
+                                className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200"
+                                value={currentPatient.physio?.cuffT || ""}
+                                onChange={(e) =>
+                                  updateNested("physio", "cuffT", e.target.value)
+                                }
+                              />
+                              <input
+                                type="number"
+                                placeholder="N"
+                                title="Noite"
+                                className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200"
+                                value={currentPatient.physio?.cuffN || ""}
+                                onChange={(e) =>
+                                  updateNested("physio", "cuffN", e.target.value)
+                                }
+                              />
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="p-4 border rounded-xl bg-white">
+
+                        <div className="p-4 border rounded-xl bg-white">
                         <h4 className="font-bold text-slate-700 mb-2">
                           Secreção
                         </h4>
@@ -5598,15 +6114,13 @@ ${condutas}`;
                       </div>
                       <div className="grid md:grid-cols-2 gap-4 border-t border-cyan-100 pt-4">
                         <div>
-                          <label className="block text-xs font-bold text-cyan-700 mb-1">
-                            Escore MRC (0-60)
+                          <label className="block text-[10px] font-bold text-cyan-700 uppercase mb-1">
+                            Escore MRC (0-60 ou Status)
                           </label>
                           <input
-                            type="number"
-                            min="0"
-                            max="60"
-                            className="w-full p-2 border rounded bg-white"
-                            placeholder="Soma MRC..."
+                            type="text"
+                            className="w-full p-2 border border-cyan-200 rounded bg-white text-xs outline-none focus:ring-2 focus:ring-cyan-400"
+                            placeholder="Ex: 48, NT, Sedado..."
                             value={currentPatient.physio?.mrcScore || ""}
                             onChange={(e) =>
                               updateNested("physio", "mrcScore", e.target.value)
@@ -5637,6 +6151,78 @@ ${condutas}`;
                               </option>
                             ))}
                           </select>
+                        </div>
+                      </div>
+
+                        {/* --- AVALIAÇÃO CLÍNICA DIÁRIA E CONDUTAS --- */}
+                        <div className="mt-6 border-t border-slate-200 pt-6">
+                          <h4 className="font-bold text-slate-700 text-sm uppercase mb-4 flex items-center gap-2">
+                            <Activity size={16} className="text-cyan-600" /> Evolução Sistêmica e Plano Terapêutico
+                          </h4>
+                          
+                          {/* Grid dos 6 Sistemas */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            {[
+                              { id: "estadoGeral", label: "Estado Geral" },
+                              { id: "sistemaNervoso", label: "Sistema Nervoso" },
+                              { id: "sistemaRespiratorio", label: "Sistema Respiratório" },
+                              { id: "sistemaCardiovascular", label: "Sistema Cardiovascular" },
+                              { id: "sistemaDigestivo", label: "Sistema Digestivo" },
+                              { id: "sistemaMusculoesqueletico", label: "Sis. Musculoesquelético" },
+                            ].map((sys) => (
+                              <div key={sys.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200 shadow-sm">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">{sys.label}</label>
+                                <textarea
+                                  className="w-full p-2 border rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200 h-20 resize-y"
+                                  value={currentPatient.physio?.[sys.id] || ""}
+                                  onChange={(e) => updateNested("physio", sys.id, e.target.value)}
+                                  placeholder={`Evolução diária - ${sys.label}...`}
+                                />
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Campos Estratégicos (Intercorrências, Condutas, Metas) */}
+                          <div className="space-y-4">
+                            {/* Intercorrências */}
+                            <div className="bg-red-50 p-3 rounded-lg border border-red-100 shadow-sm">
+                              <label className="text-[10px] font-bold text-red-600 uppercase mb-2 block flex items-center gap-1">
+                                <AlertTriangle size={12} /> Intercorrências do Plantão
+                              </label>
+                              <textarea
+                                className="w-full p-2 border border-red-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-red-300 h-16 resize-y"
+                                value={currentPatient.physio?.intercorrencias || ""}
+                                onChange={(e) => updateNested("physio", "intercorrencias", e.target.value)}
+                                placeholder="Descreva quedas de saturação, autoextubação, rolhas, instabilidade hemodinâmica nas manobras..."
+                              />
+                            </div>
+
+                            {/* Condutas */}
+                            <div className="bg-cyan-50 p-3 rounded-lg border border-cyan-100 shadow-sm">
+                              <label className="text-[10px] font-bold text-cyan-700 uppercase mb-2 block flex items-center gap-1">
+                                <ClipboardCheck size={12} /> Condutas Fisioterapêuticas Realizadas
+                              </label>
+                              <textarea
+                                className="w-full p-2 border border-cyan-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 h-28 resize-y"
+                                /* A mágica do Condutas: se o campo de hoje estiver vazio, ele puxa o padrão da admissão! */
+                                value={currentPatient.physio?.condutas || currentPatient.physio?.admissao_condutas || ""}
+                                onChange={(e) => updateNested("physio", "condutas", e.target.value)}
+                              />
+                            </div>
+
+                            {/* Metas para o Próximo Plantão */}
+                            <div className="bg-green-50 p-3 rounded-lg border border-green-100 shadow-sm">
+                              <label className="text-[10px] font-bold text-green-700 uppercase mb-2 block flex items-center gap-1">
+                                <Target size={12} /> Plano / Metas para o Próximo Plantão
+                              </label>
+                              <textarea
+                                className="w-full p-2 border border-green-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-green-300 h-20 resize-y"
+                                value={currentPatient.physio?.planoMetas || ""}
+                                onChange={(e) => updateNested("physio", "planoMetas", e.target.value)}
+                                placeholder="Ex: Iniciar protocolo de desmame, tentar sedestação à beira leito amanhã de manhã, discutir extubação no round..."
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -5794,22 +6380,16 @@ ${condutas}`;
                     </fieldset>
                   </div>
 
-                  <fieldset
-                    disabled={!isEditable}
-                    className="p-4 bg-white border rounded-xl min-w-0 m-0"
+                  {/* --- BOTÃO GERADOR DE EVOLUÇÃO --- */}
+                <div className="mt-8 mb-6 border-t-2 border-slate-200 pt-6">
+                  <button
+                    onClick={handleGeneratePhysioEvo}
+                    className="w-full p-4 bg-gradient-to-r from-cyan-700 to-blue-800 text-white font-black rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-all flex justify-center items-center gap-3 uppercase tracking-wider text-sm"
                   >
-                    <h4 className="font-bold text-slate-700 mb-2">
-                      Anotações da Fisioterapia
-                    </h4>
-                    <textarea
-                      className="w-full p-3 border rounded-lg h-32 text-sm"
-                      placeholder="Evolução, intercorrências, condutas específicas..."
-                      value={currentPatient.physio?.anotacoes || ""}
-                      onChange={(e) =>
-                        updateNested("physio", "anotacoes", e.target.value)
-                      }
-                    />
-                  </fieldset>
+                    <FileText size={20} className="text-cyan-200" />
+                    Gerar Evolução Diária
+                  </button>
+                </div>
                 </div>
               )}
 
@@ -8473,6 +9053,505 @@ ${condutas}`;
           </div>
         </div>
       )}
+     
+     {/* MODAL DE ADMISSÃO FISIOTERAPIA */}
+     {showPhysioModal && (
+        <div className="fixed inset-0 bg-slate-900/80 z-[80] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] overflow-y-auto flex flex-col shadow-2xl">
+            <div className="bg-cyan-600 p-4 text-white flex justify-between items-center sticky top-0 z-10 shadow">
+              <h3 className="font-bold flex items-center gap-2 text-lg">
+                <Wind size={20} /> Admissão Fisioterapêutica (Leito {activeTab + 1})
+              </h3>
+              <button onClick={() => setShowPhysioModal(false)} className="hover:bg-cyan-700 p-1 rounded transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-sm bg-slate-50">
+              <div className="bg-white p-4 border border-cyan-100 rounded-xl shadow-sm">
+                <label className="font-bold text-cyan-800 mb-2 block uppercase">Estado Geral</label>
+                <textarea
+                  className="w-full p-3 border rounded-lg h-20 outline-none focus:ring-2 focus:ring-cyan-200 resize-y"
+                  value={physioData.estadoGeral}
+                  onChange={(e) => setPhysioData({ ...physioData, estadoGeral: e.target.value })}
+                />
+              </div>
+              
+              <div className="bg-white p-4 border border-cyan-100 rounded-xl shadow-sm">
+                <label className="font-bold text-cyan-800 mb-2 block uppercase">Sistema Nervoso</label>
+                <textarea
+                  className="w-full p-3 border rounded-lg h-28 outline-none focus:ring-2 focus:ring-cyan-200 resize-y"
+                  value={physioData.sistemaNervoso}
+                  onChange={(e) => setPhysioData({ ...physioData, sistemaNervoso: e.target.value })}
+                />
+              </div>
+
+              <div className="bg-white p-4 border border-cyan-100 rounded-xl shadow-sm">
+                <label className="font-bold text-cyan-800 mb-2 block uppercase">Sistema Respiratório</label>
+                <textarea
+                  className="w-full p-3 border rounded-lg h-44 outline-none focus:ring-2 focus:ring-cyan-200 resize-y"
+                  value={physioData.sistemaRespiratorio}
+                  onChange={(e) => setPhysioData({ ...physioData, sistemaRespiratorio: e.target.value })}
+                />
+              </div>
+
+              <div className="bg-white p-4 border border-cyan-100 rounded-xl shadow-sm">
+                <label className="font-bold text-cyan-800 mb-2 block uppercase">Sistema Cardiovascular</label>
+                <textarea
+                  className="w-full p-3 border rounded-lg h-28 outline-none focus:ring-2 focus:ring-cyan-200 resize-y"
+                  value={physioData.sistemaCardiovascular}
+                  onChange={(e) => setPhysioData({ ...physioData, sistemaCardiovascular: e.target.value })}
+                />
+              </div>
+
+              <div className="bg-white p-4 border border-cyan-100 rounded-xl shadow-sm">
+                <label className="font-bold text-cyan-800 mb-2 block uppercase">Sistema Digestivo</label>
+                <textarea
+                  className="w-full p-3 border rounded-lg h-24 outline-none focus:ring-2 focus:ring-cyan-200 resize-y"
+                  value={physioData.sistemaDigestivo}
+                  onChange={(e) => setPhysioData({ ...physioData, sistemaDigestivo: e.target.value })}
+                />
+              </div>
+
+              <div className="bg-white p-4 border border-cyan-100 rounded-xl shadow-sm">
+                <label className="font-bold text-cyan-800 mb-2 block uppercase">Sistema Musculoesquelético</label>
+                <textarea
+                  className="w-full p-3 border rounded-lg h-24 outline-none focus:ring-2 focus:ring-cyan-200 resize-y"
+                  value={physioData.sistemaMusculoesqueletico}
+                  onChange={(e) => setPhysioData({ ...physioData, sistemaMusculoesqueletico: e.target.value })}
+                />
+              </div>
+
+              <div className="bg-white p-4 border border-cyan-100 rounded-xl shadow-sm">
+                <label className="font-bold text-cyan-800 mb-2 block uppercase">Funcionalidade e Escalas</label>
+                <textarea
+                  className="w-full p-3 border rounded-lg h-24 outline-none focus:ring-2 focus:ring-cyan-200 resize-y mb-4"
+                  value={physioData.funcionalidade}
+                  onChange={(e) => setPhysioData({ ...physioData, funcionalidade: e.target.value })}
+                />
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-cyan-100 pt-4">
+                  <div>
+                    <label className="block text-xs font-bold text-cyan-700 mb-1">
+                      Escore MRC (0-60)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="60"
+                      className="w-full p-2 border rounded bg-slate-50 outline-none focus:ring-2 focus:ring-cyan-200"
+                      placeholder="Soma MRC..."
+                      value={physioData.mrcScore || ""}
+                      onChange={(e) =>
+                        setPhysioData({ ...physioData, mrcScore: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-cyan-700 mb-1">
+                      ICU Mobility Scale (IMS)
+                    </label>
+                    <select
+                      className="w-full p-2 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                      value={physioData.ims || ""}
+                      onChange={(e) =>
+                        setPhysioData({ ...physioData, ims: e.target.value })
+                      }
+                    >
+                      <option value="">Selecione...</option>
+                      {ICU_MOBILITY_SCALE.map((scale) => (
+                        <option key={scale} value={scale}>
+                          {scale}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* --- NOVA SEÇÃO: SUPORTE VENTILATÓRIO --- */}
+                <div className="mt-4 border-t border-cyan-100 pt-4">
+                  <label className="font-bold text-cyan-800 text-xs uppercase flex items-center gap-2 mb-3">
+                    <Wind size={14} className="text-cyan-600" /> Suporte Ventilatório
+                  </label>
+                  <select
+                    className="w-full p-2 border rounded mb-3 bg-white outline-none focus:ring-2 focus:ring-cyan-200 text-xs font-bold text-slate-700"
+                    value={physioData.suporte || ""}
+                    onChange={(e) => setPhysioData({ ...physioData, suporte: e.target.value })}
+                  >
+                    <option value="">Selecione o suporte...</option>
+                    {SUPORTE_RESP_OPTS.map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
+                  </select>
+
+                  {(physioData.suporte === "Cateter Nasal" || physioData.suporte === "Máscara não reinalante" || physioData.suporte === "Tubo T") && (
+                    <div className="mb-3 animate-fadeIn">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Fluxo (L/min) / Detalhe</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                        value={physioData.parametro || ""}
+                        onChange={(e) => setPhysioData({ ...physioData, parametro: e.target.value })}
+                      />
+                    </div>
+                  )}
+
+                  {physioData.suporte === "Venturi" && (
+                    <div className="mb-3 animate-fadeIn">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">FiO2 (%)</label>
+                      <input
+                        type="number"
+                        className="w-full p-2 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                        value={physioData.fiO2 || ""}
+                        onChange={(e) => setPhysioData({ ...physioData, fiO2: e.target.value })}
+                      />
+                    </div>
+                  )}
+
+                  {physioData.suporte === "VNI" && (
+                    <div className="grid grid-cols-2 gap-2 mb-3 animate-fadeIn">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Modo (CPAP/BIPAP)</label>
+                        <select
+                          className="w-full p-2 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                          value={physioData.parametro || ""}
+                          onChange={(e) => setPhysioData({ ...physioData, parametro: e.target.value })}
+                        >
+                          <option value="">...</option>
+                          <option value="CPAP">CPAP</option>
+                          <option value="BIPAP">BIPAP</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">FiO2 (%)</label>
+                        <input
+                          type="number"
+                          className="w-full p-2 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                          value={physioData.fiO2 || ""}
+                          onChange={(e) => setPhysioData({ ...physioData, fiO2: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+{physioData.suporte === "VM" && (
+                    <div className="mb-3 animate-fadeIn">
+                      
+                      {/* --- DADOS DO TUBO OROTRAQUEAL --- */}
+                      <div className="grid grid-cols-3 gap-2 mb-3 p-3 bg-slate-100 rounded-xl border border-slate-200 shadow-inner">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Data Intubação</label>
+                          <input 
+                            type="date" 
+                            className="w-full p-2 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-slate-700" 
+                            value={physioData.dataIntubacao || ""} 
+                            onChange={(e) => setPhysioData({ ...physioData, dataIntubacao: e.target.value })} 
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Nº TOT</label>
+                          <input 
+                            type="number" step="0.5" 
+                            className="w-full p-2 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center text-slate-700" 
+                            placeholder="Ex: 8.0" 
+                            value={physioData.numeroTOT || ""} 
+                            onChange={(e) => setPhysioData({ ...physioData, numeroTOT: e.target.value })} 
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Rima (cm)</label>
+                          <input 
+                            type="number" 
+                            className="w-full p-2 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center text-slate-700" 
+                            placeholder="Ex: 22" 
+                            value={physioData.rimaFixacao || ""} 
+                            onChange={(e) => setPhysioData({ ...physioData, rimaFixacao: e.target.value })} 
+                          />
+                        </div>
+                      </div>
+
+                      {/* --- PARÂMETROS DO VENTILADOR --- */}
+                      <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
+                        <div className="col-span-2">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">Modo</label>
+                          <select
+                            className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                            value={physioData.parametro || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, parametro: e.target.value })}
+                          >
+                            <option value="">...</option>
+                            {MODOS_VM.map((m) => (
+                              <option key={m}>{m}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">Vol (ml)</label>
+                          <input
+                            type="number"
+                            className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                            value={physioData.volCorrente || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, volCorrente: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">PEEP</label>
+                          <input
+                            type="number"
+                            className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                            value={physioData.peep || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, peep: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">FR</label>
+                          <input
+                            type="number"
+                            className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                            value={physioData.fr || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, fr: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">T.ins</label>
+                          <input
+                            type="number" step="0.1"
+                            className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                            value={physioData.tIns || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, tIns: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">I:E</label>
+                          <input
+                            type="text" placeholder="1:2"
+                            className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                            value={physioData.relIE || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, relIE: e.target.value })}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">FiO2(%)</label>
+                          <input
+                            type="number"
+                            className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                            value={physioData.fiO2 || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, fiO2: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* --- NOVA SEÇÃO: VIA AÉREA E DISPOSITIVOS --- */}
+                <div className="mt-4 border-t border-cyan-100 pt-4">
+                  <label className="font-bold text-cyan-800 text-xs uppercase flex items-center gap-2 mb-3">
+                    <Shield size={14} className="text-cyan-600" /> Via Aérea e Dispositivos
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    
+                    {/* Cuff */}
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Pressão do Cuff (cmH2O)</label>
+                      <input
+                        type="number"
+                        className="w-full p-2 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                        placeholder="Ex: 25"
+                        value={physioData.cuff || ""}
+                        onChange={(e) => setPhysioData({ ...physioData, cuff: e.target.value })}
+                      />
+                    </div>
+
+                    {/* Filtro HMEF */}
+                    <div className="flex flex-col gap-1">
+                      <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase cursor-pointer h-5">
+                        <input
+                          type="checkbox"
+                          checked={physioData.filtroHMEF || false}
+                          onChange={(e) => setPhysioData({ ...physioData, filtroHMEF: e.target.checked })}
+                        />
+                        Filtro HMEF
+                      </label>
+                      <input
+                        type="date"
+                        className={`w-full p-2 border rounded text-xs outline-none focus:ring-2 focus:ring-cyan-200 ${!physioData.filtroHMEF ? 'bg-gray-100 opacity-50 cursor-not-allowed' : 'bg-slate-50'}`}
+                        value={physioData.dataTrocaHMEF || ""}
+                        onChange={(e) => setPhysioData({ ...physioData, dataTrocaHMEF: e.target.value })}
+                        disabled={!physioData.filtroHMEF}
+                        title="Data da troca do Filtro HMEF"
+                      />
+                    </div>
+
+                    {/* Sistema Fechado */}
+                    <div className="flex flex-col gap-1">
+                      <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase cursor-pointer h-5">
+                        <input
+                          type="checkbox"
+                          checked={physioData.sistemaFechado || false}
+                          onChange={(e) => setPhysioData({ ...physioData, sistemaFechado: e.target.checked })}
+                        />
+                        Sistema Fechado (Trach Care)
+                      </label>
+                      <input
+                        type="date"
+                        className={`w-full p-2 border rounded text-xs outline-none focus:ring-2 focus:ring-cyan-200 ${!physioData.sistemaFechado ? 'bg-gray-100 opacity-50 cursor-not-allowed' : 'bg-slate-50'}`}
+                        value={physioData.dataTrocaSistemaFechado || ""}
+                        onChange={(e) => setPhysioData({ ...physioData, dataTrocaSistemaFechado: e.target.value })}
+                        disabled={!physioData.sistemaFechado}
+                        title="Data da troca do Sistema Fechado"
+                      />
+                    </div>
+
+                  </div>
+                </div>
+
+{/* --- SECREÇÃO (ADMISSÃO) --- */}
+<div className="mt-4 border-t border-cyan-100 pt-4 mb-4">
+                    <label className="font-bold text-cyan-800 text-xs uppercase flex items-center gap-2 mb-3">
+                      Secreção
+                    </label>
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                      <label className="flex items-center gap-2 mb-2 text-xs text-slate-700 font-bold cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={physioData.secrecao || false}
+                          onChange={(e) => setPhysioData({ ...physioData, secrecao: e.target.checked })}
+                        />
+                        Presente na Admissão?
+                      </label>
+                      
+                      {physioData.secrecao && (
+                        <div className="grid grid-cols-3 gap-2 mt-3 animate-fadeIn">
+                          <select
+                            className="p-2 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                            value={physioData.secrecaoAspecto || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, secrecaoAspecto: e.target.value })}
+                          >
+                            <option value="">Aspecto...</option>
+                            {ASPECTO_SECRECAO.map((a) => (
+                              <option key={a}>{a}</option>
+                            ))}
+                          </select>
+                          <select
+                            className="p-2 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                            value={physioData.secrecaoColoracao || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, secrecaoColoracao: e.target.value })}
+                          >
+                            <option value="">Coloração...</option>
+                            {COLORACAO_SECRECAO.map((c) => (
+                              <option key={c}>{c}</option>
+                            ))}
+                          </select>
+                          <select
+                            className="p-2 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-cyan-200"
+                            value={physioData.secrecaoQtd || ""}
+                            onChange={(e) => setPhysioData({ ...physioData, secrecaoQtd: e.target.value })}
+                          >
+                            <option value="">Qtd...</option>
+                            {QTD_SECRECAO.map((q) => (
+                              <option key={q}>{q}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                {/* --- NOVA SEÇÃO: GASOMETRIA DE ADMISSÃO --- */}
+                <div className="mt-4 border-t border-cyan-100 pt-4">
+                  <div className="flex flex-col md:flex-row justify-between md:items-center mb-3 gap-2">
+                    <label className="font-bold text-cyan-800 text-xs uppercase flex items-center gap-2">
+                      <Activity size={14} className="text-red-500" /> Gasometria de Admissão
+                    </label>
+                    <div className="flex items-center gap-2 bg-red-50 p-1.5 rounded-lg border border-red-100">
+                      <span className="text-[10px] font-bold text-red-700 uppercase">Horário:</span>
+                      <input 
+                        type="time" 
+                        className="p-1 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-red-200 text-red-700 font-bold"
+                        value={physioData.gasoHora || ""}
+                        onChange={(e) => setPhysioData({ ...physioData, gasoHora: e.target.value })}
+                        title="Se preenchido, os dados irão automaticamente para a tabela principal"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
+                    {[{id: "gaso_pH", label: "pH"}, {id: "gaso_pCO2", label: "pCO2"}, {id: "gaso_PaO2", label: "PaO2"}, {id: "gaso_BE", label: "BE"}, 
+                      {id: "gaso_HCO3", label: "HCO3"}, {id: "gaso_SatO2", label: "SatO2"}, {id: "gaso_FiO2", label: "FiO2"}, {id: "gaso_PF", label: "P/F"}].map(param => (
+                      <div key={param.id} className="flex flex-col">
+                        <span className="text-[9px] font-bold text-slate-500 text-center mb-0.5">{param.label}</span>
+                        <input
+                          type="text"
+                          className="w-full p-1.5 border rounded bg-slate-50 text-xs text-center outline-none focus:ring-2 focus:ring-cyan-200"
+                          value={physioData[param.id] || ""}
+                          onChange={(e) => setPhysioData({ ...physioData, [param.id]: e.target.value })}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-slate-400 mt-2 italic text-right">* Preencha o horário para salvar na tabela geral.</p>
+                </div>
+              </div>
+
+              {/* --- NOVA SEÇÃO: CONDUTAS FISIOTERAPÊUTICAS --- */}
+              <div className="bg-white p-4 border border-cyan-100 rounded-xl shadow-sm mt-4">
+                <label className="font-bold text-cyan-800 mb-2 block uppercase flex items-center gap-2">
+                  <ClipboardCheck size={16} className="text-cyan-600" /> Condutas Fisioterapêuticas
+                </label>
+                <textarea
+                  className="w-full p-3 border rounded-lg h-56 outline-none focus:ring-2 focus:ring-cyan-200 resize-y text-xs text-slate-700 bg-slate-50"
+                  value={physioData.condutas || ""}
+                  onChange={(e) => setPhysioData({ ...physioData, condutas: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-100 border-t flex flex-col-reverse sm:flex-row justify-end gap-3 sticky bottom-0 z-10">
+              <button onClick={() => setShowPhysioModal(false)} className="px-6 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto">
+                Cancelar
+              </button>
+              <button onClick={handleFinalizePhysioAdmission} className="px-6 py-3 rounded-xl font-bold text-white bg-cyan-600 hover:bg-cyan-700 shadow-lg transition-colors flex items-center justify-center gap-2 w-full sm:w-auto">
+                <FileText size={18} /> Finalizar e Gerar Texto
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE TEXTO GERADO PÓS-ADMISSÃO FISIO */}
+      {generatedPhysioText && (
+        <div className="fixed inset-0 bg-slate-900/90 z-[90] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-3xl flex flex-col shadow-2xl">
+            <div className="bg-cyan-600 p-4 text-white flex justify-between items-center rounded-t-2xl">
+              <h3 className="font-bold flex items-center gap-2">
+                <ClipboardCheck size={20} /> Admissão Fisioterapêutica Concluída!
+              </h3>
+              <button onClick={() => setGeneratedPhysioText("")} className="hover:bg-cyan-700 p-1 rounded transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-600 mb-4 font-medium">
+                Copie a evolução gerada abaixo para anexar no prontuário oficial:
+              </p>
+              <textarea
+                className="w-full h-96 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 outline-none mb-6 font-mono resize-none focus:border-cyan-400 focus:bg-white transition-colors"
+                readOnly
+                value={generatedPhysioText}
+              ></textarea>
+              <div className="flex gap-3">
+                <button onClick={() => copyToClipboardFallback(generatedPhysioText)} className="flex-1 py-3 bg-cyan-100 text-cyan-800 font-bold rounded-xl hover:bg-cyan-200 transition-colors flex items-center justify-center gap-2 shadow-sm">
+                  <ClipboardCheck size={18} /> Copiar Texto Inteiro
+                </button>
+                <button onClick={() => setGeneratedPhysioText("")} className="py-3 px-6 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition-colors shadow-sm">
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE ADMISSÃO (FORMULÁRIO MÉDICO) */}
       {showAdmissionModal && (
@@ -9483,6 +10562,162 @@ ${condutas}`;
           </div>
         </div>
       )}
+
+      {/* ========================================== */}
+      {/* MODAL DO MAPA DE VENTILAÇÃO MECÂNICA       */}
+      {/* ========================================== */}
+      {showVmFlowsheet && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="bg-white w-full max-w-7xl rounded-2xl shadow-2xl flex flex-col h-[90vh] overflow-hidden animate-fadeIn">
+            
+            <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0">
+              <h2 className="text-lg font-black uppercase flex items-center gap-2 tracking-wide">
+                <Activity size={24} className="text-cyan-400" />
+                Mapa de Ventilação Mecânica - {currentPatient.nome || "Paciente"}
+              </h2>
+              <button onClick={() => setShowVmFlowsheet(false)} className="p-2 hover:bg-slate-700 rounded-full transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-auto bg-slate-50 relative">
+              <div className="mb-4 flex justify-between items-center sticky left-0">
+                <p className="text-sm text-slate-600 font-bold">Registro de Parâmetros Contínuos</p>
+                <button
+                  onClick={handleAddVmEntry}
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold rounded-lg shadow transition-colors"
+                >
+                  + Adicionar Coluna (Puxar Horário Atual)
+                </button>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-300 rounded-lg shadow-sm bg-white">
+                <table className="w-full text-[10px] text-center whitespace-nowrap">
+                <thead>
+                    {[
+                      { key: 'dataHora', label: 'Data / Hora' },
+                      { key: 'diasUti', label: 'Dias UTI' },
+                      { key: 'diasVm', label: 'Dias VM' },
+                      { key: 'cuff_row', label: 'Pressão Cuff (M/T/N)' }, 
+                      { key: 'despertar_row', label: 'Despertar Diário' }, 
+                      { key: 'modo', label: 'MODO' },
+                      { key: 'fio2', label: 'FiO2 (%)' },
+                      { key: 'pc', label: 'PC' },
+                      { key: 'vc', label: 'VC' },
+                      { key: 'vtPc', label: 'Vt pc' },
+                      { key: 'ps', label: 'PS' },
+                      { key: 'vm', label: 'V.M (L/min)' },
+                      { key: 'fluxoInsp', label: 'Fluxo Insp.' },
+                      { key: 'tInsp', label: 'T. Insp' },
+                      { key: 'ie', label: 'I:E' },
+                      { key: 'fr_row', label: 'FR set / FR tot' }, 
+                      { key: 'peep', label: 'PEEP' },
+                      { key: 'pPico', label: 'P pico' },
+                      { key: 'pPlato', label: 'P platô' },
+                      { key: 'dp', label: 'Driving Pressure (DP)' },
+                      { key: 'cst', label: 'Cst' },
+                      { key: 'cdin', label: 'Cdin' },
+                      { key: 'rva', label: 'Rva' },
+                      { key: 'autoPeep', label: 'Auto PEEP' },
+                    ].map((rowDef) => (
+                      <tr key={rowDef.key} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                        <td className="sticky left-0 bg-slate-200 p-2 font-bold text-slate-800 border-r border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 w-40 text-left">
+                          {rowDef.label}
+                        </td>
+                        {currentPatient.physio?.vmFlowsheet?.map((entry, index) => (
+                          <td key={entry.id} className="p-1 border-r border-slate-200 min-w-[120px]">
+                            {rowDef.key === 'cuff_row' ? (
+                              <div className="flex gap-1 justify-center">
+                                <input className="w-8 p-1 border rounded text-center text-[10px]" placeholder="M" value={entry.cuffM || ""} onChange={(e) => updateVmEntry(index, 'cuffM', e.target.value)} />
+                                <input className="w-8 p-1 border rounded text-center text-[10px]" placeholder="T" value={entry.cuffT || ""} onChange={(e) => updateVmEntry(index, 'cuffT', e.target.value)} />
+                                <input className="w-8 p-1 border rounded text-center text-[10px]" placeholder="N" value={entry.cuffN || ""} onChange={(e) => updateVmEntry(index, 'cuffN', e.target.value)} />
+                              </div>
+                            ) : rowDef.key === 'despertar_row' ? (
+                              <div className="flex gap-2 justify-center font-bold text-[9px]">
+                                <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={entry.despertarS || false} onChange={(e) => updateVmEntry(index, 'despertarS', e.target.checked)} /> S</label>
+                                <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={entry.despertarN || false} onChange={(e) => updateVmEntry(index, 'despertarN', e.target.checked)} /> N</label>
+                              </div>
+                            ) : rowDef.key === 'fr_row' ? (
+                              <div className="flex gap-1 justify-center items-center">
+                                <input className="w-10 p-1 border rounded text-center text-[10px]" placeholder="Set" value={entry.frSet || ""} onChange={(e) => updateVmEntry(index, 'frSet', e.target.value)} />
+                                <span>/</span>
+                                <input className="w-10 p-1 border rounded text-center text-[10px]" placeholder="Tot" value={entry.frTotal || ""} onChange={(e) => updateVmEntry(index, 'frTotal', e.target.value)} />
+                              </div>
+                            ) : (
+                              <input
+                                type="text"
+                                className={`w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 
+                                  ${rowDef.key === 'dp' ? 'bg-amber-100 font-bold text-amber-900' : ''} 
+                                  ${rowDef.key === 'cst' || rowDef.key === 'cdin' ? 'bg-blue-50 font-bold' : ''}`}
+                                value={entry[rowDef.key] || ""}
+                                onChange={(e) => updateVmEntry(index, rowDef.key, e.target.value)}
+                              />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </thead>
+                </table>
+              </div>
+            </div>
+            
+            <div className="p-3 bg-slate-100 border-t flex justify-end shrink-0">
+               <button onClick={() => setShowVmFlowsheet(false)} className="px-6 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700">Fechar Mapa</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL GERADOR DE EVOLUÇÃO DA FISIOTERAPIA  */}
+      {/* ========================================== */}
+      {showPhysioEvoModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col h-[85vh] overflow-hidden animate-fadeIn">
+            
+            <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0">
+              <h2 className="text-lg font-black uppercase flex items-center gap-2">
+                <FileText size={24} className="text-cyan-400" />
+                Evolução Diária - {currentPatient.nome || "Paciente"}
+              </h2>
+              <button onClick={() => setShowPhysioEvoModal(false)} className="p-2 hover:bg-slate-700 rounded-full transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-hidden flex flex-col bg-slate-50">
+              <div className="bg-cyan-50 border-l-4 border-cyan-500 p-3 mb-3 rounded-r-lg">
+                <p className="text-xs text-cyan-800 font-bold uppercase">
+                  Revise o texto gerado. Você pode digitar os "Ajustes Realizados" diretamente nesta caixa antes de copiar!
+                </p>
+              </div>
+              <textarea
+                className="w-full flex-1 p-4 border border-slate-300 rounded-xl text-[13px] leading-relaxed font-mono outline-none focus:ring-2 focus:ring-cyan-500 resize-none bg-white shadow-inner whitespace-pre-wrap"
+                value={physioEvoText}
+                onChange={(e) => setPhysioEvoText(e.target.value)}
+              />
+            </div>
+
+            <div className="p-4 bg-slate-100 border-t flex justify-between items-center shrink-0">
+              <button onClick={() => setShowPhysioEvoModal(false)} className="px-6 py-3 bg-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-400 transition-colors">
+                Fechar
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(physioEvoText);
+                  alert("Evolução copiada com sucesso! Cole no prontuário eletrônico do hospital.");
+                }}
+                className="px-8 py-3 bg-cyan-600 text-white rounded-xl font-black hover:bg-cyan-700 shadow-lg flex items-center gap-2 transition-colors uppercase"
+              >
+                <Copy size={20} /> Copiar para o Prontuário
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
