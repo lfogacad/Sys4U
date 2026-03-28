@@ -1581,6 +1581,7 @@ const App = () => {
   const [password, setPassword] = useState("");
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("Médico");
+  const [newConselho, setNewConselho] = useState(""); // Guarda o CRM/COREN na hora do cadastro
   const [masterCodeInput, setMasterCodeInput] = useState("");
   const [authError, setAuthError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -2280,16 +2281,23 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
     if (!auth || !db) return setAuthError("Erro de sistema.");
     if (masterCodeInput !== CODIGO_MESTRE_RT)
       return setAuthError("Código Inválido");
+    
+    // Trava de segurança: obriga a digitar o conselho na hora de cadastrar a equipe
+    if (!newConselho || newConselho.trim() === "")
+      return setAuthError("Obrigatório informar o número do Conselho (Ex: CRM-RO 1234)");
+
     try {
       const c = await createUserWithEmailAndPassword(auth, email, password);
       await setDoc(doc(db, "users_roles", c.user.uid), {
         name: newName,
         role: newRole,
+        conselho: newConselho, // <--- A MÁGICA ENTRA AQUI!
         email,
         isFirstLogin: true,
       });
       await signOut(auth);
       setIsRegistering(false);
+      setNewConselho(""); // Limpa o campo após cadastrar
       alert("Cadastrado com sucesso!");
     } catch {
       setAuthError("Erro ao registrar.");
@@ -3395,6 +3403,9 @@ ${physioData.condutas}`;
         Dieta ${viaDieta}, ${tgiStatus}. ${evacStatus}
         [FIM DO TEXTO]
         
+        Adicione EXATAMENTE esta assinatura no rodapé:
+        "Documento gerado e validado eletronicamente por: ${userProfile?.name} - ${userProfile?.role} (${userProfile?.conselho})"
+        
         REGRAS CRÍTICAS:
         - Limite-se a conectar e organizar as frases fornecidas no bloco [INÍCIO DO TEXTO] de forma culta e fluida.
         - É EXPRESSAMENTE PROIBIDO adicionar jargões soltos fora deste formato.
@@ -3847,6 +3858,13 @@ ${condutas}`;
                     <option key={r}>{r}</option>
                   ))}
                 </select>
+                <input
+                 type="text"
+                 placeholder="Nome e Nº do Conselho (Ex: CRM-RO 1234)"
+                 value={newConselho}
+                 onChange={(e) => setNewConselho(e.target.value)}
+                 className="w-full p-2 border rounded mb-3"
+                />
               </>
             )}
 
