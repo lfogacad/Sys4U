@@ -1662,36 +1662,16 @@ const App = () => {
   };
 
   const confirmarEGerar = () => {
-    // Ao confirmar, salvamos cada dado de volta na sua gaveta específica
-    
-    // 1. Gaveta Médica (Geral)
-    updateNested("medical", null, {
-      ...currentPatient.medical,
-      estadoGeral: checkData.estadoGeral,
-      antibioticosTextoIA: checkData.atbs // A IA lê daqui
-    });
-
-    // 2. Gaveta Cardiovascular
-    updateNested("cardio", null, {
-      ...currentPatient.cardio,
-      dva: checkData.usaDva,
-      drogasDVA: checkData.usaDva ? checkData.dvas : []
-    });
-
-    // 3. Gaveta Neurológica
-    updateNested("neuro", null, {
-      ...currentPatient.neuro,
-      sedacao: checkData.usaSedacao,
-      drogasSedacao: checkData.usaSedacao ? checkData.sedativos : [],
-      rass: checkData.usaSedacao ? checkData.rass : "",
-      glasgow: !checkData.usaSedacao ? checkData.glasgow : ""
-    });
+    // 1. Manda o sistema salvar nas gavetas (como já fazíamos)
+    updateNested("medical", null, { ...currentPatient.medical, estadoGeral: checkData.estadoGeral, antibioticosTextoIA: checkData.atbs });
+    updateNested("cardio", null, { ...currentPatient.cardio, dva: checkData.usaDva, drogasDVA: checkData.usaDva ? checkData.dvas : [] });
+    updateNested("neuro", null, { ...currentPatient.neuro, sedacao: checkData.usaSedacao, drogasSedacao: checkData.usaSedacao ? checkData.sedativos : [], rass: checkData.usaSedacao ? checkData.rass : "", glasgow: !checkData.usaSedacao ? checkData.glasgow : "" });
 
     setShowChecklistEvo(false);
     
-    // Dispara a IA
+    // 2. A MÁGICA: Dispara a IA entregando a 'maleta' de dados (checkData) direto na mão dela!
     setTimeout(() => {
-      generateAIEvolution(); 
+      generateAIEvolution(checkData); 
     }, 300);
   };
   // =========================================================================
@@ -3226,7 +3206,7 @@ ${physioData.condutas}`;
     save(p);
   };
 
-  const generateAIEvolution = async () => {
+  const generateAIEvolution = async (dadosDoTimeout = null) => {
     setIsGeneratingAI(true);
     let success = false;
     let lastError = "";
@@ -3292,8 +3272,8 @@ ${physioData.condutas}`;
         else if (leucoVal > 11000) leucoStatus = "leucocitose";
       }
       
-      // LIGAÇÃO DIRETA COM O TIMEOUT CLÍNICO:
-      const atbValidado = currentPatient.medical?.antibioticosTextoIA || "";
+      // Lê o Antibiótico direto da maleta do Timeout
+      const atbValidado = dadosDoTimeout?.atbs || currentPatient.medical?.antibioticosTextoIA || "";
       const atbsFinal = (!atbValidado || atbValidado.toLowerCase() === "nenhum") 
         ? "sem uso de antibióticos ativos" 
         : `em uso de ${atbValidado}`;
@@ -3378,12 +3358,33 @@ ${physioData.condutas}`;
       const sedacaoText = currentPatient.neuro?.sedacao ? "sedado" : "sem sedação";
   
       // --- MONTAGEM DO PROMPT ESTRITO ---
-      const promptText = `Atue como um médico intensivista e escreva a evolução diária do paciente internado na UTI. 
-        Siga ESTRITAMENTE a seguinte estrutura e ordem, formando parágrafos perfeitos e contínuos.
+      // =========================================================
+      // 1. TRADUÇÃO BLINDADA PARA A IA (Gênero e Estado Geral)
+      // =========================================================
+      // Ajuste de gênero 
+      const sexoPaciente = currentPatient.admission?.sexo === "F" ? "Feminino" : "Masculino";
+      const pronome = sexoPaciente === "Feminino" ? "A paciente" : "O paciente";
+      
+      // Lê o Estado Geral direto da maleta do Timeout (se não tiver, olha o prontuário)
+      const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
+      let egExtenso = "Regular Estado Geral (REG)";
+      if (egSalvo === "BEG") egExtenso = "Bom Estado Geral (BEG)";
+      if (egSalvo === "MEG") egExtenso = "Mau Estado Geral (MEG)";
+
+      // =========================================================
+      // 2. PROMPT DE EVOLUÇÃO (ORDEM DE FERRO)
+      // =========================================================
+      const promptText = `Você é um médico intensivista sênior redigindo uma evolução diária de UTI.
+        Redija a evolução em texto corrido, formal e técnico, formando parágrafos perfeitos e contínuos, seguindo ESTRITAMENTE as regras e os dados abaixo. Não invente dados clínicos que não foram fornecidos.
         NÃO UTILIZE BULLET POINTS, NÚMEROS, OU TÍTULOS DE PARÁGRAFOS (como "Parágrafo 1", "Cardiovascular", etc). Escreva apenas o texto.
-  
+
+        REGRAS DE FORMATAÇÃO E CONDUTA:
+        1. Gênero: O paciente é do sexo ${sexoPaciente}. Ajuste TODA a concordância nominal do texto (ex: sedado/sedada, taquicárdico/taquicárdica, mantido/mantida).
+        2. Estado Geral: NUNCA escreva "Médio". Utilize rigorosamente a classificação fornecida.
+        3. Antibioticoterapia: Utilize EXATAMENTE a seguinte informação sobre antimicrobianos: "${atbsFinal}". Não afirme que está sem antibióticos se houver drogas listadas aqui.
+      
         [INÍCIO DO TEXTO]
-        Paciente em [REG ou MEG - decida pela gravidade global do caso], ${sedacaoText}, ${suporteText}, ${spo2Status}.
+        ${pronome} encontra-se em ${egExtenso}, ${sedacaoText}, ${suporteText}, ${spo2Status}.
         
         ${hemodinamicaStatus}, ${dvaText}, ${fcStatus}, ${paStatus}.
         
@@ -3395,7 +3396,7 @@ ${physioData.condutas}`;
         [FIM DO TEXTO]
         
         REGRAS CRÍTICAS:
-        - Limite-se a conectar e organizar as frases fornecidas acima de forma culta e fluida.
+        - Limite-se a conectar e organizar as frases fornecidas no bloco [INÍCIO DO TEXTO] de forma culta e fluida.
         - É EXPRESSAMENTE PROIBIDO adicionar jargões soltos fora deste formato.
         - JAMAIS inclua valores absolutos de exames, pressão ou FC.`;
 
