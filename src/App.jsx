@@ -2341,6 +2341,19 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut(auth); // Faz o logoff seguro no Firebase
+      
+      // Limpa a memória do aplicativo imediatamente
+      setEmail("");
+      setPassword("");
+      
+    } catch (error) {
+      console.error("Erro ao sair do sistema:", error);
+    }
+  };
+
   useEffect(() => {
     if (!user || !db) return;
     return onSnapshot(collection(db, "leitos_uti"), (snap) => {
@@ -3993,8 +4006,9 @@ ${condutas}`;
               </p>
             </div>
             <button
-              onClick={() => signOut(auth)}
+              onClick={handleLogout} 
               className="bg-white/10 p-2 rounded-xl hover:bg-white/20"
+              title="Sair do Sistema"
             >
               <LogOut size={20} />
             </button>
