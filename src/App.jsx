@@ -55,6 +55,7 @@ import {
   Copy,
   ShieldAlert,
   Bug,
+  Check,
   Target,
 } from "lucide-react";
 
@@ -2401,6 +2402,299 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
     
     return exchange.raw < todayRaw; 
   };
+  // -------------------------------------------
+
+  // --- LÓGICA DO ALERTA DE SEPSE (REARME DINÂMICO DE MÚLTIPLOS EVENTOS) ---
+  const [showSepsisModal, setShowSepsisModal] = useState(false);
+
+  useEffect(() => {
+    // Permite rodar no seu teste local mesmo se o userProfile ainda não estiver carregado
+    const isMedico = userProfile ? userProfile.role === "Médico" : true; 
+
+    if (viewMode === "medical" && currentPatient && isMedico) {
+      const currentSofa = getAutoSOFA2(currentPatient);
+      const basalSofa = parseInt(currentPatient.sofa_data_technical?.baseline_sofa || 0);
+
+      // Referência é o menor SOFA alcançado antes de uma piora.
+      let referenceSofa = currentPatient.sofa_data_technical?.reference_sofa_for_sepsis;
+      referenceSofa = referenceSofa !== undefined ? parseInt(referenceSofa) : basalSofa;
+
+      // 1. O REARME CLÍNICO: Se o paciente MELHOROU, a régua desce!
+      // Ex: Caiu de 6 para 2. A nova referência vira 2. Se subir para 4 depois, apita de novo.
+      if (currentSofa < referenceSofa) {
+        const p = { ...currentPatient };
+        if (!p.sofa_data_technical) p.sofa_data_technical = {};
+        p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
+        p.sofa_data_technical.last_alerted_sofa = null; // Limpa a memória do último alerta
+        
+        const up = [...patients];
+        up[activeTab] = p;
+        setPatients(up);
+        return; // Deixa o React recarregar com a nova régua
+      }
+
+      // 2. O GATILHO SEPSIS-3: Piorou 2 ou mais pontos em relação à referência?
+      if (currentSofa - referenceSofa >= 2) {
+        // Só apita se ainda NÃO apitou para esse nível de gravidade exato
+        if (currentPatient.sofa_data_technical?.last_alerted_sofa !== currentSofa) {
+          setShowSepsisModal(true);
+        }
+      }
+    }
+  }, [patients, activeTab, viewMode, currentPatient, userProfile]);
+
+  const handleSepsisResponse = (hasInfection) => {
+    const p = { ...currentPatient };
+    if (!p.sofa_data_technical) p.sofa_data_technical = {};
+
+    const currentSofa = getAutoSOFA2(p);
+
+    // Salva exatamente o nível de gravidade em que estamos alertando
+    p.sofa_data_technical.last_alerted_sofa = currentSofa;
+    
+    // A nova referência passa a ser esse SOFA alto. Só apita de novo se subir MAIS 2 pontos.
+    p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
+
+    // Se o médico disser sim, acende o banner
+    p.sofa_data_technical.sepsis_protocol_active = hasInfection;
+
+    const up = [...patients];
+    up[activeTab] = p;
+    setPatients(up);
+    if (user && db) setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
+
+    setShowSepsisModal(false);
+  };
+  // --------------------------------------------------------
+
+  // LÓGICA DE AUDITORIA NORADRENALINA E CÁLCULO SOFA-2 (7 Dias Válido)
+  const [showNoraModal, setShowNoraModal] = useState(false);
+  const [currentNoraHour, setCurrentNoraHour] = useState("");
+  const [currentNoraRate, setCurrentNoraRate] = useState("");
+
+  // Diluição Padrão: 4 ampolas (16mg) em SF 250mL (final volume) = 64 µg/mL
+  // Diluição Dobrada: 8 ampolas (32mg) em SF 250mL (final volume) = 128 µg/mL
+  const calculateNoraDose = (patient, mlHour) => {
+    if (!patient) return null;
+    
+    // Peso: Tenta pegar o Peso Predito (Aba nutrição/calculado) ou o peso de admissão.
+    // Doutor, para cálculo de DVA, o ideal na UTI é usar o peso real ou estimado na admissão.
+    const peso = safeNumber(patient.nutri?.pesoRealAdmissao || patient.nutri?.pesoPredito);
+    const doubleDose = patient.sofa_data_technical?.noraDoubleDoseToday || false;
+    const rate = safeNumber(mlHour);
+    const concentration = doubleDose ? 128 : 64; // µg/mL
+
+    if (rate > 0 && peso > 0) {
+      // Cálculo: mL/h -> mcg/min -> mcg/kg/min
+      // Dose (µg/kg/min) = [ (rate mL/h * concentration µg/mL) / 60 min/h ] / peso_kg
+      const doseMcgKgMin = ((rate * concentration) / 60) / peso;
+      return doseMcgKgMin.toFixed(3);
+    }
+    return null;
+  };
+
+  const handleNoraModalResponse = (isDoubleDose) => {
+    const up = [...patients];
+    const today = getManausDateStr(); // Data de hoje (AM)
+
+    if (!up[activeTab].sofa_data_technical) up[activeTab].sofa_data_technical = {};
+    if (!up[activeTab].hd_monitoramento) up[activeTab].hd_monitoramento = {};
+    if (!up[activeTab].hd_monitoramento[currentNoraHour]) up[activeTab].hd_monitoramento[currentNoraHour] = {};
+
+    // 1. Salva o status da dose para o plantão de hoje (evita popup redundante)
+    up[activeTab].sofa_data_technical.noraDoubleDoseToday = isDoubleDose;
+    up[activeTab].sofa_data_technical.noraModalShown_date = today;
+
+    // 2. Salva o valor que o técnico digitou originalmente
+    up[activeTab].hd_monitoramento[currentNoraHour].noraRate = currentNoraRate;
+
+    setPatients(up);
+    save(up[activeTab]);
+    
+    // 3. Fecha o popup
+    setShowNoraModal(false);
+    
+    // Limpa os estados temporários
+    setCurrentNoraHour("");
+    setCurrentNoraRate("");
+  };
+  
+  // --- TRADUTOR DE MORTALIDADE SOFA-2 ---
+  const getSOFAMortality = (score) => {
+    if (score <= 1) return "Mínima";
+    if (score >= 2 && score <= 6) return "< 10%";
+    if (score >= 7 && score <= 9) return "15 - 20%";
+    if (score >= 10 && score <= 12) return "40 - 50%";
+    if (score >= 13 && score <= 14) return "50 - 60%";
+    if (score >= 15) return "> 80%";
+    return "N/A";
+  };
+
+// --- INTELIGÊNCIA ARTIFICIAL: DETECTAR GLASGOW REAL (SOFA-2) ---
+const getBestGlasgowForSOFA = (p) => {
+  // 1. PACIENTE ACORDADO (Sem Sedação):
+  // Se a chave "sedacao" for falsa ou não existir, pega o Glasgow da evolução de hoje.
+  if (!p.neuro?.sedacao) {
+    return { 
+      valor: safeNumber(p.neuro?.glasgow || 15), 
+      origem: "Atual" 
+    };
+  }
+
+  // 2. PACIENTE SEDADO: Busca o Glasgow Pré-Sedação ou da Admissão (SAPS 3)
+  // Primeiro tentamos achar um campo específico de pré-sedação (se você tiver)
+  if (p.neuro?.glasgowPreSedacao) {
+    return { 
+      valor: safeNumber(p.neuro?.glasgowPreSedacao), 
+      origem: "Pré-Sedação" 
+    };
+  }
+
+  // Se não tem salvo na evolução de hoje, vamos buscar na Admissão/SAPS 3
+  if (p.saps3?.glasgow || p.admissionData?.glasgow) {
+    const gcsSaps = safeNumber(p.saps3?.glasgow || p.admissionData?.glasgow);
+    return { 
+      valor: gcsSaps, 
+      origem: "Admissão (SAPS3)" 
+    };
+  }
+
+  // 3. FALLBACK DE SEGURANÇA HISTÓRICA:
+  // Se o sistema guarda o histórico de evoluções, ele varre de trás pra frente
+  // procurando o último dia em que o paciente NÃO estava sedado.
+  if (p.history && Array.isArray(p.history)) {
+    const lastAwake = p.history.slice().reverse().find(evo => !evo.neuro?.sedacao && evo.neuro?.glasgow);
+    if (lastAwake) {
+      return { 
+        valor: safeNumber(lastAwake.neuro.glasgow), 
+        origem: "Histórico UTI" 
+      };
+    }
+  }
+
+  // Se falhar tudo (paciente chegou sedado, sem SAPS3 preenchido), 
+  // a diretriz do SOFA orienta usar o Glasgow presumido (geralmente normal se não houver TCE).
+  return { 
+    valor: 15, 
+    origem: "Presumido" 
+  };
+};
+
+// --- MOTOR AUTOMÁTICO SOFA-2 (CAÇADOR DE DADOS HISTÓRICOS + SINAIS VITAIS + PF DIRETO) ---
+const getAutoSOFA2 = (p) => {
+  let score = 0;
+  if (!p.sofa_data_technical) p.sofa_data_technical = {};
+
+  // 1. FUNÇÕES CAÇADORAS
+  const buscarUltimoLab = (nomeExame) => {
+    if (p.labs?.today?.[nomeExame]) return parseFloat(p.labs.today[nomeExame]);
+    const datas = Object.keys(p.examHistory || {}).sort().reverse();
+    for (let d of datas) {
+      if (p.examHistory[d]?.[nomeExame]) return parseFloat(p.examHistory[d][nomeExame]);
+    }
+    return null;
+  };
+
+  const buscarUltimaPAM = () => {
+    for (let h of BH_HOURS.slice().reverse()) {
+      const pam = p.bh?.vitals?.[h]?.["PAM"];
+      if (pam) return parseFloat(pam);
+    }
+    return null;
+  };
+
+  // NOVO: Caçador específico para a Relação P/F na mesma Gasometria
+  const buscarUltimoPF = () => {
+    const colunas = Object.keys(p.gasometriaHistory || {}).reverse();
+    for (let col of colunas) {
+      const gaso = p.gasometriaHistory[col];
+      if (!gaso) continue;
+
+      // 1ª Tentativa: Procura se a Fisio/Médico digitou o valor final no campo "P/F", "PF" ou "Relação P/F"
+      const pfDireto = gaso["P/F"] || gaso["PF"] || gaso["Relação P/F"] || gaso["Relacao P/F"] || gaso["PaO2/FiO2"];
+      if (pfDireto) return parseFloat(pfDireto);
+
+      // 2ª Tentativa (Segurança temporal): Se não tem o campo P/F, calcula usando a PaO2 e FiO2 daquela EXATA coluna
+      const pao2 = gaso["PaO2"] || gaso["pO2"];
+      let fio2Gaso = gaso["FiO2"];
+      
+      if (pao2 && fio2Gaso) {
+        fio2Gaso = parseFloat(fio2Gaso);
+        // Se a pessoa digitou "40", converte para "0.4". Se digitou "0.4", mantém.
+        const fio2Decimal = fio2Gaso > 1 ? fio2Gaso / 100 : fio2Gaso;
+        return parseFloat(pao2) / fio2Decimal;
+      }
+    }
+    return null;
+  };
+
+  // 2. BRAIN (GLASGOW INTELIGENTE)
+  const neuroData = getBestGlasgowForSOFA(p);
+  const gcs = neuroData.valor;
+  p.sofa_data_technical.glasgowOrigem = neuroData.origem;
+
+  if (gcs <= 5) score += 4;
+  else if (gcs <= 8) score += 3;
+  else if (gcs <= 12) score += 2;
+  else if (gcs <= 14) score += 1;
+
+  // 3. RESPIRATÓRIO (PF Ratio CUIDADOSAMENTE AUDITADO)
+  const pfRatio = buscarUltimoPF();
+  const isVM = p.physio?.suporte === "VM" || p.physio?.suporte === "VNI";
+  
+  if (pfRatio && pfRatio > 0) {
+    p.sofa_data_technical.lastPF = Math.round(pfRatio); 
+    
+    if (pfRatio <= 75 && isVM) score += 4;
+    else if (pfRatio <= 150 && isVM) score += 3;
+    else if (pfRatio <= 225) score += 2;
+    else if (pfRatio <= 300) score += 1;
+  } else {
+    p.sofa_data_technical.lastPF = null;
+  }
+
+  // 4. CARDIOVASCULAR (Nora Auditada + PAM)
+  const bhGains = p.bh?.gains || {};
+  const lastHour = BH_HOURS.slice().reverse().find(h => bhGains[h]?.["Noradrenalina"]);
+  const lastNoraML = lastHour ? bhGains[lastHour]["Noradrenalina"] : null;
+  const noraDose = parseFloat(calculateNoraDose(p, lastNoraML) || 0);
+  
+  const ultimaPAM = buscarUltimaPAM();
+  p.sofa_data_technical.lastPAM = ultimaPAM;
+
+  if (noraDose > 0.4) score += 4;
+  else if (noraDose > 0.2) score += 3;
+  else if (noraDose > 0) score += 2;
+  else if (ultimaPAM !== null && ultimaPAM < 70) score += 1;
+
+  // 5. LIVER (Bilirrubina)
+  const bili = buscarUltimoLab("Bilirrubina Total") || buscarUltimoLab("Bilirrubina");
+  if (bili > 12) score += 4;
+  else if (bili > 6) score += 3;
+  else if (bili > 3) score += 2;
+  else if (bili >= 1.2) score += 1;
+
+  // 6. KIDNEY (Creatinina)
+  const creat = buscarUltimoLab("Creatinina");
+  p.sofa_data_technical.lastCreat = creat; 
+  
+  const isDialysis = p.medical?.dialise || false;
+  if (isDialysis) score += 4;
+  else if (creat > 3.5) score += 3;
+  else if (creat >= 2.0) score += 2;
+  else if (creat >= 1.2) score += 1;
+
+  // 7. HEMOSTASIA (Plaquetas)
+  const plat = buscarUltimoLab("Plaquetas");
+  p.sofa_data_technical.lastPlat = plat; 
+
+  if (plat && plat <= 50) score += 4;
+  else if (plat && plat <= 80) score += 3;
+  else if (plat && plat <= 100) score += 2;
+  else if (plat && plat <= 150) score += 1;
+
+  return score;
+};
   // -------------------------------------------
 
   // Updates
@@ -4808,6 +5102,128 @@ ${condutas}`;
                   disabled={!isEditable}
                   className="space-y-6 animate-fadeIn min-w-0 border-0 p-0 m-0"
                 >
+                  {/* === DASHBOARD DE GRAVIDADE SOFA-2 (AUTOMATIZADO) === */}
+                  <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-6 shadow-2xl mb-2 border border-white/10 animate-fadeIn relative">
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+                      
+                      {/* Lado Esquerdo: O Score */}
+                      <div className="flex items-center gap-6">
+                        <div className="relative">
+                          <svg className="w-24 h-24">
+                            <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-white/10" />
+                            <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="6" fill="transparent" 
+                                    strokeDasharray="251" 
+                                    strokeDashoffset={251 - (251 * (getAutoSOFA2(currentPatient) / 24))}
+                                    className={`${getAutoSOFA2(currentPatient) >= 10 ? 'text-red-500' : 'text-blue-400'} transition-all duration-1000`} 
+                                    strokeLinecap="round" />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-3xl font-black leading-none">{getAutoSOFA2(currentPatient)}</span>
+                            <span className="text-[10px] font-bold opacity-50 uppercase">Pontos</span>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <h3 className="text-xs font-black text-indigo-300 uppercase tracking-widest mb-1">Status SOFA-2</h3>
+                          <div className={`text-2xl font-black italic ${getAutoSOFA2(currentPatient) >= 10 ? 'text-red-500' : 'text-white'}`}>
+                            {getAutoSOFA2(currentPatient) >= 10 ? 'CRÍTICO / FALÊNCIA' : 'ESTÁVEL / DISFUNÇÃO'}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1 text-xs font-medium text-white/60">
+                            <span>Mortalidade: <span className="text-white font-bold">{getSOFAMortality(getAutoSOFA2(currentPatient))}</span></span>
+                            <span className="text-white/20">|</span>
+                            
+                            {/* Controle do SOFA Basal (Prevenção de Falso Alarme Sepsis-3) */}
+                            <label className="flex items-center gap-1 cursor-pointer" title="Se o paciente for renal crônico ou cirrótico, ajuste o SOFA de base aqui">
+                              Basal: 
+                              <input 
+                                type="number" 
+                                min="0" max="24"
+                                className="w-10 bg-white/10 border border-white/20 rounded text-center text-white focus:outline-none focus:border-indigo-400 font-bold px-1"
+                                value={currentPatient.sofa_data_technical?.baseline_sofa || 0}
+                                onChange={(e) => {
+                                  // Atualiza o Basal E reseta a referência do gatilho para não dar falso alarme
+                                  const novoBasal = e.target.value;
+                                  const p = currentPatient;
+                                  if (!p.sofa_data_technical) p.sofa_data_technical = {};
+                                  p.sofa_data_technical.baseline_sofa = novoBasal;
+                                  p.sofa_data_technical.reference_sofa_for_sepsis = novoBasal;
+                                  
+                                  const up = [...patients];
+                                  up[activeTab] = p;
+                                  setPatients(up);
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Lado Direito: Auditoria da Nora */}
+                      <div className="flex flex-col items-end gap-2 w-full md:w-auto border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-8">
+                        <span className="text-[10px] font-black text-indigo-300 uppercase">Monitoramento Noradrenalina</span>
+                        <div className="flex items-center gap-3">
+                          <div className={`px-3 py-1.5 rounded-lg border font-black text-xs ${currentPatient.sofa_data_technical?.noraDoubleDoseToday ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-emerald-500/20 border-emerald-500 text-emerald-400'}`}>
+                            {currentPatient.sofa_data_technical?.noraDoubleDoseToday ? 'DOSE DOBRADA' : 'DILUIÇÃO PADRÃO'}
+                          </div>
+                          {(() => {
+                            const lastHour = BH_HOURS.slice().reverse().find(h => currentPatient.bh?.gains?.[h]?.["Noradrenalina"]);
+                            const dose = calculateNoraDose(currentPatient, currentPatient.bh?.gains?.[lastHour]?.["Noradrenalina"]);
+                            return dose ? (
+                              <div className="bg-white text-indigo-950 px-4 py-1.5 rounded-lg shadow-xl flex flex-col items-center">
+                                <span className="text-xl font-black leading-none">{dose}</span>
+                                <span className="text-[9px] font-black uppercase">mcg/kg/min</span>
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-white/40 italic">Aguardando dados...</div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Rodapé: Auditoria de Dados (Inteligente) */}
+                    <div className="mt-6 pt-4 border-t border-white/5 flex flex-wrap gap-4 text-[9px] font-bold text-white/40 uppercase">
+                      <span className={currentPatient.neuro?.glasgow || currentPatient.neuro?.sedacao ? "text-indigo-400" : ""}>
+                        ● SNC: {getBestGlasgowForSOFA(currentPatient).valor} 
+                        <span className="text-[7px] ml-1 opacity-70">
+                          ({currentPatient.sofa_data_technical?.glasgowOrigem || 'N/A'})
+                        </span>
+                      </span>
+                      <span className={currentPatient.sofa_data_technical?.lastPF ? "text-indigo-400" : "text-amber-500/60"}>
+                        ● P/F: {currentPatient.sofa_data_technical?.lastPF || 'S/ GASO'}
+                      </span>
+                      <span className={currentPatient.sofa_data_technical?.lastPAM ? (currentPatient.sofa_data_technical?.lastPAM < 70 ? "text-red-400 animate-pulse" : "text-indigo-400") : "text-amber-500/60"}>
+                        ● PAM: {currentPatient.sofa_data_technical?.lastPAM || 'S/ DADO'}
+                      </span>
+                      <span className={currentPatient.sofa_data_technical?.lastCreat ? "text-indigo-400" : "text-amber-500/60"}>
+                        ● CREAT: {currentPatient.sofa_data_technical?.lastCreat || 'S/ EXAME'}
+                      </span>
+                      <span className={currentPatient.sofa_data_technical?.lastPlat ? "text-indigo-400" : "text-amber-500/60"}>
+                        ● PLT: {currentPatient.sofa_data_technical?.lastPlat || 'S/ EXAME'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* ALERTA DE SEPSE (PIPOCA SE O PROTOCOLO ESTIVER ATIVO) */}
+                  {currentPatient.sofa_data_technical?.sepsis_protocol_active && (
+                    <div className="bg-red-100 border-2 border-red-500 text-red-800 rounded-xl p-4 flex items-center justify-between mb-8 shadow-sm animate-pulse">
+                      <div className="flex items-center gap-3">
+                        <AlertCircle size={28} className="text-red-600" />
+                        <div>
+                          <h4 className="font-black uppercase text-sm">Alerta Clínico: Δ SOFA ≥ 2</h4>
+                          <p className="font-medium text-xs opacity-90">Suspeita de infecção confirmada. <span className="font-bold underline">Sugiro iniciar protocolo de Sepse (Pacote de 1 hora)</span>.</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => updateNested("sofa_data_technical", "sepsis_protocol_active", false)}
+                        className="text-red-400 hover:text-red-700 transition-colors p-2"
+                        title="Descartar Alerta"
+                      >
+                        <X size={24} />
+                      </button>
+                    </div>
+                  )}
+
                   {/* EVOLUÇÃO IA */}
                   <div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm">
                     <div className="flex justify-between items-center mb-3">
@@ -6112,7 +6528,7 @@ ${condutas}`;
                         <div className="grid grid-cols-3 gap-2 mb-6 shrink-0">
                           <div>
                             <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">
-                              TOT nº
+                              TOT/TQT nº
                             </label>
                             <input
                               type="number" step="0.5"
@@ -7416,17 +7832,36 @@ ${condutas}`;
                                       <input
                                         type="text"
                                         className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden"
-                                        value={
-                                          displayedBH.gains[h]?.[item] || ""
-                                        }
-                                        onChange={(e) =>
-                                          updateBH(
-                                            h,
-                                            "gains",
-                                            item,
-                                            e.target.value
-                                          )
-                                        }
+                                        value={displayedBH.gains[h]?.[item] || ""}
+                                        onChange={(e) => {
+                                          // 1. Deixa o técnico digitar livremente sem interrupções
+                                          updateBH(h, "gains", item, e.target.value);
+                                        }}
+                                        onBlur={(e) => {
+                                          // 2. A MÁGICA DA AUDITORIA: Avalia quando ele tira o foco do campo
+                                          const val = e.target.value;
+                                          const newVal = parseFloat(val.replace(',', '.')) || 0; 
+                                          const isNora = item.toLowerCase().includes("nora");
+                                          const todayStr = getManausDateStr();
+                                          const modalAlreadyShownToday = currentPatient.sofa_data_technical?.noraModalShown_date === todayStr;
+                                        
+                                          // Busca o valor infundido na hora imediatamente anterior
+                                          const hourIndex = BH_HOURS.indexOf(h);
+                                          const prevHour = hourIndex > 0 ? BH_HOURS[hourIndex - 1] : null;
+                                          const prevRate = prevHour ? parseFloat((displayedBH.gains[prevHour]?.[item] || "0").replace(',', '.')) : 0;
+                                        
+                                          // OS 3 GATILHOS DE SEGURANÇA DO RT:
+                                          const isFirstTime = !modalAlreadyShownToday && val && val !== "0";
+                                          const isSignificantDrop = prevRate > 0 && newVal > 0 && newVal <= (prevRate * 0.5); // Queda de 50% ou mais
+                                          const isSignificantIncrease = prevRate > 0 && newVal > 0 && newVal >= (prevRate * 1.3); // Aumento de 30% ou mais
+                                        
+                                          // Executa a trava se algum gatilho for acionado
+                                          if (isNora && !viewingPreviousBH && (isFirstTime || isSignificantDrop || isSignificantIncrease)) {
+                                            setCurrentNoraHour(h);
+                                            setCurrentNoraRate(val);
+                                            setShowNoraModal(true); // Levanta o escudo (Popup) para confirmar a diluição
+                                          }
+                                        }}
                                       />
                                       <span className="hidden print:block text-center text-[8px] w-full align-middle">
                                         {displayedBH.gains[h]?.[item] || ""}
@@ -11078,11 +11513,88 @@ ${condutas}`;
           </div>
         </div>
       )}
+      
+      {/* MODAL POPUP AUDITORIA NORADRENALINA (BLOQUEIO TÉCNICOS) */}
+      {showNoraModal && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center border-4 border-amber-400">
+              <div className="flex justify-center mb-5">
+                <AlertCircle size={44} className="text-amber-600" />
+              </div>
+              <h2 className="text-xl font-black text-slate-800 mb-3 uppercase">
+                Atenção: Registro de Noradrenalina!
+              </h2>
+              <p className="text-slate-700 font-medium mb-8 text-sm leading-relaxed">
+                Este paciente está utilizando dose dobrada de Noradrenalina neste plantão?
+                <span className="block text-xs text-slate-500 mt-2">(Verifique com a enfermeira e confirme para auditoria do SOFA-2)</span>
+              </p>
+              
+              <div className="flex gap-5">
+                <button
+                  onClick={() => handleNoraModalResponse(true)}
+                  className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-green-600 text-white px-5 py-4 rounded-xl font-bold hover:bg-green-700 transition-colors shadow-sm text-sm"
+                >
+                  <Check size={20} />
+                  SIM, DOBRADA
+                  <span className="text-[10px] opacity-80">(8 amp/250mL)</span>
+                </button>
+                <button
+                  onClick={() => handleNoraModalResponse(false)}
+                  className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-slate-100 text-slate-700 px-5 py-4 rounded-xl font-bold hover:bg-slate-200 transition-colors text-sm"
+                >
+                  <X size={20} />
+                  NÃO, PADRÃO
+                  <span className="text-[10px] opacity-80">(4 amp/250mL)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* === FIM MODAL NORA === */}
 
-    </div>
-  );
-};
+        {/* MODAL POPUP AUDITORIA SEPSE (BLOQUEIO MÉDICO) */}
+         {showSepsisModal && (
+          <div className="fixed inset-0 bg-red-900/90 flex items-center justify-center z-50 p-6 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center border-4 border-red-500">
+              <div className="flex justify-center mb-5">
+                <AlertCircle size={54} className="text-red-600 animate-pulse" />
+              </div>
+              <h2 className="text-2xl font-black text-slate-800 mb-2 uppercase">
+                Alerta: Δ SOFA ≥ 2
+              </h2>
+              <p className="text-slate-700 font-medium mb-8 text-sm leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-200">
+                O escore SOFA-2 do paciente subiu rapidamente, indicando nova disfunção orgânica aguda.
+                <br/><br/>
+                <span className="font-bold text-red-700 text-base">O paciente tem algum processo infeccioso ativo suspeito ou confirmado?</span>
+              </p>
+              
+              <div className="flex gap-4">
+                <button
+                  onClick={() => handleSepsisResponse(true)}
+                  className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-red-600 text-white px-5 py-4 rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm text-sm"
+                >
+                  <Check size={20} />
+                  SIM, TEM INFECÇÃO
+                  <span className="text-[10px] opacity-80">(Iniciar Sepsis-3)</span>
+                </button>
+                <button
+                  onClick={() => handleSepsisResponse(false)}
+                  className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-slate-200 text-slate-700 px-5 py-4 rounded-xl font-bold hover:bg-slate-300 transition-colors text-sm"
+                >
+                  <X size={20} />
+                  NÃO
+                  <span className="text-[10px] opacity-80">(Outra causa / Hemorragia)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* === FIM MODAL SEPSE === */}
+</div>
+    ); // Fecha o return do App
+}; // FECHA A CONST APP
 
+// --- COMPONENTES AUXILIARES ---
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
