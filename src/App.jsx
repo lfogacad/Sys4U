@@ -4548,6 +4548,19 @@ ${condutas}`;
                       else if (vomitoHoje) vomitoText = "Hoje";
                       else if (vomitoOntem) vomitoText = "Ontem";
 
+                      // 1. Calculamos o resultado antes de desenhar a tela
+                      const evacResult = calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao);
+
+                      // 2. Extraímos apenas os números da resposta (ex: "Há 3 dias" vira 3, "Hoje" vira vazio/NaN)
+                      const diasSemEvacuar = parseInt(String(evacResult).replace(/\D/g, ""), 10);
+
+                      // 3. O alerta dispara se for um número válido E maior que 2 (ignorando "hoje" ou "ontem")
+                      const isConstipado = 
+                        !isNaN(diasSemEvacuar) && 
+                        diasSemEvacuar > 2 && 
+                        !String(evacResult).toLowerCase().includes("hoje") && 
+                        !String(evacResult).toLowerCase().includes("ontem");
+
                       return (
                         <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl">
                           <h4 className="font-bold text-orange-800 mb-2 flex items-center gap-2">
@@ -4555,10 +4568,9 @@ ${condutas}`;
                           </h4>
                           <p className="text-sm">
                             Últ. Evacuação:{" "}
-                            <b>
-                              {calculateEvacDays(
-                                currentPatient.gastro?.dataUltimaEvacuacao
-                              )}
+                            {/* A MÁGICA VISUAL ESTÁ NESTA LINHA: */}
+                            <b className={isConstipado ? "text-red-600 font-black bg-red-100 px-1.5 py-0.5 rounded border border-red-300" : "text-slate-800"}>
+                              {evacResult}
                             </b>
                           </p>
                           {diarreiaText && (
