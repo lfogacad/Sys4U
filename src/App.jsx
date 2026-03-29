@@ -2376,6 +2376,33 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
     });
   }, [user]);
 
+  // --- LÓGICA DE PREVENÇÃO DE PAV (7 Dias) ---
+  const calculateExchangeDate = (installDate) => {
+    if (!installDate) return null;
+    const [year, month, day] = installDate.split('-');
+    const date = new Date(year, month - 1, day);
+    date.setDate(date.getDate() + 7); 
+    
+    const calcYear = date.getFullYear();
+    const calcMonth = String(date.getMonth() + 1).padStart(2, '0');
+    const calcDay = String(date.getDate()).padStart(2, '0');
+    
+    return {
+      formatted: `${calcDay}/${calcMonth}`, 
+      raw: `${calcYear}-${calcMonth}-${calcDay}` 
+    };
+  };
+
+  const isDeviceExpired = (installDate) => {
+    if (!installDate) return false;
+    const exchange = calculateExchangeDate(installDate);
+    const today = new Date();
+    const todayRaw = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    return exchange.raw < todayRaw; 
+  };
+  // -------------------------------------------
+
   // Updates
   const save = async (p) => {
     if (user && db) await setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
@@ -6111,6 +6138,7 @@ ${condutas}`;
                               }
                             />
                           </div>
+                          {/* --- INÍCIO DO BLOCO CUFF --- */}
                           <div>
                             <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block text-center" title="Pressão do Cuff: Manhã / Tarde / Noite">
                               Cuff (M | T | N)
@@ -6148,6 +6176,85 @@ ${condutas}`;
                               />
                             </div>
                           </div>
+
+                          {/* === PREVENÇÃO DE PAV (HMEF e SFA) - SINCRONIZADO COM ADMISSÃO === */}
+                          
+                          {/* FILTRO HMEF */}
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">
+                              Filtro HMEF (7 dias)
+                            </label>
+                            <div className="flex flex-col gap-1">
+                              <select
+                                className="w-full p-2 border rounded text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200 bg-white"
+                                value={currentPatient.physio?.filtroHMEF ? "Sim" : "Não"}
+                                onChange={(e) => updateNested("physio", "filtroHMEF", e.target.value === "Sim")}
+                              >
+                                <option value="Não">Não Utiliza</option>
+                                <option value="Sim">Em Uso</option>
+                              </select>
+
+                              {currentPatient.physio?.filtroHMEF && (
+                                <div className="flex flex-col gap-1 animate-fadeIn">
+                                  <input
+                                    type="date"
+                                    className="w-full p-2 border rounded text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200 bg-white"
+                                    value={currentPatient.physio?.dataTrocaHMEF || ""}
+                                    onChange={(e) => updateNested("physio", "dataTrocaHMEF", e.target.value)}
+                                    title="Data de Instalação"
+                                  />
+                                  {currentPatient.physio?.dataTrocaHMEF && (
+                                    <div className={`text-[10px] font-bold px-1 py-1.5 text-center rounded border transition-colors ${
+                                      isDeviceExpired(currentPatient.physio?.dataTrocaHMEF)
+                                      ? "bg-red-100 text-red-700 border-red-400 animate-pulse"
+                                      : "bg-green-100 text-green-700 border-green-400"
+                                    }`}>
+                                      {isDeviceExpired(currentPatient.physio?.dataTrocaHMEF) ? "⚠️ VENCIDO!" : "Troca:"} {calculateExchangeDate(currentPatient.physio?.dataTrocaHMEF)?.formatted}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* SFA (SISTEMA FECHADO) */}
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">
+                              SFA (7 dias)
+                            </label>
+                            <div className="flex flex-col gap-1">
+                              <select
+                                className="w-full p-2 border rounded text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200 bg-white"
+                                value={currentPatient.physio?.sistemaFechado ? "Sim" : "Não"}
+                                onChange={(e) => updateNested("physio", "sistemaFechado", e.target.value === "Sim")}
+                              >
+                                <option value="Não">Não Utiliza</option>
+                                <option value="Sim">Em Uso</option>
+                              </select>
+
+                              {currentPatient.physio?.sistemaFechado && (
+                                <div className="flex flex-col gap-1 animate-fadeIn">
+                                  <input
+                                    type="date"
+                                    className="w-full p-2 border rounded text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200 bg-white"
+                                    value={currentPatient.physio?.dataTrocaSistemaFechado || ""}
+                                    onChange={(e) => updateNested("physio", "dataTrocaSistemaFechado", e.target.value)}
+                                    title="Data de Instalação"
+                                  />
+                                  {currentPatient.physio?.dataTrocaSistemaFechado && (
+                                    <div className={`text-[10px] font-bold px-1 py-1.5 text-center rounded border transition-colors ${
+                                      isDeviceExpired(currentPatient.physio?.dataTrocaSistemaFechado)
+                                      ? "bg-red-100 text-red-700 border-red-400 animate-pulse"
+                                      : "bg-green-100 text-green-700 border-green-400"
+                                    }`}>
+                                      {isDeviceExpired(currentPatient.physio?.dataTrocaSistemaFechado) ? "⚠️ VENCIDO!" : "Troca:"} {calculateExchangeDate(currentPatient.physio?.dataTrocaSistemaFechado)?.formatted}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {/* --- FIM DO BLOCO DE VIA AÉREA --- */}
                         </div>
 
                         {/* Subdivisão: Secreção (Empurrada para o final do bloco) */}
