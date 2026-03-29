@@ -7169,7 +7169,7 @@ ${condutas}`;
                       </div>
                     </div>
 
-                    <div>
+                      <div>
                       <div className="overflow-x-auto border rounded-xl print:overflow-visible print:border-none print:w-full">
                         <table className="w-full text-xs text-center border-collapse">
                           <thead>
@@ -7213,9 +7213,9 @@ ${condutas}`;
                               return (
                                 <tr
                                   key={item}
-                                  className="hover:bg-slate-50 border-b print:border-black"
+                                  className="hover:bg-slate-200 transition-colors group border-b print:border-black"
                                 >
-                                  <td className="p-1 text-left font-medium text-slate-600 sticky left-0 bg-white border-r print:border-black print:text-black">
+                                  <td className="p-1 text-left font-medium text-slate-600 sticky left-0 bg-white group-hover:bg-slate-200 transition-colors border-r print:border-black print:text-black">
                                     <div className="flex justify-between items-center">
                                       <span>{item}</span>
                                       {displayedBH.customGains?.includes(
@@ -7379,9 +7379,9 @@ ${condutas}`;
                               return (
                                 <tr
                                   key={item}
-                                  className="hover:bg-slate-50 border-b print:border-black"
+                                  className="hover:bg-slate-200 transition-colors group border-b print:border-black"
                                 >
-                                  <td className="p-1 text-left font-medium text-slate-600 sticky left-0 bg-white border-r print:border-black print:text-black">
+                                  <td className="p-1 text-left font-medium text-slate-600 sticky left-0 bg-white group-hover:bg-slate-200 transition-colors border-r print:border-black print:text-black">
                                     <div className="flex justify-between items-center">
                                       <span>{item}</span>
                                       {displayedBH.customLosses?.includes(
@@ -7498,8 +7498,8 @@ ${condutas}`;
                                 </td>
                               </tr>
                             )}
-                            <tr className="bg-yellow-50/50 border-t-2 border-slate-200 print:bg-white print:border-black">
-                              <td className="p-1 text-left font-bold text-slate-500 sticky left-0 bg-white border-r print:border-black print:text-black">
+                            <tr className="bg-yellow-50/50 hover:bg-slate-200 transition-colors group border-t-2 border-slate-200 print:bg-white print:border-black">
+                              <td className="p-1 text-left font-bold text-slate-500 sticky left-0 bg-white group-hover:bg-slate-200 transition-colors border-r print:border-black print:text-black">
                                 Irrigação Vesical
                               </td>
                               {BH_HOURS.map((h) => (
@@ -7662,9 +7662,9 @@ ${condutas}`;
                           ].map((param) => (
                             <tr
                               key={param}
-                              className="border-b last:border-0 hover:bg-slate-50 print:border-black"
+                              className="border-b last:border-0 hover:bg-slate-200 transition-colors group print:border-black"
                             >
-                              <td className="p-2 text-left font-medium sticky left-0 bg-white border-r print:border-black print:text-black">
+                              <td className="p-2 text-left font-medium sticky left-0 bg-white group-hover:bg-slate-200 transition-colors border-r print:border-black print:text-black">
                                 {param}
                               </td>
                               {BH_HOURS.map((h) => {
