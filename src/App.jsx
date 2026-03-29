@@ -6368,9 +6368,47 @@ ${condutas}`;
                       <table className="w-full text-xs text-center border-collapse">
                         <thead>
                           <tr className="bg-slate-200 text-slate-700">
-                            <th className="p-2 text-left sticky left-0 bg-slate-200 border-r border-slate-300 z-10">
+                            <th className="p-2 text-left sticky left-0 bg-slate-200 border-r border-slate-300 z-10 shadow-[1px_0_0_0_#cbd5e1]">
                               PARÂMETRO
                             </th>
+                            
+                            {/* BOTÃO MOVIDO PARA A ESQUERDA (Antes do mapeamento de datas) */}
+                            {isEditable && (
+                              <th className="p-0 border-r border-slate-300 bg-blue-100 min-w-[40px]">
+                                <button
+                                  onClick={() => {
+                                    const n = prompt(
+                                      "Identificação da nova gasometria (ex: 23/02 - 14h):"
+                                    );
+                                    if (n && n.trim()) {
+                                      const up = [...patients];
+                                      if (!up[activeTab].customGasometriaCols)
+                                        up[activeTab].customGasometriaCols = [];
+                                      if (
+                                        !up[
+                                          activeTab
+                                        ].customGasometriaCols.includes(
+                                          n.trim()
+                                        )
+                                      ) {
+                                        up[
+                                          activeTab
+                                        ].customGasometriaCols.unshift(
+                                          n.trim()
+                                        );
+                                        setPatients(up);
+                                        save(up[activeTab]);
+                                      }
+                                    }
+                                  }}
+                                  className="text-blue-600 hover:text-blue-800 w-full h-full flex items-center justify-center p-2 transition-colors"
+                                  title="Adicionar Gasometria extra"
+                                >
+                                  <PlusCircle size={18} />
+                                </button>
+                              </th>
+                            )}
+
                             {uniqueGasoCols.map((col) => (
                               <th
                                 key={col}
@@ -6407,7 +6445,7 @@ ${condutas}`;
                                             save(up[activeTab]);
                                           }
                                         }}
-                                        className="text-slate-400 hover:text-red-500"
+                                        className="text-slate-400 hover:text-red-500 transition-colors"
                                         title="Excluir Coluna"
                                       >
                                         <X size={12} />
@@ -6416,52 +6454,23 @@ ${condutas}`;
                                 </div>
                               </th>
                             ))}
-                            {isEditable && (
-                              <th className="p-0 border-l border-slate-300 bg-blue-100 min-w-[40px]">
-                                <button
-                                  onClick={() => {
-                                    const n = prompt(
-                                      "Identificação da nova gasometria (ex: 23/02 - 14h):"
-                                    );
-                                    if (n && n.trim()) {
-                                      const up = [...patients];
-                                      if (!up[activeTab].customGasometriaCols)
-                                        up[activeTab].customGasometriaCols = [];
-                                      if (
-                                        !up[
-                                          activeTab
-                                        ].customGasometriaCols.includes(
-                                          n.trim()
-                                        )
-                                      ) {
-                                        up[
-                                          activeTab
-                                        ].customGasometriaCols.unshift(
-                                          n.trim()
-                                        );
-                                        setPatients(up);
-                                        save(up[activeTab]);
-                                      }
-                                    }
-                                  }}
-                                  className="text-blue-600 hover:text-blue-800 w-full h-full flex items-center justify-center p-2"
-                                  title="Adicionar Gasometria extra"
-                                >
-                                  <PlusCircle size={18} />
-                                </button>
-                              </th>
-                            )}
                           </tr>
                         </thead>
                         <tbody>
                           {GASOMETRIA_PARAMS.map((param) => (
                             <tr
                               key={param}
-                              className="border-b last:border-0 hover:bg-slate-100 bg-white"
+                              className="border-b last:border-0 hover:bg-slate-100 bg-white transition-colors"
                             >
-                              <td className="p-2 text-left font-bold text-slate-600 sticky left-0 bg-white border-r border-slate-200 z-10">
+                              <td className="p-2 text-left font-bold text-slate-600 sticky left-0 bg-white border-r border-slate-200 z-10 shadow-[1px_0_0_0_#e2e8f0]">
                                 {param}
                               </td>
+                              
+                              {/* CÉLULA VAZIA ABAIXO DO BOTÃO MOVIDA PARA A ESQUERDA */}
+                              {isEditable && (
+                                <td className="bg-slate-50 border-r border-slate-200"></td>
+                              )}
+
                               {uniqueGasoCols.map((col) => (
                                 <td
                                   key={col}
@@ -6469,7 +6478,7 @@ ${condutas}`;
                                 >
                                   <input
                                     type="text"
-                                    className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5"
+                                    className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5 transition-colors"
                                     value={
                                       currentPatient.gasometriaHistory?.[col]?.[
                                         param
@@ -6491,9 +6500,6 @@ ${condutas}`;
                                   />
                                 </td>
                               ))}
-                              {isEditable && (
-                                <td className="bg-slate-50 border-l border-slate-200"></td>
-                              )}
                             </tr>
                           ))}
                         </tbody>
