@@ -1867,19 +1867,23 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
   const bhTotals = calculateTotals(displayedBH);
 
   // Lógica Colunas Gasometria Dinâmicas (Com Motor Cronológico)
-  const gasoCols = [
-    ...(currentPatient.customGasometriaCols || []),
-    ...getLast10Days(),
-  ];
   
+  // 1. O FUNIL INFINITO: Puxa todo o histórico do paciente + datas customizadas + últimos 10 dias (para espaços em branco)
+  const gasoCols = [
+    ...Object.keys(currentPatient.gasometriaHistory || {}),
+    ...(currentPatient.customGasometriaCols || []),
+    ...getLast10Days()
+  ];
+
+  // 2. A BALANÇA DO TEMPO: Remove duplicatas e organiza da MAIS RECENTE para a MAIS ANTIGA
   const uniqueGasoCols = [...new Set(gasoCols)].sort((a, b) => {
     const parseDateString = (str) => {
-      // 1. Se for o formato Padrão do sistema (Ex: 2026-03-23) -> Assume 00:00 do dia
+      // A. Se for o formato Padrão do sistema (Ex: 2026-03-23) -> Assume 00:00 do dia
       if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
         return new Date(`${str}T00:00:00`).getTime();
       }
       
-      // 2. Se for o formato Customizado do usuário (Ex: 23/03 - 14h ou 23/03 - 14:30)
+      // B. Se for o formato Customizado do usuário (Ex: 23/03 - 14h ou 23/03 - 14:30)
       const matchDate = str.match(/^(\d{2})\/(\d{2})/);
       if (matchDate) {
         const day = parseInt(matchDate[1], 10);
@@ -1893,7 +1897,7 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
           if (matchTime[1]) {
             hour = parseInt(matchTime[1], 10); // Formato "14h"
             min = 0;
-          } else {
+          } else if (matchTime[2] && matchTime[3]) {
             hour = parseInt(matchTime[2], 10); // Formato "14:30"
             min = parseInt(matchTime[3], 10);
           }
@@ -1903,7 +1907,7 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
       return 0; // Se for uma palavra aleatória, joga para o final da fila
     };
 
-    // Ordenação Decrescente: Maior tempo (Mais novo) na esquerda, menor (Mais velho) na direita
+    // 3. A INVERSÃO: Maior tempo (Mais novo) na esquerda, menor (Mais velho) na direita
     return parseDateString(b) - parseDateString(a);
   });
 
@@ -8670,8 +8674,9 @@ ${condutas}`;
                   <th className="p-2 border bg-gray-100 sticky left-0 z-10">
                     Exame
                   </th>
-                  {getLast10Days().map((d) => (
-                    <th key={d} className="p-2 border min-w-[80px] text-center">
+                  {/* INVERSÃO DA LINHA DO TEMPO: Adicionado o .reverse() aqui */}
+                  {Array.from(new Set([...Object.keys(currentPatient.examHistory || {}), ...getLast10Days()])).sort().reverse().map((d) => (
+                    <th key={d} className="p-2 border min-w-[80px] text-center bg-gray-50">
                       {formatDateDDMM(d)}
                     </th>
                   ))}
@@ -8679,14 +8684,15 @@ ${condutas}`;
               </thead>
               <tbody>
                 {EXAM_ROWS.map((ex) => (
-                  <tr key={ex}>
-                    <td className="p-2 border font-bold sticky left-0 bg-white">
+                  <tr key={ex} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-2 border font-bold sticky left-0 bg-white shadow-[1px_0_0_0_#e5e7eb]">
                       {formatExamName(ex)}
                     </td>
-                    {getLast10Days().map((d) => (
+                    {/* INVERSÃO DA LINHA DO TEMPO: Adicionado o .reverse() aqui */}
+                    {Array.from(new Set([...Object.keys(currentPatient.examHistory || {}), ...getLast10Days()])).sort().reverse().map((d) => (
                       <td key={d} className="p-0 border">
                         <input
-                          className="w-full h-full text-center p-2 outline-none focus:bg-blue-50"
+                          className="w-full h-full text-center p-2 outline-none focus:bg-blue-100 transition-colors bg-transparent"
                           disabled={!isOverviewEditable}
                           value={currentPatient.examHistory[d]?.[ex] || ""}
                           onChange={(e) => {
@@ -8704,15 +8710,16 @@ ${condutas}`;
                     ))}
                   </tr>
                 ))}
-                {currentPatient.customExamRows.map((ex) => (
-                  <tr key={ex} className="bg-yellow-50/50">
-                    <td className="p-2 border font-bold sticky left-0 bg-white">
+                {currentPatient.customExamRows?.map((ex) => (
+                  <tr key={ex} className="bg-yellow-50/30 hover:bg-yellow-50/80 transition-colors">
+                    <td className="p-2 border font-bold sticky left-0 bg-white shadow-[1px_0_0_0_#e5e7eb]">
                       {ex}
                     </td>
-                    {getLast10Days().map((d) => (
+                    {/* INVERSÃO DA LINHA DO TEMPO: Adicionado o .reverse() aqui */}
+                    {Array.from(new Set([...Object.keys(currentPatient.examHistory || {}), ...getLast10Days()])).sort().reverse().map((d) => (
                       <td key={d} className="p-0 border">
                         <input
-                          className="w-full h-full text-center p-2 outline-none focus:bg-blue-50"
+                          className="w-full h-full text-center p-2 outline-none focus:bg-blue-100 transition-colors bg-transparent"
                           disabled={!isOverviewEditable}
                           value={currentPatient.examHistory[d]?.[ex] || ""}
                           onChange={(e) => {
@@ -8731,12 +8738,12 @@ ${condutas}`;
                 {isOverviewEditable && (
                   <tr>
                     <td
-                      colSpan={12}
-                      className="p-2 text-center border cursor-pointer hover:bg-gray-50 text-blue-600 font-bold"
+                      colSpan={50} 
+                      className="p-3 text-center border cursor-pointer bg-slate-50 hover:bg-slate-100 text-blue-600 font-bold transition-colors"
                       onClick={handleAddCustomExam}
                     >
                       <PlusCircle size={16} className="inline mr-1" /> Adicionar
-                      Linha
+                      Linha de Exame Específico
                     </td>
                   </tr>
                 )}
