@@ -3885,6 +3885,7 @@ ${condutas}`;
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="off"
               placeholder="Email"
               className="w-full p-3 border rounded-xl"
               required
@@ -3895,6 +3896,7 @@ ${condutas}`;
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
                 placeholder="Senha"
                 className="w-full p-3 border rounded-xl"
                 required={!isRegistering && !isLoading}
