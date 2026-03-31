@@ -1660,51 +1660,61 @@ const App = () => {
   };
   // =========================================================================
 
-  // Função que compila todos os dados e gera o texto da evolução
-  const handleGeneratePhysioEvo = () => {
-    const p = currentPatient;
-    const physio = p.physio || {};
-    const med = p.medical || {};
+// Função que compila todos os dados e gera o texto da evolução da Fisioterapia
+const handleGeneratePhysioEvo = () => {
+  const p = currentPatient;
+  const physio = p.physio || {};
+  const med = p.medical || {};
 
-    // Função auxiliar para somar 7 dias à data de instalação
-    const add7Days = (dateStr) => {
-      if (!dateStr) return "___/___/___";
-      const d = new Date(dateStr + "T12:00:00");
-      d.setDate(d.getDate() + 7);
-      return d.toLocaleDateString('pt-BR');
-    };
+  // Função auxiliar para somar 7 dias à data de instalação
+  const add7Days = (dateStr) => {
+    if (!dateStr) return "___/___/___";
+    const d = new Date(dateStr + "T12:00:00");
+    d.setDate(d.getDate() + 7);
+    return d.toLocaleDateString('pt-BR');
+  };
 
-    // Puxa a última gasometria registrada da tabela (se houver)
-    let gasoText = "Nenhuma gasometria registrada no plantão atual.";
-    
-    // O seu sistema usa customGasometriaCols ou salva no gasometriaHistory
-    const gasoCols = p.customGasometriaCols || Object.keys(p.gasometriaHistory || {});
-    
-    if (gasoCols.length > 0) {
-      // Como o botão "+" (unshift) coloca a nova gasometria no início, pegamos a posição 0.
-      const ultimaGasoCol = p.customGasometriaCols ? gasoCols[0] : gasoCols[gasoCols.length - 1];
-      const gasoData = p.gasometriaHistory?.[ultimaGasoCol] || {};
-      
+  // 1. CORREÇÃO DA GASOMETRIA (Buscando a chave correta e mais recente)
+  let gasoText = "Nenhuma gasometria registrada no plantão atual.";
+
+  // Bloqueia o falso positivo do array vazio
+  let gasoCols = [];
+  if (p.customGasometriaCols && p.customGasometriaCols.length > 0) {
+    gasoCols = p.customGasometriaCols;
+  } else {
+    gasoCols = Object.keys(p.gasometriaHistory || {});
+  }
+
+  if (gasoCols.length > 0) {
+    // Pega a gasometria mais nova (posição 0 para customizadas ou a última do histórico)
+    const ultimaGasoCol = (p.customGasometriaCols && p.customGasometriaCols.length > 0) ? gasoCols[0] : gasoCols[gasoCols.length - 1];
+    const gasoData = p.gasometriaHistory?.[ultimaGasoCol] || {};
+
+    // Só exibe se houver dados clínicos reais
+    if (gasoData['pH'] || gasoData['pCO2'] || gasoData['PaO2']) {
       gasoText = `Referência: ${ultimaGasoCol}
-pH: ${gasoData['pH'] || '--'} | pCO2: ${gasoData['pCO2'] || '--'} | PaO2: ${gasoData['PaO2'] || gasoData['pO2'] || '--'} | HCO3: ${gasoData['HCO3'] || '--'} | BE: ${gasoData['BE'] || '--'} | SatO2: ${gasoData['SatO2'] || '--'}%`;
-      
-      // Se você tiver lactato na tabela, descomente a linha abaixo e apague a de cima:
-      // gasoText += ` | Lac: ${gasoData['Lactato'] || '--'}`;
+pH: ${gasoData['pH'] || '--'} | pCO2: ${gasoData['pCO2'] || '--'} | PaO2: ${gasoData['PaO2'] || gasoData['pO2'] || '--'} | HCO3: ${gasoData['HCO3'] || '--'} | BE: ${gasoData['BE'] || '--'} | SatO2: ${gasoData['SatO2'] || '--'}% | P/F: ${gasoData['P/F'] || '--'}`;
     }
+  }
 
-    // Monta a linha de parâmetros ventilatórios
-    let paramText = `Modo: ${physio.parametro || '--'} | PEEP: ${physio.peep || '--'} | FiO2: ${physio.fiO2 || '--'}%`;
-    if (physio.parametro === 'VCV') paramText += ` | Vt: ${physio.vt || '--'} ml`;
-    if (physio.parametro === 'PCV') paramText += ` | PC: ${physio.pc || '--'} cmH2O`;
-    if (physio.parametro === 'PSV') paramText += ` | PS: ${physio.ps || '--'} cmH2O`;
+  // 2. CORREÇÃO DOS DIAGNÓSTICOS (Buscando da raiz do paciente onde a admissão salva)
+  const diagAgudos = p.diagnostico || med.diagnosticosAgudos || 'Não informados';
+  const diagCronicos = p.comorbidades || med.diagnosticosCronicos || 'Não informados';
+  const historiaClinica = p.historia || p.historiaClinica || med.historiaClinica || 'Não informada';
 
-    // Constrói o texto completo
-    const textoGerado = `EVOLUÇÃO FISIOTERAPÊUTICA
+  // 3. PARÂMETROS VENTILATÓRIOS (Sincronizado com os campos da Fisio)
+  let paramText = `Modo: ${physio.parametro || '--'} | PEEP: ${physio.peep || '--'} | FiO2: ${physio.fiO2 || '--'}%`;
+  if (physio.parametro === 'VCV') paramText += ` | Vt: ${physio.volCorrente || physio.vt || '--'} ml`; 
+  if (physio.parametro === 'PCV') paramText += ` | PC: ${physio.pc || '--'} cmH2O`;
+  if (physio.parametro === 'PSV') paramText += ` | PS: ${physio.ps || '--'} cmH2O`;
+
+  // Constrói o texto completo
+  const textoGerado = `EVOLUÇÃO FISIOTERAPÊUTICA
 
 --- HISTÓRIA E DIAGNÓSTICOS ---
-História Clínica: ${p.historiaClinica || med.historiaClinica || 'Não informada'}
-Diagnósticos Agudos: ${med.diagnosticosAgudos || 'Não informados'}
-Diagnósticos Crônicos: ${med.diagnosticosCronicos || 'Não informados'}
+História Clínica: ${historiaClinica}
+Diagnósticos Agudos: ${diagAgudos}
+Diagnósticos Crônicos: ${diagCronicos}
 
 --- AVALIAÇÃO POR SISTEMAS ---
 Neurológico: ${physio.sistemaNervoso || 'Sem alterações descritas'}
@@ -1714,7 +1724,7 @@ Gastrointestinal/Abdome: ${physio.sistemaDigestivo || 'Sem alterações descrita
 Musculoesquelético: ${physio.sistemaMusculoesqueletico || 'Sem alterações descritas'}
 Estado Geral: ${physio.estadoGeral || 'Não descrito'}
 
---- GASOMETRIA DO DIA ---
+--- GASOMETRIA ---
 ${gasoText}
 
 --- SUPORTE VENTILATÓRIO ---
@@ -1732,22 +1742,22 @@ Sistema Fechado de Aspiração (Trach Care):
 - Troca Prevista (7 dias): ${add7Days(physio.dataTrocaSistemaFechado)}
 
 Pressão do Cuff (cmH2O):
-Manhã: ${physio.cuffM || '--'} | Tarde: ${physio.cuffT || '--'} | Noite: ${physio.cuffN || '--'}
+Manhã: ${physio.cuffM || physio.cuff || '--'} | Tarde: ${physio.cuffT || '--'} | Noite: ${physio.cuffN || '--'}
 
 --- CONDUTAS E PLANOS ---
 Intercorrências:
 ${physio.intercorrencias || 'Nenhuma intercorrência no plantão.'}
 
 Condutas Fisioterapêuticas:
-${physio.condutas || 'Sem condutas descritas.'}
+${physio.condutas || physio.admissao_condutas || 'Sem condutas descritas.'}
 
 Planos e Metas (Próximo Plantão):
 ${p.physio?.planoMetas || "Sem planos descritos."}
 `;
-    
-    setPhysioEvoText(textoGerado);
-    setShowPhysioEvoModal(true);
-  };
+  
+  setPhysioEvoText(textoGerado);
+  setShowPhysioEvoModal(true);
+};
 
   // Função que cria uma nova coluna no Mapa puxando os dados atuais/admissão
   const handleAddVmEntry = () => {
