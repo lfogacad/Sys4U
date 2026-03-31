@@ -1373,6 +1373,20 @@ const calculateEvacDays = (dateStr) => {
   return diff.replace("D", "") + " dias";
 };
 
+const checkLossBH = (bh, lossName) => {
+  if (!bh || !bh.losses) return false;
+  // BH_HOURS já está definido no seu código, vamos usá-lo para varrer o dia
+  for (let h of BH_HOURS) {
+    const val = String(bh.losses[h]?.[lossName] || "").trim().toLowerCase();
+    const numVal = parseFloat(val.replace(",", "."));
+    // Detecta se houve perda (seja por valor numérico > 0 ou por cruzes/texto)
+    if (["sim", "s", "+", "++", "+++"].some(term => val.includes(term)) || (!isNaN(numVal) && numVal > 0)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 // CÁLCULO DE PESO PREDITO (ARDSNet)
 const calculatePesoPredito = (altura, sexo) => {
   const h = safeNumber(altura);
@@ -1590,52 +1604,56 @@ const App = () => {
   // PASSO 2: FUNÇÕES DO TIMEOUT CLÍNICO (ARQUITETURA POR SISTEMAS)
   // =========================================================================
   const abrirChecklistEvolucao = () => {
-    // Agora olhamos o paciente inteiro, dividindo as gavetas corretamente
     const p = currentPatient || {};
     const med = p.medical || {};
     const cardio = p.cardio || {};
     const neuro = p.neuro || {};
 
-    // 1. ANTIBIÓTICOS (Na raiz, perfeito para o Stewardship)
+    // --- NOVA LÓGICA GASTRO ---
+    // Verificamos se houve registro de Vômitos ou Diarreia no BH de HOJE
+    const temVomito = checkLossBH(p.bh, "Vômitos");
+    const temDiarreia = checkLossBH(p.bh, "Diarreia");
+
+    // 1. ANTIBIÓTICOS
     let atbSalvo = "";
     if (Array.isArray(p.antibiotics) && p.antibiotics.length > 0) {
       atbSalvo = p.antibiotics
         .filter(a => a && a.name)
-        .map(a => {
-          try { return `${a.name} (${getDaysD0(a.date)})`; }
-          catch(e) { return `${a.name} (Início: ${a.date})`; }
-        })
+        .map(a => `${a.name} (${getDaysD0(a.date)})`)
         .join(" + ");
     }
 
     setCheckData({
       estadoGeral: med.estadoGeral || "REG",
-      
-      // 2. CARDIOVASCULAR (Lendo exatamente de onde você me mostrou)
       usaDva: cardio.dva || false,
       dvas: Array.isArray(cardio.drogasDVA) ? [...cardio.drogasDVA] : [],
-      
-      // 3. NEUROLÓGICO (Seguindo a sua lógica de sistemas)
       usaSedacao: neuro.sedacao || false,
       sedativos: Array.isArray(neuro.drogasSedacao) ? [...neuro.drogasSedacao] : [],
       rass: neuro.rass || "",
       glasgow: neuro.glasgow || "",
+      atbs: atbSalvo,
       
-      atbs: atbSalvo
+      // --- INJETANDO O GASTRO NA MALETA ---
+      temVomito, 
+      temDiarreia,
+      evacuacao: calculateEvacDays(p.gastro?.dataUltimaEvacuacao)
     });
     
     setShowChecklistEvo(true);
   };
 
   const confirmarEGerar = () => {
-    // 1. Manda o sistema salvar nas gavetas (como já fazíamos)
+    // 1. Salva os dados nas gavetas (incluindo agora o Gastro validado no Timeout)
     updateNested("medical", null, { ...currentPatient.medical, estadoGeral: checkData.estadoGeral, antibioticosTextoIA: checkData.atbs });
     updateNested("cardio", null, { ...currentPatient.cardio, dva: checkData.usaDva, drogasDVA: checkData.usaDva ? checkData.dvas : [] });
     updateNested("neuro", null, { ...currentPatient.neuro, sedacao: checkData.usaSedacao, drogasSedacao: checkData.usaSedacao ? checkData.sedativos : [], rass: checkData.usaSedacao ? checkData.rass : "", glasgow: !checkData.usaSedacao ? checkData.glasgow : "" });
+    
+    // --- ADICIONE ESTA LINHA ---
+    updateNested("gastro", null, { ...currentPatient.gastro, temVomito: checkData.temVomito, temDiarreia: checkData.temDiarreia });
 
     setShowChecklistEvo(false);
     
-    // 2. A MÁGICA: Dispara a IA entregando a 'maleta' de dados (checkData) direto na mão dela!
+    // 2. Dispara a IA entregando a 'maleta' (checkData)
     setTimeout(() => {
       generateAIEvolution(checkData); 
     }, 300);
@@ -3393,251 +3411,170 @@ ${physioData.condutas}`;
     save(p);
   };
 
+  const checkLossBH = (bh, lossName) => {
+    if (!bh || !bh.losses) return false;
+    const hours = Array.from({ length: 24 }, (_, i) => ((i + 7) % 24).toString().padStart(2, "0") + ":00");
+    for (let h of hours) {
+      const val = String(bh.losses[h]?.[lossName] || "").trim().toLowerCase();
+      if (val !== "" && val !== "0" && val !== "não" && val !== "n") return true;
+    }
+    return false;
+  };
+
   const generateAIEvolution = async (dadosDoTimeout = null) => {
     setIsGeneratingAI(true);
     let success = false;
-    let lastError = "";
+    let lastError = "Iniciando...";
 
-    const atbsText =
-      currentPatient.antibiotics
-        .map((a) => (a.name ? `${a.name} (${getDaysD0(a.date)})` : ""))
-        .filter(Boolean)
-        .join(", ") || "Nenhum";
-    
-    const sedativosText = currentPatient.neuro.sedacao
-      ? renderValue(currentPatient.neuro.drogasSedacao)
-      : "Sem sedação contínua";
+    try {
+      const currentKey = apiKeyMed || apiKey || window.apiKey || "";
+      if (!currentKey || currentKey.length < 10) {
+        throw new Error("Chave de API ausente ou inválida.");
+      }
 
+      const safeNum = (val) => {
+        const n = parseFloat(String(val).replace(",", "."));
+        return isNaN(n) ? 0 : n;
+      };
+
+      // 1. SINAIS VITAIS (Aba Técnico)
       const vitals = currentPatient.bh?.vitals || {};
-      let tempMax = 0;
-      let spo2Min = 100;
-      let hgtVals = [];
-      let fcMax = 0;
-      let fcMin = 999;
-      let pasMax = 0;
-      let pasMin = 999;
-  
+      let tempMax = 0, spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
+      
       Object.values(vitals).forEach((v) => {
-        if (v && v["Temp (ºC)"]) {
-          const t = safeNumber(v["Temp (ºC)"]);
-          if (t > tempMax) tempMax = t;
-        }
-        if (v && v["SpO2 (%)"]) {
-          const s = safeNumber(v["SpO2 (%)"]);
-          if (s > 0 && s < spo2Min) spo2Min = s;
-        }
-        if (v && v["HGT (mg/dL)"]) hgtVals.push(safeNumber(v["HGT (mg/dL)"]));
-        if (v && v["FC (bpm)"]) {
-          const fc = safeNumber(v["FC (bpm)"]);
-          if (fc > 0 && fc > fcMax) fcMax = fc;
-          if (fc > 0 && fc < fcMin) fcMin = fc;
-        }
-        if (v && v["PAS"]) {
-          const pas = safeNumber(v["PAS"]);
-          if (pas > 0 && pas > pasMax) pasMax = pas;
-          if (pas > 0 && pas < pasMin) pasMin = pas;
-        }
+        if (!v) return;
+        const t = safeNum(v["Temp (ºC)"]); if (t > tempMax) tempMax = t;
+        const s = safeNum(v["SpO2 (%)"]); if (s > 0 && s < spo2Min) spo2Min = s;
+        const fc = safeNum(v["FC (bpm)"]);
+        if (fc > 0) { if (fcMax === 0 || fc > fcMax) fcMax = fc; if (fcMin === 0 || fc < fcMin) fcMin = fc; }
+        const pas = safeNum(v["PAS"]);
+        if (pas > 0) { if (pasMax === 0 || pas > pasMax) pasMax = pas; if (pasMin === 0 || pas < pasMin) pasMin = pas; }
       });
-  
-      // 1. SINAIS VITAIS STATUS
-      const tempStatus = tempMax >= 37.8 ? "Febril" : "Afebril";
-      const spo2Status = (spo2Min <= 92 && spo2Min > 0) ? "com baixa SpO2" : "mantendo boa SpO2";
-  
-      let fcStatus = "eucárdico";
-      if (fcMax > 100) fcStatus = "taquicárdico";
-      else if (fcMin < 60 && fcMin > 0) fcStatus = "bradicárdico";
-  
-      let paStatus = "com bom controle pressórico";
-      if (pasMin < 90 && pasMin > 0) paStatus = "hipotenso";
-      else if (pasMax > 160) paStatus = "hipertenso";
-  
-      // 2. LABORATÓRIO E INFECÇÃO
-      const leucoVal = safeNumber(currentPatient.labs?.today?.leuco);
-      let leucoStatus = "leucometria normal";
-      if (leucoVal > 0) {
-        if (leucoVal < 4000) leucoStatus = "leucopenia";
-        else if (leucoVal > 11000) leucoStatus = "leucocitose";
-      }
-      
-      // Lê o Antibiótico direto da maleta do Timeout
-      const atbValidado = dadosDoTimeout?.atbs || currentPatient.medical?.antibioticosTextoIA || "";
-      const atbsFinal = (!atbValidado || atbValidado.toLowerCase() === "nenhum") 
-        ? "sem uso de antibióticos ativos" 
-        : `em uso de ${atbValidado}`;
 
-      // 3. DIURESE E FUNÇÃO RENAL
-      const diureseNum = parseFloat(calculateDiurese12hMlKgH(currentPatient));
-      let diureseStatus = "Diurese não quantificada";
-      if (!isNaN(diureseNum)) {
-        if (diureseNum < 0.5) diureseStatus = "Baixa diurese";
-        else diureseStatus = "Boa diurese";
-      }
-  
-      const crclNum = parseFloat(calculateCreatinineClearance(currentPatient));
-      let renalStatus = "função renal não avaliada";
-      if (!isNaN(crclNum)) {
-        if (crclNum < 60) renalStatus = "função renal alterada";
-        else renalStatus = "função renal preservada";
-      }
-  
-      // 4. GASTROINTESTINAL
-      const evacDaysStr = calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao);
-      let evacStatus = "";
-      if (evacDaysStr !== "Hoje" && evacDaysStr !== "1 dias" && evacDaysStr !== "2 dias" && evacDaysStr !== "D0" && evacDaysStr !== "-") {
-        evacStatus = `Há mais de 2 dias sem evacuar (${evacDaysStr}).`;
-      }
-  
-      const vomito = currentPatient.nutri?.vomito;
-      const diarreia = currentPatient.nutri?.diarreia;
-      let tgiStatus = "sem episódios de vômito ou diarreia";
-      if (vomito && diarreia) tgiStatus = "com episódios de vômito e diarreia";
-      else if (vomito) tgiStatus = "com episódios de vômito";
-      else if (diarreia) tgiStatus = "com episódios de diarreia";
-  
-      const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
-  
-      // 5. ALTERAÇÕES LABORATORIAIS CRÍTICAS
-      const todayStr = getManausDateStr();
-      const exToday = currentPatient.examHistory?.[todayStr] || {};
-      const hb = safeNumber(exToday["Hemoglobina"]);
-      const na = safeNumber(currentPatient.labs?.today?.na);
-      const k = safeNumber(currentPatient.labs?.today?.k);
-      
-      let labsAlterados = [];
-      if (hb > 0 && hb < 7) labsAlterados.push("anemia (Hb < 7)");
-      if (na > 0 && (na < 135 || na > 145)) labsAlterados.push("distúrbio de sódio");
-      if (k > 0 && (k < 3.5 || k > 5.5)) labsAlterados.push("distúrbio de potássio");
-      
-      const labsText = labsAlterados.length > 0 ? ` Paciente apresenta ${labsAlterados.join(", ")} no laboratório de hoje.` : "";
-  
-      // 6. HEMODINÂMICA E DVA
+      const tempStatus = tempMax >= 37.8 ? "febril" : "afebril";
+      const spo2Status = (spo2Min <= 92 && spo2Min > 0) ? "com baixa SpO2" : "mantendo boa SpO2";
+      const fcStatus = fcMax > 100 ? "taquicárdico" : (fcMin > 0 && fcMin < 60 ? "bradicárdico" : "eucárdico");
+      const paStatus = (pasMin > 0 && pasMin < 90) ? "com hipotensão" : (pasMax > 160 ? "hipertenso" : "com bom controle pressórico");
+
+      // 2. ESTADO GERAL E NEURO (Janela Pop-up)
+      const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
+      const egExtenso = egSalvo === "BEG" ? "BEG" : (egSalvo === "MEG" ? "MEG" : "REG");
+      const sedacaoText = currentPatient.neuro?.sedacao ? "sedado" : "sem sedação";
+
+      // 3. RESPIRATÓRIO (Aba Fisio)
+      const suporte = currentPatient.physio?.suporte || "ar ambiente";
+      const suporteText = suporte === "VM" ? "em VM por TOT" : `em uso de ${suporte}`;
+
+      // 4. HEMODINÂMICO (Calculadora Nora e DVA Pop-up)
       let hemodinamicaStatus = "Hemodinamicamente estável";
-      if (currentPatient.bh?.gains) {
+      if (currentPatient.bh?.gains && typeof BH_HOURS !== 'undefined') {
         let noraVals = [];
-        BH_HOURS.forEach((h) => {
+        BH_HOURS.forEach(h => {
           const v = currentPatient.bh.gains[h]?.["Noradrenalina"];
-          if (v !== undefined && v !== "") {
-            const num = parseFloat(String(v).replace(",", "."));
-            if (!isNaN(num)) noraVals.push(num);
-          }
+          if (v) noraVals.push(safeNum(v));
         });
-        if (noraVals.length > 0) {
-          const last3 = noraVals.slice(-3);
-          let instavel = false;
-          if (last3.length === 1) instavel = false;
-          else if (last3.length === 2) instavel = last3[1] > last3[0];
-          else if (last3.length >= 3) instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
-          hemodinamicaStatus = instavel ? "Hemodinamicamente instável" : "Hemodinamicamente estável";
+        if (noraVals.length >= 2) {
+          const last = noraVals[noraVals.length - 1];
+          const prev = noraVals[noraVals.length - 2];
+          if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável (DVA em ascensão)";
         }
       }
-  
-      const dva = currentPatient.cardio?.dva;
-      const drogasDvaList = currentPatient.cardio?.drogasDVA?.join(", ") || "";
-      const dvaText = dva ? `em uso de DVA (${drogasDvaList})` : "sem uso de DVA";
-  
-      // 7. RESPIRATÓRIO E SEDAÇÃO
-      const suporte = currentPatient.physio?.suporte || "ar ambiente";
-      const parametro = currentPatient.physio?.parametro || "";
-      let suporteText = "em ar ambiente";
-      if (suporte === "VM") suporteText = "em VM por TOT";
-      else if (suporte === "Cateter Nasal" || suporte === "Venturi" || suporte === "VNI" || suporte === "Tubo T") suporteText = `em uso de ${suporte} ${parametro}`;
-  
-      const sedacaoText = currentPatient.neuro?.sedacao ? "sedado" : "sem sedação";
-  
-      // --- MONTAGEM DO PROMPT ESTRITO ---
-      // =========================================================
-      // 1. TRADUÇÃO BLINDADA PARA A IA (Gênero e Estado Geral)
-      // =========================================================
-      // Ajuste de gênero 
-      const sexoPaciente = currentPatient.admission?.sexo === "F" ? "Feminino" : "Masculino";
-      const pronome = sexoPaciente === "Feminino" ? "A paciente" : "O paciente";
+      const dvaText = currentPatient.cardio?.dva ? `em uso de DVA (${currentPatient.cardio.drogasDVA?.join(", ")})` : "sem uso de DVA";
+
+      // 5. RENAL (Aba Visita Multi)
+      const diureseNum = parseFloat(calculateDiurese12hMlKgH(currentPatient));
+      const diureseStatus = (!isNaN(diureseNum) && diureseNum < 0.5) ? "Baixa diurese" : "Boa diurese";
+      const crclNum = parseFloat(calculateCreatinineClearance(currentPatient));
+      const renalStatus = (!isNaN(crclNum) && crclNum < 60) ? "função renal alterada" : "função renal normal";
+
+      // 6. LABORATORIAL E INFECCIOSO (Aba Médico/Exames)
+      const leucoVal = safeNum(currentPatient.labs?.today?.leuco);
+      const leucoStatus = leucoVal > 11000 ? "leucocitose" : (leucoVal > 0 && leucoVal < 4000 ? "leucopenia" : "leucometria normal");
+      const atbValidado = dadosDoTimeout?.atbs || currentPatient.medical?.antibioticosTextoIA || "";
+      const atbsFinal = (!atbValidado || atbValidado.toLowerCase() === "nenhum") ? "sem uso de antibióticos ativos" : `em uso de ${atbValidado}`;
+
+      // 7. GASTRO E DIETA (Aba Nutri e SSVV)
+      const evacDaysStr = typeof calculateEvacDays === 'function' ? calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao) : "-";
+      const temVomitoBH = typeof checkLossBH === 'function' ? checkLossBH(currentPatient.bh, "Vômitos") : false;
+      const temDiarreiaBH = typeof checkLossBH === 'function' ? checkLossBH(currentPatient.bh, "Diarreia") : false;
       
-      // Lê o Estado Geral direto da maleta do Timeout (se não tiver, olha o prontuário)
-      const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
-      let egExtenso = "Regular Estado Geral (REG)";
-      if (egSalvo === "BEG") egExtenso = "Bom Estado Geral (BEG)";
-      if (egSalvo === "MEG") egExtenso = "Mau Estado Geral (MEG)";
+      let tgiDescricao = "";
+      if (temVomitoBH && temDiarreiaBH) tgiDescricao = "com episódios de vômito e diarreia";
+      else if (temVomitoBH) tgiDescricao = "com episódio de vômito";
+      else if (temDiarreiaBH) tgiDescricao = "com episódio de diarreia";
 
-      // =========================================================
-      // 2. PROMPT DE EVOLUÇÃO (ORDEM DE FERRO)
-      // =========================================================
-      const promptText = `Você é um médico intensivista sênior redigindo uma evolução diária de UTI.
-        Redija a evolução em texto corrido, formal e técnico, formando parágrafos perfeitos e contínuos, seguindo ESTRITAMENTE as regras e os dados abaixo. Não invente dados clínicos que não foram fornecidos.
-        NÃO UTILIZE BULLET POINTS, NÚMEROS, OU TÍTULOS DE PARÁGRAFOS (como "Parágrafo 1", "Cardiovascular", etc). Escreva apenas o texto.
+      const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
+      const sexoPaciente = currentPatient.sexo === 'F' ? 'A paciente' : 'O paciente';
+      const mantemSe = currentPatient.sexo === 'F' ? 'Mantém-se' : 'Mantém-se'; // Neutro, mas previne erros
 
-        REGRAS DE FORMATAÇÃO E CONDUTA:
-        1. Gênero: O paciente é do sexo ${sexoPaciente}. Ajuste TODA a concordância nominal do texto (ex: sedado/sedada, taquicárdico/taquicárdica, mantido/mantida).
-        2. Estado Geral: NUNCA escreva "Médio". Utilize rigorosamente a classificação fornecida.
-        3. Antibioticoterapia: Utilize EXATAMENTE a seguinte informação sobre antimicrobianos: "${atbsFinal}". Não afirme que está sem antibióticos se houver drogas listadas aqui.
+      // 8. O PROMPT "ENGESSADO"
+      const promptText = `Você é um médico intensivista. Redija a evolução ESTRITAMENTE no formato exato fornecido abaixo, substituindo os colchetes pelos dados clínicos reais fornecidos na lista. 
+      NÃO adicione introduções, NÃO crie parágrafos extras, NÃO use tópicos. Siga exatamente a estrutura de 5 parágrafos.
+
+      FORMATO OBRIGATÓRIO:
+      ${sexoPaciente} encontra-se em [ESTADO GERAL], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].
+      [HEMODINÂMICA], [DVA], apresenta-se [FC], [PA].
+      [DIURESE], com [FUNÇÃO RENAL].
+      ${mantemSe} [TEMPERATURA], com [LEUCOMETRIA] e [ATB].
+      A dieta é [VIA DIETA], [TGI]. Última evacuação: [EVACUAÇÃO].
+
+      DADOS CLÍNICOS REAIS PARA PREENCHER:
+      - [ESTADO GERAL]: ${egExtenso}
+      - [SEDAÇÃO]: ${sedacaoText}
+      - [SUPORTE RESPIRATÓRIO]: ${suporteText}
+      - [SPO2]: ${spo2Status}
+      - [HEMODINÂMICA]: ${hemodinamicaStatus}
+      - [DVA]: ${dvaText}
+      - [FC]: ${fcStatus}
+      - [PA]: ${paStatus}
+      - [DIURESE]: ${diureseStatus}
+      - [FUNÇÃO RENAL]: ${renalStatus}
+      - [TEMPERATURA]: ${tempStatus}
+      - [LEUCOMETRIA]: ${leucoStatus}
+      - [ATB]: ${atbsFinal}
+      - [VIA DIETA]: ${viaDieta}
+      - [TGI]: ${tgiDescricao ? tgiDescricao : "[OMITIR ESTA PARTE DO TGI]"}
+      - [EVACUAÇÃO]: ${evacDaysStr}
       
-        [INÍCIO DO TEXTO]
-        ${pronome} encontra-se em ${egExtenso}, ${sedacaoText}, ${suporteText}, ${spo2Status}.
-        
-        ${hemodinamicaStatus}, ${dvaText}, ${fcStatus}, ${paStatus}.
-        
-        ${diureseStatus}, com ${renalStatus}.${labsText}
-        
-        ${tempStatus}, com ${leucoStatus}, ${atbsFinal}.
-        
-        Dieta ${viaDieta}, ${tgiStatus}. ${evacStatus}
-        [FIM DO TEXTO]
-        
-        Adicione EXATAMENTE esta assinatura no rodapé:
-        "Documento gerado e validado eletronicamente por: ${userProfile?.name} - ${userProfile?.role} (${userProfile?.conselho})"
-        
-        REGRAS CRÍTICAS:
-        - Limite-se a conectar e organizar as frases fornecidas no bloco [INÍCIO DO TEXTO] de forma culta e fluida.
-        - É EXPRESSAMENTE PROIBIDO adicionar jargões soltos fora deste formato.
-        - JAMAIS inclua valores absolutos de exames, pressão ou FC.`;
+      Regra Crítica TGI: Se a tag [TGI] pedir para omitir, escreva apenas "A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO]." Não escreva "ausência de vômitos".
+      Concordância: Ajuste palavras como taquicárdico/taquicárdica caso o sexo seja feminino.`;
 
-    const modelsToTry = [
-      "gemini-2.5-flash-preview-09-2025",
-      "gemini-2.5-flash",
-      "gemini-1.5-flash",
-    ];
-
-    for (const model of modelsToTry) {
-      try {
-        const currentKey = apiKeyMed || apiKey || window.apiKey || "";
-        const r = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
-          {
+      // 9. LOOP DE MODELOS
+      const models = [
+        "gemini-2.5-flash-preview-09-2025",
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
+      ];
+      
+      for (const model of models) {
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: promptText }] }],
-            }),
-          }
-        );
-        const d = await r.json();
-        if (d.error) {
-          lastError = d.error.message;
-          if (d.error.code === 400 || d.error.code === 403) {
-            lastError =
-              "Chave de API ausente ou inválida. Se estiver rodando o sistema externamente, insira a chave no código.";
-            break;
-          }
-          if (
-            lastError.includes("not found") ||
-            lastError.includes("unregistered callers") ||
-            d.error.code === 404
-          ) {
+            body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+          });
+
+          const data = await response.json();
+
+          if (data.error) {
+            lastError = `API ${data.error.code}: ${data.error.message}`;
             continue;
           }
-          break;
+
+          if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+            setAiEvolution(data.candidates[0].content.parts[0].text);
+            success = true;
+            break;
+          }
+        } catch (e) {
+          lastError = `Falha de Rede: ${e.message}`;
         }
-        setAiEvolution(
-          d.candidates?.[0]?.content?.parts?.[0]?.text ||
-            "Não foi possível gerar a evolução."
-        );
-        success = true;
-        break;
-      } catch (e) {
-        lastError = e.message;
       }
+    } catch (err) {
+      lastError = `Erro de Processamento: ${err.message}`;
     }
 
-    if (!success) setAiEvolution(`Erro IA: ${lastError}`);
+    if (!success) setAiEvolution(`Erro ao gerar evolução: ${lastError}`);
     setIsGeneratingAI(false);
   };
 
