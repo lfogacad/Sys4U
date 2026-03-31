@@ -1,0 +1,438 @@
+import React from 'react';
+import { UserPlus, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, Target, Printer, PlusCircle } from 'lucide-react';
+import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
+import { formatDateDDMM } from '../../utils/core';
+
+const PhysioDashboard = ({
+  currentPatient,
+  isEditable,
+  uniqueGasoCols,
+  patients,
+  activeTab,
+  setPatients,
+  save,
+  handlePhysioAdmission,
+  clearDate,
+  updateP,
+  updateNested,
+  setShowVmFlowsheet,
+  handleSuporteChange,
+  toggleArrayItem,
+  calculateExchangeDate,
+  isDeviceExpired,
+  handlePrintGasometria,
+  handleGeneratePhysioEvo,
+  getTempoVMText,
+  isOverviewEditable
+}) => {
+
+  return (
+    <div className="space-y-6 animate-fadeIn">
+      {/* === BOTÃO DE ADMISSÃO FISIO === */}
+      <div className="flex justify-end print:hidden">
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            handlePhysioAdmission();
+          }}
+          className="bg-cyan-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-cyan-700 flex items-center gap-2 transition-colors shadow-sm"
+        >
+          <UserPlus size={16} /> Admissão Fisioterapêutica
+        </button>
+      </div>
+
+      <fieldset
+        disabled={!isEditable}
+        className="space-y-6 min-w-0 border-0 p-0 m-0"
+      >
+        {/* DATAS DE VIA AÉREA */}
+        <div className="grid md:grid-cols-4 gap-4 bg-cyan-50 p-4 rounded-xl border border-cyan-100">
+          <div>
+            <label className="text-xs font-bold text-cyan-700 flex justify-between">
+              Data Intubação{" "}
+              <button onClick={(e) => { e.preventDefault(); clearDate("dataIntubacao"); }} className={`${!isEditable ? "hidden" : ""}`}>
+                <X size={12} />
+              </button>
+            </label>
+            <input type="date" className="w-full p-2 border rounded bg-white" value={currentPatient.dataIntubacao || ""} onChange={(e) => updateP("dataIntubacao", e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-cyan-700 flex justify-between">
+              Data Extubação{" "}
+              <button onClick={(e) => { e.preventDefault(); clearDate("dataExtubacao"); }} className={`${!isEditable ? "hidden" : ""}`}>
+                <X size={12} />
+              </button>
+            </label>
+            <input type="date" className="w-full p-2 border rounded bg-white" value={currentPatient.dataExtubacao || ""} onChange={(e) => updateP("dataExtubacao", e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-cyan-700 flex justify-between">
+              Data TQT{" "}
+              <button onClick={(e) => { e.preventDefault(); clearDate("dataTQT"); }} className={`${!isEditable ? "hidden" : ""}`}>
+                <X size={12} />
+              </button>
+            </label>
+            <input type="date" className="w-full p-2 border rounded bg-white" value={currentPatient.dataTQT || ""} onChange={(e) => updateP("dataTQT", e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-cyan-700 flex justify-between">
+              Data Decanulação{" "}
+              <button onClick={(e) => { e.preventDefault(); clearDate("dataDecanulacao"); }} className={`${!isEditable ? "hidden" : ""}`}>
+                <X size={12} />
+              </button>
+            </label>
+            <input type="date" className="w-full p-2 border rounded bg-white" value={currentPatient.dataDecanulacao || ""} onChange={(e) => updateP("dataDecanulacao", e.target.value)} />
+          </div>
+        </div>
+
+        {/* ANTROPOMETRIA */}
+        <div className="grid md:grid-cols-2 gap-4 bg-lime-50/40 p-4 rounded-xl border border-lime-100 mb-6">
+          <div>
+            <label className="text-xs font-bold text-lime-700">Altura (m/cm)</label>
+            <input type="number" step="0.01" className="w-full p-2 border rounded bg-white" value={currentPatient.nutri?.altura || ""} onChange={(e) => updateNested("nutri", "altura", e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-lime-700">Peso Predito (kg)</label>
+            <input type="number" className="w-full p-2 border rounded bg-white" value={currentPatient.nutri?.pesoPredito || ""} onChange={(e) => updateNested("nutri", "pesoPredito", e.target.value)} />
+          </div>
+        </div>
+
+        {/* SUPORTE VENTILATÓRIO */}
+        <div className="p-4 border rounded-xl bg-white">
+          <div className="flex justify-between items-end mb-4">
+            <h4 className="font-bold text-cyan-800 flex items-center gap-2">
+              <Wind size={16} /> Suporte Ventilatório
+            </h4>
+            <div className="flex items-center gap-4 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
+              <div className="flex flex-col">
+                <label className="text-xs font-semibold text-gray-700 mb-1">Dias Prévios (Reintubação):</label>
+                <input type="number" className="w-full p-1 border border-cyan-300 rounded text-center font-bold text-cyan-700 outline-none focus:ring-2 focus:ring-cyan-500" value={currentPatient.physio?.diasAcumuladosVM || ""} onChange={(e) => updateNested("physio", "diasAcumuladosVM", parseInt(e.target.value) || 0)} placeholder="Ex: 5" />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-xs font-semibold text-gray-700 mb-1">Tempo Total de VM:</label>
+                <input type="text" readOnly className="w-full p-1 border border-gray-300 bg-gray-200 text-center font-bold text-red-600 rounded cursor-not-allowed" value={getTempoVMText(currentPatient)} title="Soma automática dos dias prévios com a intubação atual" />
+              </div>
+            </div>
+          </div>
+
+          {currentPatient.physio?.suporte === "VM" && (
+            <button onClick={() => setShowVmFlowsheet(true)} className="w-full mt-3 mb-4 p-2 bg-slate-800 text-white font-bold rounded-lg shadow flex justify-center items-center gap-2 hover:bg-slate-700 transition-colors uppercase text-xs">
+              <Wind size={16} className="text-cyan-400"/> Abrir Mapa de Ventilação Mecânica
+            </button>
+          )}
+
+          <select className="w-full p-2 border rounded mb-4 font-bold" value={currentPatient.physio?.suporte || ""} onChange={(e) => handleSuporteChange(e.target.value)}>
+            <option value="">Selecione o suporte...</option>
+            {SUPORTE_RESP_OPTS.map((o) => <option key={o}>{o}</option>)}
+          </select>
+
+          {/* PARÂMETROS CONDICIONAIS */}
+          {(currentPatient.physio?.suporte === "Cateter Nasal" || currentPatient.physio?.suporte === "Máscara não reinalante") && (
+            <div className="mb-2">
+              <label className="text-xs font-bold">Fluxo (L/min)</label>
+              <input type="number" className="w-full p-2 border rounded" placeholder="L/min" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)} />
+            </div>
+          )}
+          {currentPatient.physio?.suporte === "Venturi" && (
+            <div className="mb-2">
+              <label className="text-xs font-bold">Porcentagem (%)</label>
+              <input type="number" className="w-full p-2 border rounded" placeholder="%" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} />
+            </div>
+          )}
+          {currentPatient.physio?.suporte === "Macronebulização por TQT" && (
+            <div className="mb-2">
+              <label className="text-xs font-bold text-cyan-800">Fluxo (L/min) / FiO2 (%)</label>
+              <input type="text" className="w-full p-2 border rounded" placeholder="Ex: 10 L/min - 40%" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)} />
+            </div>
+          )}
+          {currentPatient.physio?.suporte === "VNI" && (
+            <div className="grid grid-cols-2 gap-4 mb-2">
+              <div>
+                <label className="text-xs font-bold">Modo (CPAP/BIPAP)</label>
+                <select className="w-full p-2 border rounded" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)}>
+                  <option value="CPAP">CPAP</option>
+                  <option value="BIPAP">BIPAP</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold">FiO2 (%)</label>
+                <input type="number" className="w-full p-2 border rounded" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} />
+              </div>
+            </div>
+          )}
+          {currentPatient.physio?.suporte === "VM" && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
+              <div>
+                <label className="text-xs font-bold text-slate-700">Modo</label>
+                <select className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)}>
+                  <option value="">...</option>
+                  {MODOS_VM.map((m) => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+
+              {currentPatient.physio?.parametro === "VCV" ? (
+                <div className="animate-fadeIn">
+                  <label className="text-xs font-bold text-blue-700">Vt (ml)</label>
+                  <input type="number" className="w-full p-2 border border-blue-200 rounded bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-400" placeholder="Ex: 400" value={currentPatient.physio?.vt || ""} onChange={(e) => updateNested("physio", "vt", e.target.value)} />
+                </div>
+              ) : currentPatient.physio?.parametro === "PCV" ? (
+                <div className="animate-fadeIn">
+                  <label className="text-xs font-bold text-emerald-700">PC (cmH2O)</label>
+                  <input type="number" className="w-full p-2 border border-emerald-200 rounded bg-emerald-50/30 outline-none focus:ring-2 focus:ring-emerald-400" placeholder="Ex: 15" value={currentPatient.physio?.pc || ""} onChange={(e) => updateNested("physio", "pc", e.target.value)} />
+                </div>
+              ) : currentPatient.physio?.parametro === "PSV" ? (
+                <div className="animate-fadeIn">
+                  <label className="text-xs font-bold text-purple-700">PS (cmH2O)</label>
+                  <input type="number" className="w-full p-2 border border-purple-200 rounded bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-400" placeholder="Ex: 12" value={currentPatient.physio?.ps || ""} onChange={(e) => updateNested("physio", "ps", e.target.value)} />
+                </div>
+              ) : (
+                <div className="opacity-60 pointer-events-none">
+                  <label className="text-xs font-bold text-slate-400">Parâmetro Alvo</label>
+                  <input type="text" disabled className="w-full p-2 border border-slate-200 rounded bg-slate-50" placeholder="Aguardando Modo..." />
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-bold text-slate-700">PEEP</label>
+                <input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.peep || ""} onChange={(e) => updateNested("physio", "peep", e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700">FiO2 (%)</label>
+                <input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* VIA AÉREA, SECREÇÃO, MOBILIZAÇÃO */}
+        <div className="grid md:grid-cols-2 gap-6 mb-6">
+          <div className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col h-full">
+            <h4 className="font-bold text-slate-700 text-xs uppercase mb-4 flex items-center gap-2 shrink-0">
+              Via Aérea Artificial
+            </h4>
+            <div className="grid grid-cols-3 gap-2 mb-6 shrink-0">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">TOT/TQT nº</label>
+                <input type="number" step="0.5" placeholder="Ex: 8.0" className="w-full p-2 border rounded text-xs text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.totNumero || ""} onChange={(e) => updateNested("physio", "totNumero", e.target.value)} />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Rima (cm)</label>
+                <input type="number" placeholder="Ex: 22" className="w-full p-2 border rounded text-xs text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.totRima || ""} onChange={(e) => updateNested("physio", "totRima", e.target.value)} />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block text-center" title="Pressão do Cuff: Manhã / Tarde / Noite">Cuff (M | T | N)</label>
+                <div className="flex gap-1">
+                  <input type="number" placeholder="M" title="Manhã" className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffM || ""} onChange={(e) => updateNested("physio", "cuffM", e.target.value)} />
+                  <input type="number" placeholder="T" title="Tarde" className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffT || ""} onChange={(e) => updateNested("physio", "cuffT", e.target.value)} />
+                  <input type="number" placeholder="N" title="Noite" className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffN || ""} onChange={(e) => updateNested("physio", "cuffN", e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 mt-auto shrink-0">
+              <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Secreção</h4>
+              <label className="flex items-center gap-2 mb-3 text-sm font-bold text-slate-600">
+                <input type="checkbox" className="w-4 h-4 text-cyan-600 rounded focus:ring-cyan-500" checked={currentPatient.physio?.secrecao || false} onChange={(e) => updateNested("physio", "secrecao", e.target.checked)} /> Apresentou Secreção?
+              </label>
+              {currentPatient.physio?.secrecao && (
+                <div className="grid grid-cols-3 gap-2 animate-fadeIn">
+                  <select className="p-2 border rounded text-xs outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.secrecaoAspecto || ""} onChange={(e) => updateNested("physio", "secrecaoAspecto", e.target.value)}>
+                    <option value="">Aspecto...</option>
+                    {ASPECTO_SECRECAO.map((a) => <option key={a}>{a}</option>)}
+                  </select>
+                  <select className="p-2 border rounded text-xs outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.secrecaoColoracao || ""} onChange={(e) => updateNested("physio", "secrecaoColoracao", e.target.value)}>
+                    <option value="">Coloração...</option>
+                    {COLORACAO_SECRECAO.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                  <select className="p-2 border rounded text-xs outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.secrecaoQtd || ""} onChange={(e) => updateNested("physio", "secrecaoQtd", e.target.value)}>
+                    <option value="">Qtd...</option>
+                    {QTD_SECRECAO.map((q) => <option key={q}>{q}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="p-4 border border-cyan-100 rounded-xl bg-cyan-50/30 shadow-sm flex flex-col h-full">
+            <h4 className="font-bold text-cyan-800 text-xs uppercase mb-4 flex items-center gap-2 shrink-0">
+              <Move size={16} /> Mobilização / Conduta Motora
+            </h4>
+            <div className="grid grid-cols-2 gap-3 mb-6 flex-1">
+              {MOBILIZACAO.map((m) => {
+                const mobArray = Array.isArray(currentPatient.physio?.mobilizacao) ? currentPatient.physio.mobilizacao : [];
+                return (
+                  <label key={m} className="flex items-center gap-2 text-xs font-semibold text-cyan-900 cursor-pointer hover:bg-cyan-100/50 p-1 rounded transition-colors">
+                    <input type="checkbox" className="w-3.5 h-3.5 text-cyan-600 rounded focus:ring-cyan-500" checked={mobArray.includes(m)} onChange={() => toggleArrayItem("physio", "mobilizacao", m)} /> {m}
+                  </label>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-4 border-t border-cyan-200 pt-4 mt-auto shrink-0">
+              <div>
+                <label className="block text-[10px] font-bold text-cyan-700 uppercase mb-1">Escore MRC (0-60)</label>
+                <input type="text" className="w-full p-2 border border-cyan-200 rounded bg-white text-xs text-center font-bold text-cyan-900 outline-none focus:ring-2 focus:ring-cyan-400" placeholder="Ex: 48, NT" value={currentPatient.physio?.mrcScore || ""} onChange={(e) => updateNested("physio", "mrcScore", e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-cyan-700 uppercase mb-1">IMS (Escala Mobilidade)</label>
+                <select className="w-full p-2 border border-cyan-200 rounded bg-white text-xs font-bold text-cyan-900 outline-none focus:ring-2 focus:ring-cyan-400" value={currentPatient.physio?.icuMobilityScale || ""} onChange={(e) => updateNested("physio", "icuMobilityScale", e.target.value)}>
+                  <option value="">Selecione...</option>
+                  {ICU_MOBILITY_SCALE.map((scale) => <option key={scale} value={scale}>{scale}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* EVOLUÇÃO SISTÊMICA */}
+        <div className="w-full mb-6 p-4 border border-slate-200 rounded-xl bg-white shadow-sm">
+          <h4 className="font-bold text-slate-700 text-sm uppercase mb-6 flex items-center gap-2 border-b border-slate-100 pb-3">
+            <Activity size={18} className="text-cyan-600" /> Evolução Sistêmica e Plano Terapêutico
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {[
+              { id: "estadoGeral", label: "Estado Geral" },
+              { id: "sistemaNervoso", label: "Sistema Nervoso" },
+              { id: "sistemaRespiratorio", label: "Sistema Respiratório" },
+              { id: "sistemaCardiovascular", label: "Sistema Cardiovascular" },
+              { id: "sistemaDigestivo", label: "Sistema Digestivo" },
+              { id: "sistemaMusculoesqueletico", label: "Sis. Musculoesquelético" },
+            ].map((sys) => (
+              <div key={sys.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200 shadow-sm flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">{sys.label}</label>
+                <textarea className="w-full p-2 border rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200 flex-1 resize-y min-h-[80px]" value={currentPatient.physio?.[sys.id] || ""} onChange={(e) => updateNested("physio", sys.id, e.target.value)} placeholder={`Evolução diária - ${sys.label}...`} />
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-4 border-t border-slate-100 pt-6">
+            <div className="bg-red-50 p-4 rounded-lg border border-red-100 shadow-sm">
+              <label className="text-xs font-bold text-red-600 uppercase mb-2 block flex items-center gap-1">
+                <Shield size={14} /> Intercorrências do Plantão
+              </label>
+              <textarea className="w-full p-3 border border-red-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-red-300 h-20 resize-y" value={currentPatient.physio?.intercorrencias || ""} onChange={(e) => updateNested("physio", "intercorrencias", e.target.value)} placeholder="Descreva quedas de saturação, autoextubação, rolhas, instabilidade hemodinâmica nas manobras..." />
+            </div>
+            <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-100 shadow-sm">
+              <label className="text-xs font-bold text-cyan-700 uppercase mb-2 block flex items-center gap-1">
+                <ClipboardCheck size={14} /> Condutas Fisioterapêuticas Realizadas
+              </label>
+              <textarea className="w-full p-3 border border-cyan-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 h-28 resize-y" value={currentPatient.physio?.condutas || currentPatient.physio?.admissao_condutas || ""} onChange={(e) => updateNested("physio", "condutas", e.target.value)} />
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg border border-green-100 shadow-sm">
+              <label className="text-xs font-bold text-green-700 uppercase mb-2 block flex items-center gap-1">
+                <Target size={14} /> Plano / Metas para o Próximo Plantão
+              </label>
+              <textarea className="w-full p-3 border border-green-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-green-300 h-24 resize-y" value={currentPatient.physio?.planoMetas || ""} onChange={(e) => updateNested("physio", "planoMetas", e.target.value)} placeholder="Ex: Iniciar protocolo de desmame, tentar sedestação à beira leito amanhã de manhã, discutir extubação no round..." />
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      {/* GASOMETRIA ARTERIAL */}
+      <div className="p-4 bg-slate-50 border rounded-xl border-slate-200">
+        <div className="flex justify-between items-center mb-3">
+          <h4 className="font-bold text-slate-700 flex items-center gap-2">
+            <Activity size={16} /> Gasometria Arterial
+          </h4>
+          <button onClick={handlePrintGasometria} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 print:hidden">
+            <Printer size={14} /> Imprimir
+          </button>
+        </div>
+        <fieldset disabled={!isEditable} className="overflow-x-auto rounded-lg border border-slate-200 min-w-0 border-0 p-0 m-0">
+          <table className="w-full text-xs text-center border-collapse">
+            <thead>
+              <tr className="bg-slate-200 text-slate-700">
+                <th className="p-2 text-left sticky left-0 bg-slate-200 border-r border-slate-300 z-10 shadow-[1px_0_0_0_#cbd5e1]">PARÂMETRO</th>
+                {isEditable && (
+                  <th className="p-0 border-r border-slate-300 bg-blue-100 min-w-[40px]">
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const n = prompt("Identificação da nova gasometria (ex: 23/02 - 14h):");
+                        if (n && n.trim()) {
+                          const up = [...patients];
+                          if (!up[activeTab].customGasometriaCols) up[activeTab].customGasometriaCols = [];
+                          if (!up[activeTab].customGasometriaCols.includes(n.trim())) {
+                            up[activeTab].customGasometriaCols.unshift(n.trim());
+                            setPatients(up);
+                            save(up[activeTab]);
+                          }
+                        }
+                      }}
+                      className="text-blue-600 hover:text-blue-800 w-full h-full flex items-center justify-center p-2 transition-colors"
+                      title="Adicionar Gasometria extra"
+                    >
+                      <PlusCircle size={18} />
+                    </button>
+                  </th>
+                )}
+                {uniqueGasoCols.map((col) => (
+                  <th key={col} className="p-2 border-l border-slate-300 min-w-[80px]">
+                    <div className="flex items-center justify-between gap-1">
+                      <span>{col.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(col) : col}</span>
+                      {currentPatient.customGasometriaCols?.includes(col) && isEditable && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (window.confirm(`Excluir a coluna "${col}"?`)) {
+                              const up = [...patients];
+                              up[activeTab].customGasometriaCols = up[activeTab].customGasometriaCols.filter((c) => c !== col);
+                              if (up[activeTab].gasometriaHistory) delete up[activeTab].gasometriaHistory[col];
+                              setPatients(up);
+                              save(up[activeTab]);
+                            }
+                          }}
+                          className="text-slate-400 hover:text-red-500 transition-colors" title="Excluir Coluna"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {GASOMETRIA_PARAMS.map((param) => (
+                <tr key={param} className="border-b last:border-0 hover:bg-slate-100 bg-white transition-colors">
+                  <td className="p-2 text-left font-bold text-slate-600 sticky left-0 bg-white border-r border-slate-200 z-10 shadow-[1px_0_0_0_#e2e8f0]">{param}</td>
+                  {isEditable && <td className="bg-slate-50 border-r border-slate-200"></td>}
+                  {uniqueGasoCols.map((col) => (
+                    <td key={col} className="p-0 border-l border-slate-200">
+                      <input
+                        type="text"
+                        className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5 transition-colors"
+                        value={currentPatient.gasometriaHistory?.[col]?.[param] || ""}
+                        onChange={(e) => {
+                          const up = [...patients];
+                          if (!up[activeTab].gasometriaHistory) up[activeTab].gasometriaHistory = {};
+                          if (!up[activeTab].gasometriaHistory[col]) up[activeTab].gasometriaHistory[col] = {};
+                          up[activeTab].gasometriaHistory[col][param] = e.target.value;
+                          setPatients(up);
+                        }}
+                        onBlur={() => save(patients[activeTab])}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </fieldset>
+      </div>
+
+      <div className="mt-8 mb-6 border-t-2 border-slate-200 pt-6">
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            handleGeneratePhysioEvo();
+          }}
+          className="w-full p-4 bg-gradient-to-r from-cyan-700 to-blue-800 text-white font-black rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-all flex justify-center items-center gap-3 uppercase tracking-wider text-sm"
+        >
+          <FileText size={20} className="text-cyan-200" /> Gerar Evolução Diária
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default PhysioDashboard;
