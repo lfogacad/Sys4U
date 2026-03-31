@@ -349,6 +349,10 @@ const TechDashboard = ({
                     return (
                       <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
                         <input type="text" className={`w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden ${isRed ? "text-red-600 font-bold" : ""}`} value={val} onChange={(e) => updateBH(h, "vitals", param, e.target.value)} />
+                        {/* Esta é a linha que faz o número aparecer no papel da impressora: */}
+                        <span className={`hidden print:block text-center text-[8px] w-full align-middle print:text-black ${isRed ? "font-bold" : ""}`}>
+                          {val}
+                        </span>
                       </td>
                     );
                   })}
