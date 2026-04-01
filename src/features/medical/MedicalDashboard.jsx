@@ -301,10 +301,42 @@ const MedicalDashboard = ({
                 </>
               ) : (
                 <>
-                  <input type="text" value={atb.name || ""} onChange={(e) => updateAntibiotic(idx, "name", e.target.value.toUpperCase())} placeholder={`Novo ATB ${idx + 1}`} className="flex-1 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 uppercase" />
-                  <input type="date" value={atb.date || ""} onChange={(e) => updateAntibiotic(idx, "date", e.target.value)} className="w-32 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700" />
+                  <input 
+                    id={`atb-name-${idx}`}
+                    type="text" 
+                    defaultValue={atb.name || ""} 
+                    onBlur={(e) => updateAntibiotic(idx, "name", e.target.value.toUpperCase())} 
+                    placeholder={`Novo ATB ${idx + 1}`} 
+                    className="flex-1 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 uppercase" 
+                  />
+                  <input 
+                    id={`atb-date-${idx}`}
+                    type="date" 
+                    defaultValue={atb.date || ""} 
+                    onBlur={(e) => updateAntibiotic(idx, "date", e.target.value)} 
+                    className="w-32 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700" 
+                  />
                   <div className="w-12 flex items-center justify-center font-bold text-orange-300 bg-slate-50 rounded-lg border border-orange-100">-</div>
-                  <button onClick={(e) => { e.preventDefault(); if (atb.name && atb.date) { updateAntibiotic(idx, "locked", true); } else { alert("Preencha o Nome e a Data do antibiótico para fixá-lo!"); } }} className={`flex items-center justify-center text-green-600 hover:text-white hover:bg-green-500 transition-colors bg-green-50 border border-green-200 rounded-lg w-10 shadow-sm ${!isEditable ? "hidden" : ""}`} title="Confirmar e Fixar Antibiótico"><CheckCircle size={18} strokeWidth={2.5} /></button>
+                  <button 
+                    onClick={(e) => { 
+                      e.preventDefault(); 
+                      const nameInput = document.getElementById(`atb-name-${idx}`);
+                      const dateInput = document.getElementById(`atb-date-${idx}`);
+                      nameInput?.blur();
+                      dateInput?.blur();
+                      setTimeout(() => {
+                        if (nameInput?.value && dateInput?.value) { 
+                          updateAntibiotic(idx, "locked", true); 
+                        } else { 
+                          alert("Preencha o Nome e a Data do antibiótico para fixá-lo!"); 
+                        }
+                      }, 100);
+                    }} 
+                    className={`flex items-center justify-center text-green-600 hover:text-white hover:bg-green-500 transition-colors bg-green-50 border border-green-200 rounded-lg w-10 shadow-sm ${!isEditable ? "hidden" : ""}`} 
+                    title="Confirmar e Fixar Antibiótico"
+                  >
+                    <CheckCircle size={18} strokeWidth={2.5} />
+                  </button>
                 </>
               )}
             </div>
