@@ -489,6 +489,24 @@ const MORSE_OPTIONS = {
 
 // --- FUNÇÕES UTILS ---
 
+const getAdmissionData = (p) => {
+  // 1. Tenta buscar dados salvos explicitamente na admissão médica
+  // 2. Se não houver, tenta buscar o primeiro registro do histórico de SSVV
+  // 3. Como último recurso, usa os dados atuais (mas avisa o usuário)
+  
+  const admissionVitals = p.medical?.vitalsAtAdmission || {};
+  const hasAdmissionData = Object.keys(admissionVitals).length > 0;
+
+  return {
+    temp: admissionVitals.temp || p.admissaoTemp || 36,
+    fc: admissionVitals.fc || p.admissaoFC || 80,
+    pas: admissionVitals.pas || p.admissaoPAS || 120,
+    pam: admissionVitals.pam || p.admissaoPAM || 80,
+    spo2: admissionVitals.spo2 || p.admissaoSpO2 || 95,
+    isFallback: !hasAdmissionData
+  };
+};
+
 const safeNumber = (val) => {
   if (val === null || val === undefined || val === "") return 0;
   let str = String(val).trim();
@@ -652,7 +670,7 @@ const getMissingSAPS3 = (patient) => {
   return missing;
 };
 
-// --- CÁLCULO SAPS 3 (ATUALIZADO CONFORME PLANILHA) ---
+// --- CÁLCULO SAPS 3 (ATUALIZADO CONFORME PLANILHA E ADMISSÃO) ---
 const calculateSAPS3Score = (patient) => {
   if (!patient.nome) return { score: 0, prob: "---", details: [] };
   
@@ -668,6 +686,11 @@ const calculateSAPS3Score = (patient) => {
   let score = 0;
   let details = [];
   const s3 = patient.saps3 || {};
+
+  // EXTRAÇÃO PRIMÁRIA: Busca os SSVV da Admissão
+  const admFC = safeNumber(patient.medical?.vitalsAtAdmission?.fc || patient.admissaoFC);
+  const admPAS = safeNumber(patient.medical?.vitalsAtAdmission?.pas || patient.admissaoPAS);
+  const admTemp = safeNumber(patient.medical?.vitalsAtAdmission?.temp || patient.admissaoTemp);
 
   // 1. Idade
   const age = calculateAge(patient.dataNascimento) || 0;
@@ -726,7 +749,6 @@ const calculateSAPS3Score = (patient) => {
     const rm = getVal(patient.neuro?.glasgowBasalRM);
     const basalTotal = ao + rv + rm;
     
-    // Fallback: Se marcou sedado mas não preencheu o basal, cai para o atual para não zerar a pontuação
     glasgow = basalTotal > 0 ? basalTotal : calculateGlasgowTotal(patient);
     
     if (basalTotal > 0) details.push(`Paciente Sedado -> Usando Glasgow Basal (${glasgow})`);
@@ -751,9 +773,9 @@ const calculateSAPS3Score = (patient) => {
   else if (creat >= 2.0) { score += 7; details.push(`Creatinina (2.0-3.4): +7`); }
   else if (creat >= 1.2) { score += 2; details.push(`Creatinina (1.2-1.9): +2`); }
 
-  // 11. Frequência Cardíaca
-  let fcMax = 0;
-  if (patient.bh?.vitals) {
+  // 11. Frequência Cardíaca (Atualizado para focar na Admissão)
+  let fcMax = admFC > 0 ? admFC : 0;
+  if (fcMax === 0 && patient.bh?.vitals) {
     Object.values(patient.bh.vitals).forEach((v) => {
       const fc = safeNumber(v["FC (bpm)"]);
       if (fc > fcMax) fcMax = fc;
@@ -780,9 +802,9 @@ const calculateSAPS3Score = (patient) => {
     else if (plaq < 100000) { score += 5; details.push(`Plaquetas (50.000-99.999): +5`); }
   }
 
-  // 15. PA Sistólica
-  let pasMin = 999;
-  if (patient.bh?.vitals) {
+  // 15. PA Sistólica (Atualizado para focar na Admissão)
+  let pasMin = admPAS > 0 ? admPAS : 999;
+  if (pasMin === 999 && patient.bh?.vitals) {
     Object.values(patient.bh.vitals).forEach((v) => {
       const pas = safeNumber(v["PAS"]);
       if (pas > 0 && pas < pasMin) pasMin = pas;
@@ -801,9 +823,9 @@ const calculateSAPS3Score = (patient) => {
     else if (pf < 250) { score += 7; details.push(`PaO2/FiO2 (100-249): +7`); }
   }
 
-  // 17. Temperatura
-  let tempMin = 99;
-  if (patient.bh?.vitals) {
+  // 17. Temperatura (Atualizado para focar na Admissão)
+  let tempMin = admTemp > 0 ? admTemp : 99;
+  if (tempMin === 99 && patient.bh?.vitals) {
     Object.values(patient.bh.vitals).forEach((v) => {
       const t = safeNumber(v["Temp (ºC)"]);
       if (t > 0 && t < tempMin) tempMin = t;
