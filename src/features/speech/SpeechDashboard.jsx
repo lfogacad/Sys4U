@@ -166,24 +166,6 @@ const SpeechDashboard = ({
                             </div>
                           )}
                         </div>
-
-                        <div className="bg-white p-4 rounded-lg border border-pink-100">
-                          <label className="block text-xs font-bold text-gray-500 uppercase mb-2">
-                            Blue Dye Test
-                          </label>
-                          <select
-                            className="w-full p-2 border rounded"
-                            value={currentPatient.fono?.blue_dye || ""}
-                            onChange={(e) =>
-                              updateNested("fono", "blue_dye", e.target.value)
-                            }
-                          >
-                            <option value="">Selecione...</option>
-                            <option value="Negativo">Negativo</option>
-                            <option value="Positivo">Positivo</option>
-                            <option value="Não Realizado">Não Realizado</option>
-                          </select>
-                        </div>
                       </div>
                     </div>
 
