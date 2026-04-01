@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, Droplets, Clock, Printer, RotateCcw, Scale, X, PlusCircle, Activity, Edit3 } from 'lucide-react';
+import { AlertCircle, ShieldAlert, Droplets, Clock, Printer, RotateCcw, Scale, X, PlusCircle, Activity, CheckCircle, Edit3 } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
 
@@ -361,6 +361,47 @@ const TechDashboard = ({
             </tbody>
           </table>
         </fieldset>
+      </div>
+
+      {/* ALERTA DE SEGURANÇA - FONOAUDIOLOGIA */}
+      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm">
+        <h4 className="text-sm font-black text-amber-800 flex items-center gap-2 mb-2 uppercase tracking-wide">
+          <ShieldAlert size={18} className="text-amber-600" />
+          Segurança de Deglutição
+        </h4>
+        
+        <div className="flex flex-col md:flex-row gap-6 mt-3 bg-white p-3 rounded border border-amber-200">
+          
+          {/* CONSISTÊNCIA DA DIETA */}
+          <div className="flex-1">
+            <span className="text-[10px] text-amber-600 font-bold uppercase block mb-1">Consistência Alimentar Liberada:</span>
+            <span className="text-sm font-black text-slate-800 uppercase">
+              {currentPatient.fono?.consistencia || "Aguardando avaliação / Dieta Zero"}
+            </span>
+          </div>
+          
+          {/* LIBERAÇÃO DE ÁGUA E UTENSÍLIO */}
+          <div className="flex-1 border-t md:border-t-0 md:border-l border-amber-100 md:pl-6 pt-3 md:pt-0">
+            <span className="text-[10px] text-amber-600 font-bold uppercase block mb-1">Água Via Oral (VO):</span>
+            {currentPatient.fono?.toleraAgua ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 text-xs font-black rounded border border-emerald-300">
+                  <CheckCircle size={14} /> LIBERADA
+                </span>
+                {currentPatient.fono?.utensilioAgua && (
+                  <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded border border-slate-200">
+                    Via: {currentPatient.fono.utensilioAgua}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 text-xs font-black rounded border border-red-300">
+                <X size={14} /> SUSPENSA
+              </span>
+            )}
+          </div>
+      
+        </div>
       </div>
 
       <fieldset disabled={!isEditable} className="mt-6 print:hidden min-w-0 border-0 p-0 m-0">
