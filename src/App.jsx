@@ -2019,26 +2019,42 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
       )
     )
       return;
-    const up = [...patients];
-    const p = ensureBHStructure(up[activeTab]);
-    const { accumulated } = calculateTotals(p.bh);
-
-    p.bh_previous = JSON.parse(JSON.stringify(p.bh));
-
-    p.bh = {
-      date: getManausDateStr(),
-      accumulated,
-      insensibleLoss: p.bh.insensibleLoss,
-      gains: {},
-      losses: {},
-      irrigation: {},
-      vitals: {},
-      customGains: p.bh.customGains || [],
-      customLosses: p.bh.customLosses || [],
-    };
-    up[activeTab] = p;
-    setPatients(up);
-    if (user && db) setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
+  
+    // Usamos o setPatients com callback para garantir que estamos pegando o estado mais recente
+    setPatients(prevPatients => {
+      const up = [...prevPatients];
+      
+      // 1. CLONE ABSOLUTO: Criamos um paciente totalmente novo na memória para o React não se perder
+      const p = JSON.parse(JSON.stringify(up[activeTab])); 
+      
+      // 2. Calcula o saldo acumulado que vai passar para o próximo plantão
+      const { accumulated } = calculateTotals(p.bh || {});
+  
+      // 3. O "Torniquete": Salva o balanço de hoje intacto na gaveta do dia anterior
+      p.bh_previous = { ...(p.bh || {}) };
+  
+      // 4. Inicia a nova folha de balanço 24h (zerada, mas com o saldo herdado)
+      p.bh = {
+        date: typeof getManausDateStr === 'function' ? getManausDateStr() : new Date().toISOString().split('T')[0],
+        accumulated: accumulated || 0,
+        insensibleLoss: p.bh?.insensibleLoss || 0,
+        gains: {},
+        losses: {},
+        irrigation: {},
+        vitals: {},
+        customGains: p.bh?.customGains || [],
+        customLosses: p.bh?.customLosses || [],
+      };
+  
+      up[activeTab] = p;
+  
+      // 5. Salva no banco de dados definitivo (Firebase)
+      if (typeof user !== 'undefined' && typeof db !== 'undefined' && user && db) {
+        setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
+      }
+  
+      return up; // Atualiza a tela instantaneamente
+    });
   };
 
   const handlePrintBH = () => window.print();
