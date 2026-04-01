@@ -3497,8 +3497,13 @@ ${physioData.condutas}`;
       const suporte = currentPatient.physio?.suporte || "ar ambiente";
       const suporteText = suporte === "VM" ? "em VM por TOT" : `em uso de ${suporte}`;
 
-      // 4. HEMODINÂMICO (Calculadora Nora e DVA Pop-up)
-      let hemodinamicaStatus = "Hemodinamicamente estável";
+      // 4. HEMODINÂMICO (Calculadora Nora e DVA Pop-up) - AJUSTADO
+      // Primeiro, checa se tem DVA marcado no sistema
+      const usaDVA = currentPatient.cardio?.dva === true; 
+      
+      // Define a base: Se usa DVA é compensado, se não, é estável.
+      let hemodinamicaStatus = usaDVA ? "Hemodinamicamente compensado" : "Hemodinamicamente estável";
+      
       if (currentPatient.bh?.gains && typeof BH_HOURS !== 'undefined') {
         let noraVals = [];
         BH_HOURS.forEach(h => {
@@ -3508,10 +3513,11 @@ ${physioData.condutas}`;
         if (noraVals.length >= 2) {
           const last = noraVals[noraVals.length - 1];
           const prev = noraVals[noraVals.length - 2];
+          // Se a dose estiver subindo, ele está instável, independentemente do resto.
           if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável (DVA em ascensão)";
         }
       }
-      const dvaText = currentPatient.cardio?.dva ? `em uso de DVA (${currentPatient.cardio.drogasDVA?.join(", ")})` : "sem uso de DVA";
+      const dvaText = usaDVA ? `em uso de DVA (${currentPatient.cardio.drogasDVA?.join(", ")})` : "sem uso de DVA";
 
       // 5. RENAL (Aba Visita Multi)
       const diureseNum = parseFloat(calculateDiurese12hMlKgH(currentPatient));
@@ -3537,7 +3543,7 @@ ${physioData.condutas}`;
 
       const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
       const sexoPaciente = currentPatient.sexo === 'F' ? 'A paciente' : 'O paciente';
-      const mantemSe = currentPatient.sexo === 'F' ? 'Mantém-se' : 'Mantém-se'; // Neutro, mas previne erros
+      const mantemSe = currentPatient.sexo === 'F' ? 'Mantém-se' : 'Mantém-se'; 
 
       // 8. O PROMPT "ENGESSADO"
       const promptText = `Você é um médico intensivista. Redija a evolução ESTRITAMENTE no formato exato fornecido abaixo, substituindo os colchetes pelos dados clínicos reais fornecidos na lista. 
