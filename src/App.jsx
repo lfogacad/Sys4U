@@ -4549,9 +4549,10 @@ ${condutas}`;
       <ChecklistEvoModal
         showChecklistEvo={showChecklistEvo}
         setShowChecklistEvo={setShowChecklistEvo}
-        checkData={checkData}
-        setCheckData={setCheckData}
-        confirmarEGerar={confirmarEGerar}
+        currentPatient={currentPatient}
+        updateNested={updateNested}
+        updateP={updateP}
+        confirmarEGerar={generateAIEvolution}
       />
       
       {/* MODAL: AUDITORIA DE NORADRENALINA */}
