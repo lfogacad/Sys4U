@@ -1,25 +1,12 @@
 {
-    "short_name": "Sys4U",
-    "name": "Sys4U - UTI",
-    "icons": [
-      {
-        "src": "/favicon.png",
-        "sizes": "64x64 32x32 24x24 16x16",
-        "type": "image/png"
-      },
-      {
-        "src": "/logo.png",
-        "type": "image/png",
-        "sizes": "192x192"
-      },
-      {
-        "src": "/logo.png",
-        "type": "image/png",
-        "sizes": "512x512"
-      }
-    ],
-    "start_url": ".",
-    "display": "standalone",
-    "theme_color": "#0284c7",
-    "background_color": "#ffffff"
-  }
+  "short_name": "Sys4U Pro",
+  "name": "Sys4U - Gestão UTI 2.0",
+  "icons": [
+    { "src": "/sys4u_v1.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/sys4u_v1.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0284c7",
+  "background_color": "#ffffff"
+}
