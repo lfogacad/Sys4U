@@ -3469,6 +3469,11 @@ ${physioData.condutas}`;
         return isNaN(n) ? 0 : n;
       };
 
+      // --- IDENTIFICAÇÃO DE GÊNERO ---
+      const isFem = currentPatient.sexo === 'F';
+      const sexoPaciente = isFem ? 'A paciente' : 'O paciente';
+      const mantemSe = 'Mantém-se'; 
+
       // 1. SINAIS VITAIS (Aba Técnico)
       const vitals = currentPatient.bh?.vitals || {};
       let tempMax = 0, spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
@@ -3485,24 +3490,27 @@ ${physioData.condutas}`;
 
       const tempStatus = tempMax >= 37.8 ? "febril" : "afebril";
       const spo2Status = (spo2Min <= 92 && spo2Min > 0) ? "com baixa SpO2" : "mantendo boa SpO2";
-      const fcStatus = fcMax > 100 ? "taquicárdico" : (fcMin > 0 && fcMin < 60 ? "bradicárdico" : "eucárdico");
-      const paStatus = (pasMin > 0 && pasMin < 90) ? "com hipotensão" : (pasMax > 160 ? "hipertenso" : "com bom controle pressórico");
+      
+      // Ajuste de gênero para FC e PA
+      const fcStatus = fcMax > 100 ? (isFem ? "taquicárdica" : "taquicárdico") : (fcMin > 0 && fcMin < 60 ? (isFem ? "bradicárdica" : "bradicárdico") : (isFem ? "eucárdica" : "eucárdico"));
+      const paStatus = (pasMin > 0 && pasMin < 90) ? "com hipotensão" : (pasMax > 160 ? (isFem ? "hipertensa" : "hipertenso") : "com bom controle pressórico");
 
       // 2. ESTADO GERAL E NEURO (Janela Pop-up)
       const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
       const egExtenso = egSalvo === "BEG" ? "BEG" : (egSalvo === "MEG" ? "MEG" : "REG");
-      const sedacaoText = currentPatient.neuro?.sedacao ? "sedado" : "sem sedação";
+      
+      // Ajuste de gênero para sedação
+      const sedacaoText = currentPatient.neuro?.sedacao ? (isFem ? "sedada" : "sedado") : "sem sedação";
 
       // 3. RESPIRATÓRIO (Aba Fisio)
       const suporte = currentPatient.physio?.suporte || "ar ambiente";
       const suporteText = suporte === "VM" ? "em VM por TOT" : `em uso de ${suporte}`;
 
-      // 4. HEMODINÂMICO (Calculadora Nora e DVA Pop-up) - AJUSTADO
-      // Primeiro, checa se tem DVA marcado no sistema
+      // 4. HEMODINÂMICO (Calculadora Nora e DVA Pop-up)
       const usaDVA = currentPatient.cardio?.dva === true; 
       
-      // Define a base: Se usa DVA é compensado, se não, é estável.
-      let hemodinamicaStatus = usaDVA ? "Hemodinamicamente compensado" : "Hemodinamicamente estável";
+      // Ajuste de gênero para compensado(a)
+      let hemodinamicaStatus = usaDVA ? (isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado") : "Hemodinamicamente estável";
       
       if (currentPatient.bh?.gains && typeof BH_HOURS !== 'undefined') {
         let noraVals = [];
@@ -3513,7 +3521,6 @@ ${physioData.condutas}`;
         if (noraVals.length >= 2) {
           const last = noraVals[noraVals.length - 1];
           const prev = noraVals[noraVals.length - 2];
-          // Se a dose estiver subindo, ele está instável, independentemente do resto.
           if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável (DVA em ascensão)";
         }
       }
@@ -3542,8 +3549,6 @@ ${physioData.condutas}`;
       else if (temDiarreiaBH) tgiDescricao = "com episódio de diarreia";
 
       const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
-      const sexoPaciente = currentPatient.sexo === 'F' ? 'A paciente' : 'O paciente';
-      const mantemSe = currentPatient.sexo === 'F' ? 'Mantém-se' : 'Mantém-se'; 
 
       // 8. O PROMPT "ENGESSADO"
       const promptText = `Você é um médico intensivista. Redija a evolução ESTRITAMENTE no formato exato fornecido abaixo, substituindo os colchetes pelos dados clínicos reais fornecidos na lista. 
@@ -3574,8 +3579,7 @@ ${physioData.condutas}`;
       - [TGI]: ${tgiDescricao ? tgiDescricao : "[OMITIR ESTA PARTE DO TGI]"}
       - [EVACUAÇÃO]: ${evacDaysStr}
       
-      Regra Crítica TGI: Se a tag [TGI] pedir para omitir, escreva apenas "A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO]." Não escreva "ausência de vômitos".
-      Concordância: Ajuste palavras como taquicárdico/taquicárdica caso o sexo seja feminino.`;
+      Regra Crítica TGI: Se a tag [TGI] pedir para omitir, escreva apenas "A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO]." Não escreva "ausência de vômitos".`;
 
       // 9. LOOP DE MODELOS
       const models = [
