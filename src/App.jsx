@@ -4251,13 +4251,14 @@ ${condutas}`;
           />
 
           {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE */}
-          <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden">
+          {/* CORREÇÃO AQUI: Adicionado 'self-start', e movido o 'md:sticky md:top-6' para este container principal */}
+          <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
             
             <div className="relative mb-6 md:mb-0 print:hidden">
               
-              {/* Container dos Botões (COM A CURA: md:overflow-visible) */}
-              <div className="flex overflow-x-auto md:overflow-visible md:flex-col gap-3 pb-2 md:pb-0 scrollbar-hide md:sticky md:top-6">
-              {visibleNavButtons.map((btn) => {
+              {/* Container dos Botões (Retiramos o sticky daqui e passamos para o pai ali em cima) */}
+              <div className="flex overflow-x-auto md:overflow-visible md:flex-col gap-3 pb-2 md:pb-0 scrollbar-hide">
+                {visibleNavButtons.map((btn) => {
                   const isActive = viewMode === btn.id;
                   const isTapped = tappedTab === btn.id;
 
@@ -4281,17 +4282,15 @@ ${condutas}`;
                         onMouseLeave={() => {
                           if (tappedTab === btn.id) setTappedTab(null);
                         }}
-                        // INJEÇÃO ESTÉTICA: shadow-md (sombra base maior) e hover:shadow-lg (sombra ao passar o mouse)
                         className={`absolute top-0 left-0 flex items-center h-10 md:h-12 min-w-[2.5rem] md:min-w-[3rem] p-0 rounded-xl border transition-all duration-300 ease-in-out outline-none group overflow-hidden shadow-md hover:shadow-lg hover:w-[180px] hover:z-[100] ${
                           isActive
                             ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white"
-                            // INJEÇÃO ESTÉTICA 2: bg-blue-50 (azul clarinho) e border-blue-200
                             : "bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100 hover:border-blue-300"
                         } ${isTapped && window.innerWidth < 768 ? "w-[180px]" : "w-10 md:w-12"}`}
                         title={btn.label}
                       >
                         <div className="flex-shrink-0 flex items-center justify-center min-w-[2.5rem] md:min-w-[3rem] h-full">
-                          <div className="scale-75 md:scale-90 text-blue-700"> {/* Cor do ícone levemente mais forte para contraste */}
+                          <div className="scale-75 md:scale-90 text-blue-700">
                             {btn.icon}
                           </div>
                         </div>
