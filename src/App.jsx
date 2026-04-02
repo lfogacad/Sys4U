@@ -1590,7 +1590,7 @@ const App = () => {
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [changePasswordError, setChangePasswordError] = useState(null);
-
+  const [tappedTab, setTappedTab] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showATBHistoryModal, setShowATBHistoryModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -2438,34 +2438,33 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
   const [showSepsisModal, setShowSepsisModal] = useState(false);
 
   useEffect(() => {
-    // Permite rodar no seu teste local mesmo se o userProfile ainda não estiver carregado
     const isMedico = userProfile ? userProfile.role === "Médico" : true; 
 
     if (viewMode === "medical" && currentPatient && isMedico) {
       const currentSofa = getAutoSOFA2(currentPatient);
       const basalSofa = parseInt(currentPatient.sofa_data_technical?.baseline_sofa || 0);
 
-      // Referência é o menor SOFA alcançado antes de uma piora.
       let referenceSofa = currentPatient.sofa_data_technical?.reference_sofa_for_sepsis;
       referenceSofa = referenceSofa !== undefined ? parseInt(referenceSofa) : basalSofa;
 
-      // 1. O REARME CLÍNICO: Se o paciente MELHOROU, a régua desce!
-      // Ex: Caiu de 6 para 2. A nova referência vira 2. Se subir para 4 depois, apita de novo.
-      if (currentSofa < referenceSofa) {
+      // FILTRO DE SEGURANÇA: Verifica se a queda do SOFA é por falta de dados (início de plantão)
+      const isPlantaoZerado = !currentPatient.bh?.vitals || Object.keys(currentPatient.bh.vitals).length === 0;
+
+      // 1. O REARME CLÍNICO (Apenas se o dia NÃO estiver zerado)
+      if (currentSofa < referenceSofa && !isPlantaoZerado) {
         const p = { ...currentPatient };
         if (!p.sofa_data_technical) p.sofa_data_technical = {};
         p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
-        p.sofa_data_technical.last_alerted_sofa = null; // Limpa a memória do último alerta
+        p.sofa_data_technical.last_alerted_sofa = null; 
         
         const up = [...patients];
         up[activeTab] = p;
         setPatients(up);
-        return; // Deixa o React recarregar com a nova régua
+        return; 
       }
 
-      // 2. O GATILHO SEPSIS-3: Piorou 2 ou mais pontos em relação à referência?
+      // 2. O GATILHO SEPSIS-3
       if (currentSofa - referenceSofa >= 2) {
-        // Só apita se ainda NÃO apitou para esse nível de gravidade exato
         if (currentPatient.sofa_data_technical?.last_alerted_sofa !== currentSofa) {
           setShowSepsisModal(true);
         }
@@ -4183,7 +4182,6 @@ ${condutas}`;
         <div className="bg-white p-2 rounded-2xl shadow-lg mb-4 flex overflow-x-auto gap-2 scrollbar-hide print:hidden">
           {patients.map((p) => {
             // TRAVA DE SEGURANÇA DO LEITO 11 (SANDBOX)
-            // IMPORTANTE: Troque 'isAdmin' pela variável que você usa para identificar o administrador
             if (p.leito === 11 && !isAdmin) return null;
 
             return (
@@ -4204,20 +4202,58 @@ ${condutas}`;
           })}
         </div>
 
+        {/* BARRA DE NAVEGAÇÃO - ESTILO SANFONA MINIMALISTA */}
         <div className="flex flex-wrap gap-2 mb-6 print:hidden">
-          {visibleNavButtons.map((btn) => (
-            <button
-              key={btn.id}
-              onClick={() => setViewMode(btn.id)}
-              className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors ${
-                viewMode === btn.id
-                  ? "bg-blue-600 text-white shadow-md"
-                  : "bg-slate-700 text-white hover:bg-slate-600"
-              }`}
-            >
-              {btn.icon} {btn.label}
-            </button>
-          ))}
+          {visibleNavButtons.map((btn) => {
+            const isActive = viewMode === btn.id;
+            const isTapped = tappedTab === btn.id;
+
+            return (
+              <button
+                key={btn.id}
+                onClick={() => {
+                  const isMobile = window.innerWidth < 768;
+                  if (isMobile) {
+                    if (tappedTab !== btn.id && !isActive) {
+                      setTappedTab(btn.id); // 1º Clique: Expande
+                    } else {
+                      setViewMode(btn.id); // 2º Clique: Entra na aba
+                      setTappedTab(null);
+                    }
+                  } else {
+                    setViewMode(btn.id); // Desktop: Clique direto
+                  }
+                }}
+                onMouseLeave={() => {
+                  if (tappedTab === btn.id) setTappedTab(null);
+                }}
+                className={`group relative flex items-center justify-center p-2.5 rounded-xl border transition-all duration-300 ease-in-out outline-none ${
+                  isActive
+                    ? "bg-blue-600 border-blue-600 text-white shadow-md"
+                    : "bg-slate-700 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white hover:bg-slate-600"
+                }`}
+                title={btn.label}
+              >
+                {/* O ÍCONE */}
+                <div className="flex-shrink-0 flex items-center justify-center">
+                  {btn.icon}
+                </div>
+
+                {/* O TEXTO (Efeito Sanfona) */}
+                <div
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out flex items-center ${
+                    isTapped || isActive
+                      ? "max-w-[200px] opacity-100 ml-2" 
+                      : "max-w-0 opacity-0 ml-0 md:group-hover:max-w-[200px] md:group-hover:opacity-100 md:group-hover:ml-2"
+                  }`}
+                >
+                  <span className="text-sm font-bold tracking-wide">
+                    {btn.label}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         <div
