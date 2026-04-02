@@ -3940,7 +3940,7 @@ ${condutas}`;
   // FALLBACK SE FIREBASE NÃO INICIALIZOU CORRETAMENTE NO AMBIENTE
   if (firebaseError || !auth || !db) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans bg-hexagon-pattern bg-repeat">
         <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md text-center border-t-4 border-red-500">
           <AlertTriangle className="mx-auto text-red-500 mb-4" size={48} />
           <h1 className="text-xl font-bold text-slate-800 mb-2">
@@ -4092,7 +4092,7 @@ ${condutas}`;
     );
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans pb-20 relative">
+    <div className="min-h-screen bg-gray-100 font-sans pb-20 relative bg-hexagon-pattern bg-repeat">
       <style>{`
           @media print {
             @page { size: ${
@@ -4129,25 +4129,47 @@ ${condutas}`;
           }
         `}</style>
 
+      {/* CABEÇALHO SUPERIOR - IMAGEM TOTAL DE FUNDO */}
       <div
         id="original-header"
-        className="bg-gradient-to-r from-blue-700 to-cyan-600 pb-28 pt-8 px-4 md:px-8 shadow-xl print:hidden"
+        className="relative pb-28 pt-8 px-4 md:px-8 shadow-xl print:hidden bg-[url('/logodagua.svg')] bg-cover bg-center bg-no-repeat"
       >
-        <div className="max-w-7xl mx-auto flex justify-between items-center text-white">
+        {/* Camada escura opcional (Descomente a linha abaixo se o texto branco ficar difícil de ler por causa do fundo claro) */}
+        {/* <div className="absolute inset-0 bg-black/10 pointer-events-none"></div> */}
+
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
+          
+          {/* LADO ESQUERDO: Logo e Títulos */}
           <div className="flex items-center gap-4">
-            <Activity className="w-8 h-8" />
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
+            <img 
+              src="/logobranca.png" 
+              alt="Sys4U Logo" 
+              className="w-16 h-16 object-contain"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'flex';
+              }}
+            />
+            <div className="hidden w-16 h-16 border-2 border-white/50 rounded-xl items-center justify-center text-white">
+              <Activity size={32} />
+            </div>
+
+            <div className="flex flex-col">
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-white shadow-sm">
                 UTI Municipal de Ariquemes
               </h1>
-              <p className="text-blue-100 text-sm font-medium opacity-90">
-                Sys4U
+              <hr className="border-white/40 my-1" />
+              <p className="text-white text-xs md:text-sm font-medium opacity-95 shadow-sm">
+                Sys4U - Desenvolvimento de Sistemas
               </p>
             </div>
           </div>
+
+          {/* LADO DIREITO: Cápsula de Usuário e Upload */}
           <div className="flex items-center gap-4">
+            
             <label
-              className="bg-white/10 hover:bg-white/20 p-2 rounded-xl text-white transition-all border border-white/10 cursor-pointer"
+              className="bg-white/10 hover:bg-white/20 p-2.5 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm"
               title="Upload Lote"
             >
               <FolderInput size={20} />
@@ -4159,130 +4181,160 @@ ${condutas}`;
                 onChange={handleBulkUpload}
               />
             </label>
-            <div className="text-right hidden md:block">
-              <p className="text-sm font-bold">
-                {userProfile?.name || user.email}
-              </p>
-              <p className="text-xs text-blue-200 bg-white/10 px-2 py-0.5 rounded inline-block">
-                {userProfile?.role || "Acesso"}
-              </p>
+
+            <div className="flex items-center bg-white rounded-full p-1.5 pr-2 shadow-lg gap-3">
+              <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center text-white shadow-inner">
+                <User size={20} />
+              </div>
+              
+              <div className="flex flex-col text-right hidden md:flex min-w-[120px]">
+                <span className="text-sm font-bold text-slate-800 leading-tight">
+                  {userProfile?.name || user?.email || "Dr. Luciano Fogaça"}
+                </span>
+                <span className="text-xs text-slate-500 leading-tight">
+                  - {userProfile?.role || "Administrador"}
+                </span>
+              </div>
+
+              <button
+                onClick={handleLogout} 
+                className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 flex items-center justify-center text-white transition-colors shadow-sm ml-2"
+                title="Sair do Sistema"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
-            <button
-              onClick={handleLogout} 
-              className="bg-white/10 p-2 rounded-xl hover:bg-white/20"
-              title="Sair do Sistema"
-            >
-              <LogOut size={20} />
-            </button>
+
           </div>
         </div>
       </div>
 
+
       <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0 print:p-0">
-        <div className="bg-white p-2 rounded-2xl shadow-lg mb-4 flex overflow-x-auto gap-2 scrollbar-hide print:hidden">
+        {/* BARRA DE LEITOS (Blindada contra vazamentos do fundo) */}
+        <div className="relative z-20 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 scrollbar-hide print:hidden border border-white">
           {patients.map((p) => {
-            // TRAVA DE SEGURANÇA DO LEITO 11 (SANDBOX)
             if (p.leito === 11 && !isAdmin) return null;
+            
+            const isActive = activeTab === p.id;
 
             return (
               <button
                 key={p.id}
                 onClick={() => setActiveTab(p.id)}
-                className={`flex-shrink-0 w-12 h-14 rounded-xl font-bold text-sm transition-all ${
-                  activeTab === p.id
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "bg-white text-slate-500 hover:bg-slate-50"
-                }`}
-              >
-                <span className="text-[10px] opacity-70 font-normal">Leito</span>
-                <br />
-                {p.leito}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* BARRA DE NAVEGAÇÃO - ESTILO SANFONA MINIMALISTA */}
-        <div className="flex flex-wrap gap-2 mb-6 print:hidden">
-          {visibleNavButtons.map((btn) => {
-            const isActive = viewMode === btn.id;
-            const isTapped = tappedTab === btn.id;
-
-            return (
-              <button
-                key={btn.id}
-                onClick={() => {
-                  const isMobile = window.innerWidth < 768;
-                  if (isMobile) {
-                    if (tappedTab !== btn.id && !isActive) {
-                      setTappedTab(btn.id); // 1º Clique: Expande
-                    } else {
-                      setViewMode(btn.id); // 2º Clique: Entra na aba
-                      setTappedTab(null);
-                    }
-                  } else {
-                    setViewMode(btn.id); // Desktop: Clique direto
-                  }
-                }}
-                onMouseLeave={() => {
-                  if (tappedTab === btn.id) setTappedTab(null);
-                }}
-                className={`group relative flex items-center justify-center p-2.5 rounded-xl border transition-all duration-300 ease-in-out outline-none ${
+                // w-14 e h-16 garantem a borda horizontal menor (formato retangular)
+                className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center ${
                   isActive
-                    ? "bg-blue-600 border-blue-600 text-white shadow-md"
-                    : "bg-slate-700 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white hover:bg-slate-600"
+                    ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
+                    : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
                 }`}
-                title={btn.label}
               >
-                {/* O ÍCONE */}
-                <div className="flex-shrink-0 flex items-center justify-center">
-                  {btn.icon}
-                </div>
-
-                {/* O TEXTO (Efeito Sanfona) */}
-                <div
-                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out flex items-center ${
-                    isTapped || isActive
-                      ? "max-w-[200px] opacity-100 ml-2" 
-                      : "max-w-0 opacity-0 ml-0 md:group-hover:max-w-[200px] md:group-hover:opacity-100 md:group-hover:ml-2"
-                  }`}
-                >
-                  <span className="text-sm font-bold tracking-wide">
-                    {btn.label}
-                  </span>
-                </div>
+                <span className="text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">Leito</span>
+                <span className="text-xl leading-none">{p.leito}</span>
               </button>
             );
           })}
         </div>
 
+       {/* BARRA DE NAVEGAÇÃO - ESTILO SANFONA COM IMAGEM LIVRE */}
+       <div className="relative mb-6 print:hidden">
+          
+          {/* Fundo de Hexágonos (Posicionamento corrigido para não vazar para cima) */}
+          <img 
+            src="/hexagons.svg" 
+            alt="Hexágonos" 
+            className="absolute -top-5 -right-4 md:-right-4 w-[280px] md:w-[450px] opacity-15 pointer-events-none z-0" 
+          />
+          
+          <div className="flex flex-wrap gap-2 relative z-10">
+            {visibleNavButtons.map((btn) => {
+              const isActive = viewMode === btn.id;
+              const isTapped = tappedTab === btn.id;
+
+              return (
+                <button
+                  key={btn.id}
+                  onClick={() => {
+                    const isMobile = window.innerWidth < 768;
+                    if (isMobile) {
+                      if (tappedTab !== btn.id && !isActive) {
+                        setTappedTab(btn.id); 
+                      } else {
+                        setViewMode(btn.id); 
+                        setTappedTab(null);
+                      }
+                    } else {
+                      setViewMode(btn.id); 
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (tappedTab === btn.id) setTappedTab(null);
+                  }}
+                  className={`group relative flex items-center justify-center p-2.5 rounded-xl border transition-all duration-300 ease-in-out outline-none ${
+                    isActive
+                      ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white shadow-md"
+                      : "bg-blue-50 border-blue-100 text-blue-700 hover:bg-blue-100 hover:border-blue-300"
+                  }`}
+                  title={btn.label}
+                >
+                  <div className="flex-shrink-0 flex items-center justify-center">
+                    {btn.icon}
+                  </div>
+
+                  <div
+                    className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out flex items-center ${
+                      isTapped || isActive
+                        ? "max-w-[200px] opacity-100 ml-2" 
+                        : "max-w-0 opacity-0 ml-0 md:group-hover:max-w-[200px] md:group-hover:opacity-100 md:group-hover:ml-2"
+                    }`}
+                  >
+                    <span className="text-sm font-bold tracking-wide">
+                      {btn.label}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* CABEÇALHO DO PACIENTE (Com sobreposição, borda e sombra superior) */}
         <div
-          id="original-header"
-          className="sticky top-0 z-30 bg-white p-4 shadow-md border-b border-gray-100 print:hidden flex justify-between items-center"
+          className="relative z-30 bg-white px-6 py-5 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] border border-slate-200 border-b-slate-100 print:hidden flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-t-3xl"
         >
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            {currentPatient.nome || "Leito Disponível"}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Nome do Paciente */}
+            <h2 className="text-xl md:text-2xl font-extrabold text-teal-600 uppercase tracking-tight">
+              {currentPatient.nome || "LEITO DISPONÍVEL"}
+            </h2>
+            
+            {/* Lixeira (Apagar Dados) */}
             {currentPatient.nome && (userProfile?.role === "Médico" || isAdmin) && (
               <button
                 onClick={handleClearData}
-                className="text-gray-300 hover:text-red-500 ml-2 print:hidden"
+                className="text-slate-300 hover:text-red-500 transition-colors print:hidden flex-shrink-0"
                 title="Excluir Paciente / Limpar Leito"
               >
-                <Trash2 size={16} />
+                <Trash2 size={20} />
               </button>
             )}
+            
+            {/* Idade (Pílula) */}
             {currentPatient.nome && currentPatient.dataNascimento && (
-              <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-lg">
+              <span className="bg-teal-600 text-white text-sm font-bold px-3 py-1 rounded-full shadow-sm flex-shrink-0">
                 {calculateAge(currentPatient.dataNascimento)} anos
               </span>
             )}
-          </h2>
-          <span className="text-lg font-bold text-slate-600 bg-gray-100 px-3 py-1 rounded-lg">
+          </div>
+
+          {/* Marcador do Leito (Bloco Cinza) */}
+          <span className="text-xl font-bold text-slate-700 bg-slate-100 px-5 py-2 rounded-xl flex-shrink-0 text-center border border-slate-200">
             Leito {currentPatient.leito}
           </span>
         </div>
 
-        <div className="bg-white p-6 rounded-b-3xl shadow-sm border border-gray-100 min-h-[500px] print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none">
+        {/* CORPO DO PRONTUÁRIO (Agora como barreira impenetrável) */}
+        <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 border-slate-200 min-h-[500px] print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none">
           {!currentPatient.nome ? (
             <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-slate-500 print:hidden">
               <UserPlus size={64} className="mb-4 text-slate-300" />
