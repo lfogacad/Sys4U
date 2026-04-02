@@ -4246,7 +4246,7 @@ ${condutas}`;
             className="absolute -top-5 -right-4 md:-right-4 w-[280px] md:w-[450px] opacity-15 pointer-events-none z-0" 
           />
           
-          <div className="flex flex-wrap gap-2 relative z-10">
+          <div className="flex overflow-x-auto flex-nowrap gap-2 relative z-10 scrollbar-hide pb-2">
             {visibleNavButtons.map((btn) => {
               const isActive = viewMode === btn.id;
               const isTapped = tappedTab === btn.id;
@@ -4270,7 +4270,7 @@ ${condutas}`;
                   onMouseLeave={() => {
                     if (tappedTab === btn.id) setTappedTab(null);
                   }}
-                  className={`group relative flex items-center justify-center p-2.5 rounded-xl border transition-all duration-300 ease-in-out outline-none ${
+                  className={`flex-shrink-0 group relative flex items-center justify-center p-2.5 rounded-xl border transition-all duration-300 ease-in-out outline-none ${
                     isActive
                       ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white shadow-md"
                       : "bg-blue-50 border-blue-100 text-blue-700 hover:bg-blue-100 hover:border-blue-300"
