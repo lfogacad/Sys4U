@@ -3271,15 +3271,22 @@ dataIntubacao: p.dataIntubacao || "",
     p.physio.tIns = physioData.tIns;
     p.physio.relIE = physioData.relIE;
     p.physio.filtroHMEF = physioData.filtroHMEF;
-    p.physio.dataTrocaHMEF = physioData.dataTrocaHMEF;
+    
+    // CORREÇÃO: Nomes alinhados com o Modal e o Painel Principal
+    p.physio.dataHMEF = physioData.dataHMEF; 
+    
     p.physio.sistemaFechado = physioData.sistemaFechado;
-    p.physio.dataTrocaSistemaFechado = physioData.dataTrocaSistemaFechado;
+    
+    // CORREÇÃO: Nomes alinhados com o Modal e o Painel Principal
+    p.physio.dataSFA = physioData.dataSFA; 
+    
     p.physio.cuff = physioData.cuff;
     p.physio.admissao_condutas = physioData.condutas;
     p.dataIntubacao = physioData.dataIntubacao; 
     
     p.physio.totNumero = physioData.numeroTOT;
     p.physio.totRima = physioData.rimaFixacao;
+    
     // Transferindo a avaliação por sistemas da Admissão para o Dia a Dia
     p.physio.estadoGeral = physioData.estadoGeral;
     p.physio.sistemaNervoso = physioData.sistemaNervoso;
@@ -3287,6 +3294,7 @@ dataIntubacao: p.dataIntubacao || "",
     p.physio.sistemaCardiovascular = physioData.sistemaCardiovascular;
     p.physio.sistemaDigestivo = physioData.sistemaDigestivo;
     p.physio.sistemaMusculoesqueletico = physioData.sistemaMusculoesqueletico;
+    
     // --- TRANSFERINDO OS DADOS DA SECREÇÃO BASAL ---
     p.physio.secrecao = physioData.secrecao;
     p.physio.secrecaoAspecto = physioData.secrecaoAspecto;

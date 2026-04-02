@@ -206,11 +206,13 @@ const PhysioDashboard = ({
 
         {/* VIA AÉREA, SECREÇÃO, MOBILIZAÇÃO */}
         <div className="grid md:grid-cols-2 gap-6 mb-6">
-          <div className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col h-full">
+        <div className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col h-full">
             <h4 className="font-bold text-slate-700 text-xs uppercase mb-4 flex items-center gap-2 shrink-0">
-              Via Aérea Artificial
+              Via Aérea e Dispositivos
             </h4>
-            <div className="grid grid-cols-3 gap-2 mb-6 shrink-0">
+            
+            {/* LINHA 1: TOT e CUFF */}
+            <div className="grid grid-cols-3 gap-2 mb-4 shrink-0">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">TOT/TQT nº</label>
                 <input type="number" step="0.5" placeholder="Ex: 8.0" className="w-full p-2 border rounded text-xs text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.totNumero || ""} onChange={(e) => updateNested("physio", "totNumero", e.target.value)} />
@@ -227,6 +229,45 @@ const PhysioDashboard = ({
                   <input type="number" placeholder="N" title="Noite" className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffN || ""} onChange={(e) => updateNested("physio", "cuffN", e.target.value)} />
                 </div>
               </div>
+            </div>
+
+            {/* LINHA 2: DISPOSITIVOS (HMEF E SFA) - PROTOCOLO 7 DIAS (168h) */}
+            <div className="grid grid-cols-2 gap-4 mb-6 pt-4 border-t border-slate-100">
+              
+              {/* FILTRO HMEF */}
+              <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] font-bold text-slate-700">Filtro HMEF</label>
+                  <button onClick={(e) => { e.preventDefault(); clearDate("dataHMEF", "physio"); }} className="text-slate-400 hover:text-red-500"><X size={12} /></button>
+                </div>
+                <input type="date" className="w-full p-1.5 border rounded text-xs outline-none focus:ring-cyan-400" value={currentPatient.physio?.dataHMEF || ""} onChange={(e) => updateNested("physio", "dataHMEF", e.target.value)} />
+                <div className="mt-1 text-[10px] font-bold">
+                  {currentPatient.physio?.dataHMEF ? (
+                     <span className={isDeviceExpired(currentPatient.physio?.dataHMEF, 168) ? "text-red-600" : "text-green-600"}>
+                       {/* INJEÇÃO DO .formatted AQUI */}
+                       Trocar: {calculateExchangeDate(currentPatient.physio?.dataHMEF, 168)?.formatted}
+                     </span>
+                  ) : <span className="text-slate-400">Sem data</span>}
+                </div>
+              </div>
+
+              {/* TRAQUEIA SFA */}
+              <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] font-bold text-slate-700">Traqueia SFA</label>
+                  <button onClick={(e) => { e.preventDefault(); clearDate("dataSFA", "physio"); }} className="text-slate-400 hover:text-red-500"><X size={12} /></button>
+                </div>
+                <input type="date" className="w-full p-1.5 border rounded text-xs outline-none focus:ring-cyan-400" value={currentPatient.physio?.dataSFA || ""} onChange={(e) => updateNested("physio", "dataSFA", e.target.value)} />
+                <div className="mt-1 text-[10px] font-bold">
+                  {currentPatient.physio?.dataSFA ? (
+                     <span className={isDeviceExpired(currentPatient.physio?.dataSFA, 168) ? "text-red-600" : "text-green-600"}>
+                       {/* INJEÇÃO DO .formatted AQUI */}
+                       Trocar: {calculateExchangeDate(currentPatient.physio?.dataSFA, 168)?.formatted}
+                     </span>
+                  ) : <span className="text-slate-400">Sem data</span>}
+                </div>
+              </div>
+
             </div>
 
             <div className="pt-4 border-t border-slate-100 mt-auto shrink-0">

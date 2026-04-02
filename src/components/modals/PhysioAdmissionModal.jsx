@@ -315,15 +315,20 @@ const PhysioAdmissionModal = ({
                     <input
                       type="checkbox"
                       checked={physioData.filtroHMEF || false}
-                      onChange={(e) => setPhysioData({ ...physioData, filtroHMEF: e.target.checked })}
+                      onChange={(e) => {
+                        // Se desmarcar, limpa a data também
+                        const newData = { ...physioData, filtroHMEF: e.target.checked };
+                        if (!e.target.checked) newData.dataHMEF = "";
+                        setPhysioData(newData);
+                      }}
                     />
                     Filtro HMEF
                   </label>
                   <input
                     type="date"
                     className={`w-full p-2 border rounded text-xs outline-none focus:ring-2 focus:ring-cyan-200 ${!physioData.filtroHMEF ? 'bg-gray-100 opacity-50 cursor-not-allowed' : 'bg-slate-50'}`}
-                    value={physioData.dataTrocaHMEF || ""}
-                    onChange={(e) => setPhysioData({ ...physioData, dataTrocaHMEF: e.target.value })}
+                    value={physioData.dataHMEF || ""} // NOME CORRIGIDO AQUI
+                    onChange={(e) => setPhysioData({ ...physioData, dataHMEF: e.target.value })} // NOME CORRIGIDO AQUI
                     disabled={!physioData.filtroHMEF}
                     title="Data da troca do Filtro HMEF"
                   />
@@ -335,15 +340,20 @@ const PhysioAdmissionModal = ({
                     <input
                       type="checkbox"
                       checked={physioData.sistemaFechado || false}
-                      onChange={(e) => setPhysioData({ ...physioData, sistemaFechado: e.target.checked })}
+                      onChange={(e) => {
+                        // Se desmarcar, limpa a data também
+                        const newData = { ...physioData, sistemaFechado: e.target.checked };
+                        if (!e.target.checked) newData.dataSFA = "";
+                        setPhysioData(newData);
+                      }}
                     />
                     Sistema Fechado (Trach Care)
                   </label>
                   <input
                     type="date"
                     className={`w-full p-2 border rounded text-xs outline-none focus:ring-2 focus:ring-cyan-200 ${!physioData.sistemaFechado ? 'bg-gray-100 opacity-50 cursor-not-allowed' : 'bg-slate-50'}`}
-                    value={physioData.dataTrocaSistemaFechado || ""}
-                    onChange={(e) => setPhysioData({ ...physioData, dataTrocaSistemaFechado: e.target.value })}
+                    value={physioData.dataSFA || ""} // NOME CORRIGIDO AQUI
+                    onChange={(e) => setPhysioData({ ...physioData, dataSFA: e.target.value })} // NOME CORRIGIDO AQUI
                     disabled={!physioData.sistemaFechado}
                     title="Data da troca do Sistema Fechado"
                   />
