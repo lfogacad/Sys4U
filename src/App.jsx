@@ -4132,14 +4132,11 @@ ${condutas}`;
       {/* CABEÇALHO SUPERIOR - IMAGEM TOTAL DE FUNDO */}
       <div
         id="original-header"
-        className="relative pb-28 pt-8 px-4 md:px-8 shadow-xl print:hidden bg-[url('/logodagua.svg')] bg-cover bg-center bg-no-repeat"
+        className="relative z-30 pb-36 pt-8 px-4 md:px-8 shadow-xl print:hidden bg-[url('/logodagua.svg')] bg-cover bg-center bg-no-repeat"
       >
-        {/* Camada escura opcional (Descomente a linha abaixo se o texto branco ficar difícil de ler por causa do fundo claro) */}
-        {/* <div className="absolute inset-0 bg-black/10 pointer-events-none"></div> */}
-
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
           
-          {/* LADO ESQUERDO: Logo e Títulos */}
+          {/* LADO ESQUERDO DO CABEÇALHO: Logo e Títulos RESTAURADOS */}
           <div className="flex items-center gap-4">
             <img 
               src="/logobranca.png" 
@@ -4151,7 +4148,8 @@ ${condutas}`;
               }}
             />
             <div className="hidden w-16 h-16 border-2 border-white/50 rounded-xl items-center justify-center text-white">
-              <Activity size={32} />
+              {/* Fallback Icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
             </div>
 
             <div className="flex flex-col">
@@ -4165,14 +4163,14 @@ ${condutas}`;
             </div>
           </div>
 
-          {/* LADO DIREITO: Cápsula de Usuário e Upload */}
+          {/* LADO DIREITO DO CABEÇALHO: Cápsula de Usuário e Upload */}
           <div className="flex items-center gap-4">
-            
             <label
               className="bg-white/10 hover:bg-white/20 p-2.5 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm"
               title="Upload Lote"
             >
-              <FolderInput size={20} />
+              {/* Ocultando o ícone do FolderInput só para o código ficar limpo, ele está no seu import */}
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
               <input
                 type="file"
                 multiple
@@ -4184,7 +4182,8 @@ ${condutas}`;
 
             <div className="flex items-center bg-white rounded-full p-1.5 pr-2 shadow-lg gap-3">
               <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center text-white shadow-inner">
-                <User size={20} />
+                {/* Ocultando o ícone User só para o código ficar limpo */}
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               </div>
               
               <div className="flex flex-col text-right hidden md:flex min-w-[120px]">
@@ -4201,28 +4200,25 @@ ${condutas}`;
                 className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 flex items-center justify-center text-white transition-colors shadow-sm ml-2"
                 title="Sair do Sistema"
               >
-                <LogOut size={18} />
+                 {/* Ocultando o ícone LogOut só para o código ficar limpo */}
+                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
               </button>
             </div>
-
           </div>
         </div>
       </div>
 
-
       <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0 print:p-0">
-        {/* BARRA DE LEITOS (Blindada contra vazamentos do fundo) */}
-        <div className="relative z-20 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 scrollbar-hide print:hidden border border-white">
+        
+        {/* BARRA DE LEITOS */}
+        <div className="relative z-40 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 scrollbar-hide print:hidden border border-white">
           {patients.map((p) => {
             if (p.leito === 11 && !isAdmin) return null;
-            
             const isActive = activeTab === p.id;
-
             return (
               <button
                 key={p.id}
                 onClick={() => setActiveTab(p.id)}
-                // w-14 e h-16 garantem a borda horizontal menor (formato retangular)
                 className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center ${
                   isActive
                     ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
@@ -4236,102 +4232,115 @@ ${condutas}`;
           })}
         </div>
 
-       {/* BARRA DE NAVEGAÇÃO - ESTILO SANFONA COM IMAGEM LIVRE */}
-       <div className="relative mb-6 print:hidden">
+        {/* CONTAINER DE DUAS COLUNAS NO PC */}
+        <div className="flex flex-col md:flex-row gap-4 md:gap-6 relative mt-2">
           
-          {/* Fundo de Hexágonos (Posicionamento corrigido para não vazar para cima) */}
+          {/* Fundo de Hexágonos (AGORA LIVRE NO CONTAINER PRINCIPAL, NA EXTREMA DIREITA) */}
           <img 
             src="/hexagons.svg" 
             alt="Hexágonos" 
-            className="absolute -top-5 -right-4 md:-right-4 w-[280px] md:w-[450px] opacity-15 pointer-events-none z-0" 
+            className="absolute -top-6 right-0 md:-right-4 w-[280px] md:w-[350px] opacity-15 pointer-events-none z-0" 
           />
-          
-          <div className="flex overflow-x-auto flex-nowrap gap-2 relative z-10 scrollbar-hide pb-2">
-            {visibleNavButtons.map((btn) => {
-              const isActive = viewMode === btn.id;
-              const isTapped = tappedTab === btn.id;
 
-              return (
-                <button
-                  key={btn.id}
-                  onClick={() => {
-                    const isMobile = window.innerWidth < 768;
-                    if (isMobile) {
-                      if (tappedTab !== btn.id && !isActive) {
-                        setTappedTab(btn.id); 
-                      } else {
-                        setViewMode(btn.id); 
-                        setTappedTab(null);
-                      }
-                    } else {
-                      setViewMode(btn.id); 
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (tappedTab === btn.id) setTappedTab(null);
-                  }}
-                  className={`flex-shrink-0 group relative flex items-center justify-center p-2.5 rounded-xl border transition-all duration-300 ease-in-out outline-none ${
-                    isActive
-                      ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white shadow-md"
-                      : "bg-blue-50 border-blue-100 text-blue-700 hover:bg-blue-100 hover:border-blue-300"
-                  }`}
-                  title={btn.label}
-                >
-                  <div className="flex-shrink-0 flex items-center justify-center">
-                    {btn.icon}
-                  </div>
+          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE */}
+          <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden">
+            
+            <div className="relative mb-6 md:mb-0 print:hidden">
+              
+              {/* Container dos Botões (COM A CURA: md:overflow-visible) */}
+              <div className="flex overflow-x-auto md:overflow-visible md:flex-col gap-3 pb-2 md:pb-0 scrollbar-hide md:sticky md:top-6">
+              {visibleNavButtons.map((btn) => {
+                  const isActive = viewMode === btn.id;
+                  const isTapped = tappedTab === btn.id;
 
-                  <div
-                    className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out flex items-center ${
-                      isTapped || isActive
-                        ? "max-w-[200px] opacity-100 ml-2" 
-                        : "max-w-0 opacity-0 ml-0 md:group-hover:max-w-[200px] md:group-hover:opacity-100 md:group-hover:ml-2"
-                    }`}
+                  return (
+                    <div key={btn.id} className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0 z-10 hover:z-[100]">
+                      
+                      <button
+                        onClick={() => {
+                          const isMobile = window.innerWidth < 768;
+                          if (isMobile) {
+                            if (tappedTab !== btn.id && !isActive) {
+                              setTappedTab(btn.id); 
+                            } else {
+                              setViewMode(btn.id); 
+                              setTappedTab(null);
+                            }
+                          } else {
+                            setViewMode(btn.id); 
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          if (tappedTab === btn.id) setTappedTab(null);
+                        }}
+                        // INJEÇÃO ESTÉTICA: shadow-md (sombra base maior) e hover:shadow-lg (sombra ao passar o mouse)
+                        className={`absolute top-0 left-0 flex items-center h-10 md:h-12 min-w-[2.5rem] md:min-w-[3rem] p-0 rounded-xl border transition-all duration-300 ease-in-out outline-none group overflow-hidden shadow-md hover:shadow-lg hover:w-[180px] hover:z-[100] ${
+                          isActive
+                            ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white"
+                            // INJEÇÃO ESTÉTICA 2: bg-blue-50 (azul clarinho) e border-blue-200
+                            : "bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100 hover:border-blue-300"
+                        } ${isTapped && window.innerWidth < 768 ? "w-[180px]" : "w-10 md:w-12"}`}
+                        title={btn.label}
+                      >
+                        <div className="flex-shrink-0 flex items-center justify-center min-w-[2.5rem] md:min-w-[3rem] h-full">
+                          <div className="scale-75 md:scale-90 text-blue-700"> {/* Cor do ícone levemente mais forte para contraste */}
+                            {btn.icon}
+                          </div>
+                        </div>
+
+                        <div
+                          className={`whitespace-nowrap transition-opacity duration-300 pr-4 ${
+                            isTapped && window.innerWidth < 768 
+                              ? "opacity-100" 
+                              : "opacity-0 group-hover:opacity-100"
+                          }`}
+                        >
+                          <span className="text-xs md:text-sm font-bold tracking-wide">
+                            {btn.label}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* LADO DIREITO: ÁREA DE CONTEÚDO DO PRONTUÁRIO */}
+          {/* Note o z-30 aqui, ele é menor que o z-[60] da coluna da esquerda! */}
+          <div className="flex-1 min-w-0 relative z-30">
+            
+            {/* CABEÇALHO DO PACIENTE */}
+            <div
+              className="relative bg-white px-6 py-5 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] border border-slate-200 border-b-slate-100 print:hidden flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-t-3xl"
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-xl md:text-2xl font-extrabold text-teal-600 uppercase tracking-tight">
+                  {currentPatient.nome || "LEITO DISPONÍVEL"}
+                </h2>
+                
+                {currentPatient.nome && (userProfile?.role === "Médico" || isAdmin) && (
+                  <button
+                    onClick={handleClearData}
+                    className="text-slate-300 hover:text-red-500 transition-colors print:hidden flex-shrink-0"
+                    title="Excluir Paciente / Limpar Leito"
                   >
-                    <span className="text-sm font-bold tracking-wide">
-                      {btn.label}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+                     <Trash2 size={20} />
+                  </button>
+                )}
+                
+                {currentPatient.nome && currentPatient.dataNascimento && (
+                  <span className="bg-teal-600 text-white text-sm font-bold px-3 py-1 rounded-full shadow-sm flex-shrink-0">
+                    {calculateAge(currentPatient.dataNascimento)} anos
+                  </span>
+                )}
+              </div>
 
-        {/* CABEÇALHO DO PACIENTE (Com sobreposição, borda e sombra superior) */}
-        <div
-          className="relative z-30 bg-white px-6 py-5 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] border border-slate-200 border-b-slate-100 print:hidden flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-t-3xl"
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Nome do Paciente */}
-            <h2 className="text-xl md:text-2xl font-extrabold text-teal-600 uppercase tracking-tight">
-              {currentPatient.nome || "LEITO DISPONÍVEL"}
-            </h2>
-            
-            {/* Lixeira (Apagar Dados) */}
-            {currentPatient.nome && (userProfile?.role === "Médico" || isAdmin) && (
-              <button
-                onClick={handleClearData}
-                className="text-slate-300 hover:text-red-500 transition-colors print:hidden flex-shrink-0"
-                title="Excluir Paciente / Limpar Leito"
-              >
-                <Trash2 size={20} />
-              </button>
-            )}
-            
-            {/* Idade (Pílula) */}
-            {currentPatient.nome && currentPatient.dataNascimento && (
-              <span className="bg-teal-600 text-white text-sm font-bold px-3 py-1 rounded-full shadow-sm flex-shrink-0">
-                {calculateAge(currentPatient.dataNascimento)} anos
+              <span className="text-xl font-bold text-slate-700 bg-slate-100 px-5 py-2 rounded-xl flex-shrink-0 text-center border border-slate-200">
+                Leito {currentPatient.leito}
               </span>
-            )}
-          </div>
-
-          {/* Marcador do Leito (Bloco Cinza) */}
-          <span className="text-xl font-bold text-slate-700 bg-slate-100 px-5 py-2 rounded-xl flex-shrink-0 text-center border border-slate-200">
-            Leito {currentPatient.leito}
-          </span>
-        </div>
+            </div>
 
         {/* CORPO DO PRONTUÁRIO (Agora como barreira impenetrável) */}
         <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 border-slate-200 min-h-[500px] print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none">
@@ -4517,6 +4526,8 @@ ${condutas}`;
             </>
           )}
         </div>
+        </div> {/* Fim do Lado Direito (Área de Conteúdo) */}
+        </div> {/* Fim do Container de Duas Colunas */}
       </main>
 
       {/* MODAL: TROCA DE SENHA OBRIGATÓRIA */}
