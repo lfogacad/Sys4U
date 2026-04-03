@@ -128,27 +128,33 @@ const SpeechDashboard = ({
                         </div>
 
                         <div className="bg-white p-4 rounded-lg border border-pink-100">
-                          <label className="flex items-center gap-2 font-bold text-pink-700 mb-2">
-                            <input
-                              type="checkbox"
-                              checked={currentPatient.fono?.toleraAgua || false}
-                              onChange={(e) =>
-                                updateNested(
-                                  "fono",
-                                  "toleraAgua",
-                                  e.target.checked
-                                )
-                              }
-                            />{" "}
+                          <label className="block font-bold text-pink-700 mb-2">
                             Água Oral Liberada?
                           </label>
-                          {currentPatient.fono?.toleraAgua && (
-                            <div>
+                          <select
+                            className="w-full p-2 border border-pink-200 rounded outline-none focus:ring-2 focus:ring-pink-300 text-sm font-bold text-slate-700 mb-3"
+                            // Garante que leia corretamente caso o dado antigo fosse true/false
+                            value={
+                              currentPatient.fono?.toleraAgua === true || currentPatient.fono?.toleraAgua === "Sim" ? "Sim" :
+                              currentPatient.fono?.toleraAgua === false || currentPatient.fono?.toleraAgua === "Não" ? "Não" : ""
+                            }
+                            onChange={(e) =>
+                              updateNested("fono", "toleraAgua", e.target.value)
+                            }
+                          >
+                            <option value="">Aguardando Avaliação...</option>
+                            <option value="Sim">Sim (Liberada)</option>
+                            <option value="Não">Não (Suspensa)</option>
+                          </select>
+
+                          {/* O utensílio só aparece se a resposta for "Sim" */}
+                          {(currentPatient.fono?.toleraAgua === "Sim" || currentPatient.fono?.toleraAgua === true) && (
+                            <div className="animate-fadeIn pt-2 border-t border-pink-50 mt-2">
                               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                                 Utensílio
                               </label>
                               <select
-                                className="w-full p-2 border rounded"
+                                className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-pink-300 text-sm"
                                 value={currentPatient.fono?.utensilioAgua || ""}
                                 onChange={(e) =>
                                   updateNested(

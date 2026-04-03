@@ -383,7 +383,9 @@ const TechDashboard = ({
           {/* LIBERAÇÃO DE ÁGUA E UTENSÍLIO (Centralizado no seu próprio bloco) */}
           <div className="flex-1 border-t md:border-t-0 md:border-l border-amber-100 md:pl-6 pt-3 md:pt-0 flex flex-col items-center justify-center text-center">
             <span className="text-[10px] text-amber-600 font-bold uppercase block mb-2 w-full">Água Via Oral (VO):</span>
-            {currentPatient.fono?.toleraAgua ? (
+            
+            {/* LÓGICA DE 3 ESTADOS: Sim, Não ou Aguardando */}
+            {currentPatient.fono?.toleraAgua === "Sim" || currentPatient.fono?.toleraAgua === true ? (
               <div className="flex items-center justify-center gap-2 flex-wrap">
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 text-xs font-black rounded border border-emerald-300">
                   <CheckCircle size={14} /> LIBERADA
@@ -394,9 +396,13 @@ const TechDashboard = ({
                   </span>
                 )}
               </div>
-            ) : (
+            ) : currentPatient.fono?.toleraAgua === "Não" || currentPatient.fono?.toleraAgua === false ? (
               <span className="inline-flex items-center justify-center gap-1 px-2 py-1 bg-red-100 text-red-800 text-xs font-black rounded border border-red-300">
                 <X size={14} /> SUSPENSA
+              </span>
+            ) : (
+              <span className="inline-flex items-center justify-center gap-1 px-2 py-1 bg-slate-100 text-slate-500 text-xs font-black rounded border border-slate-300">
+                <Clock size={14} /> AGUARDANDO AVALIAÇÃO
               </span>
             )}
           </div>
