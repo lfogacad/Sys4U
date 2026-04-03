@@ -4250,20 +4250,20 @@ ${condutas}`;
             className="absolute -top-6 right-0 md:-right-4 w-[280px] md:w-[350px] opacity-15 pointer-events-none z-0" 
           />
 
-          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE */}
-          {/* CORREÇÃO AQUI: Adicionado 'self-start', e movido o 'md:sticky md:top-6' para este container principal */}
+          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE E CARROSSEL MOBILE */}
           <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
             
             <div className="relative mb-6 md:mb-0 print:hidden">
               
-              {/* Container dos Botões (Retiramos o sticky daqui e passamos para o pai ali em cima) */}
-              <div className="flex overflow-x-auto md:overflow-visible md:flex-col gap-3 pb-2 md:pb-0 scrollbar-hide">
+              {/* INJEÇÃO CARROSSEL: snap-x e snap-mandatory criam o "trilho magnético" */}
+              <div className="flex overflow-x-auto md:overflow-visible md:flex-col gap-3 pb-2 md:pb-0 scrollbar-hide snap-x snap-mandatory">
                 {visibleNavButtons.map((btn) => {
                   const isActive = viewMode === btn.id;
                   const isTapped = tappedTab === btn.id;
 
                   return (
-                    <div key={btn.id} className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0 z-10 hover:z-[100]">
+                    // INJEÇÃO CARROSSEL 2: snap-center faz o botão parar sempre no centro da rolagem
+                    <div key={btn.id} className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0 z-10 hover:z-[100] snap-center">
                       
                       <button
                         onClick={() => {
