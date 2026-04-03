@@ -3017,10 +3017,23 @@ ${admissionData.diagAgudos || "-"}
 DIAGNÓSTICOS CRÔNICOS:
 ${admissionData.diagCronicos || "-"}
 
-CONDUTA:
+    CONDUTA:
 ${admissionData.conduta || "-"}`;
 
-    r.historiaClinica = text;
+    // === INÍCIO DA SUTURA ===
+    // Criando o bloco filtrado apenas com o que importa para o dia a dia
+    const historiaAbaMedica = `HISTÓRIA CLÍNICA:
+${admissionData.historia || "-"}
+
+MEDICAMENTOS DE USO HABITUAL:
+${admissionData.medicamentos || "-"}
+
+NÍVEL DE CONSCIÊNCIA BASAL: ${admissionData.conscienciaBasal || "-"}
+MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
+
+    // Agora a Aba Médica recebe apenas o resumo
+    r.historiaClinica = historiaAbaMedica;
+    // === FIM DA SUTURA ===
 
     const up = [...patients];
     up[activeTab] = r;
@@ -3028,7 +3041,8 @@ ${admissionData.conduta || "-"}`;
     save(r);
 
     setShowAdmissionModal(false);
-    setGeneratedAdmissionText(text);
+    // A tela de copiar texto final continua recebendo a Admissão Completa
+    setGeneratedAdmissionText(text); 
     setViewMode("medical");
   };
 
