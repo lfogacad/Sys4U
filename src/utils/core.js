@@ -621,16 +621,34 @@ export const getSOFAMortality = (score) => {
     return { valor: 15, origem: "Presumido" };
   };
   
-  // --- MOTOR PRINCIPAL SOFA-2 ---
+  // --- MOTOR PRINCIPAL SOFA-2 (CORRIGIDO E OTIMIZADO) ---
   export const getAutoSOFA2 = (p) => {
     let score = 0;
     if (!p.sofa_data_technical) p.sofa_data_technical = {};
   
-    const buscarUltimoLab = (nomeExame) => {
-      if (p.labs?.today?.[nomeExame]) return parseFloat(p.labs.today[nomeExame]);
+    // SUTURA 1: Função robusta que aceita variações de nome e corrige a VÍRGULA brasileira
+    const buscarUltimoLab = (nomesPossiveis) => {
+      const parseBr = (val) => {
+        if (!val) return null;
+        const clean = val.toString().trim().replace(',', '.'); // Converte 1,5 para 1.5
+        return clean === "" ? null : parseFloat(clean);
+      };
+
+      const nomes = Array.isArray(nomesPossiveis) ? nomesPossiveis : [nomesPossiveis];
+      
+      // Procura primeiro nos exames de hoje
+      for (let nome of nomes) {
+        const val = parseBr(p.labs?.today?.[nome]);
+        if (val !== null && !isNaN(val)) return val;
+      }
+      
+      // Se não achar hoje, varre o histórico do mais recente pro mais antigo
       const datas = Object.keys(p.examHistory || {}).sort().reverse();
       for (let d of datas) {
-        if (p.examHistory[d]?.[nomeExame]) return parseFloat(p.examHistory[d][nomeExame]);
+        for (let nome of nomes) {
+          const val = parseBr(p.examHistory[d]?.[nome]);
+          if (val !== null && !isNaN(val)) return val;
+        }
       }
       return null;
     };
@@ -638,7 +656,8 @@ export const getSOFAMortality = (score) => {
     const buscarUltimaPAM = () => {
       for (let h of BH_HOURS.slice().reverse()) {
         const pam = p.bh?.vitals?.[h]?.["PAM"];
-        if (pam) return parseFloat(pam);
+        // Correção de vírgula aqui também por segurança
+        if (pam) return parseFloat(pam.toString().replace(',', '.')); 
       }
       return null;
     };
@@ -649,13 +668,15 @@ export const getSOFAMortality = (score) => {
         const gaso = p.gasometriaHistory[col];
         if (!gaso) continue;
         const pfDireto = gaso["P/F"] || gaso["PF"] || gaso["Relação P/F"] || gaso["Relacao P/F"] || gaso["PaO2/FiO2"];
-        if (pfDireto) return parseFloat(pfDireto);
+        if (pfDireto) return parseFloat(pfDireto.toString().replace(',', '.'));
+        
         const pao2 = gaso["PaO2"] || gaso["pO2"];
         let fio2Gaso = gaso["FiO2"];
         if (pao2 && fio2Gaso) {
-          fio2Gaso = parseFloat(fio2Gaso);
+          fio2Gaso = parseFloat(fio2Gaso.toString().replace(',', '.'));
+          const pao2Float = parseFloat(pao2.toString().replace(',', '.'));
           const fio2Decimal = fio2Gaso > 1 ? fio2Gaso / 100 : fio2Gaso;
-          return parseFloat(pao2) / fio2Decimal;
+          return pao2Float / fio2Decimal;
         }
       }
       return null;
@@ -696,21 +717,25 @@ export const getSOFAMortality = (score) => {
     else if (noraDose > 0) score += 2;
     else if (ultimaPAM !== null && ultimaPAM < 70) score += 1;
   
-    const bili = buscarUltimoLab("Bilirrubina Total") || buscarUltimoLab("Bilirrubina");
+    // SUTURA 2: Passando um Array com variações de nomes para garantir que ele ache!
+    const bili = buscarUltimoLab(["Bilirrubina Total", "Bilirrubina", "BT", "Bili"]);
     if (bili > 12) score += 4;
     else if (bili > 6) score += 3;
     else if (bili > 3) score += 2;
     else if (bili >= 1.2) score += 1;
   
-    const creat = buscarUltimoLab("Creatinina");
+    // Buscando a Creatinina de forma blindada
+    const creat = buscarUltimoLab(["Creatinina", "Creat", "Cr", "Cr."]);
     p.sofa_data_technical.lastCreat = creat; 
     const isDialysis = p.medical?.dialise || false;
+    
     if (isDialysis) score += 4;
     else if (creat > 3.5) score += 3;
     else if (creat >= 2.0) score += 2;
     else if (creat >= 1.2) score += 1;
   
-    const plat = buscarUltimoLab("Plaquetas");
+    // Buscando as Plaquetas
+    const plat = buscarUltimoLab(["Plaquetas", "Plat", "PLT", "Plaq"]);
     p.sofa_data_technical.lastPlat = plat; 
     if (plat && plat <= 50) score += 4;
     else if (plat && plat <= 80) score += 3;
