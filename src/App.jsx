@@ -1603,6 +1603,32 @@ const App = () => {
     useState(false);
   const [pendingUploadData, setPendingUploadData] = useState(null);
 
+  // --- INJEÇÕES DO CARROSSEL 3D MOBILE ---
+  const navScrollRef = React.useRef(null);
+  const [centerTab, setCenterTab] = React.useState(null);
+
+  const handleNavScroll = () => {
+    if (!navScrollRef.current || window.innerWidth >= 768) return;
+    const container = navScrollRef.current;
+    const centerPosition = container.scrollLeft + container.clientWidth / 2;
+
+    let closest = null;
+    let minDistance = Infinity;
+
+    Array.from(container.children).forEach((child) => {
+      if (!child.id || !child.id.startsWith('nav-')) return;
+      const childCenter = child.offsetLeft + child.clientWidth / 2;
+      const distance = Math.abs(centerPosition - childCenter);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closest = child.id.replace('nav-', '');
+      }
+    });
+
+    if (closest && closest !== centerTab) setCenterTab(closest);
+  };
+  // ---------------------------------------
+
   // NOVOS ESTADOS PARA ADMISSÃO DE PACIENTE
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
   const [admissionData, setAdmissionData] = useState({});
@@ -1621,6 +1647,8 @@ const App = () => {
   // ESTADOS DO TIMEOUT CLÍNICO (PRÉ-EVOLUÇÃO MÉDICA)
   const [showChecklistEvo, setShowChecklistEvo] = useState(false);
   const [checkData, setCheckData] = useState({ estadoGeral: "REG", usaDva: false, dvas: [], usaSedacao: false, sedativos: [], rass: "", glasgow: "", atbs: "" });
+
+
 
   // =========================================================================
   // PASSO 2: FUNÇÕES DO TIMEOUT CLÍNICO (ARQUITETURA POR SISTEMAS)
@@ -4250,57 +4278,79 @@ ${condutas}`;
             className="absolute -top-6 right-0 md:-right-4 w-[280px] md:w-[350px] opacity-15 pointer-events-none z-0" 
           />
 
-          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE E CARROSSEL MOBILE */}
+          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE (Carrossel 3D Mobile) */}
           <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
-            
             <div className="relative mb-6 md:mb-0 print:hidden">
-              
-              {/* INJEÇÃO CARROSSEL: snap-x e snap-mandatory criam o "trilho magnético" */}
-              <div className="flex overflow-x-auto md:overflow-visible md:flex-col gap-3 pb-2 md:pb-0 scrollbar-hide snap-x snap-mandatory">
-                {visibleNavButtons.map((btn) => {
-                  const isActive = viewMode === btn.id;
-                  const isTapped = tappedTab === btn.id;
+
+              {/* CONTAINER DO CARROSSEL */}
+              {/* px-[35vw] garante que a primeira e a última aba alcancem o centro da tela no celular */}
+              <div
+                ref={navScrollRef}
+                onScroll={handleNavScroll}
+                className="flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 px-[35vw] md:px-0 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center"
+              >
+                {visibleNavButtons.map((btn, index) => {
+                  const isActive = viewMode === btn.id; // APENAS ele recebe a cor
+                  
+                  // Se for celular, a aba expande se estiver no centro do scroll
+                  const isExpandedMobile = centerTab === btn.id && window.innerWidth < 768; 
+
+                  // --- CÁLCULO DA CASCATA 3D (Z-INDEX) ---
+                  // Calcula a distância do item para o centro. Quem tá no centro ganha o z-index maior.
+                  const centerIndex = visibleNavButtons.findIndex(b => b.id === centerTab);
+                  const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
+                  const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
 
                   return (
-                    // INJEÇÃO CARROSSEL 2: snap-center faz o botão parar sempre no centro da rolagem
-                    <div key={btn.id} className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0 z-10 hover:z-[100] snap-center">
-                      
+                    <div
+                      key={btn.id}
+                      id={`nav-${btn.id}`}
+                      style={{ zIndex: isActive ? 50 : zIndexCascata }} // O item clicado (ativo) sempre fura a fila e vai pra frente
+                      // -ml-4 cria a sobreposição das abas umas por cima das outras no celular
+                      className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out 
+                        ${window.innerWidth < 768 ? '-ml-5 first:ml-0' : ''} 
+                        hover:z-[100]
+                      `}
+                    >
                       <button
                         onClick={() => {
                           const isMobile = window.innerWidth < 768;
                           if (isMobile) {
-                            if (tappedTab !== btn.id && !isActive) {
-                              setTappedTab(btn.id); 
+                            // Se bater na aba no mobile, ela centraliza. Se já tiver no centro, ativa a ficha dela.
+                            if (centerTab !== btn.id) {
+                               const el = document.getElementById(`nav-${btn.id}`);
+                               if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
                             } else {
-                              setViewMode(btn.id); 
-                              setTappedTab(null);
+                               setViewMode(btn.id);
                             }
                           } else {
-                            setViewMode(btn.id); 
+                            setViewMode(btn.id);
                           }
                         }}
-                        onMouseLeave={() => {
-                          if (tappedTab === btn.id) setTappedTab(null);
-                        }}
-                        className={`absolute top-0 left-0 flex items-center h-10 md:h-12 min-w-[2.5rem] md:min-w-[3rem] p-0 rounded-xl border transition-all duration-300 ease-in-out outline-none group overflow-hidden shadow-md hover:shadow-lg hover:w-[180px] hover:z-[100] ${
-                          isActive
-                            ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white"
-                            : "bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100 hover:border-blue-300"
-                        } ${isTapped && window.innerWidth < 768 ? "w-[180px]" : "w-10 md:w-12"}`}
+                        // LÓGICA DE COR E TAMANHO
+                        className={`flex items-center h-12 md:h-12 min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
+                          ${
+                            isActive
+                              ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
+                              : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm"
+                          }
+                          ${isExpandedMobile ? "w-[160px]" : "w-12"}
+                          md:w-12 md:hover:w-[180px]
+                        `}
                         title={btn.label}
                       >
-                        <div className="flex-shrink-0 flex items-center justify-center min-w-[2.5rem] md:min-w-[3rem] h-full">
-                          <div className="scale-75 md:scale-90 text-blue-700">
+                        {/* ÍCONE */}
+                        <div className={`flex-shrink-0 flex items-center justify-center w-12 h-12 transition-transform duration-300 ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                          <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
                             {btn.icon}
                           </div>
                         </div>
 
+                        {/* TEXTO (Aparece se for o centro no mobile ou hover no PC) */}
                         <div
-                          className={`whitespace-nowrap transition-opacity duration-300 pr-4 ${
-                            isTapped && window.innerWidth < 768 
-                              ? "opacity-100" 
-                              : "opacity-0 group-hover:opacity-100"
-                          }`}
+                          className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+                            ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
+                          `}
                         >
                           <span className="text-xs md:text-sm font-bold tracking-wide">
                             {btn.label}
