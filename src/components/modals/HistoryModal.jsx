@@ -20,8 +20,50 @@ const HistoryModal = ({
 }) => {
   if (!showHistoryModal) return null;
 
-  // Calculamos as datas únicas para a timeline invertida uma única vez
+  // Calculamos as datas únicas para a timeline
   const timelineDates = Array.from(new Set([...Object.keys(currentPatient.examHistory || {}), ...getLast10Days()])).sort().reverse();
+
+  // SUTURA 1: Unificamos os exames fixos e os customizados em uma única "espinha dorsal" para a navegação funcionar
+  const allExams = [...EXAM_ROWS, ...(currentPatient.customExamRows || [])];
+
+  // SUTURA 2: O cérebro da navegação por teclado (Cima, Baixo, Esquerda, Direita e Enter)
+  const handleKeyDown = (e, rowIndex, colIndex) => {
+    let nextRow = rowIndex;
+    let nextCol = colIndex;
+    let shouldMove = false;
+
+    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+      nextRow = rowIndex + 1;
+      shouldMove = true;
+    } 
+    else if (e.key === 'ArrowUp') {
+      nextRow = rowIndex - 1;
+      shouldMove = true;
+    } 
+    else if (e.key === 'ArrowRight') {
+      // Pula para a coluna da direita apenas se o cursor estiver no fim do texto
+      if (e.target.selectionEnd === e.target.value.length) {
+        nextCol = colIndex + 1;
+        shouldMove = true;
+      }
+    } 
+    else if (e.key === 'ArrowLeft') {
+      // Pula para a coluna da esquerda apenas se o cursor estiver no início do texto
+      if (e.target.selectionStart === 0) {
+        nextCol = colIndex - 1;
+        shouldMove = true;
+      }
+    }
+
+    if (shouldMove) {
+      const nextInput = document.getElementById(`exam-input-${nextRow}-${nextCol}`);
+      if (nextInput) {
+        e.preventDefault(); // Previne o pulo duplo ou rolagem da tela
+        nextInput.focus();
+        nextInput.select(); // Já deixa o texto selecionado para sobrescrever rápido
+      }
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-white z-[60] flex flex-col p-4 animate-fadeIn history-print-mode">
@@ -66,54 +108,44 @@ const HistoryModal = ({
             </tr>
           </thead>
           <tbody>
-            {EXAM_ROWS.map((ex) => (
-              <tr key={ex} className="hover:bg-blue-50 transition-colors border-b last:border-0">
-                <td className="p-2 border-r border-slate-200 font-bold text-slate-700 sticky left-0 bg-white shadow-[1px_0_0_0_#e2e8f0]">
-                  {formatExamName(ex)}
-                </td>
-                {timelineDates.map((d) => (
-                  <td key={d} className="p-0 border-r border-slate-200">
-                    <input
-                      className="w-full h-full text-center p-2 outline-none focus:bg-blue-100 focus:font-bold transition-colors bg-transparent"
-                      disabled={!isOverviewEditable}
-                      value={currentPatient.examHistory[d]?.[ex] || ""}
-                      onChange={(e) => {
-                        const up = [...patients];
-                        if (!up[activeTab].examHistory[d]) up[activeTab].examHistory[d] = {};
-                        up[activeTab].examHistory[d][ex] = e.target.value;
-                        const s = syncLabsFromHistory(up[activeTab]);
-                        up[activeTab] = s;
-                        setPatients(up);
-                      }}
-                      onBlur={() => save(patients[activeTab])}
-                    />
+            {allExams.map((ex, rowIndex) => {
+              const isCustom = !EXAM_ROWS.includes(ex); // Verifica se é um exame customizado para colorir diferente
+              
+              return (
+                <tr key={ex} className={`${isCustom ? "bg-yellow-50/30 hover:bg-yellow-50/80" : "hover:bg-blue-50"} transition-colors border-b last:border-0`}>
+                  <td className={`p-2 border-r border-slate-200 font-bold text-slate-700 sticky left-0 shadow-[1px_0_0_0_#e2e8f0] ${isCustom ? "bg-yellow-50" : "bg-white"}`}>
+                    {isCustom ? ex : formatExamName(ex)}
                   </td>
-                ))}
-              </tr>
-            ))}
-            {currentPatient.customExamRows?.map((ex) => (
-              <tr key={ex} className="bg-yellow-50/30 hover:bg-yellow-50/80 transition-colors border-b">
-                <td className="p-2 border-r border-slate-200 font-bold text-slate-700 sticky left-0 bg-yellow-50 shadow-[1px_0_0_0_#e2e8f0]">
-                  {ex}
-                </td>
-                {timelineDates.map((d) => (
-                  <td key={d} className="p-0 border-r border-slate-200">
-                    <input
-                      className="w-full h-full text-center p-2 outline-none focus:bg-blue-100 transition-colors bg-transparent"
-                      disabled={!isOverviewEditable}
-                      value={currentPatient.examHistory[d]?.[ex] || ""}
-                      onChange={(e) => {
-                        const up = [...patients];
-                        if (!up[activeTab].examHistory[d]) up[activeTab].examHistory[d] = {};
-                        up[activeTab].examHistory[d][ex] = e.target.value;
-                        setPatients(up);
-                      }}
-                      onBlur={() => save(patients[activeTab])}
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
+                  
+                  {timelineDates.map((d, colIndex) => (
+                    <td key={d} className="p-0 border-r border-slate-200">
+                      <input
+                        id={`exam-input-${rowIndex}-${colIndex}`} // O Endereço (Coordenada) da célula
+                        className="w-full h-full text-center p-2 outline-none focus:bg-blue-100 focus:font-bold transition-colors bg-transparent"
+                        disabled={!isOverviewEditable}
+                        value={currentPatient.examHistory[d]?.[ex] || ""}
+                        onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)} // Reflexo Neurológico Injetado
+                        onChange={(e) => {
+                          const up = [...patients];
+                          if (!up[activeTab].examHistory[d]) up[activeTab].examHistory[d] = {};
+                          up[activeTab].examHistory[d][ex] = e.target.value;
+                          
+                          // Sincroniza apenas exames do painel principal (ignora os customizados nessa sincronização)
+                          if (!isCustom) {
+                            const s = syncLabsFromHistory(up[activeTab]);
+                            up[activeTab] = s;
+                          }
+                          
+                          setPatients(up);
+                        }}
+                        onBlur={() => save(patients[activeTab])}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+            
             {isOverviewEditable && (
               <tr>
                 <td
