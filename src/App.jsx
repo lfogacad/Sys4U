@@ -4367,12 +4367,13 @@ ${condutas}`;
           {/* Note o z-30 aqui, ele é menor que o z-[60] da coluna da esquerda! */}
           <div className="flex-1 min-w-0 relative z-30">
             
-            {/* CABEÇALHO DO PACIENTE */}
+            {/* CABEÇALHO DO PACIENTE (Otimizado para 1 linha) */}
             <div
-              className="relative bg-white px-6 py-5 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] border border-slate-200 border-b-slate-100 print:hidden flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-t-3xl"
+              className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm px-4 py-3 shadow-md border border-slate-200 border-b-slate-100 print:hidden flex flex-row items-center justify-between gap-2 rounded-t-3xl"
             >
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-xl md:text-2xl font-extrabold text-teal-600 uppercase tracking-tight">
+              {/* O truncate garante que nomes enormes não quebrem a linha */}
+              <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                <h2 className="text-lg md:text-xl font-extrabold text-teal-600 uppercase tracking-tight truncate">
                   {currentPatient.nome || "LEITO DISPONÍVEL"}
                 </h2>
                 
@@ -4382,18 +4383,19 @@ ${condutas}`;
                     className="text-slate-300 hover:text-red-500 transition-colors print:hidden flex-shrink-0"
                     title="Excluir Paciente / Limpar Leito"
                   >
-                     <Trash2 size={20} />
+                     <Trash2 size={18} />
                   </button>
                 )}
                 
                 {currentPatient.nome && currentPatient.dataNascimento && (
-                  <span className="bg-teal-600 text-white text-sm font-bold px-3 py-1 rounded-full shadow-sm flex-shrink-0">
+                  <span className="bg-teal-600 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm flex-shrink-0">
                     {calculateAge(currentPatient.dataNascimento)} anos
                   </span>
                 )}
               </div>
 
-              <span className="text-xl font-bold text-slate-700 bg-slate-100 px-5 py-2 rounded-xl flex-shrink-0 text-center border border-slate-200">
+              {/* Quadrado do Leito reduzido e protegido com whitespace-nowrap */}
+              <span className="text-sm md:text-base font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl flex-shrink-0 text-center border border-slate-200 whitespace-nowrap">
                 Leito {currentPatient.leito}
               </span>
             </div>

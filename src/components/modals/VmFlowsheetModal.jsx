@@ -15,13 +15,20 @@ const VmFlowsheetModal = ({
       <div className="bg-white w-full max-w-7xl rounded-2xl shadow-2xl flex flex-col h-[90vh] overflow-hidden animate-fadeIn print:shadow-none print:h-auto print:overflow-visible">
         
         {/* CABEÇALHO - Oculto na impressão para economizar tinta */}
-        <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0 print:hidden">
-          <h2 className="text-lg font-black uppercase flex items-center gap-2 tracking-wide">
-            <Activity size={24} className="text-cyan-400" />
-            Mapa de Ventilação Mecânica - {currentPatient.nome || "Paciente"}
-          </h2>
-          <button onClick={() => setShowVmFlowsheet(false)} className="p-2 hover:bg-slate-700 rounded-full transition-colors">
-            <X size={24} />
+        <div className="p-3 md:p-4 bg-slate-800 flex justify-between items-center shrink-0 print:hidden">
+          
+          <div className="flex flex-col min-w-0 pr-4">
+            <h2 className="text-base md:text-lg font-black uppercase text-white flex items-center gap-2 tracking-wide">
+              <Activity size={20} className="text-cyan-400 shrink-0" />
+              Mapa de VM
+            </h2>
+            <span className="text-xs md:text-sm text-slate-300 font-bold truncate mt-0.5">
+              Paciente: {currentPatient.nome || "Não identificado"}
+            </span>
+          </div>
+
+          <button onClick={() => setShowVmFlowsheet(false)} className="p-2 hover:bg-slate-700 rounded-full transition-colors text-white/70 hover:text-white shrink-0">
+            <X size={20} />
           </button>
         </div>
 
