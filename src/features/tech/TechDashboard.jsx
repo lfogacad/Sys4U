@@ -25,6 +25,84 @@ const TechDashboard = ({
   setCurrentNoraRate,
   setShowNoraModal
 }) => {
+
+  // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
+  const LIMITS = {
+    gains: {
+      "Dieta SNE": { min: 0, max: 120 },
+      "Água": { min: 0, max: 999 }, // Pega "Água (VO/SNE)"
+      "Soro basal": { min: 0, max: 500 },
+      "Diluição EV": { min: 0, max: 500 },
+      "Volume": { min: 0, max: 1000 },
+      "Midazolan": { min: 0, max: 100 },
+      "Fentanil": { min: 0, max: 100 },
+      "Noradrenalina": { min: 0, max: 100 },
+      "Dobutamina": { min: 0, max: 100 },
+      "Hemocomponentes": { min: 0, max: 500 }
+    },
+    losses: {
+      "Diurese": { min: 0, max: 2000 }, // Pega "Diurese (Total Coletado)" e variações
+      "Drenos": { min: 0, max: 5000 },
+      "SNG/SNE": { min: 0, max: 999 },
+      "HD": { min: 0, max: 9999 }
+    },
+    vitals: {
+      "Temp (ºC)": { min: 20, max: 45 },
+      "FC (bpm)": { min: 0, max: 350 },
+      "FR (irpm)": { min: 0, max: 99 },
+      "PAS": { min: 0, max: 300 },
+      "PAD": { min: 0, max: 200 },
+      "PAM": { min: 0, max: 250 },
+      "SpO2 (%)": { min: 0, max: 100 },
+      "HGT (mg/dL)": { min: 0, max: 600 }
+    }
+  };
+
+  const getLimits = (category, item) => {
+    if (!LIMITS[category]) return null;
+    const matchedKey = Object.keys(LIMITS[category]).find(k => item.includes(k));
+    return matchedKey ? LIMITS[category][matchedKey] : null;
+  };
+
+  const handleValidatedChange = (hour, category, item, e) => {
+    let val = e.target.value;
+    
+    if (val === "") {
+      updateBH(hour, category, item, val);
+      return;
+    }
+    
+    const limits = getLimits(category, item);
+
+    // SE ESTIVER NA LISTA DE LIMITES: Aplica a barreira de números e teto máximo
+    if (limits) {
+      // Trava para aceitar apenas números, ponto e vírgula nos campos limitados
+      if (!/^-?\d*[.,]?\d*$/.test(val)) return;
+
+      const numVal = parseFloat(val.replace(',', '.'));
+      if (!isNaN(numVal) && numVal > limits.max) {
+        return; // Bloqueia fisicamente a tecla se passar do Teto
+      }
+    }
+
+    // Se NÃO estiver na lista, passa direto por aqui aceitando letras e números normalmente!
+    updateBH(hour, category, item, val);
+  };
+
+  const checkMinLimitOnBlur = (hour, category, item, e) => {
+    let val = e.target.value;
+    if (val === "") return;
+    const numVal = parseFloat(val.replace(',', '.'));
+    if (!isNaN(numVal)) {
+      const limits = getLimits(category, item);
+      // Audita o piso inferior (ex: Temperatura 2ºC ou valores negativos)
+      if (limits && numVal < limits.min) {
+        alert(`ATENÇÃO de SEGURANÇA:\n\nO valor inserido em ${item} é inferior ao mínimo permitido (${limits.min}).\nO dado foi removido para evitar erros no Prontuário.`);
+        updateBH(hour, category, item, ""); // Extirpa o valor inválido
+      }
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fadeIn print:space-y-2 bh-print-container">
       <div id="print-header" className="hidden print:flex w-full justify-between items-center text-xs font-bold border-b-2 border-black pb-2 mb-1 text-black">
@@ -143,8 +221,9 @@ const TechDashboard = ({
                             type="text"
                             className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden"
                             value={displayedBH.gains[h]?.[item] || ""}
-                            onChange={(e) => updateBH(h, "gains", item, e.target.value)}
+                            onChange={(e) => handleValidatedChange(h, "gains", item, e)}
                             onBlur={(e) => {
+                              checkMinLimitOnBlur(h, "gains", item, e);
                               const val = e.target.value;
                               const newVal = parseFloat(val.replace(',', '.')) || 0;
                               const isNora = item.toLowerCase().includes("nora");
@@ -244,7 +323,13 @@ const TechDashboard = ({
                       </td>
                       {BH_HOURS.map((h) => (
                         <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
-                          <input type="text" className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden" value={displayedBH.losses[h]?.[item] || ""} onChange={(e) => updateBH(h, "losses", item, e.target.value)} />
+                          <input 
+                            type="text" 
+                            className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden" 
+                            value={displayedBH.losses[h]?.[item] || ""} 
+                            onChange={(e) => handleValidatedChange(h, "losses", item, e)} 
+                            onBlur={(e) => checkMinLimitOnBlur(h, "losses", item, e)} 
+                          />
                           <span className="hidden print:block text-center text-[8px] w-full align-middle">{displayedBH.losses[h]?.[item] || ""}</span>
                         </td>
                       ))}
@@ -349,7 +434,13 @@ const TechDashboard = ({
                     }
                     return (
                       <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
-                        <input type="text" className={`w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden ${isRed ? "text-red-600 font-bold" : ""}`} value={val} onChange={(e) => updateBH(h, "vitals", param, e.target.value)} />
+                        <input 
+                          type="text" 
+                          className={`w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden ${isRed ? "text-red-600 font-bold" : ""}`} 
+                          value={val} 
+                          onChange={(e) => handleValidatedChange(h, "vitals", param, e)} 
+                          onBlur={(e) => checkMinLimitOnBlur(h, "vitals", param, e)} 
+                        />
                         <span className={`hidden print:block text-center text-[8px] w-full align-middle print:text-black ${isRed ? "font-bold" : ""}`}>
                           {val}
                         </span>
