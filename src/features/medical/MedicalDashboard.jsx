@@ -145,45 +145,6 @@ const MedicalDashboard = ({
         </div>
       )}
 
-      {/* EVOLUÇÃO IA */}
-      <div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2">
-            <Sparkles size={16} /> Evolução Diária (IA)
-          </h3>
-          <div className="flex gap-2">
-            {aiEvolution && (
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  copyToClipboardFallback(aiEvolution);
-                }}
-                className="flex items-center gap-1 bg-white border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-indigo-50 transition"
-                title="Copiar texto gerado"
-              >
-                <ClipboardCheck size={14} /> Copiar
-              </button>
-            )}
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                abrirChecklistEvolucao();
-              }}
-              className="flex items-center gap-2 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-indigo-700 transition"
-            >
-              {isGeneratingAI ? <Loader2 className="animate-spin" size={14} /> : <Sparkles size={14} />} Gerar Evolução
-            </button>
-          </div>
-        </div>
-        {aiEvolution && (
-          <textarea
-            className="w-full bg-indigo-50/50 p-3 rounded-lg border border-indigo-100 text-sm text-slate-700 min-h-[150px] outline-none focus:ring-2 focus:ring-indigo-400 resize-y"
-            value={aiEvolution}
-            onChange={(e) => setAiEvolution(e.target.value)}
-          />
-        )}
-      </div>
-
       {/* DADOS CADASTRAIS */}
       <div className="grid md:grid-cols-5 gap-4 bg-slate-50 p-4 rounded-xl">
         <div className="md:col-span-2">
@@ -343,6 +304,46 @@ const MedicalDashboard = ({
           );
         })}
       </div>
+
+      {/* EVOLUÇÃO IA */}
+      <div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2">
+            <Sparkles size={16} /> Evolução Diária (IA)
+          </h3>
+          <div className="flex gap-2">
+            {aiEvolution && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  copyToClipboardFallback(aiEvolution);
+                }}
+                className="flex items-center gap-1 bg-white border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-indigo-50 transition"
+                title="Copiar texto gerado"
+              >
+                <ClipboardCheck size={14} /> Copiar
+              </button>
+            )}
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                abrirChecklistEvolucao();
+              }}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-indigo-700 transition"
+            >
+              {isGeneratingAI ? <Loader2 className="animate-spin" size={14} /> : <Sparkles size={14} />} Gerar Evolução
+            </button>
+          </div>
+        </div>
+        {aiEvolution && (
+          <textarea
+            className="w-full bg-indigo-50/50 p-3 rounded-lg border border-indigo-100 text-sm text-slate-700 min-h-[150px] outline-none focus:ring-2 focus:ring-indigo-400 resize-y"
+            value={aiEvolution}
+            onChange={(e) => setAiEvolution(e.target.value)}
+          />
+        )}
+      </div>
+      
     </fieldset>
   );
 };

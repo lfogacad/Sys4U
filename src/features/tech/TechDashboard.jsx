@@ -293,24 +293,25 @@ const TechDashboard = ({
               </tbody>
             </table>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-100 rounded-xl border border-slate-200 print:hidden mt-4">
-            <div>
-              <p className="text-[10px] text-slate-500 font-bold uppercase">Total Ganhos</p>
-              <p className="text-xl font-bold text-green-600">+{bhTotals.totalGains}</p>
+          {/* SUTURA 1: Retirado o print:hidden, transformado em flex para impressão limpa */}
+          <div className="grid grid-cols-2 md:grid-cols-4 print:flex print:justify-between gap-4 p-4 print:p-0 print:pt-2 bg-slate-100 print:bg-white rounded-xl border border-slate-200 print:border-none mt-4 print:mt-1">
+            <div className="print:text-center">
+              <p className="text-[10px] text-slate-500 print:text-black font-bold uppercase">Total Ganhos</p>
+              <p className="text-xl font-bold text-green-600 print:text-black">+{bhTotals.totalGains}</p>
             </div>
-            <div>
-              <p className="text-[10px] text-slate-500 font-bold uppercase">Total Perdas (+PI)</p>
-              <p className="text-xl font-bold text-red-600">-{bhTotals.totalLosses + safeNumber(displayedBH.insensibleLoss)}</p>
+            <div className="print:text-center">
+              <p className="text-[10px] text-slate-500 print:text-black font-bold uppercase">Total Perdas (+PI)</p>
+              <p className="text-xl font-bold text-red-600 print:text-black">-{bhTotals.totalLosses + safeNumber(displayedBH.insensibleLoss)}</p>
             </div>
-            <div className="bg-white p-2 rounded-lg border border-slate-300 print:border-none">
-              <p className="text-[10px] text-slate-500 font-bold uppercase">Balanço 24h</p>
-              <p className={`text-xl font-bold ${bhTotals.dailyBalance >= 0 ? "text-blue-600" : "text-orange-600"}`}>{bhTotals.dailyBalance > 0 ? "+" : ""}{bhTotals.dailyBalance}</p>
+            <div className="bg-white p-2 print:p-0 rounded-lg border border-slate-300 print:border-none print:text-center">
+              <p className="text-[10px] text-slate-500 print:text-black font-bold uppercase">Balanço 24h</p>
+              <p className={`text-xl font-bold ${bhTotals.dailyBalance >= 0 ? "text-blue-600 print:text-black" : "text-orange-600 print:text-black"}`}>{bhTotals.dailyBalance > 0 ? "+" : ""}{bhTotals.dailyBalance}</p>
             </div>
-            <div className="bg-slate-800 p-2 rounded-lg text-white print:text-black print:bg-white print:border flex flex-col justify-between">
-              <div className="flex justify-between items-center mb-1">
+            <div className="bg-slate-800 p-2 rounded-lg text-white print:text-black print:bg-white flex flex-col justify-between print:text-center">
+              <div className="flex justify-between print:justify-center items-center mb-1">
                 <p className="text-[10px] text-slate-400 font-bold uppercase print:text-black">Acumulado Ant.</p>
-                <input type="text" value={displayedBH.accumulated || ""} onChange={(e) => updateNested("bh", "accumulated", e.target.value)} className="w-12 bg-slate-700 text-white text-xs text-center rounded outline-none border border-slate-600 print:hidden focus:ring-1 focus:ring-blue-400" />
-                <span className="hidden print:inline text-[10px] font-bold">{displayedBH.accumulated || 0}</span>
+                <input type="text" value={displayedBH.accumulated || ""} onChange={(e) => updateNested("bh", "accumulated", e.target.value)} className="w-12 bg-slate-700 text-white text-xs text-center rounded outline-none border border-slate-600 print:hidden focus:ring-1 focus:ring-blue-400 ml-1" />
+                <span className="hidden print:inline text-[10px] font-bold ml-1">: {displayedBH.accumulated || 0}</span>
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 font-bold uppercase print:text-black">Total Atual</p>
@@ -349,7 +350,6 @@ const TechDashboard = ({
                     return (
                       <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
                         <input type="text" className={`w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden ${isRed ? "text-red-600 font-bold" : ""}`} value={val} onChange={(e) => updateBH(h, "vitals", param, e.target.value)} />
-                        {/* Esta é a linha que faz o número aparecer no papel da impressora: */}
                         <span className={`hidden print:block text-center text-[8px] w-full align-middle print:text-black ${isRed ? "font-bold" : ""}`}>
                           {val}
                         </span>
@@ -364,7 +364,7 @@ const TechDashboard = ({
       </div>
 
       {/* ALERTA DE SEGURANÇA - FONOAUDIOLOGIA */}
-      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm">
+      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm print:hidden">
         <h4 className="text-sm font-black text-amber-800 flex items-center gap-2 mb-2 uppercase tracking-wide">
           <ShieldAlert size={18} className="text-amber-600" />
           Segurança de Deglutição
