@@ -4296,7 +4296,6 @@ ${condutas}`;
                   const isExpandedMobile = centerTab === btn.id && window.innerWidth < 768; 
 
                   // --- CÁLCULO DA CASCATA 3D (Z-INDEX) ---
-                  // Calcula a distância do item para o centro. Quem tá no centro ganha o z-index maior.
                   const centerIndex = visibleNavButtons.findIndex(b => b.id === centerTab);
                   const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
                   const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
@@ -4305,8 +4304,8 @@ ${condutas}`;
                     <div
                       key={btn.id}
                       id={`nav-${btn.id}`}
-                      style={{ zIndex: isActive ? 50 : zIndexCascata }} // O item clicado (ativo) sempre fura a fila e vai pra frente
-                      // -ml-4 cria a sobreposição das abas umas por cima das outras no celular
+                      // CORREÇÃO: Agora usa apenas a cascata natural. A aba ativa vai para trás se sair do centro!
+                      style={{ zIndex: zIndexCascata }} 
                       className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out 
                         ${window.innerWidth < 768 ? '-ml-5 first:ml-0' : ''} 
                         hover:z-[100]
