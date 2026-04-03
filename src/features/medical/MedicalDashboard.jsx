@@ -223,7 +223,7 @@ const MedicalDashboard = ({
           <p className="text-sm font-bold text-blue-600 mb-3 text-right">Total Glasgow: {calculateGlasgowTotal(currentPatient)}</p>
 
           <label className="block text-xs font-bold text-gray-500 mb-1">RASS</label>
-          <select className="w-full p-2 border rounded mb-3" value={currentPatient.neuro.rass || ""} onChange={(e) => updateNested("neuro", "rass", e.target.value)}><option value="">Selecione...</option>{RASS_OPTS.map((r) => <option key={r}>{r}</option>)}</select>
+          <select className="w-full p-2 border rounded mb-3" value={currentPatient.neuro.rass || ""} onChange={(e) => updateNested("neuro", "rass", e.target.value)}><option value="">Se Sedado...</option>{RASS_OPTS.map((r) => <option key={r}>{r}</option>)}</select>
 
           <label className="flex items-center gap-2 mb-2 font-bold">
             <input type="checkbox" checked={currentPatient.neuro.sedacao || false} onChange={(e) => updateNested("neuro", "sedacao", e.target.checked)} /> Sedação Contínua
