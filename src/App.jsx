@@ -3326,7 +3326,7 @@ dataIntubacao: p.dataIntubacao || "",
 
   const handleFinalizePhysioAdmission = () => {
     const up = [...patients];
-    const p = up[activeTab];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
     if (!p.physio) p.physio = {};
     
     p.physio.admissao_estadoGeral = physioData.estadoGeral;
@@ -3407,6 +3407,7 @@ dataIntubacao: p.dataIntubacao || "",
       if (physioData.gaso_PF) p.gasometriaHistory[colName]["P/F"] = physioData.gaso_PF;
     }
 
+    up[activeTab] = p;
     setPatients(up);
     save(p);
 
@@ -3431,7 +3432,6 @@ dataIntubacao: p.dataIntubacao || "",
     let airwayText = "";
     let itensAirway = [];
     
-    // Injeta os dados do TOT se o paciente estiver em VM
     if (physioData.suporte === "VM") {
       if (physioData.dataIntubacao) itensAirway.push(`Intubação: ${physioData.dataIntubacao ? formatDateDDMM(physioData.dataIntubacao) : "-"}`);
       if (physioData.numeroTOT) itensAirway.push(`TOT Nº: ${physioData.numeroTOT}`);
@@ -3439,8 +3439,8 @@ dataIntubacao: p.dataIntubacao || "",
     }
     
     if (physioData.cuff) itensAirway.push(`Cuff: ${physioData.cuff} cmH2O`);
-    if (physioData.filtroHMEF) itensAirway.push(`Filtro HMEF (Troca: ${physioData.dataTrocaHMEF ? formatDateDDMM(physioData.dataTrocaHMEF) : "Não informada"})`);
-    if (physioData.sistemaFechado) itensAirway.push(`Sist. Fechado de Aspiração (Troca: ${physioData.dataTrocaSistemaFechado ? formatDateDDMM(physioData.dataTrocaSistemaFechado) : "Não informada"})`);
+    if (physioData.filtroHMEF) itensAirway.push(`Filtro HMEF (Troca: ${physioData.dataHMEF ? formatDateDDMM(physioData.dataHMEF) : "Não informada"})`);
+    if (physioData.sistemaFechado) itensAirway.push(`Sist. Fechado de Aspiração (Troca: ${physioData.dataSFA ? formatDateDDMM(physioData.dataSFA) : "Não informada"})`);
     
     if (itensAirway.length > 0) {
       airwayText = `\nVIA AÉREA E DISPOSITIVOS: ${itensAirway.join(" | ")}`;
