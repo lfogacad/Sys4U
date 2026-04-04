@@ -216,8 +216,10 @@ const PhysioAdmissionModal = ({
                     </div>
                   </div>
 
-                  {/* --- PARÂMETROS DO VENTILADOR --- */}
+                  {/* --- PARÂMETROS DO VENTILADOR (COM CAMALEÃO INTELIGENTE) --- */}
                   <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
+                    
+                    {/* CAMPO 1: MODO */}
                     <div className="col-span-2">
                       <label className="text-[9px] font-bold text-slate-500 uppercase">Modo</label>
                       <select
@@ -226,20 +228,38 @@ const PhysioAdmissionModal = ({
                         onChange={(e) => setPhysioData({ ...physioData, parametro: e.target.value })}
                       >
                         <option value="">...</option>
-                        {MODOS_VM.map((m) => (
-                          <option key={m}>{m}</option>
+                        {MODOS_VM && MODOS_VM.map((m) => (
+                          <option key={m} value={m}>{m}</option>
                         ))}
                       </select>
                     </div>
+
+                    {/* CAMPO 2: O CAMALEÃO (Vt / PC / PS) */}
                     <div className="col-span-2">
-                      <label className="text-[9px] font-bold text-slate-500 uppercase">Vol (ml)</label>
-                      <input
-                        type="number"
-                        className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
-                        value={physioData.volCorrente || ""}
-                        onChange={(e) => setPhysioData({ ...physioData, volCorrente: e.target.value })}
-                      />
+                      {physioData.parametro === "VCV" ? (
+                        <div className="animate-fadeIn">
+                          <label className="text-[9px] font-bold uppercase text-blue-600">Vt (ml)</label>
+                          <input type="number" className="w-full p-1.5 border rounded bg-blue-50 text-xs outline-none focus:ring-2 focus:ring-blue-400 text-center font-bold text-blue-700" value={physioData.volCorrente || ""} onChange={(e) => setPhysioData({ ...physioData, volCorrente: e.target.value })} />
+                        </div>
+                      ) : physioData.parametro === "PCV" ? (
+                        <div className="animate-fadeIn">
+                          <label className="text-[9px] font-bold uppercase text-orange-600">PC (cmH2O)</label>
+                          <input type="number" className="w-full p-1.5 border rounded bg-orange-50 text-xs outline-none focus:ring-2 focus:ring-orange-400 text-center font-bold text-orange-700" value={physioData.pressaoControlada || ""} onChange={(e) => setPhysioData({ ...physioData, pressaoControlada: e.target.value })} />
+                        </div>
+                      ) : physioData.parametro === "PSV" ? (
+                        <div className="animate-fadeIn">
+                          <label className="text-[9px] font-bold uppercase text-green-600">PS (cmH2O)</label>
+                          <input type="number" className="w-full p-1.5 border rounded bg-green-50 text-xs outline-none focus:ring-2 focus:ring-green-400 text-center font-bold text-green-700" value={physioData.pressaoSuporte || ""} onChange={(e) => setPhysioData({ ...physioData, pressaoSuporte: e.target.value })} />
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase">Parâmetro</label>
+                          <input type="text" disabled className="w-full p-1.5 border rounded bg-slate-100 text-xs cursor-not-allowed text-center" />
+                        </div>
+                      )}
                     </div>
+
+                    {/* CAMPO 3: PEEP */}
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase">PEEP</label>
                       <input
@@ -249,42 +269,54 @@ const PhysioAdmissionModal = ({
                         onChange={(e) => setPhysioData({ ...physioData, peep: e.target.value })}
                       />
                     </div>
+
+                    {/* CAMPO 4: FR (Bloqueado em PSV) */}
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase">FR</label>
                       <input
                         type="number"
-                        className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                        className={`w-full p-1.5 border rounded text-xs outline-none text-center ${physioData.parametro === "PSV" ? "bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200" : "bg-slate-50 focus:ring-2 focus:ring-cyan-200"}`}
                         value={physioData.fr || ""}
                         onChange={(e) => setPhysioData({ ...physioData, fr: e.target.value })}
+                        disabled={physioData.parametro === "PSV"}
                       />
                     </div>
+
+                    {/* CAMPO 5: T.Ins (Bloqueado em PSV) */}
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase">T.ins</label>
                       <input
                         type="number" step="0.1"
-                        className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                        className={`w-full p-1.5 border rounded text-xs outline-none text-center ${physioData.parametro === "PSV" ? "bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200" : "bg-slate-50 focus:ring-2 focus:ring-cyan-200"}`}
                         value={physioData.tIns || ""}
                         onChange={(e) => setPhysioData({ ...physioData, tIns: e.target.value })}
+                        disabled={physioData.parametro === "PSV"}
                       />
                     </div>
+
+                    {/* CAMPO 6: I:E (Bloqueado em PSV) */}
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase">I:E</label>
                       <input
-                        type="text" placeholder="1:2"
-                        className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                        type="text" placeholder={physioData.parametro === "PSV" ? "-" : "1:2"}
+                        className={`w-full p-1.5 border rounded text-xs outline-none text-center ${physioData.parametro === "PSV" ? "bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200" : "bg-slate-50 focus:ring-2 focus:ring-cyan-200"}`}
                         value={physioData.relIE || ""}
                         onChange={(e) => setPhysioData({ ...physioData, relIE: e.target.value })}
+                        disabled={physioData.parametro === "PSV"}
                       />
                     </div>
-                    <div className="col-span-2">
+
+                    {/* CAMPO 7: FiO2 */}
+                    <div className="col-span-2 md:col-span-8 lg:col-span-2">
                       <label className="text-[9px] font-bold text-slate-500 uppercase">FiO2(%)</label>
                       <input
                         type="number"
-                        className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center"
+                        className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200 text-center font-bold text-slate-700"
                         value={physioData.fiO2 || ""}
                         onChange={(e) => setPhysioData({ ...physioData, fiO2: e.target.value })}
                       />
                     </div>
+
                   </div>
                 </div>
               )}

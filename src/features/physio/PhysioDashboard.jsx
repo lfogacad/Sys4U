@@ -229,24 +229,25 @@ const PhysioDashboard = ({
                 <label className="text-xs font-bold text-slate-700">Modo</label>
                 <select className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)}>
                   <option value="">...</option>
-                  {MODOS_VM.map((m) => <option key={m}>{m}</option>)}
+                  {MODOS_VM && MODOS_VM.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
 
+              {/* === SUTURA: Nomes das variáveis alinhados com o Modal === */}
               {currentPatient.physio?.parametro === "VCV" ? (
                 <div className="animate-fadeIn">
                   <label className="text-xs font-bold text-blue-700">Vt (ml)</label>
-                  <input type="number" className="w-full p-2 border border-blue-200 rounded bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-400" placeholder="Ex: 400" value={currentPatient.physio?.vt || ""} onChange={(e) => updateNested("physio", "vt", e.target.value)} />
+                  <input type="number" className="w-full p-2 border border-blue-200 rounded bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-400" placeholder="Ex: 400" value={currentPatient.physio?.volCorrente || ""} onChange={(e) => updateNested("physio", "volCorrente", e.target.value)} />
                 </div>
               ) : currentPatient.physio?.parametro === "PCV" ? (
                 <div className="animate-fadeIn">
                   <label className="text-xs font-bold text-emerald-700">PC (cmH2O)</label>
-                  <input type="number" className="w-full p-2 border border-emerald-200 rounded bg-emerald-50/30 outline-none focus:ring-2 focus:ring-emerald-400" placeholder="Ex: 15" value={currentPatient.physio?.pc || ""} onChange={(e) => updateNested("physio", "pc", e.target.value)} />
+                  <input type="number" className="w-full p-2 border border-emerald-200 rounded bg-emerald-50/30 outline-none focus:ring-2 focus:ring-emerald-400" placeholder="Ex: 15" value={currentPatient.physio?.pressaoControlada || ""} onChange={(e) => updateNested("physio", "pressaoControlada", e.target.value)} />
                 </div>
               ) : currentPatient.physio?.parametro === "PSV" ? (
                 <div className="animate-fadeIn">
                   <label className="text-xs font-bold text-purple-700">PS (cmH2O)</label>
-                  <input type="number" className="w-full p-2 border border-purple-200 rounded bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-400" placeholder="Ex: 12" value={currentPatient.physio?.ps || ""} onChange={(e) => updateNested("physio", "ps", e.target.value)} />
+                  <input type="number" className="w-full p-2 border border-purple-200 rounded bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-400" placeholder="Ex: 12" value={currentPatient.physio?.pressaoSuporte || ""} onChange={(e) => updateNested("physio", "pressaoSuporte", e.target.value)} />
                 </div>
               ) : (
                 <div className="opacity-60 pointer-events-none">

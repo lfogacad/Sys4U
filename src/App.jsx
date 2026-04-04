@@ -3345,6 +3345,8 @@ dataIntubacao: p.dataIntubacao || "",
     p.physio.peep = physioData.peep;
     p.physio.fiO2 = physioData.fiO2;
     p.physio.volCorrente = physioData.volCorrente;
+    p.physio.pressaoControlada = physioData.pressaoControlada;
+    p.physio.pressaoSuporte = physioData.pressaoSuporte;
     p.physio.fr = physioData.fr;
     p.physio.tIns = physioData.tIns;
     p.physio.relIE = physioData.relIE;
@@ -3417,7 +3419,12 @@ dataIntubacao: p.dataIntubacao || "",
     let suporteText = "";
     if (physioData.suporte) {
       if (physioData.suporte === "VM") {
-        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | Vol. Corrente: ${physioData.volCorrente || "-"}ml | PEEP: ${physioData.peep || "-"} | FR: ${physioData.fr || "-"} | T.ins: ${physioData.tIns || "-"} | I:E: ${physioData.relIE || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
+        let paramText = "-";
+        if (physioData.parametro === "VCV") paramText = `Vt: ${physioData.volCorrente || "-"}ml`;
+        else if (physioData.parametro === "PCV") paramText = `PC: ${physioData.pressaoControlada || "-"}cmH2O`;
+        else if (physioData.parametro === "PSV") paramText = `PS: ${physioData.pressaoSuporte || "-"}cmH2O`;
+        
+        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | ${paramText} | PEEP: ${physioData.peep || "-"} | FR: ${physioData.fr || "-"} | T.ins: ${physioData.tIns || "-"} | I:E: ${physioData.relIE || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
       } else if (physioData.suporte === "VNI") {
         suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
       } else if (physioData.suporte === "Venturi") {
