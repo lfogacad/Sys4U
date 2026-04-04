@@ -3325,10 +3325,10 @@ dataIntubacao: p.dataIntubacao || "",
   };
 
   const handleFinalizePhysioAdmission = () => {
+    // Clonagem fisiológica padrão React (Preserva datas e a integridade do save!)
     const up = [...patients];
-    const p = JSON.parse(JSON.stringify(up[activeTab]));
-    if (!p.physio) p.physio = {};
-    
+    const p = { ...up[activeTab] };
+    p.physio = { ...(p.physio || {}) };
     p.physio.admissao_estadoGeral = physioData.estadoGeral;
     p.physio.admissao_sistemaNervoso = physioData.sistemaNervoso;
     p.physio.admissao_sistemaRespiratorio = physioData.sistemaRespiratorio;
