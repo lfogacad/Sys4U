@@ -2638,8 +2638,21 @@ const getBestGlasgowForSOFA = (p) => {
 };
 
   // Updates
+  // Função Save blindada contra rejeição do Firebase (Filtra undefined)
   const save = async (p) => {
-    if (user && db) await setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
+    if (user && db) {
+      try {
+        // O Firebase rejeita salvar se houver qualquer "undefined" no objeto.
+        // Esse comando converte o objeto inteiro e limpa todas as "toxinas" vazias antes de enviar.
+        const pacienteSeguro = JSON.parse(JSON.stringify(p));
+        
+        await setDoc(doc(db, "leitos_uti", `bed_${p.id}`), pacienteSeguro);
+        // console.log("Salvamento concluído com sucesso no Banco!"); // Pode descomentar para ver o log
+      } catch (error) {
+        console.error("ALERTA CRÍTICO: Falha ao gravar no Banco de Dados:", error);
+        alert("Erro ao salvar! O banco de dados rejeitou a gravação. Verifique a sua conexão.");
+      }
+    }
   };
   const updateP = (f, v) => {
     const up = [...patients];
