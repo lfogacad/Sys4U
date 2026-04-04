@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, Target, Printer, PlusCircle } from 'lucide-react';
+import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, Target, Printer, PlusCircle } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
 import { formatDateDDMM } from '../../utils/core';
 
@@ -25,6 +25,24 @@ const PhysioDashboard = ({
   getTempoVMText,
   isOverviewEditable
 }) => {
+
+  // === FORMATADORES DE DATA CURTA ===
+  const formatShort = (iso) => {
+    if (!iso) return "DD/MM/AA";
+    const [y, m, d] = iso.split('-');
+    if (!y || !m || !d) return iso;
+    return `${d}/${m}/${y.slice(-2)}`;
+  };
+
+  const getTrocaShort = (iso, hours) => {
+    if (!iso) return "";
+    const d = new Date(iso + 'T12:00:00'); // Evita bugs de fuso horário
+    d.setHours(d.getHours() + hours);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    return `${dd}/${mm}/${yy}`;
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -99,20 +117,38 @@ const PhysioDashboard = ({
 
         {/* SUPORTE VENTILATÓRIO */}
         <div className="p-4 border rounded-xl bg-white">
-          <div className="flex justify-between items-end mb-4">
-            <h4 className="font-bold text-cyan-800 flex items-center gap-2">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3 mb-4">
+            
+            <h4 className="font-bold text-cyan-800 flex items-center gap-2 shrink-0">
               <Wind size={16} /> Suporte Ventilatório
             </h4>
-            <div className="flex items-center gap-4 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
-              <div className="flex flex-col">
-                <label className="text-xs font-semibold text-gray-700 mb-1">Dias Prévios (Reintubação):</label>
-                <input type="number" className="w-full p-1 border border-cyan-300 rounded text-center font-bold text-cyan-700 outline-none focus:ring-2 focus:ring-cyan-500" value={currentPatient.physio?.diasAcumuladosVM || ""} onChange={(e) => updateNested("physio", "diasAcumuladosVM", parseInt(e.target.value) || 0)} placeholder="Ex: 5" />
+            <div className="flex flex-row items-center gap-3 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-xs w-full md:w-auto">
+              <div className="flex flex-col flex-1">
+                <label className="text-[10px] md:text-xs font-semibold text-gray-700 mb-1 leading-tight truncate" title="Dias Prévios (Reintubação)">
+                  Dias Prévios:
+                </label>
+                <input 
+                  type="number" 
+                  className="w-full p-1 border border-cyan-300 rounded text-center font-bold text-cyan-700 outline-none focus:ring-2 focus:ring-cyan-500" 
+                  value={currentPatient.physio?.diasAcumuladosVM || ""} 
+                  onChange={(e) => updateNested("physio", "diasAcumuladosVM", parseInt(e.target.value) || 0)} 
+                  placeholder="Ex: 5" 
+                />
               </div>
-              <div className="flex flex-col">
-                <label className="text-xs font-semibold text-gray-700 mb-1">Tempo Total de VM:</label>
-                <input type="text" readOnly className="w-full p-1 border border-gray-300 bg-gray-200 text-center font-bold text-red-600 rounded cursor-not-allowed" value={getTempoVMText(currentPatient)} title="Soma automática dos dias prévios com a intubação atual" />
+              <div className="flex flex-col flex-1">
+                <label className="text-[10px] md:text-xs font-semibold text-gray-700 mb-1 leading-tight truncate">
+                  Tempo Total:
+                </label>
+                <input 
+                  type="text" 
+                  readOnly 
+                  className="w-full p-1 border border-gray-300 bg-gray-200 text-center font-bold text-red-600 rounded cursor-not-allowed" 
+                  value={getTempoVMText(currentPatient)} 
+                  title="Soma automática dos dias prévios com a intubação atual" 
+                />
               </div>
             </div>
+            
           </div>
 
           {currentPatient.physio?.suporte === "VM" && (
@@ -240,12 +276,25 @@ const PhysioDashboard = ({
                   <label className="text-[10px] font-bold text-slate-700">Filtro HMEF</label>
                   <button onClick={(e) => { e.preventDefault(); clearDate("dataHMEF", "physio"); }} className="text-slate-400 hover:text-red-500"><X size={12} /></button>
                 </div>
-                <input type="date" className="w-full p-1.5 border rounded text-xs outline-none focus:ring-cyan-400" value={currentPatient.physio?.dataHMEF || ""} onChange={(e) => updateNested("physio", "dataHMEF", e.target.value)} />
-                <div className="mt-1 text-[10px] font-bold">
+                
+                {/* CAMPO BLINDADO CONTRA FORMATOS DO CELULAR */}
+                <div className="relative w-full">
+                  <div className="w-full p-1.5 border border-slate-300 rounded text-xs bg-white flex justify-between items-center text-slate-800 font-bold">
+                    <span>{formatShort(currentPatient.physio?.dataHMEF)}</span>
+                    <Calendar size={14} className="text-cyan-600" />
+                  </div>
+                  <input 
+                    type="date" 
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                    value={currentPatient.physio?.dataHMEF || ""} 
+                    onChange={(e) => updateNested("physio", "dataHMEF", e.target.value)} 
+                  />
+                </div>
+
+                <div className="mt-1 text-[10px] font-bold text-center">
                   {currentPatient.physio?.dataHMEF ? (
                      <span className={isDeviceExpired(currentPatient.physio?.dataHMEF, 168) ? "text-red-600" : "text-green-600"}>
-                       {/* INJEÇÃO DO .formatted AQUI */}
-                       Trocar: {calculateExchangeDate(currentPatient.physio?.dataHMEF, 168)?.formatted}
+                       Trocar: {getTrocaShort(currentPatient.physio?.dataHMEF, 168)}
                      </span>
                   ) : <span className="text-slate-400">Sem data</span>}
                 </div>
@@ -257,12 +306,25 @@ const PhysioDashboard = ({
                   <label className="text-[10px] font-bold text-slate-700">Traqueia SFA</label>
                   <button onClick={(e) => { e.preventDefault(); clearDate("dataSFA", "physio"); }} className="text-slate-400 hover:text-red-500"><X size={12} /></button>
                 </div>
-                <input type="date" className="w-full p-1.5 border rounded text-xs outline-none focus:ring-cyan-400" value={currentPatient.physio?.dataSFA || ""} onChange={(e) => updateNested("physio", "dataSFA", e.target.value)} />
-                <div className="mt-1 text-[10px] font-bold">
+
+                {/* CAMPO BLINDADO CONTRA FORMATOS DO CELULAR */}
+                <div className="relative w-full">
+                  <div className="w-full p-1.5 border border-slate-300 rounded text-xs bg-white flex justify-between items-center text-slate-800 font-bold">
+                    <span>{formatShort(currentPatient.physio?.dataSFA)}</span>
+                    <Calendar size={14} className="text-cyan-600" />
+                  </div>
+                  <input 
+                    type="date" 
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                    value={currentPatient.physio?.dataSFA || ""} 
+                    onChange={(e) => updateNested("physio", "dataSFA", e.target.value)} 
+                  />
+                </div>
+
+                <div className="mt-1 text-[10px] font-bold text-center">
                   {currentPatient.physio?.dataSFA ? (
                      <span className={isDeviceExpired(currentPatient.physio?.dataSFA, 168) ? "text-red-600" : "text-green-600"}>
-                       {/* INJEÇÃO DO .formatted AQUI */}
-                       Trocar: {calculateExchangeDate(currentPatient.physio?.dataSFA, 168)?.formatted}
+                       Trocar: {getTrocaShort(currentPatient.physio?.dataSFA, 168)}
                      </span>
                   ) : <span className="text-slate-400">Sem data</span>}
                 </div>
