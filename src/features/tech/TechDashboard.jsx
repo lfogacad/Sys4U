@@ -382,15 +382,18 @@ const TechDashboard = ({
           <div className="grid grid-cols-2 md:grid-cols-4 print:flex print:justify-between gap-4 p-4 print:p-0 print:pt-2 bg-slate-100 print:bg-white rounded-xl border border-slate-200 print:border-none mt-4 print:mt-1">
             <div className="print:text-center">
               <p className="text-[10px] text-slate-500 print:text-black font-bold uppercase">Total Ganhos</p>
-              <p className="text-xl font-bold text-green-600 print:text-black">+{bhTotals.totalGains}</p>
+              <p className="text-xl font-bold text-green-600 print:text-black">+{Math.round(bhTotals.totalGains || 0)}</p>
             </div>
             <div className="print:text-center">
               <p className="text-[10px] text-slate-500 print:text-black font-bold uppercase">Total Perdas (+PI)</p>
-              <p className="text-xl font-bold text-red-600 print:text-black">-{bhTotals.totalLosses + safeNumber(displayedBH.insensibleLoss)}</p>
+              <p className="text-xl font-bold text-red-600 print:text-black">-{Math.round((bhTotals.totalLosses || 0) + safeNumber(displayedBH.insensibleLoss))}</p>
             </div>
             <div className="bg-white p-2 print:p-0 rounded-lg border border-slate-300 print:border-none print:text-center">
               <p className="text-[10px] text-slate-500 print:text-black font-bold uppercase">Balanço 24h</p>
-              <p className={`text-xl font-bold ${bhTotals.dailyBalance >= 0 ? "text-blue-600 print:text-black" : "text-orange-600 print:text-black"}`}>{bhTotals.dailyBalance > 0 ? "+" : ""}{bhTotals.dailyBalance}</p>
+              <p className={`text-xl font-bold ${Math.round(bhTotals.dailyBalance || 0) >= 0 ? "text-blue-600 print:text-black" : "text-orange-600 print:text-black"}`}>
+                {Math.round(bhTotals.dailyBalance || 0) > 0 ? "+" : ""}
+                {Math.round(bhTotals.dailyBalance || 0)}
+              </p>
             </div>
             <div className="bg-slate-800 p-2 rounded-lg text-white print:text-black print:bg-white flex flex-col justify-between print:text-center">
               <div className="flex justify-between print:justify-center items-center mb-1">
@@ -400,7 +403,10 @@ const TechDashboard = ({
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 font-bold uppercase print:text-black">Total Atual</p>
-                <p className="text-xl font-bold">{bhTotals.accumulated > 0 ? "+" : ""}{bhTotals.accumulated}</p>
+                <p className="text-xl font-bold">
+                  {Math.round(bhTotals.accumulated || 0) > 0 ? "+" : ""}
+                  {Math.round(bhTotals.accumulated || 0)}
+                </p>
               </div>
             </div>
           </div>
