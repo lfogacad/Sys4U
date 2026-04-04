@@ -119,8 +119,35 @@ const PhysioDashboard = ({
         <div className="p-4 border rounded-xl bg-white">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3 mb-4">
             
-            <h4 className="font-bold text-cyan-800 flex items-center gap-2 shrink-0">
+          <h4 className="font-bold text-cyan-800 flex items-center gap-2 shrink-0">
               <Wind size={16} /> Suporte Ventilatório
+              
+              {/* === CÁLCULO DA pO2 IDEAL === */}
+              {(() => {
+                if (!currentPatient?.dataNascimento) return null;
+                
+                // Calcula a idade de forma autônoma e segura
+                const birthDate = new Date(currentPatient.dataNascimento);
+                const today = new Date();
+                let idade = today.getFullYear() - birthDate.getFullYear();
+                const m = today.getMonth() - birthDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                  idade--;
+                }
+                
+                // Fórmula de Mellemgaard (Decúbito Dorsal)
+                const pO2Ideal = Math.round(109 - (0.43 * idade));
+                
+                return (
+                  <span 
+                    className="ml-2 px-2 py-0.5 bg-cyan-100/80 text-cyan-800 text-[10px] font-black tracking-wide rounded-full border border-cyan-300 shadow-sm cursor-help" 
+                    title={`Calculado para ${idade} anos | Fórmula (Supino): 109 - (0.43 x Idade)`}
+                  >
+                    pO2 Ideal: {pO2Ideal}
+                  </span>
+                );
+              })()}
+              {/* ==================================== */}
             </h4>
             <div className="flex flex-row items-center gap-3 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-xs w-full md:w-auto">
               <div className="flex flex-col flex-1">
