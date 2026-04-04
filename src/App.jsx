@@ -3059,10 +3059,8 @@ ${admissionData.diagCronicos || "-"}
     CONDUTA:
 ${admissionData.conduta || "-"}`;
 
-    // === INÍCIO DA SUTURA ===
     // Criando o bloco filtrado apenas com o que importa para o dia a dia
-    const historiaAbaMedica = `HISTÓRIA CLÍNICA:
-${admissionData.historia || "-"}
+    const historiaAbaMedica = `${admissionData.historia || "-"}
 
 MEDICAMENTOS DE USO HABITUAL:
 ${admissionData.medicamentos || "-"}
@@ -3072,7 +3070,6 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
     // Agora a Aba Médica recebe apenas o resumo
     r.historiaClinica = historiaAbaMedica;
-    // === FIM DA SUTURA ===
 
     const up = [...patients];
     up[activeTab] = r;
