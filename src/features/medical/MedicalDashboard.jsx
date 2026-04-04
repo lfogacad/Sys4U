@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, X, Sparkles, ClipboardCheck, Loader2, ChevronDown, ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle } from 'lucide-react';
+import { AlertCircle, Edit3, X, Sparkles, ClipboardCheck, Loader2, ChevronDown, ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle } from 'lucide-react';
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
 import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
 
@@ -22,7 +22,8 @@ const MedicalDashboard = ({
   isGeneratingAI,
   setShowATBHistoryModal,
   clearAntibiotic,
-  updateAntibiotic
+  updateAntibiotic,
+  handleEditAdmission
 }) => {
   return (
     <fieldset disabled={!isEditable} className="space-y-6 animate-fadeIn min-w-0 border-0 p-0 m-0">
@@ -123,6 +124,25 @@ const MedicalDashboard = ({
             ● PLT: {currentPatient.sofa_data_technical?.lastPlat || 'S/ EXAME'}
           </span>
         </div>
+      </div>
+
+      {/* BOTÃO DE REABRIR ADMISSÃO */}
+      <div className="flex justify-end mb-6 print:hidden">
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            if (handleEditAdmission) handleEditAdmission();
+          }}
+          disabled={!isEditable}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition shadow-sm ${
+            !isEditable
+              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+              : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
+          }`}
+          title="Reabrir e editar dados da Admissão Médica"
+        >
+          <Edit3 size={16} /> Reabrir Admissão Médica
+        </button>
       </div>
 
       {/* ALERTA DE SEPSE */}

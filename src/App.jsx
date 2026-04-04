@@ -2914,6 +2914,45 @@ const getBestGlasgowForSOFA = (p) => {
     });
   };
 
+  // Função que preenche o modal antes de abrir para edição
+  const handleEditAdmission = () => {
+    setAdmissionData(prev => ({
+      ...prev,
+      nome: currentPatient.nome || "",
+      sexo: currentPatient.sexo || "",
+      dataNascimento: currentPatient.dataNascimento || "",
+      origem: currentPatient.procedencia || "",
+      diagAgudos: currentPatient.diagnostico || "",
+      diagCronicos: currentPatient.comorbidades || "",
+      
+      // Resgatando o SAPS 3 para não vir em branco
+      saps_origem: currentPatient.saps3?.origemMapped || "",
+      saps_dias: currentPatient.saps3?.diasHospital || "",
+      saps_motivo: currentPatient.saps3?.motivoAdmissao || "",
+      saps_sistema: currentPatient.saps3?.sistemaRazao || "",
+      saps_infeccao: currentPatient.saps3?.infeccaoAdmissao || "",
+      saps_sitioInfeccao: currentPatient.saps3?.sitioInfeccao || "",
+      saps_cirurgiaUrgente: currentPatient.saps3?.cirurgiaUrgente || "",
+      saps_imunossupressao: currentPatient.saps3?.imunossupressao || "",
+      saps_comorbidades: currentPatient.saps3?.comorbidades || [],
+
+      // Resgatando Neuro e Cardio
+      ecg_ao: currentPatient.neuro?.glasgowAO || "",
+      ecg_rv: currentPatient.neuro?.glasgowRV || "",
+      ecg_rm: currentPatient.neuro?.glasgowRM || "",
+      ecg_basal_ao: currentPatient.neuro?.glasgowBasalAO || "",
+      ecg_basal_rv: currentPatient.neuro?.glasgowBasalRV || "",
+      ecg_basal_rm: currentPatient.neuro?.glasgowBasalRM || "",
+      rass: currentPatient.neuro?.rass || "",
+      dva: currentPatient.cardio?.dva || false,
+      drogasDVA: currentPatient.cardio?.drogasDVA || [],
+      sedacao: currentPatient.neuro?.sedacao || false,
+      drogasSedacao: currentPatient.neuro?.drogasSedacao || [],
+    }));
+    
+    setShowAdmissionModal(true);
+  };
+
   const handleFinalizeAdmission = () => {
     if (!admissionData.nome || !admissionData.nome.trim()) {
       return alert(
@@ -2921,7 +2960,7 @@ const getBestGlasgowForSOFA = (p) => {
       );
     }
 
-    const r = defaultPatient(activeTab);
+    const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
     r.nome = admissionData.nome.trim().toUpperCase();
     r.sexo = admissionData.sexo || "";
     r.dataNascimento = admissionData.dataNascimento || "";
@@ -4494,6 +4533,7 @@ ${condutas}`;
                   setShowATBHistoryModal={setShowATBHistoryModal}
                   clearAntibiotic={clearAntibiotic}
                   updateAntibiotic={updateAntibiotic}
+                  handleEditAdmission={handleEditAdmission}
                 />
               )}
 
