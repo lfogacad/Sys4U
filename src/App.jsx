@@ -540,6 +540,13 @@ const getManausDateStr = () => {
   return `${y}-${m}-${d}`;
 };
 
+const formatarDataBR = (dataISO) => {
+  if (!dataISO) return "--/--/----";
+  // dataISO vem como "2010-08-20"
+  const [ano, mes, dia] = dataISO.split("-");
+  return `${dia}/${mes}/${ano}`;
+};
+
 const parseLocalDate = (s) => {
   if (!s) return null;
   const [y, m, d] = s.split("-").map(Number);
