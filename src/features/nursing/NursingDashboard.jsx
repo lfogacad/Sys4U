@@ -41,7 +41,7 @@ const NursingDashboard = ({
           {(() => {
             const reqBraden = ["braden_percepcao", "braden_umidade", "braden_atividade", "braden_mobilidade", "braden_nutricao", "braden_friccao"];
             const reqMorse = ["morse_historico", "morse_diagnostico", "morse_auxilio", "morse_terapiaIV", "morse_marcha", "morse_estadoMental"];
-
+          
             const bradenSum = reqBraden.reduce((s, k) => s + parseInt(currentPatient.enfermagem?.[k] || 0), 0);
             let bradenRisk = "";
             if (bradenSum > 0) {
@@ -49,9 +49,9 @@ const NursingDashboard = ({
               else if (bradenSum <= 12) bradenRisk = "Risco Alto";
               else if (bradenSum <= 14) bradenRisk = "Risco Moderado";
               else if (bradenSum <= 18) bradenRisk = "Risco Leve";
-              else bradenRisk = "Sem Risco / Risco Mínimo";
+              else bradenRisk = "Sem Risco"; // Encurtei para caber melhor no layout centralizado
             }
-
+          
             const morseSum = reqMorse.reduce((s, k) => s + parseInt(currentPatient.enfermagem?.[k] || 0), 0);
             let morseRisk = "";
             if (currentPatient.enfermagem?.morse_historico !== undefined && currentPatient.enfermagem?.morse_historico !== "") {
@@ -59,23 +59,37 @@ const NursingDashboard = ({
               else if (morseSum <= 44) morseRisk = "Risco Moderado";
               else morseRisk = "Risco Alto";
             }
-
+          
             return (
               <div className="grid grid-cols-2 gap-4 mb-2 mt-4">
-                <div className="p-4 border border-orange-200 rounded-xl bg-orange-50/50 flex flex-col justify-center">
-                  <h4 className="text-xs font-bold text-orange-800 uppercase mb-2 flex items-center gap-1"><AlertTriangle size={14} /> Escala de Braden</h4>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-bold text-orange-600">{bradenSum > 0 ? bradenSum : "-"}</span>
-                    <span className={`text-xs font-bold px-2 py-1 rounded-lg ${bradenSum <= 12 ? "bg-red-200 text-red-800" : "bg-orange-200 text-orange-800"}`}>{bradenRisk}</span>
+                
+                {/* SUTURA: ESCALA DE BRADEN (Centralizada) */}
+                <div className="flex flex-col items-center justify-center p-4 border border-orange-200 rounded-xl bg-orange-50/50 text-center">
+                  <h4 className="text-xs font-bold text-orange-800 uppercase mb-3 flex items-center justify-center gap-1">
+                    <AlertTriangle size={14} /> Escala de Braden
+                  </h4>
+                  <div className="text-4xl font-black text-orange-600 leading-none">
+                    {bradenSum > 0 ? bradenSum : "-"}
+                  </div>
+                  {/* A etiqueta agora tem mt-3 para descer e max-w para quebrar a linha se o texto for grande */}
+                  <div className={`mt-3 px-3 py-1.5 text-[11px] font-bold rounded-lg leading-tight shadow-sm max-w-[90%] break-words ${bradenSum <= 12 ? "bg-red-200 text-red-900" : "bg-orange-200 text-orange-900"}`}>
+                    {bradenRisk || "Não Avaliado"}
                   </div>
                 </div>
-                <div className="p-4 border border-blue-200 rounded-xl bg-blue-50/50 flex flex-col justify-center">
-                  <h4 className="text-xs font-bold text-blue-800 uppercase mb-2 flex items-center gap-1"><AlertTriangle size={14} /> Escala de Morse</h4>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-bold text-blue-600">{currentPatient.enfermagem?.morse_historico !== undefined ? morseSum : "-"}</span>
-                    <span className={`text-xs font-bold px-2 py-1 rounded-lg ${morseSum >= 45 ? "bg-red-200 text-red-800" : "bg-blue-200 text-blue-800"}`}>{morseRisk}</span>
+          
+                {/* SUTURA: ESCALA DE MORSE (Centralizada) */}
+                <div className="flex flex-col items-center justify-center p-4 border border-blue-200 rounded-xl bg-blue-50/50 text-center">
+                  <h4 className="text-xs font-bold text-blue-800 uppercase mb-3 flex items-center justify-center gap-1">
+                    <AlertTriangle size={14} /> Escala de Morse
+                  </h4>
+                  <div className="text-4xl font-black text-blue-600 leading-none">
+                    {currentPatient.enfermagem?.morse_historico !== undefined ? morseSum : "-"}
+                  </div>
+                  <div className={`mt-3 px-3 py-1.5 text-[11px] font-bold rounded-lg leading-tight shadow-sm max-w-[90%] break-words ${morseSum >= 45 ? "bg-red-200 text-red-900" : "bg-blue-200 text-blue-900"}`}>
+                    {morseRisk || "Não Avaliado"}
                   </div>
                 </div>
+          
               </div>
             );
           })()}
