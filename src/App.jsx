@@ -4357,20 +4357,14 @@ const navButtons = allNavButtons.filter((btn) => {
               <div
                 ref={navScrollRef}
                 onScroll={handleNavScroll}
-                // SUTURA: Se tiver pouca aba (técnico), diminui o padding lateral para não travar o scroll no mobile
-                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center
-                  ${window.innerWidth < 768 && visibleNavButtons.length <= 3 
-                    ? "px-[15vw] justify-center" 
-                    : "px-[35vw]"
-                  }
-                `}
+                // SUTURA: px-[40vw] garante que mesmo com 1 ou 2 abas, você consiga "deslizar" ela para fora do centro
+                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center px-[40vw] md:px-0`}
               >
                 {visibleNavButtons.map((btn, index) => {
                   const isActive = viewMode === btn.id;
                   
                   // SE SÓ TIVER 2 ABAS, ELAS FICAM SEMPRE "EXPANDIDAS" NO MOBILE PARA FACILITAR O TOQUE
-                  const isExpandedMobile = window.innerWidth < 768 && 
-                    (visibleNavButtons.length <= 2 ? true : centerTab === btn.id); 
+                  const isExpandedMobile = window.innerWidth < 768 && centerTab === btn.id;
 
                   // --- CÁLCULO DA CASCATA 3D ---
                   const centerIndex = visibleNavButtons.findIndex(b => b.id === (centerTab || visibleNavButtons[0]?.id));
