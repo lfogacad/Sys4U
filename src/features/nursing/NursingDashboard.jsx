@@ -163,11 +163,30 @@ const NursingDashboard = ({
           </div>
 
           <div className="p-4 border rounded-xl bg-orange-50/20">
-            <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2"><Activity size={16} /> Pele e Curativos</h4>
-            <textarea placeholder="Lesões por pressão (Local / Estágio)..." className="w-full p-2 border rounded mb-2 h-16" value={currentPatient.enfermagem?.lesaoLocal || ""} onChange={(e) => updateNested("enfermagem", "lesaoLocal", e.target.value)} />
-            <div className="flex gap-2">
-              <input className="flex-1 p-2 border rounded" placeholder="Tipo de Curativo" value={currentPatient.enfermagem?.curativoTipo || ""} onChange={(e) => updateNested("enfermagem", "curativoTipo", e.target.value)} />
-              <input type="date" className="w-32 p-2 border rounded" value={currentPatient.enfermagem?.curativoData || ""} onChange={(e) => updateNested("enfermagem", "curativoData", e.target.value)} />
+            <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2">
+              <Activity size={16} /> Pele e Curativos
+            </h4>
+            <textarea 
+              placeholder="Lesões por pressão (Local / Estágio)..." 
+              className="w-full p-2 border rounded mb-2 h-16" 
+              value={currentPatient.enfermagem?.lesaoLocal || ""} 
+              onChange={(e) => updateNested("enfermagem", "lesaoLocal", e.target.value)} 
+            />
+            
+            {/* SUTURA: Quebra de linha inteligente para o Mobile */}
+            <div className="flex flex-col md:flex-row gap-2">
+              <input 
+                className="w-full md:flex-1 p-2 border rounded outline-none focus:ring-2 focus:ring-orange-300" 
+                placeholder="Tipo de Curativo" 
+                value={currentPatient.enfermagem?.curativoTipo || ""} 
+                onChange={(e) => updateNested("enfermagem", "curativoTipo", e.target.value)} 
+              />
+              <input 
+                type="date" 
+                className="w-full md:w-32 p-2 border rounded outline-none focus:ring-2 focus:ring-orange-300" 
+                value={currentPatient.enfermagem?.curativoData || ""} 
+                onChange={(e) => updateNested("enfermagem", "curativoData", e.target.value)} 
+              />
             </div>
           </div>
 
