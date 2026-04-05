@@ -3957,25 +3957,31 @@ ${condutas}`;
     }
   };
 
-  const navButtons = [
-    { id: "overview", label: "Visita Multi", icon: <Activity size={16} /> },
-    { id: "medical", label: "Médico", icon: <Stethoscope size={16} /> },
-    { id: "nursing", label: "Enfermeiro", icon: <NurseCap size={16} /> },
-    { id: "physio", label: "Fisioterapeuta", icon: <Wind size={16} /> },
-    { id: "nutri", label: "Nutrição", icon: <Apple size={16} /> },
-    { id: "speech", label: "Fonoaudiologia", icon: <Mic size={16} /> },
-    { id: "tech", label: "Téc. em Enf.", icon: <Thermometer size={16} /> },
-    { id: "hemodialysis", label: "Hemodiálise", icon: <Filter size={16} /> },
-    ...(userProfile?.role === "Gestor" || userProfile?.role === "Administrador"
-      ? [
-          {
-            id: "management",
-            label: "Gestão da UTI",
-            icon: <Gauge size={16} />,
-          },
-        ]
-      : []),
-  ];
+// Filtro de abas sem conflito de leitos
+const allNavButtons = [
+  { id: "overview", label: "Visita Multi", icon: <Activity size={16} /> },
+  { id: "medical", label: "Médico", icon: <Stethoscope size={16} /> },
+  { id: "nursing", label: "Enfermeiro", icon: <NurseCap size={16} /> },
+  { id: "physio", label: "Fisioterapeuta", icon: <Wind size={16} /> },
+  { id: "nutri", label: "Nutrição", icon: <Apple size={16} /> },
+  { id: "speech", label: "Fonoaudiologia", icon: <Mic size={16} /> },
+  { id: "tech", label: "Téc. em Enf.", icon: <Thermometer size={16} /> },
+  { id: "hemodialysis", label: "Hemodiálise", icon: <Filter size={16} /> },
+  ...(userProfile?.role === "Gestor" || userProfile?.role === "Administrador"
+    ? [{ id: "management", label: "Gestão da UTI", icon: <Gauge size={16} /> }]
+    : []),
+];
+
+const navButtons = allNavButtons.filter((btn) => {
+  // Para "Técnico em Enfermagem", liberamos o Overview (âncora) + as abas dele
+  if (userProfile?.role === "Técnico em Enfermagem") {
+    return btn.id === "overview" || btn.id === "tech" || btn.id === "hemodialysis";
+  }
+  
+  // Para os demais (Médicos/Enfermeiros), mostramos tudo menos as abas técnicas para não poluir
+  // Se quiser que todos vejam tudo, basta deixar apenas "return true"
+  return btn.id !== "tech" && btn.id !== "hemodialysis" && btn.id !== "management";
+});
 
   // RBAC - LOGICA DE PERMISSÕES
   const isDocRole =
