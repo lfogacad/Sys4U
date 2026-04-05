@@ -3,6 +3,14 @@ import { AlertCircle, Edit3, X, Sparkles, ClipboardCheck, Loader2, ChevronDown, 
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
 import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
 
+const formatarDataBR = (dataISO) => {
+  if (!dataISO) return "";
+  const partes = dataISO.split("-");
+  if (partes.length !== 3) return dataISO;
+  const [ano, mes, dia] = partes;
+  return `${dia}/${mes}/${ano}`;
+};
+
 const MedicalDashboard = ({
   currentPatient,
   isEditable,
@@ -171,9 +179,20 @@ const MedicalDashboard = ({
           <label className="text-xs font-bold text-gray-400">Nome</label>
           <input type="text" value={currentPatient.nome || ""} onChange={(e) => updateP("nome", e.target.value)} className="w-full p-2 border rounded-lg" />
         </div>
+        {/* DATA DE NASCIMENTO */}
         <div>
           <label className="text-xs font-bold text-gray-400">Nascimento</label>
-          <input type="date" value={currentPatient.dataNascimento || ""} onChange={(e) => updateP("dataNascimento", e.target.value)} className="w-full p-2 border rounded-lg" />
+          <div className="relative">
+            <input 
+              type="date" 
+              value={currentPatient.dataNascimento || ""} 
+              onChange={(e) => updateP("dataNascimento", e.target.value)} 
+              className="w-full p-2 border rounded-lg text-transparent bg-transparent absolute inset-0 z-10 opacity-0" 
+            />
+            <div className="w-full p-2 border rounded-lg bg-white min-h-[38px] text-sm flex items-center">
+              {formatarDataBR(currentPatient.dataNascimento) || <span className="text-gray-300">dd/mm/aaaa</span>}
+            </div>
+          </div>
         </div>
         <div>
           <label className="text-xs font-bold text-gray-400">Sexo</label>
@@ -200,9 +219,22 @@ const MedicalDashboard = ({
       {/* DATA ADMISSÃO */}
       <div>
         <label className="text-xs font-bold text-gray-400 flex justify-between">
-          Data Admissão <button onClick={(e) => { e.preventDefault(); clearDate("dataInternacao"); }} className={`${!isEditable ? "hidden" : ""}`}><X size={12} /></button>
+          Data Admissão 
+          <button onClick={(e) => { e.preventDefault(); clearDate("dataInternacao"); }} className={`${!isEditable ? "hidden" : ""}`}>
+            <X size={12} />
+          </button>
         </label>
-        <input type="date" value={currentPatient.dataInternacao || ""} onChange={(e) => updateP("dataInternacao", e.target.value)} className="w-full p-2 border rounded-lg" />
+        <div className="relative">
+          <input 
+            type="date" 
+            value={currentPatient.dataInternacao || ""} 
+            onChange={(e) => updateP("dataInternacao", e.target.value)} 
+            className="w-full p-2 border rounded-lg text-transparent bg-transparent absolute inset-0 z-10 opacity-0" 
+          />
+          <div className="w-full p-2 border rounded-lg bg-white min-h-[38px] text-sm flex items-center">
+            {formatarDataBR(currentPatient.dataInternacao) || <span className="text-gray-300">dd/mm/aaaa</span>}
+          </div>
+        </div>
       </div>
 
       {/* HISTÓRIA CLÍNICA */}
