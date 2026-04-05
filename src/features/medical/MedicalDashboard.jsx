@@ -298,60 +298,86 @@ const MedicalDashboard = ({
           <h4 className="text-sm font-bold text-orange-700">Prescrição de Antimicrobianos</h4>
           <button onClick={(e) => { e.preventDefault(); setShowATBHistoryModal(true); }} className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded hover:bg-orange-300 font-bold flex items-center gap-1 transition-colors"><Clock size={14} /> Histórico</button>
         </div>
+        
         {currentPatient.antibiotics?.map((atb, idx) => {
           const isFixed = atb.locked || (atb.name && atb.date && atb.locked !== false);
+          
+          // Verifica se é o último item da lista para não colocar linha sobrando no final
+          const isLastItem = idx === currentPatient.antibiotics.length - 1;
+
           return (
-            <div key={idx} className="flex gap-2 mb-2">
-              {isFixed ? (
-                <>
-                  <div className="flex-1 flex items-center px-3 py-2 bg-orange-100/50 border border-orange-200 rounded-lg text-orange-900 font-bold uppercase overflow-hidden shadow-sm">
-                    <Pill size={16} className="mr-2 text-orange-500 flex-shrink-0" />
-                    <span className="truncate">{atb.name}</span>
-                  </div>
-                  <div className="w-32 flex items-center justify-center px-2 py-2 bg-orange-50 border border-orange-200 rounded-lg text-sm font-bold text-orange-800 shadow-sm">{formatDateDDMM(atb.date)}</div>
-                  <div className="w-12 flex items-center justify-center font-bold text-orange-600 bg-white rounded-lg border border-orange-200 shadow-sm">{getDaysD0(atb.date)}</div>
-                  <button onClick={(e) => { e.preventDefault(); clearAntibiotic(idx); }} className={`flex items-center justify-center text-orange-400 hover:text-white hover:bg-red-500 transition-colors bg-white border border-orange-200 rounded-lg w-10 shadow-sm ${!isEditable ? "hidden" : ""}`} title="Excluir e arquivar no histórico"><X size={18} strokeWidth={3} /></button>
-                </>
-              ) : (
-                <>
-                  <input 
-                    id={`atb-name-${idx}`}
-                    type="text" 
-                    defaultValue={atb.name || ""} 
-                    onBlur={(e) => updateAntibiotic(idx, "name", e.target.value.toUpperCase())} 
-                    placeholder={`Novo ATB ${idx + 1}`} 
-                    className="flex-1 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 uppercase" 
-                  />
-                  <input 
-                    id={`atb-date-${idx}`}
-                    type="date" 
-                    defaultValue={atb.date || ""} 
-                    onBlur={(e) => updateAntibiotic(idx, "date", e.target.value)} 
-                    className="w-32 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700" 
-                  />
-                  <div className="w-12 flex items-center justify-center font-bold text-orange-300 bg-slate-50 rounded-lg border border-orange-100">-</div>
-                  <button 
-                    onClick={(e) => { 
-                      e.preventDefault(); 
-                      const nameInput = document.getElementById(`atb-name-${idx}`);
-                      const dateInput = document.getElementById(`atb-date-${idx}`);
-                      nameInput?.blur();
-                      dateInput?.blur();
-                      setTimeout(() => {
-                        if (nameInput?.value && dateInput?.value) { 
-                          updateAntibiotic(idx, "locked", true); 
-                        } else { 
-                          alert("Preencha o Nome e a Data do antibiótico para fixá-lo!"); 
-                        }
-                      }, 100);
-                    }} 
-                    className={`flex items-center justify-center text-green-600 hover:text-white hover:bg-green-500 transition-colors bg-green-50 border border-green-200 rounded-lg w-10 shadow-sm ${!isEditable ? "hidden" : ""}`} 
-                    title="Confirmar e Fixar Antibiótico"
-                  >
-                    <CheckCircle size={18} strokeWidth={2.5} />
-                  </button>
-                </>
+            // A key agora fica na casca externa para o React não reclamar
+            <div key={idx} className="w-full">
+              
+              <div className="flex flex-wrap md:flex-nowrap gap-2 mb-3 items-stretch">
+                {isFixed ? (
+                  /* ESTADO: ATB FIXADO */
+                  <>
+                    <div className="flex-1 flex items-center px-3 py-2 bg-orange-100/50 border border-orange-200 rounded-lg text-orange-900 font-bold uppercase overflow-hidden shadow-sm">
+                      <Pill size={16} className="mr-2 text-orange-500 flex-shrink-0" />
+                      <span className="truncate text-xs md:text-sm">{atb.name}</span>
+                    </div>
+                    <div className="w-[85px] md:w-32 flex items-center justify-center px-1 py-2 bg-orange-50 border border-orange-200 rounded-lg text-xs md:text-sm font-bold text-orange-800 shadow-sm">{formatDateDDMM(atb.date)}</div>
+                    <div className="w-10 md:w-12 flex items-center justify-center text-sm md:text-base font-bold text-orange-600 bg-white rounded-lg border border-orange-200 shadow-sm">{getDaysD0(atb.date)}</div>
+                    <button onClick={(e) => { e.preventDefault(); clearAntibiotic(idx); }} className={`flex items-center justify-center text-orange-400 hover:text-white hover:bg-red-500 transition-colors bg-white border border-orange-200 rounded-lg w-10 md:w-10 shadow-sm ${!isEditable ? "hidden" : ""}`} title="Excluir e arquivar no histórico"><X size={18} strokeWidth={3} /></button>
+                  </>
+                ) : (
+                  /* ESTADO: INSERINDO NOVO ATB */
+                  <>
+                    <div className="flex flex-wrap md:flex-nowrap w-full gap-2">
+                      
+                      {/* LINHA 1 (Mobile) */}
+                      <input 
+                        id={`atb-name-${idx}`}
+                        type="text" 
+                        defaultValue={atb.name || ""} 
+                        onBlur={(e) => updateAntibiotic(idx, "name", e.target.value.toUpperCase())} 
+                        placeholder={`Novo ATB ${idx + 1}`} 
+                        className="w-full md:flex-1 min-w-[100px] p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 uppercase text-sm" 
+                      />
+
+                      {/* LINHA 2 (Mobile) */}
+                      <div className="flex w-full md:w-auto gap-2 mt-1 md:mt-0">
+                        <input 
+                          id={`atb-date-${idx}`}
+                          type="date" 
+                          defaultValue={atb.date || ""} 
+                          onBlur={(e) => updateAntibiotic(idx, "date", e.target.value)} 
+                          className="flex-1 md:w-32 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 text-sm" 
+                        />
+                        <div className="hidden md:flex w-12 items-center justify-center font-bold text-orange-300 bg-slate-50 rounded-lg border border-orange-100">-</div>
+                        <button 
+                          onClick={(e) => { 
+                            e.preventDefault(); 
+                            const nameInput = document.getElementById(`atb-name-${idx}`);
+                            const dateInput = document.getElementById(`atb-date-${idx}`);
+                            nameInput?.blur();
+                            dateInput?.blur();
+                            setTimeout(() => {
+                              if (nameInput?.value && dateInput?.value) { 
+                                updateAntibiotic(idx, "locked", true); 
+                              } else { 
+                                alert("Preencha o Nome e a Data do antibiótico para fixá-lo!"); 
+                              }
+                            }, 100);
+                          }} 
+                          className={`flex flex-shrink-0 items-center justify-center w-[42px] md:w-10 h-[42px] md:h-auto text-green-600 hover:text-white hover:bg-green-500 transition-colors bg-green-50 border border-green-200 rounded-lg shadow-sm ${!isEditable ? "hidden" : ""}`} 
+                          title="Confirmar e Fixar Antibiótico"
+                        >
+                          <CheckCircle size={18} strokeWidth={2.5} />
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* A Linha Divisória */}
+              {/* Só aparece se não for o último item da lista. O w-[70%] dá os 70% de largura, e mx-auto centraliza. */}
+              {!isLastItem && (
+                <div className="w-[70%] mx-auto mb-3 border-b border-orange-200/80"></div>
               )}
+              
             </div>
           );
         })}
