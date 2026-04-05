@@ -3957,7 +3957,7 @@ ${condutas}`;
     }
   };
 
-// Filtro de abas sem conflito de leitos
+// SUTURA: Filtro de abas assimétrico (Técnico vê 2, os outros veem todas)
 const allNavButtons = [
   { id: "overview", label: "Visita Multi", icon: <Activity size={16} /> },
   { id: "medical", label: "Médico", icon: <Stethoscope size={16} /> },
@@ -3973,14 +3973,12 @@ const allNavButtons = [
 ];
 
 const navButtons = allNavButtons.filter((btn) => {
-  // Para "Técnico em Enfermagem", liberamos o Overview (âncora) + as abas dele
+  // Se for técnico, filtro rigoroso: apenas 2 abas
   if (userProfile?.role === "Técnico em Enfermagem") {
-    return btn.id === "overview" || btn.id === "tech" || btn.id === "hemodialysis";
+    return btn.id === "tech" || btn.id === "hemodialysis";
   }
-  
-  // Para os demais (Médicos/Enfermeiros), mostramos tudo menos as abas técnicas para não poluir
-  // Se quiser que todos vejam tudo, basta deixar apenas "return true"
-  return btn.id !== "tech" && btn.id !== "hemodialysis" && btn.id !== "management";
+  // Para todos os outros profissionais, mostra TODAS as abas
+  return true; 
 });
 
   // RBAC - LOGICA DE PERMISSÕES
@@ -4031,21 +4029,18 @@ const navButtons = allNavButtons.filter((btn) => {
   const canCloseDay = userProfile?.role === "Enfermeiro" || isOverviewEditable;
   const isBHReadOnly = viewingPreviousBH || !isEditable;
 
-  // FILTRO DE ABAS PARA TÉCNICOS EM ENFERMAGEM
-  const visibleNavButtons =
-    userProfile?.role === "Técnico em Enfermagem"
-      ? navButtons.filter(
-          (btn) => btn.id === "tech" || btn.id === "hemodialysis"
-        )
-      : navButtons;
+  // FILTRO DE ABAS: Técnico vê 2, os outros profissionais veem TODAS
+  const visibleNavButtons = userProfile?.role === "Técnico em Enfermagem"
+    ? navButtons.filter(btn => btn.id === "tech" || btn.id === "hemodialysis")
+    : navButtons; // Para médicos, fisios, etc., retorna a lista completa
 
   // GARANTIR QUE O TÉCNICO NÃO FIQUE PRESO NUMA ABA INVISÍVEL
   useEffect(() => {
-    if (
-      userProfile?.role === "Técnico em Enfermagem" &&
-      !["tech", "hemodialysis"].includes(viewMode)
-    ) {
-      setViewMode("tech");
+    if (userProfile?.role === "Técnico em Enfermagem") {
+      const abasPermitidas = ["tech", "hemodialysis"];
+      if (!abasPermitidas.includes(viewMode)) {
+        setViewMode("tech"); // Se cair numa aba proibida, redireciona para a dele
+      }
     }
   }, [userProfile?.role, viewMode]);
 
@@ -4363,7 +4358,13 @@ const navButtons = allNavButtons.filter((btn) => {
               <div
                 ref={navScrollRef}
                 onScroll={handleNavScroll}
-                className="flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 px-[35vw] md:px-0 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center"
+                // SUTURA: Se tiver pouca aba (técnico), diminui o padding lateral para não travar o scroll no mobile
+                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center
+                  ${window.innerWidth < 768 && visibleNavButtons.length <= 3 
+                    ? "px-[15vw] justify-center" 
+                    : "px-[35vw]"
+                  }
+                `}
               >
                 {visibleNavButtons.map((btn, index) => {
                   const isActive = viewMode === btn.id; // APENAS ele recebe a cor
