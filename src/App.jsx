@@ -4353,8 +4353,7 @@ const navButtons = allNavButtons.filter((btn) => {
           <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
             <div className="relative mb-6 md:mb-0 print:hidden">
 
-              {/* CONTAINER DO CARROSSEL */}
-              {/* px-[35vw] garante que a primeira e a última aba alcancem o centro da tela no celular */}
+              {/* CONTAINER DO CARROSSEL AJUSTADO */}
               <div
                 ref={navScrollRef}
                 onScroll={handleNavScroll}
@@ -4367,13 +4366,14 @@ const navButtons = allNavButtons.filter((btn) => {
                 `}
               >
                 {visibleNavButtons.map((btn, index) => {
-                  const isActive = viewMode === btn.id; // APENAS ele recebe a cor
+                  const isActive = viewMode === btn.id;
                   
-                  // Se for celular, a aba expande se estiver no centro do scroll
-                  const isExpandedMobile = centerTab === btn.id && window.innerWidth < 768; 
+                  // SE SÓ TIVER 2 ABAS, ELAS FICAM SEMPRE "EXPANDIDAS" NO MOBILE PARA FACILITAR O TOQUE
+                  const isExpandedMobile = window.innerWidth < 768 && 
+                    (visibleNavButtons.length <= 2 ? true : centerTab === btn.id); 
 
-                  // --- CÁLCULO DA CASCATA 3D (Z-INDEX) ---
-                  const centerIndex = visibleNavButtons.findIndex(b => b.id === centerTab);
+                  // --- CÁLCULO DA CASCATA 3D ---
+                  const centerIndex = visibleNavButtons.findIndex(b => b.id === (centerTab || visibleNavButtons[0]?.id));
                   const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
                   const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
 
