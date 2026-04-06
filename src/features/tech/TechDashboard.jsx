@@ -119,29 +119,34 @@ const TechDashboard = ({
         </div>
       )}
 
-      <div className="flex justify-between items-end mb-2 print:hidden">
+      {/* SUTURA: Flex-col no mobile, Flex-row no PC para os botões */}
+      <div className="flex flex-col md:flex-row md:justify-between items-start md:items-end gap-3 mb-2 print:hidden">
+        
+        {/* LINHA 1 (Mobile): Título */}
         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
           <Droplets className="text-blue-500" /> Balanço Hídrico {viewingPreviousBH ? "(DIA ANTERIOR)" : "24h"}
         </h3>
-        <div className="flex gap-2">
+        
+        {/* LINHA 2 (Mobile): Botões de ação com wrap para não espremer */}
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <button
             onClick={() => currentPatient.bh_previous && setViewingPreviousBH(!viewingPreviousBH)}
             disabled={!currentPatient.bh_previous}
-            className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors ${
+            className={`flex-1 md:flex-none px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors ${
               !currentPatient.bh_previous ? "bg-gray-100 text-gray-400 cursor-not-allowed" : viewingPreviousBH ? "bg-orange-500 text-white hover:bg-orange-600" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
             }`}
             title={!currentPatient.bh_previous ? "Ainda não foi fechado nenhum dia para este leito." : "Ver balanço do dia anterior"}
           >
             <Clock size={14} /> {viewingPreviousBH ? "Voltar ao Atual" : "Dia Anterior"}
           </button>
-          <button onClick={handlePrintBH} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
+          <button onClick={handlePrintBH} className="flex-1 md:flex-none bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1">
             <Printer size={14} /> Imprimir
           </button>
           {!viewingPreviousBH && canCloseDay && (
             <button
               onClick={handleNextDayBH}
               disabled={!isEditable}
-              className={`bg-blue-600 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 ${
+              className={`w-full md:w-auto bg-blue-600 text-white px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 mt-1 md:mt-0 ${
                 !isEditable ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"
               }`}
             >
@@ -152,20 +157,34 @@ const TechDashboard = ({
       </div>
 
       <fieldset disabled={isBHReadOnly} className="min-w-0 border-0 p-0 m-0 space-y-4">
-        <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl print:hidden">
-          <div className="flex items-center gap-2">
-            <Scale size={16} className="text-slate-400" />
-            <span className="text-xs font-bold text-slate-500 uppercase">Peso (kg):</span>
-            <input type="text" value={currentPatient.nutri?.peso} disabled className="w-20 p-1 border rounded text-center text-sm font-bold bg-gray-100 text-gray-500" placeholder={currentPatient.nutri?.peso || "---"} />
+        
+        {/* SUTURA: Retirado o botão de Calcular PI e ajustado o layout para não "vazar" */}
+        <div className="flex items-center justify-between gap-2 bg-slate-50 p-3 rounded-xl print:hidden">
+          
+          {/* Peso */}
+          <div className="flex items-center gap-1 md:gap-2">
+            <Scale size={16} className="text-slate-400 hidden sm:block" />
+            <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase">Peso (kg):</span>
+            <input 
+              type="text" 
+              value={currentPatient.nutri?.peso} 
+              disabled 
+              className="w-14 md:w-20 p-1 border rounded text-center text-[10px] md:text-sm font-bold bg-gray-100 text-gray-500" 
+              placeholder={currentPatient.nutri?.peso || "---"} 
+            />
           </div>
-          {!viewingPreviousBH && (
-            <button onClick={(e) => { e.preventDefault(); handleAutoCalcInsensible(); }} className="text-blue-600 text-xs font-bold hover:underline print:hidden">
-              Calcular PI
-            </button>
-          )}
-          <div className="ml-auto text-xs text-slate-500">
-            PI Total: <input type="text" value={displayedBH.insensibleLoss} onChange={(e) => updateNested("bh", "insensibleLoss", e.target.value)} className="w-16 p-1 border rounded text-center ml-1 bg-white" /> ml
+
+          {/* PI Total (Agora com flex-shrink-0 para não amassar no mobile) */}
+          <div className="flex items-center text-[10px] md:text-xs font-bold text-slate-500 whitespace-nowrap flex-shrink-0">
+            PI Total: 
+            <input 
+              type="text" 
+              value={displayedBH.insensibleLoss} 
+              onChange={(e) => updateNested("bh", "insensibleLoss", e.target.value)} 
+              className="w-12 md:w-16 p-1 border rounded text-center ml-1 md:ml-2 bg-white text-slate-800" 
+            /> ml
           </div>
+          
         </div>
 
         <div>
@@ -397,7 +416,7 @@ const TechDashboard = ({
             </div>
             <div className="bg-slate-800 p-2 rounded-lg text-white print:text-black print:bg-white flex flex-col justify-between print:text-center">
               <div className="flex justify-between print:justify-center items-center mb-1">
-                <p className="text-[10px] text-slate-400 font-bold uppercase print:text-black">Acumulado Ant.</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase print:text-black">BH Ant.</p>
                 <input type="text" value={displayedBH.accumulated || ""} onChange={(e) => updateNested("bh", "accumulated", e.target.value)} className="w-12 bg-slate-700 text-white text-xs text-center rounded outline-none border border-slate-600 print:hidden focus:ring-1 focus:ring-blue-400 ml-1" />
                 <span className="hidden print:inline text-[10px] font-bold ml-1">: {displayedBH.accumulated || 0}</span>
               </div>
