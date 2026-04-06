@@ -299,8 +299,8 @@ const PhysioDashboard = ({
               Via Aérea e Dispositivos
             </h4>
             
-            {/* LINHA 1: TOT e CUFF */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-2 mb-4 shrink-0">
+            {/* LINHAS 1 E 2: TOT, RIMA e CUFF */}
+            <div className="grid grid-cols-2 gap-3 mb-4 shrink-0">
               
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">TOT/TQT nº</label>
@@ -312,12 +312,12 @@ const PhysioDashboard = ({
                 <input type="number" placeholder="Ex: 22" className="w-full p-2 border rounded text-xs text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.totRima || ""} onChange={(e) => updateNested("physio", "totRima", e.target.value)} />
               </div>
               
-              {/* SUTURA: Cuff isolado na 2ª linha no celular (col-span-2) e centralizado */}
-              <div className="col-span-2 md:col-span-1 flex flex-col mt-2 md:mt-0">
+              {/* SUTURA: Cuff isolado na 2ª linha EM TODAS AS TELAS (col-span-2) e centralizado */}
+              <div className="col-span-2 flex flex-col mt-2 items-center">
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block text-center" title="Pressão do Cuff: Manhã / Tarde / Noite">Pressão do Cuff (M | T | N)</label>
                 
-                {/* O w-[80%] mx-auto no celular garante que os botões não fiquem esticados demais */}
-                <div className="flex gap-2 justify-center w-[80%] md:w-full mx-auto md:mx-0">
+                {/* Ajustamos a largura para md:w-[60%] no PC, assim ele fica centralizado sem esticar demais */}
+                <div className="flex gap-2 justify-center w-[80%] md:w-[60%]">
                   <input type="number" placeholder="M" title="Manhã" className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffM || ""} onChange={(e) => updateNested("physio", "cuffM", e.target.value)} />
                   <input type="number" placeholder="T" title="Tarde" className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffT || ""} onChange={(e) => updateNested("physio", "cuffT", e.target.value)} />
                   <input type="number" placeholder="N" title="Noite" className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffN || ""} onChange={(e) => updateNested("physio", "cuffN", e.target.value)} />
