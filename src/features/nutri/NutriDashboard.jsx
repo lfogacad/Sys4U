@@ -110,19 +110,23 @@ const NutriDashboard = ({
 
                     <div className="flex flex-col md:flex-row gap-4">
                       <div className="flex-1 bg-white p-3 rounded-lg border border-lime-200">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-bold text-lime-700">
+                        
+                        {/* items-end ajuda a alinhar o texto com a linha do input */}
+                        <div className="flex items-end gap-2 mb-2">
+                          <span className="text-sm font-bold text-lime-700 leading-tight">
                             Meta Atingida:
                           </span>
                           <input
                             type="text"
-                            className="flex-1 p-1 border-b border-lime-500 outline-none text-sm bg-transparent"
+                            // min-w-0 permite que o input encolha no celular sem estourar o layout
+                            className="flex-1 min-w-0 p-1 border-b border-lime-500 outline-none text-sm bg-transparent"
                             value={currentPatient.nutri?.atingido || ""}
                             onChange={(e) =>
                               updateNested("nutri", "atingido", e.target.value)
                             }
                           />
                         </div>
+
                         <textarea
                           className="w-full text-xs p-2 border rounded outline-none h-12 bg-slate-50"
                           placeholder="Anotações sobre a meta atingida..."

@@ -300,23 +300,30 @@ const PhysioDashboard = ({
             </h4>
             
             {/* LINHA 1: TOT e CUFF */}
-            <div className="grid grid-cols-3 gap-2 mb-4 shrink-0">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-2 mb-4 shrink-0">
+              
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">TOT/TQT nº</label>
                 <input type="number" step="0.5" placeholder="Ex: 8.0" className="w-full p-2 border rounded text-xs text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.totNumero || ""} onChange={(e) => updateNested("physio", "totNumero", e.target.value)} />
               </div>
+              
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Rima (cm)</label>
                 <input type="number" placeholder="Ex: 22" className="w-full p-2 border rounded text-xs text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.totRima || ""} onChange={(e) => updateNested("physio", "totRima", e.target.value)} />
               </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block text-center" title="Pressão do Cuff: Manhã / Tarde / Noite">Cuff (M | T | N)</label>
-                <div className="flex gap-1">
-                  <input type="number" placeholder="M" title="Manhã" className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffM || ""} onChange={(e) => updateNested("physio", "cuffM", e.target.value)} />
-                  <input type="number" placeholder="T" title="Tarde" className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffT || ""} onChange={(e) => updateNested("physio", "cuffT", e.target.value)} />
-                  <input type="number" placeholder="N" title="Noite" className="w-1/3 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffN || ""} onChange={(e) => updateNested("physio", "cuffN", e.target.value)} />
+              
+              {/* SUTURA: Cuff isolado na 2ª linha no celular (col-span-2) e centralizado */}
+              <div className="col-span-2 md:col-span-1 flex flex-col mt-2 md:mt-0">
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block text-center" title="Pressão do Cuff: Manhã / Tarde / Noite">Pressão do Cuff (M | T | N)</label>
+                
+                {/* O w-[80%] mx-auto no celular garante que os botões não fiquem esticados demais */}
+                <div className="flex gap-2 justify-center w-[80%] md:w-full mx-auto md:mx-0">
+                  <input type="number" placeholder="M" title="Manhã" className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffM || ""} onChange={(e) => updateNested("physio", "cuffM", e.target.value)} />
+                  <input type="number" placeholder="T" title="Tarde" className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffT || ""} onChange={(e) => updateNested("physio", "cuffT", e.target.value)} />
+                  <input type="number" placeholder="N" title="Noite" className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" value={currentPatient.physio?.cuffN || ""} onChange={(e) => updateNested("physio", "cuffN", e.target.value)} />
                 </div>
               </div>
+              
             </div>
 
             {/* LINHA 2: DISPOSITIVOS (HMEF E SFA) - PROTOCOLO 7 DIAS (168h) */}
