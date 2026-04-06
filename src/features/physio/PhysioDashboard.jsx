@@ -143,7 +143,7 @@ const PhysioDashboard = ({
                     className="ml-2 px-2 py-0.5 bg-cyan-100/80 text-cyan-800 text-[10px] font-black tracking-wide rounded-full border border-cyan-300 shadow-sm cursor-help" 
                     title={`Calculado para ${idade} anos | Fórmula (Supino): 109 - (0.43 x Idade)`}
                   >
-                    pO2 Ideal: {pO2Ideal}
+                    PaO2 Ideal: {pO2Ideal}
                   </span>
                 );
               })()}
