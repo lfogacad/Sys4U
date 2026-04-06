@@ -208,26 +208,121 @@ const HemoDashboard = ({
       <div className="hidden print:block force-print-break"></div>
 
       {/* SECÇÃO 3 E 4: ACESSO VASCULAR E INSUMOS */}
-      <fieldset disabled={!isNursingRole && currentPatient?.leito !== 11} className="grid md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-2">
-        <div className="border rounded-xl p-4 print:p-2 bg-white">
-          <h4 className="font-bold text-slate-700 mb-3 text-sm section-title">ACESSO VASCULAR</h4>
-          <div className="space-y-3 text-xs">
-            <div className="grid grid-cols-3 gap-2 items-center"><label className="font-bold text-slate-600">FAV</label><select className="col-span-2 p-1 border rounded bg-slate-50" value={currentPatient.hd_acesso?.fav_local || ""} onChange={(e) => updateNested("hd_acesso", "fav_local", e.target.value)}><option value="">Local...</option><option value="MSD">MSD</option><option value="MSE">MSE</option></select></div>
-            <div className="grid grid-cols-2 gap-2"><div className="flex gap-2 items-center"><label className="font-bold text-slate-600">Frêmito</label><select className="flex-1 p-1 border rounded" value={currentPatient.hd_acesso?.fremito || ""} onChange={(e) => updateNested("hd_acesso", "fremito", e.target.value)}><option value="">-</option><option value="SIM">SIM</option><option value="NÃO">NÃO</option></select></div><div className="flex gap-2 items-center"><label className="font-bold text-slate-600">Punção</label><select className="flex-1 p-1 border rounded" value={currentPatient.hd_acesso?.puncao || ""} onChange={(e) => updateNested("hd_acesso", "puncao", e.target.value)}><option value="">-</option><option value="FÁCIL">FÁCIL</option><option value="DIFÍCIL">DIFÍCIL</option></select></div></div>
-            <hr className="my-1 border-dashed" />
-            <div className="grid grid-cols-3 gap-2 items-center"><label className="font-bold text-slate-600">CATÉTER</label><select className="col-span-2 p-1 border rounded bg-slate-50" value={currentPatient.hd_acesso?.cateter_tipo || ""} onChange={(e) => updateNested("hd_acesso", "cateter_tipo", e.target.value)}><option value="">Tipo...</option><option value="DUPLO LUMEN">DUPLO LUMEN</option><option value="TRIPLO LUMEN">TRIPLO LUMEN</option><option value="PERMICATH">PERMICATH</option></select></div>
-            <div className="grid grid-cols-3 gap-2 items-center"><label className="font-bold text-slate-600">Local</label><select className="col-span-2 p-1 border rounded" value={currentPatient.hd_acesso?.cateter_local || ""} onChange={(e) => updateNested("hd_acesso", "cateter_local", e.target.value)}><option value="">-</option><option value="VJID">VJID</option><option value="VJIE">VJIE</option><option value="VSCD">VSCD</option><option value="VSCE">VSCE</option><option value="VFID">VFID</option><option value="VFIE">VFIE</option></select></div>
-            <div className="grid grid-cols-2 gap-2"><div><label className="font-bold text-slate-600 block">Inserção</label><input type="date" className="w-full p-1 border rounded" value={currentPatient.hd_acesso?.insercao || ""} onChange={(e) => updateNested("hd_acesso", "insercao", e.target.value)} /></div><div><label className="font-bold text-slate-600 block">Fluxo</label><select className="w-full p-1 border rounded" value={currentPatient.hd_acesso?.fluxo || ""} onChange={(e) => updateNested("hd_acesso", "fluxo", e.target.value)}><option value="">-</option><option value="BOM">BOM</option><option value="RUIM">RUIM</option><option value="AUSENTE">AUSENTE</option></select></div></div>
-            <div><label className="font-bold text-slate-600 block">Local Prévio</label><input type="text" className="w-full p-1 border rounded" value={currentPatient.hd_acesso?.previo || ""} onChange={(e) => updateNested("hd_acesso", "previo", e.target.value)} /></div>
-            <hr className="my-1 border-dashed" />
-            <div><label className="font-bold text-slate-600 block mb-1">Curativo</label><div className="grid grid-cols-2 gap-1 text-[10px]">{["Limpo", "Hiperemia", "Secreção Serosa", "Sanguinolenta", "Purulenta", "Sem ponto"].map((c) => (<label key={c} className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={currentPatient.hd_acesso?.curativo?.includes(c) || false} onChange={() => toggleHDAcessoCurativo(c)} /> {c.toUpperCase()}</label>))}</div></div>
-            <div className="pt-2"><label className="font-bold text-slate-600 block text-xs">Intercorrências</label><textarea className="w-full p-2 border rounded h-12 outline-none" value={currentPatient.hd_acesso?.intercorrencias || ""} onChange={(e) => updateNested("hd_acesso", "intercorrencias", e.target.value)}></textarea></div>
+      <fieldset disabled={!isNursingRole && currentPatient?.leito !== 11} className="flex flex-col md:grid md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-2 w-full overflow-hidden">
+        
+        {/* BLOCO 1: ACESSO VASCULAR */}
+        <div className="border rounded-xl p-4 print:p-2 bg-white w-full">
+          <h4 className="font-bold text-slate-700 mb-3 text-sm section-title text-center md:text-left">ACESSO VASCULAR</h4>
+          <div className="space-y-3 text-xs w-full">
+            
+            <div className="flex flex-col sm:grid sm:grid-cols-3 gap-2 items-start sm:items-center">
+              <label className="font-bold text-slate-600">FAV</label>
+              <select className="w-full sm:col-span-2 p-1.5 border rounded bg-slate-50 outline-none" value={currentPatient.hd_acesso?.fav_local || ""} onChange={(e) => updateNested("hd_acesso", "fav_local", e.target.value)}>
+                <option value="">Local...</option><option value="MSD">MSD</option><option value="MSE">MSE</option>
+              </select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-start sm:items-center">
+                <label className="font-bold text-slate-600">Frêmito</label>
+                <select className="w-full p-1.5 border rounded outline-none" value={currentPatient.hd_acesso?.fremito || ""} onChange={(e) => updateNested("hd_acesso", "fremito", e.target.value)}><option value="">-</option><option value="SIM">SIM</option><option value="NÃO">NÃO</option></select>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-start sm:items-center">
+                <label className="font-bold text-slate-600">Punção</label>
+                <select className="w-full p-1.5 border rounded outline-none" value={currentPatient.hd_acesso?.puncao || ""} onChange={(e) => updateNested("hd_acesso", "puncao", e.target.value)}><option value="">-</option><option value="FÁCIL">FÁCIL</option><option value="DIFÍCIL">DIFÍCIL</option></select>
+              </div>
+            </div>
+            
+            <hr className="my-2 border-dashed border-slate-200" />
+            
+            <div className="flex flex-col sm:grid sm:grid-cols-3 gap-2 items-start sm:items-center">
+              <label className="font-bold text-slate-600">CATÉTER</label>
+              <select className="w-full sm:col-span-2 p-1.5 border rounded bg-slate-50 outline-none" value={currentPatient.hd_acesso?.cateter_tipo || ""} onChange={(e) => updateNested("hd_acesso", "cateter_tipo", e.target.value)}>
+                <option value="">Tipo...</option><option value="DUPLO LUMEN">DUPLO LUMEN</option><option value="TRIPLO LUMEN">TRIPLO LUMEN</option><option value="PERMICATH">PERMICATH</option>
+              </select>
+            </div>
+            
+            <div className="flex flex-col sm:grid sm:grid-cols-3 gap-2 items-start sm:items-center">
+              <label className="font-bold text-slate-600">Local</label>
+              <select className="w-full sm:col-span-2 p-1.5 border rounded outline-none" value={currentPatient.hd_acesso?.cateter_local || ""} onChange={(e) => updateNested("hd_acesso", "cateter_local", e.target.value)}>
+                <option value="">-</option><option value="VJID">VJID</option><option value="VJIE">VJIE</option><option value="VSCD">VSCD</option><option value="VSCE">VSCE</option><option value="VFID">VFID</option><option value="VFIE">VFIE</option>
+              </select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Inserção</label>
+                <input type="date" className="w-full p-1.5 border rounded outline-none" value={currentPatient.hd_acesso?.insercao || ""} onChange={(e) => updateNested("hd_acesso", "insercao", e.target.value)} />
+              </div>
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Fluxo</label>
+                <select className="w-full p-1.5 border rounded outline-none" value={currentPatient.hd_acesso?.fluxo || ""} onChange={(e) => updateNested("hd_acesso", "fluxo", e.target.value)}><option value="">-</option><option value="BOM">BOM</option><option value="RUIM">RUIM</option><option value="AUSENTE">AUSENTE</option></select>
+              </div>
+            </div>
+            
+            <div>
+              <label className="font-bold text-slate-600 block mb-1">Local Prévio</label>
+              <input type="text" className="w-full p-1.5 border rounded outline-none" value={currentPatient.hd_acesso?.previo || ""} onChange={(e) => updateNested("hd_acesso", "previo", e.target.value)} />
+            </div>
+            
+            <hr className="my-2 border-dashed border-slate-200" />
+            
+            <div>
+              <label className="font-bold text-slate-600 block mb-2 text-center md:text-left">Curativo</label>
+              <div className="grid grid-cols-2 gap-y-2 gap-x-1 text-[10px]">
+                {["Limpo", "Hiperemia", "Secreção Serosa", "Sanguinolenta", "Purulenta", "Sem ponto"].map((c) => (
+                  <label key={c} className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" checked={currentPatient.hd_acesso?.curativo?.includes(c) || false} onChange={() => toggleHDAcessoCurativo(c)} className="w-3 h-3 text-blue-600" /> 
+                    <span className="truncate">{c.toUpperCase()}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            
+            <div className="pt-2">
+              <label className="font-bold text-slate-600 block mb-1">Intercorrências</label>
+              <textarea className="w-full p-2 border rounded h-16 outline-none resize-none" value={currentPatient.hd_acesso?.intercorrencias || ""} onChange={(e) => updateNested("hd_acesso", "intercorrencias", e.target.value)}></textarea>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 print:gap-2">
-          <div className="border rounded-xl p-4 print:p-2 bg-white flex-1"><h4 className="font-bold text-slate-700 mb-2 text-sm section-title">INSUMOS</h4><div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">{HD_SUPPLIES.map((item) => item.id !== "vazio" ? (<div key={item.id} className="flex justify-between items-center border-b pb-0.5"><span className="truncate pr-1 text-slate-600">{item.label}</span><input type="number" className="w-10 text-center border rounded outline-none p-0" value={currentPatient.hd_insumos?.[item.id] || ""} onChange={(e) => updateNested("hd_insumos", item.id, e.target.value)} /></div>) : (<div key="vazio"></div>))}</div></div>
-          <div className="border rounded-xl p-4 print:p-2 bg-yellow-50/50 flex-1"><h4 className="font-bold text-slate-700 mb-2 text-sm section-title">ANOTAÇÕES DE ENFERMAGEM</h4><div className="flex gap-4 mb-2 text-xs"><div className="flex items-center gap-1"><label className="font-bold text-slate-600">INÍCIO:</label><input type="time" className="p-1 border rounded bg-white w-20" value={currentPatient.hd_anotacoes?.inicio || ""} onChange={(e) => updateNested("hd_anotacoes", "inicio", e.target.value)} /></div><div className="flex items-center gap-1"><label className="font-bold text-slate-600">TÉRMINO:</label><input type="time" className="p-1 border rounded bg-white w-20" value={currentPatient.hd_anotacoes?.termino || ""} onChange={(e) => updateNested("hd_anotacoes", "termino", e.target.value)} /></div></div><textarea className="w-full h-20 p-2 border rounded outline-none text-xs bg-white mb-2" value={currentPatient.hd_anotacoes?.texto || ""} onChange={(e) => updateNested("hd_anotacoes", "texto", e.target.value)}></textarea><div className="flex items-center gap-2 text-xs"><label className="font-bold text-slate-600">TÉCNICO:</label><input type="text" className="flex-1 p-1 border-b bg-transparent outline-none" value={currentPatient.hd_anotacoes?.tecnico || ""} onChange={(e) => updateNested("hd_anotacoes", "tecnico", e.target.value)} /></div></div>
+        {/* BLOCO 2: INSUMOS E ANOTAÇÕES */}
+        <div className="flex flex-col gap-4 print:gap-2 w-full">
+          
+          <div className="border rounded-xl p-4 print:p-2 bg-white flex-1 w-full">
+            <h4 className="font-bold text-slate-700 mb-3 text-sm section-title text-center md:text-left">INSUMOS</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-[10px]">
+              {HD_SUPPLIES.map((item) => item.id !== "vazio" ? (
+                <div key={item.id} className="flex justify-between items-center border-b pb-1">
+                  <span className="truncate pr-2 text-slate-600">{item.label}</span>
+                  <input type="number" className="w-12 text-center border rounded outline-none p-0.5" value={currentPatient.hd_insumos?.[item.id] || ""} onChange={(e) => updateNested("hd_insumos", item.id, e.target.value)} />
+                </div>
+              ) : (<div key="vazio" className="hidden sm:block"></div>))}
+            </div>
+          </div>
+          
+          <div className="border rounded-xl p-4 print:p-2 bg-yellow-50/50 flex-1 w-full">
+            <h4 className="font-bold text-slate-700 mb-3 text-sm section-title text-center md:text-left">ANOTAÇÕES DE ENFERMAGEM</h4>
+            
+            <div className="flex flex-col sm:flex-row justify-between gap-3 mb-3 text-xs">
+              <div className="flex items-center gap-2 justify-between sm:justify-start w-full sm:w-auto">
+                <label className="font-bold text-slate-600">INÍCIO:</label>
+                <input type="time" className="p-1.5 border rounded bg-white w-24 text-center outline-none" value={currentPatient.hd_anotacoes?.inicio || ""} onChange={(e) => updateNested("hd_anotacoes", "inicio", e.target.value)} />
+              </div>
+              <div className="flex items-center gap-2 justify-between sm:justify-start w-full sm:w-auto">
+                <label className="font-bold text-slate-600">TÉRMINO:</label>
+                <input type="time" className="p-1.5 border rounded bg-white w-24 text-center outline-none" value={currentPatient.hd_anotacoes?.termino || ""} onChange={(e) => updateNested("hd_anotacoes", "termino", e.target.value)} />
+              </div>
+            </div>
+            
+            <textarea className="w-full h-24 p-2 border rounded outline-none text-xs bg-white mb-3 resize-none" placeholder="Evolução de enfermagem..." value={currentPatient.hd_anotacoes?.texto || ""} onChange={(e) => updateNested("hd_anotacoes", "texto", e.target.value)}></textarea>
+            
+            <div className="flex items-center gap-2 text-xs">
+              <label className="font-bold text-slate-600 whitespace-nowrap">TÉCNICO(A):</label>
+              <input type="text" className="flex-1 min-w-0 p-1 border-b border-slate-300 bg-transparent outline-none" value={currentPatient.hd_anotacoes?.tecnico || ""} onChange={(e) => updateNested("hd_anotacoes", "tecnico", e.target.value)} />
+            </div>
+          </div>
+        
         </div>
       </fieldset>
 
