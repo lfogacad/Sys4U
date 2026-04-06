@@ -3551,11 +3551,28 @@ ${physioData.condutas}`;
     const up = [...patients];
     const p = up[activeTab];
     const calc = calculateSAPS3Score(p);
+    
+    // 1. TRAVA O SAPS 3 (O código original do senhor)
     if (!p.saps3) p.saps3 = {};
     p.saps3.isLocked = true;
     p.saps3.lockedScore = calc.score;
     p.saps3.lockedProb = calc.prob;
     p.saps3.lockedDetails = calc.details;
+
+    // 2. SUTURA: CARIMBO AUTOMÁTICO NA EVOLUÇÃO MÉDICA
+    if (!p.medical) p.medical = {};
+    const evolucaoAtual = p.medical.evolucao || "";
+    const textoSaps = `\n\n--- ADMISSÃO ---\nEscore SAPS 3: ${calc.score} pontos (Mortalidade Estimada: ${calc.prob}%).\n----------------\n`;
+
+    // Verifica se o texto já existe para evitar duplicidade (caso o médico destrave e trave de novo)
+    if (!evolucaoAtual.includes("Escore SAPS 3:")) {
+      p.medical.evolucao = evolucaoAtual + textoSaps;
+      alert("SAPS 3 Travado e carimbado na Evolução Médica com sucesso!");
+    } else {
+      alert("SAPS 3 Travado com sucesso!");
+    }
+
+    // 3. SALVA TUDO NO BANCO DE DADOS
     setPatients(up);
     save(p);
   };
