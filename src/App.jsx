@@ -1,6 +1,10 @@
+import './index.css';
 import React, { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import {
   ClipboardCheck,
+  Search,
+  ArrowLeft,
   User,
   Stethoscope,
   Clock,
@@ -1573,8 +1577,8 @@ const getLast10Days = () => {
   return d;
 };
 
-// --- APP COMPONENT ---
-const App = () => {
+// --- MODULO UTI COMPONENT ---
+const ModuloUTI = () => {
   const [pdfReady, setPdfReady] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -4837,35 +4841,225 @@ const navButtons = allNavButtons.filter((btn) => {
       />
 </div>
     ); // Fecha o return do App
-}; // FECHA A CONST APP
+  }; // FECHA O MODULO UTI (Antigo App)
 
-// --- COMPONENTES AUXILIARES ---
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-  render() {
-    if (this.state.hasError)
-      return (
-        <div className="p-10 text-red-600 text-center font-bold font-sans">
-          <h1>Erro Crítico na Aplicação.</h1>
-          <p className="text-sm font-normal text-slate-600 mt-2">
-            Detalhe: {this.state.error?.message}
-          </p>
+  // ==========================================
+  // NOVOS MÓDULOS DA V2 (PRONTUÁRIO ELETRÔNICO)
+  // ==========================================
+  
+  // 1. TELA DE LOGIN
+  const LoginScreen = () => {
+    const navigate = useNavigate();
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full text-center">
+          <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Activity size={32} className="text-white" />
+          </div>
+          <h1 className="text-2xl font-black text-slate-800 mb-2">HospitalOS V2</h1>
+          <p className="text-sm text-slate-500 mb-8">Acesso Restrito ao Corpo Clínico</p>
+          
+          <button 
+            onClick={() => navigate('/hub')}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-colors"
+          >
+            Entrar no Sistema
+          </button>
         </div>
-      );
-    return this.props.children;
-  }
-}
+      </div>
+    );
+  };
+  
+  // 2. TELA DE SELEÇÃO DE SERVIÇOS (HUB)
+  const ServiceHub = () => {
+    const navigate = useNavigate();
+    return (
+      <div className="min-h-screen bg-slate-50 p-8">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-black text-slate-800 mb-2">Central de Serviços</h2>
+          <p className="text-slate-500 mb-8">Selecione o módulo que deseja acessar:</p>
+  
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <button 
+              onClick={() => navigate('/uti')}
+              className="flex flex-col items-center justify-center p-8 bg-white border-2 border-transparent hover:border-blue-500 rounded-2xl shadow-sm hover:shadow-xl transition-all group"
+            >
+              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Activity size={32} />
+              </div>
+              <h3 className="font-bold text-lg text-slate-800">UTI Adulto</h3>
+              <span className="text-xs text-slate-500 mt-1">Gestão de Leitos Internação</span>
+            </button>
+  
+            <button 
+              onClick={() => navigate('/recepcao')}
+              className="flex flex-col items-center justify-center p-8 bg-white border-2 border-transparent hover:border-emerald-500 rounded-2xl shadow-sm hover:shadow-xl transition-all group"
+            >
+              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Activity size={32} /> 
+              </div>
+              <h3 className="font-bold text-lg text-slate-800">Recepção</h3>
+              <span className="text-xs text-slate-500 mt-1">Cadastro e Admissão (CPF)</span>
+            </button>
+  
+            <button 
+              disabled
+              className="flex flex-col items-center justify-center p-8 bg-slate-50 border-2 border-slate-200 rounded-2xl opacity-60 cursor-not-allowed"
+            >
+              <div className="w-16 h-16 bg-slate-200 text-slate-400 rounded-full flex items-center justify-center mb-4">
+                <Activity size={32} />
+              </div>
+              <h3 className="font-bold text-lg text-slate-500">Prontuário Web</h3>
+              <span className="text-xs text-slate-400 mt-1">Em breve</span>
+            </button>
+  
+          </div>
+        </div>
+      </div>
+    );
+  };
+  
+  // 3. TELA DE RECEPÇÃO (BUSCA E CADASTRO)
+const ModuloRecepcao = () => {
+  const navigate = useNavigate();
+  const [cpf, setCpf] = useState('');
+  const [status, setStatus] = useState('idle'); // idle, searching, found, not_found
+  const [patient, setPatient] = useState(null);
 
-export default function AppWrapper() {
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (cpf.length < 11) return alert("Digite um CPF válido (somente números)");
+    
+    setStatus('searching');
+
+    // Simulando uma busca no Banco de Dados (Demora 1 segundo)
+    setTimeout(() => {
+      if (cpf === '12345678900') {
+        // Encontrou!
+        setPatient({ nome: 'João da Silva', nascimento: '15/05/1980', cpf: '12345678900' });
+        setStatus('found');
+      } else {
+        // Não encontrou...
+        setStatus('not_found');
+      }
+    }, 1000);
+  };
+
   return (
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="max-w-3xl mx-auto">
+        
+        {/* CABEÇALHO */}
+        <div className="flex items-center gap-4 mb-8">
+          <button onClick={() => navigate('/hub')} className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-100 transition-colors">
+            <ArrowLeft size={20} className="text-slate-600" />
+          </button>
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <Activity className="text-emerald-500" />
+            Recepção e Admissão
+          </h2>
+        </div>
+
+        {/* ÁREA DE BUSCA */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
+          <h3 className="font-bold text-slate-700 mb-4 text-lg">Buscar Paciente</h3>
+          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-4">
+            <input
+              type="text"
+              placeholder="Digite o CPF (somente números)"
+              className="flex-1 p-4 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500 text-lg font-mono tracking-widest"
+              value={cpf}
+              onChange={(e) => setCpf(e.target.value.replace(/\D/g, ''))} // Aceita só números
+              maxLength="11"
+            />
+            <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
+              <Search size={20} /> Buscar
+            </button>
+          </form>
+        </div>
+
+        {/* RESULTADOS DA BUSCA */}
+        {status === 'searching' && (
+          <div className="text-center text-slate-500 py-10 animate-pulse font-bold">
+            Consultando banco de dados do Ministério da Saúde...
+          </div>
+        )}
+
+        {status === 'found' && patient && (
+          <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fadeIn">
+            <div>
+              <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Paciente Encontrado</p>
+              <h4 className="text-2xl font-black text-slate-800">{patient.nome}</h4>
+              <p className="text-sm text-slate-600 mt-1">Data Nasc: <b>{patient.nascimento}</b> | CPF: <b>{patient.cpf}</b></p>
+            </div>
+            <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold shadow-sm transition-colors w-full sm:w-auto">
+              Iniciar Internação
+            </button>
+          </div>
+        )}
+
+        {status === 'not_found' && (
+          <div className="bg-white p-10 rounded-2xl shadow-sm border border-dashed border-slate-300 text-center animate-fadeIn">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
+              <UserPlus size={32} />
+            </div>
+            <h4 className="text-lg font-bold text-slate-800 mb-2">Paciente não localizado</h4>
+            <p className="text-sm text-slate-500 mb-6">Não há registros para o CPF informado.</p>
+            <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 mx-auto transition-colors">
+              <UserPlus size={20} /> Cadastrar Novo Paciente
+            </button>
+          </div>
+        )}
+
+      </div>
+    </div>
   );
-}
+};
+
+  // 4. O NOVO CÉREBRO (ROTEADOR)
+  const AppRouter = () => {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<LoginScreen />} />
+          <Route path="/hub" element={<ServiceHub />} />
+          {/* A rota abaixo carrega o seu app antigo inteiro quando acessarem /uti */}
+          <Route path="/uti/*" element={<ModuloUTI />} />
+          <Route path="/recepcao" element={<ModuloRecepcao />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  };
+  
+  // --- COMPONENTES AUXILIARES (SEU CÓDIGO MANTIDO INTACTO) ---
+  class ErrorBoundary extends React.Component {
+    constructor(props) {
+      super(props);
+      this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+      return { hasError: true, error };
+    }
+    render() {
+      if (this.state.hasError)
+        return (
+          <div className="p-10 text-red-600 text-center font-bold font-sans">
+            <h1>Erro Crítico na Aplicação.</h1>
+            <p className="text-sm font-normal text-slate-600 mt-2">
+              Detalhe: {this.state.error?.message}
+            </p>
+          </div>
+        );
+      return this.props.children;
+    }
+  }
+  
+  // 5. O WRAPPER FINAL AGORA RENDERIZA O NOVO ROTEADOR
+  export default function AppWrapper() {
+    return (
+      <ErrorBoundary>
+        <AppRouter />
+      </ErrorBoundary>
+    );
+  }
