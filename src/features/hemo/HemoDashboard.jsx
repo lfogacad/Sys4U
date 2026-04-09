@@ -149,7 +149,7 @@ const HemoDashboard = ({
       </fieldset>
 
       {/* SECÇÃO 2: MONITORAMENTO HORÁRIO */}
-      <fieldset disabled={!isNursingRole && currentPatient?.leito !== 11} className="min-w-0 border-0 p-0 m-0 mt-4">
+      <fieldset disabled={!isEditable && currentPatient?.leito !== 11} className="min-w-0 border-0 p-0 m-0 mt-4">
         <div className="flex justify-between items-center mb-2 print:hidden">
           <h4 className="font-bold text-slate-700 text-sm flex items-center gap-2">CONTROLES E ANOTAÇÕES DA ENFERMAGEM</h4>
           <button type="button" onClick={resetHDTecnico} className="print:hidden text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm" title="Apagar monitoramento, balanço, acessos e insumos">Limpar Tudo (Técnico)</button>
@@ -187,7 +187,7 @@ const HemoDashboard = ({
       </fieldset>
 
       {/* LINHA DE ENTRADAS, UF REALIZADA E BH FINAL */}
-      <fieldset disabled={!isNursingRole && currentPatient?.leito !== 11} className="grid grid-cols-3 gap-4 print:gap-2 print:my-1 mt-4">
+      <fieldset disabled={!isEditable && currentPatient?.leito !== 11} className="grid grid-cols-3 gap-4 print:gap-2 print:my-1 mt-4">
         <div className="flex flex-col items-center justify-center bg-green-50 print:bg-white p-2 print:p-0.5 rounded border border-green-200 print:border-black">
           <span className="font-bold text-green-800 print:text-black text-xs print:text-[10px]">ENTRADAS</span>
           <input type="text" readOnly className="w-full bg-transparent border-none print:hidden outline-none text-base text-center font-bold text-green-700 cursor-not-allowed" value={calcularHDEntradas(currentPatient)} title="Soma automática das colunas S.F. 0,9% e GH 50%" />
@@ -208,7 +208,7 @@ const HemoDashboard = ({
       <div className="hidden print:block force-print-break"></div>
 
       {/* SECÇÃO 3 E 4: ACESSO VASCULAR E INSUMOS */}
-      <fieldset disabled={!isNursingRole && currentPatient?.leito !== 11} className="flex flex-col md:grid md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-2 w-full overflow-hidden">
+      <fieldset disabled={!isEditable && currentPatient?.leito !== 11} className="flex flex-col md:grid md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-2 w-full overflow-hidden">
         
         {/* BLOCO 1: ACESSO VASCULAR */}
         <div className="border rounded-xl p-4 print:p-2 bg-white w-full">
