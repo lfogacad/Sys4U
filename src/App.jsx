@@ -1472,9 +1472,10 @@ const analyzeTextWithGemini = async (text) => {
   let lastErrorMsg = "Erro desconhecido";
 
   const modelsToTry = [
-    "gemini-2.5-flash-preview-09-2025",
     "gemini-2.5-flash",
+    "gemini-1.5-flash-latest",
     "gemini-1.5-flash",
+    "gemini-1.0-pro", // Fallback de segurança infalível
   ];
 
   for (const model of modelsToTry) {
