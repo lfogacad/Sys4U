@@ -58,7 +58,12 @@ import {
   Check,
   Target,
 } from "lucide-react";
-import { auth, db, firebaseError, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, signOut, onAuthStateChanged, sendPasswordResetEmail, collection, doc, setDoc, getDoc, onSnapshot } from "./config/firebase";
+// 1. As ferramentas de Banco de Dados (Nativas do Firebase)
+import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion } from "firebase/firestore";
+// 2. As ferramentas de Autenticação (Nativas do Firebase)
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
+// 3. A sua conexão com o Hospital (O seu arquivo local)
+import { auth, db, firebaseError } from "./config/firebase";
 import { getAutoSOFA2 } from "./utils/core";
 import PhysioDashboard from './features/physio/PhysioDashboard';
 import NutriDashboard from './features/nutri/NutriDashboard';
@@ -2056,11 +2061,10 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
     )
       return;
   
-    // Usamos o setPatients com callback para garantir que estamos pegando o estado mais recente
     setPatients(prevPatients => {
       const up = [...prevPatients];
       
-      // 1. CLONE ABSOLUTO: Criamos um paciente totalmente novo na memória para o React não se perder
+      // 1. CLONE ABSOLUTO: Criamos um paciente totalmente novo na memória
       const p = JSON.parse(JSON.stringify(up[activeTab])); 
       
       // 2. Calcula o saldo acumulado que vai passar para o próximo plantão
@@ -2084,9 +2088,24 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
   
       up[activeTab] = p;
   
-      // 5. Salva no banco de dados definitivo (Firebase)
+      // --- 5. A NOVA SUTURA DE SEGURANÇA E RASTREABILIDADE ---
       if (typeof user !== 'undefined' && typeof db !== 'undefined' && user && db) {
-        setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
+        
+        // A. Cria a etiqueta de auditoria (Quem fez e quando fez)
+        const novoLog = {
+          data: new Date().toISOString(),
+          acao: "Fechamento de Balanço Hídrico (Mudança de Dia)",
+          usuario: userProfile?.name || "Usuário Desconhecido", // Pega o nome lá da prop!
+          perfil: userProfile?.role || "Equipe"
+        };
+
+        // B. updateDoc salva APENAS o que mudou, sem "atropelar" o resto do prontuário
+        const docRef = doc(db, "leitos_uti", `bed_${p.id}`);
+        updateDoc(docRef, {
+          bh: p.bh,                 // Atualiza a gaveta de hoje
+          bh_previous: p.bh_previous, // Atualiza a gaveta de ontem
+          logs: arrayUnion(novoLog)   // Adiciona o log sem apagar os antigos
+        }).catch(err => console.error("Erro ao salvar fechamento no Firebase:", err));
       }
   
       return up; // Atualiza a tela instantaneamente
