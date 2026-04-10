@@ -1,6 +1,6 @@
 import './index.css';
 import React, { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import {
   ClipboardCheck,
   Search,
@@ -1578,29 +1578,29 @@ const getLast10Days = () => {
 };
 
 // --- MODULO UTI COMPONENT ---
-const ModuloUTI = () => {
+// Agora recebemos user e userProfile como "props" vindas do roteador
+const ModuloUTI = ({ user, userProfile, handleLogout }) => {
+  const location = useLocation();
   const [pdfReady, setPdfReady] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-
-  // STATES
-  const [user, setUser] = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
-  const [activeTab, setActiveTab] = useState(0);
-  const [viewMode, setViewMode] = useState("overview");
-  const [viewingPreviousBH, setViewingPreviousBH] = useState(false);
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState("Médico");
-  const [newConselho, setNewConselho] = useState(""); // Guarda o CRM/COREN na hora do cadastro
-  const [masterCodeInput, setMasterCodeInput] = useState("");
-  const [authError, setAuthError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showForceChangePassword, setShowForceChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [changePasswordError, setChangePasswordError] = useState(null);
+
+  // --- REATIVAR O GATILHO DE TROCA DE SENHA ---
+  useEffect(() => {
+    // Se o perfil que veio do AppRouter disser que é o primeiro login, abre o modal
+    if (userProfile?.isFirstLogin) {
+      setShowForceChangePassword(true);
+    }
+  }, [userProfile]);
+
+  // --- STATES CLÍNICOS MANTIDOS ---
+  const [activeTab, setActiveTab] = useState(0);
+  const [viewMode, setViewMode] = useState("overview");
+  const [viewingPreviousBH, setViewingPreviousBH] = useState(false);
   const [tappedTab, setTappedTab] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showATBHistoryModal, setShowATBHistoryModal] = useState(false);
@@ -1610,9 +1610,9 @@ const ModuloUTI = () => {
   const [pdfProcessingStatus, setPdfProcessingStatus] = useState("");
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiEvolution, setAiEvolution] = useState("");
-  const [showIndividualUploadModal, setShowIndividualUploadModal] =
-    useState(false);
+  const [showIndividualUploadModal, setShowIndividualUploadModal] = useState(false);
   const [pendingUploadData, setPendingUploadData] = useState(null);
+
 
   // --- INJEÇÕES DO CARROSSEL 3D MOBILE ---
   const navScrollRef = React.useRef(null);
@@ -2321,66 +2321,19 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
     }, 100);
   };
 
-  // AUTH
+  // Apenas monitora se o perfil carregado exige troca de senha
   useEffect(() => {
-    if (!auth) return;
-    try {
-      const u = onAuthStateChanged(auth, async (u) => {
-        setUser(u);
-        if (u && db) {
-          const s = await getDoc(doc(db, "users_roles", u.uid));
-          if (s.exists()) {
-            setUserProfile(s.data());
-            if (s.data().isFirstLogin) setShowForceChangePassword(true);
-          }
-        }
-      });
-      return () => u();
-    } catch (e) {
-      console.error("Erro Auth", e);
+    if (userProfile?.isFirstLogin) {
+      setShowForceChangePassword(true);
     }
-  }, []);
+  }, [userProfile]);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    if (!auth) return setAuthError("Erro de comunicação com o servidor.");
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch {
-      setAuthError("Erro de acesso. Verifique seu email e senha.");
-    }
-  };
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    if (!auth || !db) return setAuthError("Erro de sistema.");
-    if (masterCodeInput !== CODIGO_MESTRE_RT)
-      return setAuthError("Código Inválido");
-    
-    // Trava de segurança: obriga a digitar o conselho na hora de cadastrar a equipe
-    if (!newConselho || newConselho.trim() === "")
-      return setAuthError("Obrigatório informar o número do Conselho (Ex: CRM-RO 1234)");
-
-    try {
-      const c = await createUserWithEmailAndPassword(auth, email, password);
-      await setDoc(doc(db, "users_roles", c.user.uid), {
-        name: newName,
-        role: newRole,
-        conselho: newConselho, // <--- A MÁGICA ENTRA AQUI!
-        email,
-        isFirstLogin: true,
-      });
-      await signOut(auth);
-      setIsRegistering(false);
-      setNewConselho(""); // Limpa o campo após cadastrar
-      alert("Cadastrado com sucesso!");
-    } catch {
-      setAuthError("Erro ao registrar.");
-    }
-  };
   const handleForceChangePassword = async (e) => {
-    e.preventDefault();
-    if (!auth || !db) return;
-    if (newPassword.length < 6) return;
+  e.preventDefault();
+  if (!auth || !db || !user) return;
+  if (newPassword !== confirmNewPassword) return alert("As senhas não coincidem.");
+  if (newPassword.length < 6) return alert("A senha deve ter no mínimo 6 caracteres.");
+    
     try {
       await updatePassword(user, newPassword);
       await setDoc(
@@ -2389,42 +2342,11 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
         { merge: true }
       );
       setShowForceChangePassword(false);
-    } catch {}
-  };
-
-  const handleResetPassword = async (e) => {
-    e.preventDefault();
-    if (!auth) return setAuthError("Erro de comunicação com o servidor.");
-    if (!email)
-      return setAuthError(
-        "Por favor, preencha o campo de Email acima antes de pedir a redefinição."
-      );
-    setIsLoading(true);
-    try {
-      await sendPasswordResetEmail(auth, email);
-      alert(
-        "Email de redefinição de senha enviado! Verifique sua caixa de entrada (e a pasta de Spam)."
-      );
-      setAuthError(null);
+      alert("Senha atualizada com sucesso!");
     } catch (error) {
-      setAuthError(
-        "Erro ao tentar enviar email de recuperação. Verifique se o email está correto e se a conta existe."
-      );
+      alert("Erro ao atualizar. Tente novamente.");
     } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth); // Faz o logoff seguro no Firebase
-      
-      // Limpa a memória do aplicativo imediatamente
-      setEmail("");
-      setPassword("");
-      
-    } catch (error) {
-      console.error("Erro ao sair do sistema:", error);
+      setIsLoading(false); // <--- Termina o carregamento
     }
   };
 
@@ -2882,10 +2804,13 @@ const getBestGlasgowForSOFA = (p) => {
   };
 
   const handleAdmitPatient = () => {
+    // Verifica se veio alguém da recepção no "encaminhamento"
+    const incoming = location.state?.incomingPatient;
+
     setAdmissionData({
-      nome: "",
+      nome: incoming ? incoming.nome : "", // Se vier da recepção, já preenche o nome!
       sexo: "",
-      dataNascimento: "",
+      dataNascimento: incoming ? incoming.nascimento : "", // E a data de nascimento!
       origem: "",
       historia: "",
       exameGeral: "",
@@ -4848,72 +4773,109 @@ const navButtons = allNavButtons.filter((btn) => {
   // ==========================================
   
   // 1. TELA DE LOGIN
-  const LoginScreen = () => {
-    const navigate = useNavigate();
+  const LoginScreen = ({ email, setEmail, password, setPassword, handleLogin, authError, isLoading }) => {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full text-center">
-          <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Activity size={32} className="text-white" />
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
+        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border-t-8 border-blue-600">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg rotate-3">
+               <Activity size={32} className="text-white" />
+            </div>
           </div>
-          <h1 className="text-2xl font-black text-slate-800 mb-2">HospitalOS V2</h1>
-          <p className="text-sm text-slate-500 mb-8">Acesso Restrito ao Corpo Clínico</p>
-          
-          <button 
-            onClick={() => navigate('/hub')}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-colors"
-          >
-            Entrar no Sistema
-          </button>
+          <h1 className="text-2xl font-black text-center text-slate-800 mb-1 uppercase tracking-tight">HospitalOS V2</h1>
+          <p className="text-center text-slate-400 text-sm mb-8 font-medium italic">Sistema de Gestão de Cuidados Críticos</p>
+  
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Acesso Institucional</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seu@email.com"
+                className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 transition-all text-slate-700"
+                required
+              />
+            </div>
+  
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Senha de Segurança</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 transition-all text-slate-700"
+                required
+              />
+            </div>
+  
+            {authError && <p className="text-red-500 text-xs font-bold text-center bg-red-50 py-2 rounded-lg">{authError}</p>}
+  
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-lg shadow-blue-200 shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              {isLoading ? <Loader2 className="animate-spin" /> : "ACESSAR SISTEMA"}
+            </button>
+          </form>
         </div>
       </div>
     );
   };
   
   // 2. TELA DE SELEÇÃO DE SERVIÇOS (HUB)
-  const ServiceHub = () => {
+  const ServiceHub = ({ userProfile }) => {
     const navigate = useNavigate();
+    const role = userProfile?.role || "";
+  
+    // Definição de permissões por botão
+    const canSeeUTI = true; // Quase todos veem a UTI, mas o conteúdo dentro muda
+    const canSeeRecepcao = ["Administrador", "Gestor", "Médico", "Enfermeiro"].includes(role);
+    const canSeeFinanceiro = ["Administrador", "Gestor"].includes(role);
+  
     return (
-      <div className="min-h-screen bg-slate-50 p-8">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-black text-slate-800 mb-2">Central de Serviços</h2>
-          <p className="text-slate-500 mb-8">Selecione o módulo que deseja acessar:</p>
+      <div className="min-h-screen bg-slate-50 p-6 md:p-12">
+        <div className="max-w-5xl mx-auto">
+          <header className="mb-12">
+            <h2 className="text-4xl font-black text-slate-800 tracking-tighter">Central de Serviços</h2>
+            <p className="text-slate-500 font-medium">Bem-vindo, {userProfile?.name}. Selecione sua área de atuação:</p>
+          </header>
   
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            <button 
-              onClick={() => navigate('/uti')}
-              className="flex flex-col items-center justify-center p-8 bg-white border-2 border-transparent hover:border-blue-500 rounded-2xl shadow-sm hover:shadow-xl transition-all group"
-            >
-              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Activity size={32} />
-              </div>
-              <h3 className="font-bold text-lg text-slate-800">UTI Adulto</h3>
-              <span className="text-xs text-slate-500 mt-1">Gestão de Leitos Internação</span>
-            </button>
+            {/* BOTÃO UTI - Geralmente visível para todos da assistência */}
+            {canSeeUTI && (
+              <button onClick={() => navigate('/uti')} className="group p-8 bg-white border-b-4 border-blue-600 rounded-3xl shadow-sm hover:shadow-2xl transition-all text-left">
+                <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                  <Activity size={32} />
+                </div>
+                <h3 className="font-black text-xl text-slate-800 mb-2">UTI ADULTO</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">Gestão de leitos, evoluções clínicas e balanço hídrico.</p>
+              </button>
+            )}
   
-            <button 
-              onClick={() => navigate('/recepcao')}
-              className="flex flex-col items-center justify-center p-8 bg-white border-2 border-transparent hover:border-emerald-500 rounded-2xl shadow-sm hover:shadow-xl transition-all group"
-            >
-              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Activity size={32} /> 
-              </div>
-              <h3 className="font-bold text-lg text-slate-800">Recepção</h3>
-              <span className="text-xs text-slate-500 mt-1">Cadastro e Admissão (CPF)</span>
-            </button>
+            {/* BOTÃO RECEPÇÃO - Escondido para técnicos, por exemplo */}
+            {canSeeRecepcao && (
+              <button onClick={() => navigate('/recepcao')} className="group p-8 bg-white border-b-4 border-emerald-500 rounded-3xl shadow-sm hover:shadow-2xl transition-all text-left">
+                <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                  <Search size={32} />
+                </div>
+                <h3 className="font-black text-xl text-slate-800 mb-2">RECEPÇÃO</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">Admissão de novos pacientes e busca por CPF/CNS.</p>
+              </button>
+            )}
   
-            <button 
-              disabled
-              className="flex flex-col items-center justify-center p-8 bg-slate-50 border-2 border-slate-200 rounded-2xl opacity-60 cursor-not-allowed"
-            >
-              <div className="w-16 h-16 bg-slate-200 text-slate-400 rounded-full flex items-center justify-center mb-4">
-                <Activity size={32} />
-              </div>
-              <h3 className="font-bold text-lg text-slate-500">Prontuário Web</h3>
-              <span className="text-xs text-slate-400 mt-1">Em breve</span>
-            </button>
-  
+            {/* BOTÃO GESTÃO - Só Diretores/Administradores */}
+            {canSeeFinanceiro && (
+              <button className="group p-8 bg-white border-b-4 border-purple-500 rounded-3xl shadow-sm hover:shadow-2xl transition-all text-left">
+                <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                  <Gauge size={32} />
+                </div>
+                <h3 className="font-black text-xl text-slate-800 mb-2">DASHBOARD GESTOR</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">Indicadores de mortalidade, ocupação e custos hospitalares.</p>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -4937,7 +4899,7 @@ const ModuloRecepcao = () => {
     setTimeout(() => {
       if (cpf === '12345678900') {
         // Encontrou!
-        setPatient({ nome: 'João da Silva', nascimento: '15/05/1980', cpf: '12345678900' });
+        setPatient({ nome: 'João da Silva', nascimento: '1980-05-15', cpf: '12345678900' });
         setStatus('found');
       } else {
         // Não encontrou...
@@ -4991,9 +4953,14 @@ const ModuloRecepcao = () => {
             <div>
               <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Paciente Encontrado</p>
               <h4 className="text-2xl font-black text-slate-800">{patient.nome}</h4>
-              <p className="text-sm text-slate-600 mt-1">Data Nasc: <b>{patient.nascimento}</b> | CPF: <b>{patient.cpf}</b></p>
+              <p className="text-sm text-slate-600 mt-1">
+                Data Nasc: <b>{formatarDataBR(patient.nascimento)}</b> | CPF: <b>{patient.cpf}</b>
+              </p>
             </div>
-            <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold shadow-sm transition-colors w-full sm:w-auto">
+            <button 
+              onClick={() => navigate('/uti', { state: { incomingPatient: patient } })}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold shadow-sm transition-colors w-full sm:w-auto"
+            >
               Iniciar Internação
             </button>
           </div>
@@ -5017,22 +4984,7 @@ const ModuloRecepcao = () => {
   );
 };
 
-  // 4. O NOVO CÉREBRO (ROTEADOR)
-  const AppRouter = () => {
-    return (
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<LoginScreen />} />
-          <Route path="/hub" element={<ServiceHub />} />
-          {/* A rota abaixo carrega o seu app antigo inteiro quando acessarem /uti */}
-          <Route path="/uti/*" element={<ModuloUTI />} />
-          <Route path="/recepcao" element={<ModuloRecepcao />} />
-        </Routes>
-      </BrowserRouter>
-    );
-  };
-  
-  // --- COMPONENTES AUXILIARES (SEU CÓDIGO MANTIDO INTACTO) ---
+  // --- COMPONENTE DE SEGURANÇA (DISJUNTOR) ---
   class ErrorBoundary extends React.Component {
     constructor(props) {
       super(props);
@@ -5042,20 +4994,194 @@ const ModuloRecepcao = () => {
       return { hasError: true, error };
     }
     render() {
-      if (this.state.hasError)
+      if (this.state.hasError) {
         return (
-          <div className="p-10 text-red-600 text-center font-bold font-sans">
-            <h1>Erro Crítico na Aplicação.</h1>
-            <p className="text-sm font-normal text-slate-600 mt-2">
-              Detalhe: {this.state.error?.message}
-            </p>
+          <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
+            <div className="bg-white p-8 rounded-3xl shadow-xl border-t-4 border-red-500 max-w-md">
+              <h1 className="text-xl font-bold text-slate-800 mb-2">Erro Crítico de Renderização</h1>
+              <p className="text-sm text-slate-500 mb-4">
+                O sistema encontrou um erro inesperado. Tente recarregar a página.
+              </p>
+              <pre className="text-[10px] bg-red-50 p-3 rounded-lg text-red-600 overflow-auto mb-4">
+                {this.state.error?.message}
+              </pre>
+              <button 
+                onClick={() => window.location.reload()}
+                className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition-colors"
+              >
+                Recarregar Sistema
+              </button>
+            </div>
           </div>
         );
+      }
       return this.props.children;
     }
   }
+
+  // --- 4. O NOVO CÉREBRO (ROTEADOR COM AUTH) ---
+  const AppRouter = () => {
+    // Estados de Autenticação movidos para o topo
+    const [user, setUser] = useState(null);
+    const [userProfile, setUserProfile] = useState(null);
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [authError, setAuthError] = useState(null);
+    const [isLoading, setIsLoading] = useState(true); // Começa carregando para checar o Firebase
+    
+    const [isRegistering, setIsRegistering] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState("Médico");
+  const [newConselho, setNewConselho] = useState("");
+  const [masterCodeInput, setMasterCodeInput] = useState("");
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    if (!auth || !db) return setAuthError("Erro de sistema.");
+    if (masterCodeInput !== CODIGO_MESTRE_RT) return setAuthError("Código Mestre Inválido");
+    
+    if (!newConselho || newConselho.trim() === "") return setAuthError("Número do Conselho obrigatório.");
+
+    setIsLoading(true);
+    try {
+      const c = await createUserWithEmailAndPassword(auth, email, password);
+      await setDoc(doc(db, "users_roles", c.user.uid), {
+        name: newName,
+        role: newRole,
+        conselho: newConselho,
+        email,
+        isFirstLogin: true,
+      });
+      await signOut(auth);
+      setIsRegistering(false);
+      alert("Profissional cadastrado com sucesso!");
+    } catch (err) {
+      setAuthError("Erro ao registrar. Verifique os dados.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+   // --- LÓGICA DE ACESSO UNIFICADA ---
+
+  // 1. Função de Login
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setAuthError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // O useEffect abaixo detectará o login e atualizará o estado automaticamente
+    } catch (err) {
+      setAuthError("Email ou senha incorretos.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 2. Função de Redefinir Senha
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!email) return setAuthError("Preencha o email para redefinir.");
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert("Email de redefinição enviado! Verifique sua caixa de entrada.");
+    } catch (err) {
+      setAuthError("Erro ao enviar email de recuperação.");
+    }
+  };
+
+  // 3. Função de Logout
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      // Resetar os estados locais por segurança
+      setUser(null);
+      setUserProfile(null);
+      // Redirecionamento forçado se o sistema não detectar a mudança de estado
+      window.location.href = "/"; 
+    } catch (err) {
+      console.error("Erro ao sair:", err);
+    }
+  };
+
+  // 4. Vigilância do Firebase (O "Vigia" do Portão)
+  useEffect(() => {
+    if (!auth) return;
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      setIsLoading(true);
+      if (u) {
+        setUser(u);
+        if (db) {
+          try {
+            const docRef = doc(db, "users_roles", u.uid);
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+              setUserProfile(snap.data());
+            }
+          } catch (err) {
+            console.error("Erro ao carregar perfil:", err);
+          }
+        }
+      } else {
+        setUser(null);
+        setUserProfile(null);
+      }
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 5. Tela de Carregamento (Splash Screen)
+  if (isLoading && !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 flex-col gap-4">
+        <Loader2 className="animate-spin text-blue-600" size={48} />
+        <p className="text-slate-500 font-bold animate-pulse">Sincronizando Banco de Dados...</p>
+      </div>
+    );
+  }
   
-  // 5. O WRAPPER FINAL AGORA RENDERIZA O NOVO ROTEADOR
+    return (
+      <BrowserRouter>
+        <Routes>
+          {/* ROTA INICIAL: Se logado vai pro Hub, se não, Login */}
+          <Route 
+            path="/" 
+            element={
+              user ? <Navigate to="/hub" /> : 
+              <LoginScreen 
+                email={email} setEmail={setEmail} 
+                password={password} setPassword={setPassword} 
+                handleLogin={handleLogin} authError={authError} 
+                isLoading={isLoading} 
+              />
+            } 
+          />
+  
+          {/* HUB: Só entra se estiver logado */}
+          <Route 
+            path="/hub" 
+            element={user ? <ServiceHub userProfile={userProfile} handleLogout={handleLogout} /> : <Navigate to="/" />} 
+          />
+  
+          {/* UTI: Passamos o perfil do usuário para a UTI saber o que mostrar */}
+          <Route 
+            path="/uti/*" 
+            element={user ? <ModuloUTI user={user} userProfile={userProfile} handleLogout={handleLogout} /> : <Navigate to="/" />}
+          />
+  
+          {/* RECEPÇÃO: Só para quem tem permissão */}
+          <Route 
+            path="/recepcao" 
+            element={user ? <ModuloRecepcao userProfile={userProfile} /> : <Navigate to="/" />} 
+          />
+        </Routes>
+      </BrowserRouter>
+    );
+  };
+  
+  // 5. O WRAPPER FINAL
   export default function AppWrapper() {
     return (
       <ErrorBoundary>
