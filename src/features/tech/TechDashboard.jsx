@@ -23,14 +23,15 @@ const TechDashboard = ({
   updateNested,
   setCurrentNoraHour,
   setCurrentNoraRate,
-  setShowNoraModal
+  setShowNoraModal,
+  handleBlurSave // <-- Adicionado para a Caixa Preta
 }) => {
 
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
   const LIMITS = {
     gains: {
       "Dieta SNE": { min: 0, max: 120 },
-      "Água": { min: 0, max: 999 }, // Pega "Água (VO/SNE)"
+      "Água": { min: 0, max: 999 },
       "Soro basal": { min: 0, max: 500 },
       "Diluição EV": { min: 0, max: 500 },
       "Volume": { min: 0, max: 1000 },
@@ -41,7 +42,7 @@ const TechDashboard = ({
       "Hemocomponentes": { min: 0, max: 500 }
     },
     losses: {
-      "Diurese": { min: 0, max: 2000 }, // Pega "Diurese (Total Coletado)" e variações
+      "Diurese": { min: 0, max: 2000 },
       "Drenos": { min: 0, max: 5000 },
       "SNG/SNE": { min: 0, max: 999 },
       "HD": { min: 0, max: 9999 }
@@ -74,31 +75,32 @@ const TechDashboard = ({
     
     const limits = getLimits(category, item);
 
-    // SE ESTIVER NA LISTA DE LIMITES: Aplica a barreira de números e teto máximo
     if (limits) {
-      // Trava para aceitar apenas números, ponto e vírgula nos campos limitados
       if (!/^-?\d*[.,]?\d*$/.test(val)) return;
-
       const numVal = parseFloat(val.replace(',', '.'));
       if (!isNaN(numVal) && numVal > limits.max) {
-        return; // Bloqueia fisicamente a tecla se passar do Teto
+        return; 
       }
     }
-
-    // Se NÃO estiver na lista, passa direto por aqui aceitando letras e números normalmente!
     updateBH(hour, category, item, val);
   };
 
   const checkMinLimitOnBlur = (hour, category, item, e) => {
     let val = e.target.value;
+    
+    // 1. CARIMBO DA AUDITORIA (Sempre roda quando sai da célula)
+    handleBlurSave(`BH: Editou ${item} às ${hour}h (${category === 'gains' ? 'Ganho' : category === 'losses' ? 'Perda' : 'Sinal Vital'})`);
+
     if (val === "") return;
     const numVal = parseFloat(val.replace(',', '.'));
     if (!isNaN(numVal)) {
       const limits = getLimits(category, item);
-      // Audita o piso inferior (ex: Temperatura 2ºC ou valores negativos)
       if (limits && numVal < limits.min) {
         alert(`ATENÇÃO de SEGURANÇA:\n\nO valor inserido em ${item} é inferior ao mínimo permitido (${limits.min}).\nO dado foi removido para evitar erros no Prontuário.`);
-        updateBH(hour, category, item, ""); // Extirpa o valor inválido
+        updateBH(hour, category, item, ""); 
+        
+        // Se extirpou o valor por segurança, audita essa ação também!
+        handleBlurSave(`Segurança BH: O sistema bloqueou um valor irreal (${val}) no campo ${item} às ${hour}h`);
       }
     }
   };
@@ -119,18 +121,19 @@ const TechDashboard = ({
         </div>
       )}
 
-      {/* SUTURA: Flex-col no mobile, Flex-row no PC para os botões */}
       <div className="flex flex-col md:flex-row md:justify-between items-start md:items-end gap-3 mb-2 print:hidden">
-        
-        {/* LINHA 1 (Mobile): Título */}
         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
           <Droplets className="text-blue-500" /> Balanço Hídrico {viewingPreviousBH ? "(DIA ANTERIOR)" : "24h"}
         </h3>
-        
-        {/* LINHA 2 (Mobile): Botões de ação com wrap para não espremer */}
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <button
-            onClick={() => currentPatient.bh_previous && setViewingPreviousBH(!viewingPreviousBH)}
+            onClick={() => {
+              if (currentPatient.bh_previous) {
+                const isGoingToPrevious = !viewingPreviousBH;
+                setViewingPreviousBH(isGoingToPrevious);
+                handleBlurSave(`BH: Acessou visualização do Balanço ${isGoingToPrevious ? 'Anterior' : 'Atual'}`);
+              }
+            }}
             disabled={!currentPatient.bh_previous}
             className={`flex-1 md:flex-none px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors ${
               !currentPatient.bh_previous ? "bg-gray-100 text-gray-400 cursor-not-allowed" : viewingPreviousBH ? "bg-orange-500 text-white hover:bg-orange-600" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
@@ -144,7 +147,7 @@ const TechDashboard = ({
           </button>
           {!viewingPreviousBH && canCloseDay && (
             <button
-              onClick={handleNextDayBH}
+              onClick={handleNextDayBH} // Essa função tem o 'save()' na origem, não se preocupe
               disabled={!isEditable}
               className={`w-full md:w-auto bg-blue-600 text-white px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 mt-1 md:mt-0 ${
                 !isEditable ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"
@@ -157,11 +160,7 @@ const TechDashboard = ({
       </div>
 
       <fieldset disabled={isBHReadOnly} className="min-w-0 border-0 p-0 m-0 space-y-4">
-        
-        {/* SUTURA: Retirado o botão de Calcular PI e ajustado o layout para não "vazar" */}
         <div className="flex items-center justify-between gap-2 bg-slate-50 p-3 rounded-xl print:hidden">
-          
-          {/* Peso */}
           <div className="flex items-center gap-1 md:gap-2">
             <Scale size={16} className="text-slate-400 hidden sm:block" />
             <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase">Peso (kg):</span>
@@ -173,18 +172,16 @@ const TechDashboard = ({
               placeholder={currentPatient.nutri?.peso || "---"} 
             />
           </div>
-
-          {/* PI Total (Agora com flex-shrink-0 para não amassar no mobile) */}
           <div className="flex items-center text-[10px] md:text-xs font-bold text-slate-500 whitespace-nowrap flex-shrink-0">
             PI Total: 
             <input 
               type="text" 
-              value={displayedBH.insensibleLoss} 
+              value={displayedBH.insensibleLoss || ""} 
               onChange={(e) => updateNested("bh", "insensibleLoss", e.target.value)} 
+              onBlur={() => handleBlurSave("BH: Alterou manualmente a Perda Insensível (PI)")}
               className="w-12 md:w-16 p-1 border rounded text-center ml-1 md:ml-2 bg-white text-slate-800" 
             /> ml
           </div>
-          
         </div>
 
         <div>
@@ -224,7 +221,7 @@ const TechDashboard = ({
                                     });
                                   }
                                   setPatients(up);
-                                  save(up[activeTab]);
+                                  save(up[activeTab], `BH: Excluiu linha customizada de Ganho (${item})`);
                                 }
                               }}
                               className="text-slate-400 hover:text-red-500 print:hidden" title="Excluir Ganho"
@@ -281,7 +278,7 @@ const TechDashboard = ({
                             if (!up[activeTab].bh.customGains.includes(n.trim()) && !BH_GAINS.includes(n.trim())) {
                               up[activeTab].bh.customGains.push(n.trim());
                               setPatients(up);
-                              save(up[activeTab]);
+                              save(up[activeTab], `BH: Adicionou nova linha customizada de Ganho (${n.trim()})`);
                             }
                           }
                         }}
@@ -330,7 +327,7 @@ const TechDashboard = ({
                                     });
                                   }
                                   setPatients(up);
-                                  save(up[activeTab]);
+                                  save(up[activeTab], `BH: Excluiu linha customizada de Perda (${item})`);
                                 }
                               }}
                               className="text-slate-400 hover:text-red-500 print:hidden" title="Excluir Perda"
@@ -369,7 +366,7 @@ const TechDashboard = ({
                             if (!up[activeTab].bh.customLosses.includes(n.trim()) && !BH_LOSSES.includes(n.trim())) {
                               up[activeTab].bh.customLosses.push(n.trim());
                               setPatients(up);
-                              save(up[activeTab]);
+                              save(up[activeTab], `BH: Adicionou nova linha customizada de Perda (${n.trim()})`);
                             }
                           }
                         }}
@@ -386,8 +383,15 @@ const TechDashboard = ({
                   </td>
                   {BH_HOURS.map((h) => (
                     <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
-                      <input type="text" className="w-full h-full text-center outline-none bg-transparent focus:bg-yellow-50 p-0.5 text-slate-400 print:hidden" placeholder="Vol" value={displayedBH.irrigation[h] || ""} onChange={(e) => updateBH(h, "irrigation", null, e.target.value)} />
-                      <span className="hidden print:block text-center text-[8px] w-full text-black align-middle">{displayedBH.irrigation[h] || ""}</span>
+                      <input 
+                        type="text" 
+                        className="w-full h-full text-center outline-none bg-transparent focus:bg-yellow-50 p-0.5 text-slate-400 print:hidden" 
+                        placeholder="Vol" 
+                        value={displayedBH.irrigation?.[h] || ""} 
+                        onChange={(e) => updateBH(h, "irrigation", null, e.target.value)} 
+                        onBlur={() => handleBlurSave(`BH: Editou Irrigação Vesical às ${h}h`)}
+                      />
+                      <span className="hidden print:block text-center text-[8px] w-full text-black align-middle">{displayedBH.irrigation?.[h] || ""}</span>
                     </td>
                   ))}
                   <td className="font-bold text-slate-700 bg-slate-50 print:bg-white print:text-black print:border-black text-[9px]">
@@ -397,7 +401,6 @@ const TechDashboard = ({
               </tbody>
             </table>
           </div>
-          {/* SUTURA 1: Retirado o print:hidden, transformado em flex para impressão limpa */}
           <div className="grid grid-cols-2 md:grid-cols-4 print:flex print:justify-between gap-4 p-4 print:p-0 print:pt-2 bg-slate-100 print:bg-white rounded-xl border border-slate-200 print:border-none mt-4 print:mt-1">
             <div className="print:text-center">
               <p className="text-[10px] text-slate-500 print:text-black font-bold uppercase">Total Ganhos</p>
@@ -417,7 +420,13 @@ const TechDashboard = ({
             <div className="bg-slate-800 p-2 rounded-lg text-white print:text-black print:bg-white flex flex-col justify-between print:text-center">
               <div className="flex justify-between print:justify-center items-center mb-1">
                 <p className="text-[10px] text-slate-400 font-bold uppercase print:text-black">BH Ant.</p>
-                <input type="text" value={displayedBH.accumulated || ""} onChange={(e) => updateNested("bh", "accumulated", e.target.value)} className="w-12 bg-slate-700 text-white text-xs text-center rounded outline-none border border-slate-600 print:hidden focus:ring-1 focus:ring-blue-400 ml-1" />
+                <input 
+                  type="text" 
+                  value={displayedBH.accumulated || ""} 
+                  onChange={(e) => updateNested("bh", "accumulated", e.target.value)} 
+                  onBlur={() => handleBlurSave("BH: Editou o Saldo do Balanço Anterior (BH Ant.)")}
+                  className="w-12 bg-slate-700 text-white text-xs text-center rounded outline-none border border-slate-600 print:hidden focus:ring-1 focus:ring-blue-400 ml-1" 
+                />
                 <span className="hidden print:inline text-[10px] font-bold ml-1">: {displayedBH.accumulated || 0}</span>
               </div>
               <div>
@@ -479,16 +488,13 @@ const TechDashboard = ({
         </fieldset>
       </div>
 
-      {/* ALERTA DE SEGURANÇA - FONOAUDIOLOGIA */}
-      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm print:hidden">
+      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm print:hidden mt-6">
         <h4 className="text-sm font-black text-amber-800 flex items-center gap-2 mb-2 uppercase tracking-wide">
           <ShieldAlert size={18} className="text-amber-600" />
           Segurança de Deglutição
         </h4>
         
         <div className="flex flex-col md:flex-row gap-6 mt-3 bg-white p-3 rounded border border-amber-200">
-          
-          {/* CONSISTÊNCIA DA DIETA (De volta ao seu lugar de direito!) */}
           <div className="flex-1 flex flex-col justify-center">
             <span className="text-[10px] text-amber-600 font-bold uppercase block mb-1">Consistência Alimentar Liberada:</span>
             <span className="text-sm font-black text-slate-800 uppercase">
@@ -496,11 +502,9 @@ const TechDashboard = ({
             </span>
           </div>
           
-          {/* LIBERAÇÃO DE ÁGUA E UTENSÍLIO (Centralizado no seu próprio bloco) */}
           <div className="flex-1 border-t md:border-t-0 md:border-l border-amber-100 md:pl-6 pt-3 md:pt-0 flex flex-col items-center justify-center text-center">
             <span className="text-[10px] text-amber-600 font-bold uppercase block mb-2 w-full">Água Via Oral (VO):</span>
             
-            {/* LÓGICA DE 3 ESTADOS: Sim, Não ou Aguardando */}
             {currentPatient.fono?.toleraAgua === "Sim" || currentPatient.fono?.toleraAgua === true ? (
               <div className="flex items-center justify-center gap-2 flex-wrap">
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 text-xs font-black rounded border border-emerald-300">
@@ -522,14 +526,19 @@ const TechDashboard = ({
               </span>
             )}
           </div>
-      
         </div>
       </div>
 
       <fieldset disabled={!isEditable} className="mt-6 print:hidden min-w-0 border-0 p-0 m-0">
         <div className="p-4 bg-white border rounded-xl shadow-sm">
           <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><Edit3 size={16} className="text-slate-400" /> Anotações da Equipe Técnica</h4>
-          <textarea className="w-full p-3 border rounded-lg h-32 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-slate-50 focus:bg-white transition-colors" placeholder="Registros do plantão, intercorrências, observações gerais..." value={currentPatient.enfermagem?.anotacoes_tech || ""} onChange={(e) => updateNested("enfermagem", "anotacoes_tech", e.target.value)} />
+          <textarea 
+            className="w-full p-3 border rounded-lg h-32 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-slate-50 focus:bg-white transition-colors" 
+            placeholder="Registros do plantão, intercorrências, observações gerais..." 
+            value={currentPatient.enfermagem?.anotacoes_tech || ""} 
+            onChange={(e) => updateNested("enfermagem", "anotacoes_tech", e.target.value)} 
+            onBlur={() => handleBlurSave("Equipe Técnica: Editou as Anotações Gerais")}
+          />
         </div>
       </fieldset>
     </div>
