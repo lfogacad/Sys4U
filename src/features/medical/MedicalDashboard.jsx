@@ -19,6 +19,7 @@ const MedicalDashboard = ({
   setPatients,
   updateNested,
   updateP,
+  handleBlurSave,
   clearDate,
   historyOpen,
   setHistoryOpen,
@@ -177,7 +178,13 @@ const MedicalDashboard = ({
       <div className="grid md:grid-cols-5 gap-4 bg-slate-50 p-4 rounded-xl">
         <div className="md:col-span-2">
           <label className="text-xs font-bold text-gray-400">Nome</label>
-          <input type="text" value={currentPatient.nome || ""} onChange={(e) => updateP("nome", e.target.value)} className="w-full p-2 border rounded-lg" />
+          <input 
+            type="text" 
+            value={currentPatient.nome || ""} 
+            onChange={(e) => updateP("nome", e.target.value)} 
+            onBlur={() => handleBlurSave("Médico: Editou Nome do Paciente")}
+            className="w-full p-2 border rounded-lg" 
+          />
         </div>
         {/* DATA DE NASCIMENTO */}
         <div>
@@ -187,6 +194,7 @@ const MedicalDashboard = ({
               type="date" 
               value={currentPatient.dataNascimento || ""} 
               onChange={(e) => updateP("dataNascimento", e.target.value)} 
+              onBlur={() => handleBlurSave("Médico: Editou Data de Nascimento")}
               className="w-full p-2 border rounded-lg text-transparent bg-transparent absolute inset-0 z-10 opacity-0" 
             />
             <div className="w-full p-2 border rounded-lg bg-white min-h-[38px] text-sm flex items-center">
@@ -196,7 +204,12 @@ const MedicalDashboard = ({
         </div>
         <div>
           <label className="text-xs font-bold text-gray-400">Sexo</label>
-          <select value={currentPatient.sexo || ""} onChange={(e) => updateP("sexo", e.target.value)} className="w-full p-2 border rounded-lg">
+          <select 
+            value={currentPatient.sexo || ""} 
+            onChange={(e) => updateP("sexo", e.target.value)} 
+            onBlur={() => handleBlurSave("Médico: Alterou o Sexo")}
+            className="w-full p-2 border rounded-lg"
+          >
             <option value="">-</option>
             <option value="M">M</option>
             <option value="F">F</option>
@@ -204,15 +217,32 @@ const MedicalDashboard = ({
         </div>
         <div className="md:col-span-1">
           <label className="text-xs font-bold text-gray-400">Procedência</label>
-          <input type="text" value={currentPatient.procedencia || ""} onChange={(e) => updateP("procedencia", e.target.value)} className="w-full p-2 border rounded-lg" />
+          <input 
+            type="text" 
+            value={currentPatient.procedencia || ""} 
+            onChange={(e) => updateP("procedencia", e.target.value)} 
+            onBlur={() => handleBlurSave("Médico: Editou Procedência")}
+            className="w-full p-2 border rounded-lg" 
+          />
         </div>
         <div className="md:col-span-5">
           <label className="text-xs font-bold text-gray-400">Diagnóstico Principal</label>
-          <input type="text" value={currentPatient.diagnostico || ""} onChange={(e) => updateP("diagnostico", e.target.value)} className="w-full p-2 border rounded-lg" />
+          <input 
+            type="text" 
+            value={currentPatient.diagnostico || ""} 
+            onChange={(e) => updateP("diagnostico", e.target.value)} 
+            onBlur={() => handleBlurSave("Médico: Editou Diagnóstico")}
+            className="w-full p-2 border rounded-lg" 
+          />
         </div>
         <div className="md:col-span-5">
           <label className="text-xs font-bold text-gray-400">HPP / Comorbidades</label>
-          <textarea value={currentPatient.comorbidades || ""} onChange={(e) => updateP("comorbidades", e.target.value)} className="w-full p-2 border rounded-lg h-24" />
+          <textarea 
+            value={currentPatient.comorbidades || ""} 
+            onChange={(e) => updateP("comorbidades", e.target.value)} 
+            onBlur={() => handleBlurSave("Médico: Editou HPP/Comorbidades")}
+            className="w-full p-2 border rounded-lg h-24" 
+          />
         </div>
       </div>
 
@@ -229,6 +259,7 @@ const MedicalDashboard = ({
             type="date" 
             value={currentPatient.dataInternacao || ""} 
             onChange={(e) => updateP("dataInternacao", e.target.value)} 
+            onBlur={() => handleBlurSave("Médico: Editou Data de Admissão")}
             className="w-full p-2 border rounded-lg text-transparent bg-transparent absolute inset-0 z-10 opacity-0" 
           />
           <div className="w-full p-2 border rounded-lg bg-white min-h-[38px] text-sm flex items-center">
@@ -243,7 +274,13 @@ const MedicalDashboard = ({
           {historyOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />} História Clínica
         </button>
         {historyOpen && (
-          <textarea value={currentPatient.historiaClinica || ""} onChange={(e) => updateP("historiaClinica", e.target.value)} className="w-full mt-3 p-3 border border-slate-200 rounded-lg h-32 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100" placeholder="Digite a história clínica detalhada do paciente..." />
+          <textarea 
+            value={currentPatient.historiaClinica || ""} 
+            onChange={(e) => updateP("historiaClinica", e.target.value)} 
+            onBlur={() => handleBlurSave("Médico: Editou História Clínica")}
+            className="w-full mt-3 p-3 border border-slate-200 rounded-lg h-32 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100" 
+            placeholder="Digite a história clínica detalhada do paciente..." 
+          />
         )}
       </div>
 
@@ -252,13 +289,25 @@ const MedicalDashboard = ({
         <div className="p-4 border rounded-xl bg-red-50/20">
           <h4 className="font-bold text-red-800 mb-4 flex items-center gap-2"><HeartPulse size={16} /> Cardiovascular</h4>
           <label className="flex items-center gap-2 mb-2 font-bold">
-            <input type="checkbox" checked={currentPatient.cardio.dva || false} onChange={(e) => updateNested("cardio", "dva", e.target.checked)} /> DVA (Drogas Vasoativas)
+            <input 
+              type="checkbox" 
+              checked={currentPatient.cardio.dva || false} 
+              onChange={(e) => updateNested("cardio", "dva", e.target.checked)} 
+              onBlur={() => handleBlurSave("Médico: Alterou Uso de DVA")}
+            /> 
+            DVA (Drogas Vasoativas)
           </label>
           {currentPatient.cardio.dva && (
             <div className="grid grid-cols-2 gap-2 pl-4">
               {OPCOES_DVA.map((d) => (
                 <label key={d} className="flex items-center gap-1 text-sm cursor-pointer">
-                  <input type="checkbox" checked={currentPatient.cardio.drogasDVA?.includes(d)} onChange={() => toggleArrayItem("cardio", "drogasDVA", d)} /> {d}
+                  <input 
+                    type="checkbox" 
+                    checked={currentPatient.cardio.drogasDVA?.includes(d)} 
+                    onChange={() => toggleArrayItem("cardio", "drogasDVA", d)} 
+                    onBlur={() => handleBlurSave(`Médico: Alterou DVA Específica (${d})`)}
+                  /> 
+                  {d}
                 </label>
               ))}
             </div>
@@ -268,23 +317,35 @@ const MedicalDashboard = ({
         <div className="p-4 border rounded-xl bg-indigo-50/20">
           <h4 className="font-bold text-indigo-800 mb-4 flex items-center gap-2"><Brain size={16} /> Neurológico</h4>
           <div className="grid md:grid-cols-3 gap-2 mb-2">
-            <select className="p-2 border rounded text-xs" value={currentPatient.neuro.glasgowAO || ""} onChange={(e) => updateNested("neuro", "glasgowAO", e.target.value)}><option value="">AO</option>{GLASGOW_AO.map((o) => <option key={o}>{o}</option>)}</select>
-            <select className="p-2 border rounded text-xs" value={currentPatient.neuro.glasgowRV || ""} onChange={(e) => updateNested("neuro", "glasgowRV", e.target.value)}><option value="">RV</option>{GLASGOW_RV.map((o) => <option key={o}>{o}</option>)}</select>
-            <select className="p-2 border rounded text-xs" value={currentPatient.neuro.glasgowRM || ""} onChange={(e) => updateNested("neuro", "glasgowRM", e.target.value)}><option value="">RM</option>{GLASGOW_RM.map((o) => <option key={o}>{o}</option>)}</select>
+            <select className="p-2 border rounded text-xs" value={currentPatient.neuro.glasgowAO || ""} onChange={(e) => updateNested("neuro", "glasgowAO", e.target.value)} onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (AO)")}><option value="">AO</option>{GLASGOW_AO.map((o) => <option key={o}>{o}</option>)}</select>
+            <select className="p-2 border rounded text-xs" value={currentPatient.neuro.glasgowRV || ""} onChange={(e) => updateNested("neuro", "glasgowRV", e.target.value)} onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RV)")}><option value="">RV</option>{GLASGOW_RV.map((o) => <option key={o}>{o}</option>)}</select>
+            <select className="p-2 border rounded text-xs" value={currentPatient.neuro.glasgowRM || ""} onChange={(e) => updateNested("neuro", "glasgowRM", e.target.value)} onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RM)")}><option value="">RM</option>{GLASGOW_RM.map((o) => <option key={o}>{o}</option>)}</select>
           </div>
           <p className="text-sm font-bold text-blue-600 mb-3 text-right">Total Glasgow: {calculateGlasgowTotal(currentPatient)}</p>
 
           <label className="block text-xs font-bold text-gray-500 mb-1">RASS</label>
-          <select className="w-full p-2 border rounded mb-3" value={currentPatient.neuro.rass || ""} onChange={(e) => updateNested("neuro", "rass", e.target.value)}><option value="">Se Sedado...</option>{RASS_OPTS.map((r) => <option key={r}>{r}</option>)}</select>
+          <select className="w-full p-2 border rounded mb-3" value={currentPatient.neuro.rass || ""} onChange={(e) => updateNested("neuro", "rass", e.target.value)} onBlur={() => handleBlurSave("Médico: Avaliou RASS")}><option value="">Se Sedado...</option>{RASS_OPTS.map((r) => <option key={r}>{r}</option>)}</select>
 
           <label className="flex items-center gap-2 mb-2 font-bold">
-            <input type="checkbox" checked={currentPatient.neuro.sedacao || false} onChange={(e) => updateNested("neuro", "sedacao", e.target.checked)} /> Sedação Contínua
+            <input 
+              type="checkbox" 
+              checked={currentPatient.neuro.sedacao || false} 
+              onChange={(e) => updateNested("neuro", "sedacao", e.target.checked)} 
+              onBlur={() => handleBlurSave("Médico: Alterou Uso de Sedação")}
+            /> 
+            Sedação Contínua
           </label>
           {currentPatient.neuro.sedacao && (
             <div className="grid grid-cols-2 gap-2 pl-4">
               {OPCOES_SEDATIVOS.map((d) => (
                 <label key={d} className="flex items-center gap-1 text-sm cursor-pointer">
-                  <input type="checkbox" checked={currentPatient.neuro.drogasSedacao?.includes(d)} onChange={() => toggleArrayItem("neuro", "drogasSedacao", d)} /> {d}
+                  <input 
+                    type="checkbox" 
+                    checked={currentPatient.neuro.drogasSedacao?.includes(d)} 
+                    onChange={() => toggleArrayItem("neuro", "drogasSedacao", d)} 
+                    onBlur={() => handleBlurSave(`Médico: Alterou Sedativo Específico (${d})`)}
+                  /> 
+                  {d}
                 </label>
               ))}
             </div>
@@ -301,17 +362,12 @@ const MedicalDashboard = ({
         
         {currentPatient.antibiotics?.map((atb, idx) => {
           const isFixed = atb.locked || (atb.name && atb.date && atb.locked !== false);
-          
-          // Verifica se é o último item da lista para não colocar linha sobrando no final
           const isLastItem = idx === currentPatient.antibiotics.length - 1;
 
           return (
-            // A key agora fica na casca externa para o React não reclamar
             <div key={idx} className="w-full">
-              
               <div className="flex flex-wrap md:flex-nowrap gap-2 mb-3 items-stretch">
                 {isFixed ? (
-                  /* ESTADO: ATB FIXADO */
                   <>
                     <div className="flex-1 flex items-center px-3 py-2 bg-orange-100/50 border border-orange-200 rounded-lg text-orange-900 font-bold uppercase overflow-hidden shadow-sm">
                       <Pill size={16} className="mr-2 text-orange-500 flex-shrink-0" />
@@ -322,27 +378,35 @@ const MedicalDashboard = ({
                     <button onClick={(e) => { e.preventDefault(); clearAntibiotic(idx); }} className={`flex items-center justify-center text-orange-400 hover:text-white hover:bg-red-500 transition-colors bg-white border border-orange-200 rounded-lg w-10 md:w-10 shadow-sm ${!isEditable ? "hidden" : ""}`} title="Excluir e arquivar no histórico"><X size={18} strokeWidth={3} /></button>
                   </>
                 ) : (
-                  /* ESTADO: INSERINDO NOVO ATB */
                   <>
                     <div className="flex flex-wrap md:flex-nowrap w-full gap-2">
-                      
-                      {/* LINHA 1 (Mobile) */}
                       <input 
                         id={`atb-name-${idx}`}
                         type="text" 
                         defaultValue={atb.name || ""} 
-                        onBlur={(e) => updateAntibiotic(idx, "name", e.target.value.toUpperCase())} 
+                        
+                        // Atualiza a memória e engatilha o salvamento com auditoria no onBlur
+                        onBlur={(e) => {
+                          updateAntibiotic(idx, "name", e.target.value.toUpperCase());
+                          handleBlurSave(`Médico: Digitou Nome de Novo ATB (${e.target.value})`);
+                        }} 
+                        
                         placeholder={`Novo ATB ${idx + 1}`} 
                         className="w-full md:flex-1 min-w-[100px] p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 uppercase text-sm" 
                       />
 
-                      {/* LINHA 2 (Mobile) */}
                       <div className="flex w-full md:w-auto gap-2 mt-1 md:mt-0">
                         <input 
                           id={`atb-date-${idx}`}
                           type="date" 
                           defaultValue={atb.date || ""} 
-                          onBlur={(e) => updateAntibiotic(idx, "date", e.target.value)} 
+                          
+                          // Atualiza a memória e engatilha o salvamento com auditoria no onBlur
+                          onBlur={(e) => {
+                            updateAntibiotic(idx, "date", e.target.value);
+                            handleBlurSave("Médico: Definiu Data de Novo ATB");
+                          }} 
+                          
                           className="flex-1 md:w-32 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 text-sm" 
                         />
                         <div className="hidden md:flex w-12 items-center justify-center font-bold text-orange-300 bg-slate-50 rounded-lg border border-orange-100">-</div>
@@ -356,6 +420,8 @@ const MedicalDashboard = ({
                             setTimeout(() => {
                               if (nameInput?.value && dateInput?.value) { 
                                 updateAntibiotic(idx, "locked", true); 
+                                // O botão de Check audita a confirmação final
+                                handleBlurSave(`Médico: Fixou Prescrição de ATB (${nameInput.value})`);
                               } else { 
                                 alert("Preencha o Nome e a Data do antibiótico para fixá-lo!"); 
                               }
@@ -372,12 +438,9 @@ const MedicalDashboard = ({
                 )}
               </div>
 
-              {/* A Linha Divisória */}
-              {/* Só aparece se não for o último item da lista. O w-[70%] dá os 70% de largura, e mx-auto centraliza. */}
               {!isLastItem && (
                 <div className="w-[70%] mx-auto mb-3 border-b border-orange-200/80"></div>
               )}
-              
             </div>
           );
         })}
@@ -395,6 +458,8 @@ const MedicalDashboard = ({
                 onClick={(e) => {
                   e.preventDefault();
                   copyToClipboardFallback(aiEvolution);
+                  // Auditando a cópia do texto
+                  handleBlurSave("Médico: Copiou Evolução da IA");
                 }}
                 className="flex items-center gap-1 bg-white border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-indigo-50 transition"
                 title="Copiar texto gerado"
@@ -418,6 +483,8 @@ const MedicalDashboard = ({
             className="w-full bg-indigo-50/50 p-3 rounded-lg border border-indigo-100 text-sm text-slate-700 min-h-[150px] outline-none focus:ring-2 focus:ring-indigo-400 resize-y"
             value={aiEvolution}
             onChange={(e) => setAiEvolution(e.target.value)}
+            // A IA não salva no firebase do paciente diretamente, mas auditamos a edição do campo
+            onBlur={() => handleBlurSave("Médico: Editou o campo de Evolução da IA")}
           />
         )}
       </div>
