@@ -1827,42 +1827,46 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
 
   // Função que cria uma nova coluna no Mapa puxando os dados atuais/admissão
   const handleAddVmEntry = () => {
-    const flowsheet = Array.isArray(currentPatient.physio?.vmFlowsheet) 
-      ? [...currentPatient.physio.vmFlowsheet] 
-      : [];
-      
+    // 1. Cópia profunda para garantir que o React não engasgue
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    
+    if (!p.physio) p.physio = {};
+    if (!Array.isArray(p.physio.vmFlowsheet)) p.physio.vmFlowsheet = [];
+
     const now = new Date();
     const dataHora = `${now.toLocaleDateString('pt-BR')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    // --- IMPORTAÇÃO DIRETA DAS FUNÇÕES NATIVAS (Fonte Única de Verdade) ---
-    // Puxa o retorno exato das funções que você já utiliza no sistema
-    const diasUtiImportado = typeof getDaysD1 === 'function' ? getDaysD1(currentPatient.dataInternacao) : "";
-    const diasVmImportado = typeof getTempoVMText === 'function' ? getTempoVMText(currentPatient) : "";
-    // ----------------------------------------------------------------------
+    // --- SUA MÁGICA MANTIDA INTACTA ---
+    const diasUtiImportado = typeof getDaysD1 === 'function' ? getDaysD1(p.dataInternacao) : "";
+    const diasVmImportado = typeof getTempoVMText === 'function' ? getTempoVMText(p) : "";
 
-    flowsheet.push({
+    const newEntry = {
       id: Date.now().toString(),
       dataHora: dataHora,
       diasUti: diasUtiImportado,
       diasVm: diasVmImportado,
-      cuffM: currentPatient.physio?.cuffM || "",
-      cuffT: currentPatient.physio?.cuffT || "",
-      cuffN: currentPatient.physio?.cuffN || "",
+      cuffM: p.physio?.cuffM || "",
+      cuffT: p.physio?.cuffT || "",
+      cuffN: p.physio?.cuffN || "",
       despertarS: false,
       despertarN: false,
-      modo: currentPatient.physio?.parametro || "",
-      fio2: currentPatient.physio?.fiO2 || "",
-      pc: currentPatient.physio?.parametro === "PCV" ? currentPatient.physio?.pc : "",
-      vc: currentPatient.physio?.parametro === "VCV" ? currentPatient.physio?.vt : "",
+      modo: p.physio?.parametro || "",
+      fio2: p.physio?.fiO2 || "",
+      
+      // Mapeamento blindado (Tenta pegar 'pc' ou 'pressaoControlada', o que existir)
+      pc: p.physio?.parametro === "PCV" ? (p.physio?.pc || p.physio?.pressaoControlada || "") : "",
+      vc: p.physio?.parametro === "VCV" ? (p.physio?.vt || p.physio?.volCorrente || "") : "",
       vtPc: "",
-      ps: currentPatient.physio?.parametro === "PSV" ? currentPatient.physio?.ps : "",
+      ps: p.physio?.parametro === "PSV" ? (p.physio?.ps || p.physio?.pressaoSuporte || "") : "",
+      
       vm: "",
       fluxoInsp: "",
       tInsp: "",
       ie: "",
       frSet: "",
       frTotal: "",
-      peep: currentPatient.physio?.peep || "",
+      peep: p.physio?.peep || "",
       pPico: "",
       pPlato: "",
       dp: "",
@@ -1870,42 +1874,62 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
       cdin: "", 
       rva: "",
       autoPeep: ""
-    });
+    };
 
-    // Salva a nova coluna no banco de dados do paciente
-    updateNested("physio", "vmFlowsheet", flowsheet);
+    p.physio.vmFlowsheet.push(newEntry);
+
+    // 2. Atualiza a tela instantaneamente
+    up[activeTab] = p;
+    setPatients(up);
+
+    // 3. A AUDITORIA: Salva na mesma hora carimbando que a Fisio iniciou uma coluna!
+    save(p, `Mapa VM: Adicionou uma nova coluna de avaliação (${dataHora})`);
   };
 
-    // Função para atualizar uma célula específica da tabela E calcular DP/Compliância
+  // Função para atualizar uma célula específica da tabela E calcular DP/Compliância
   const updateVmEntry = (index, field, value) => {
-    const flowsheet = [...(currentPatient.physio?.vmFlowsheet || [])];
-    let updatedEntry = { ...flowsheet[index], [field]: value };
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda (blindagem)
 
-    // --- MÁGICA DOS CÁLCULOS AUTOMÁTICOS ---
-    const plato = parseFloat(updatedEntry.pPlato);
-    const peep = parseFloat(updatedEntry.peep);
-    const vt = parseFloat(updatedEntry.vcv) || parseFloat(updatedEntry.vtPc); 
+      if (!p.physio) p.physio = {};
+      if (!p.physio.vmFlowsheet) p.physio.vmFlowsheet = [];
 
-    if (!isNaN(plato) && !isNaN(peep)) {
-      const dpCalculada = plato - peep;
-      updatedEntry.dp = dpCalculada.toFixed(0); 
+      let updatedEntry = { ...p.physio.vmFlowsheet[index], [field]: value };
 
-      if (!isNaN(vt) && dpCalculada > 0) {
-        const cstCalculada = vt / dpCalculada;
-        updatedEntry.cStDin = cstCalculada.toFixed(1); 
+      // --- MÁGICA DOS CÁLCULOS AUTOMÁTICOS PRESERVADA ---
+      const plato = parseFloat(updatedEntry.pPlato);
+      const peep = parseFloat(updatedEntry.peep);
+      // Pega o volume corrente independente do nome que estiver na tela (vc, vcv ou vtPc)
+      const vt = parseFloat(updatedEntry.vc) || parseFloat(updatedEntry.vcv) || parseFloat(updatedEntry.vtPc); 
+
+      if (!isNaN(plato) && !isNaN(peep)) {
+        const dpCalculada = plato - peep;
+        updatedEntry.dp = dpCalculada.toFixed(0); 
+
+        if (!isNaN(vt) && dpCalculada > 0) {
+          const cstCalculada = vt / dpCalculada;
+          updatedEntry.cStDin = cstCalculada.toFixed(1); 
+          updatedEntry.cst = cstCalculada.toFixed(1); // Compatibilidade com a tela
+        } else {
+          updatedEntry.cStDin = updatedEntry.cStDin || ""; 
+          updatedEntry.cst = updatedEntry.cst || ""; 
+        }
       } else {
-        updatedEntry.cStDin = updatedEntry.cStDin || ""; 
+        if (field === 'pPlato' || field === 'peep') {
+          updatedEntry.dp = "";
+          updatedEntry.cStDin = "";
+          updatedEntry.cst = "";
+        }
       }
-    } else {
-      if (field === 'pPlato' || field === 'peep') {
-        updatedEntry.dp = "";
-        updatedEntry.cStDin = "";
-      }
-    }
+  
+        p.physio.vmFlowsheet[index] = updatedEntry;
+        up[activeTab] = p;
+        return up;
+      });
+      // Sem o save() aqui! A auditoria será acionada perfeitamente pelo onBlur do modal.
+    };
 
-    flowsheet[index] = updatedEntry;
-    updateNested("physio", "vmFlowsheet", flowsheet);
-  };
   const [physioData, setPhysioData] = useState({});
   const [generatedPhysioText, setGeneratedPhysioText] = useState("");
 
@@ -4748,6 +4772,7 @@ const navButtons = allNavButtons.filter((btn) => {
         activeTab={activeTab}
         nursingData={nursingData}
         setNursingData={setNursingData}
+        handleBlurSave={handleBlurSave}
         handleFinalizeNursingAdmission={handleFinalizeNursingAdmission}
       />
      
@@ -4758,6 +4783,7 @@ const navButtons = allNavButtons.filter((btn) => {
         activeTab={activeTab}
         physioData={physioData}
         setPhysioData={setPhysioData}
+        handleBlurSave={handleBlurSave}
         handleFinalizePhysioAdmission={handleFinalizePhysioAdmission}
       />
 
@@ -4775,6 +4801,7 @@ const navButtons = allNavButtons.filter((btn) => {
         activeTab={activeTab}
         admissionData={admissionData}
         setAdmissionData={setAdmissionData}
+        handleBlurSave={handleBlurSave}
         toggleSAPSComorbidade={toggleSAPSComorbidade}
         handleFinalizeAdmission={handleFinalizeAdmission}
       />
@@ -4818,6 +4845,7 @@ const navButtons = allNavButtons.filter((btn) => {
         setShowVmFlowsheet={setShowVmFlowsheet}
         currentPatient={currentPatient}
         handleAddVmEntry={handleAddVmEntry}
+        handleBlurSave={handleBlurSave}
         updateVmEntry={updateVmEntry}
       />
 
@@ -4843,12 +4871,14 @@ const navButtons = allNavButtons.filter((btn) => {
       {/* MODAL: AUDITORIA DE NORADRENALINA */}
       <NoraModal
         showNoraModal={showNoraModal}
+        handleBlurSave={handleBlurSave}
         handleNoraModalResponse={handleNoraModalResponse}
       />
 
         {/* MODAL: ALERTA DE SEPSE (Sepsis-3) */}
       <SepsisModal
         showSepsisModal={showSepsisModal}
+        handleBlurSave={handleBlurSave}
         handleSepsisResponse={handleSepsisResponse}
       />
 </div>
