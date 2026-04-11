@@ -3,7 +3,8 @@ import { AlertCircle, Check, X } from 'lucide-react';
 
 const NoraModal = ({
   showNoraModal,
-  handleNoraModalResponse
+  handleNoraModalResponse,
+  handleBlurSave // <-- 1. Adicionado o bisturi da Caixa Preta aqui
 }) => {
   if (!showNoraModal) return null;
 

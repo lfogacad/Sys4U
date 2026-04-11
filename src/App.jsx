@@ -2507,27 +2507,33 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
   };
 
   const handleNoraModalResponse = (isDoubleDose) => {
+    // 1. Cópia profunda (Blindagem de Memória)
     const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
     const today = getManausDateStr(); // Data de hoje (AM)
 
-    if (!up[activeTab].sofa_data_technical) up[activeTab].sofa_data_technical = {};
-    if (!up[activeTab].hd_monitoramento) up[activeTab].hd_monitoramento = {};
-    if (!up[activeTab].hd_monitoramento[currentNoraHour]) up[activeTab].hd_monitoramento[currentNoraHour] = {};
+    if (!p.sofa_data_technical) p.sofa_data_technical = {};
+    if (!p.hd_monitoramento) p.hd_monitoramento = {};
+    if (!p.hd_monitoramento[currentNoraHour]) p.hd_monitoramento[currentNoraHour] = {};
 
-    // 1. Salva o status da dose para o plantão de hoje (evita popup redundante)
-    up[activeTab].sofa_data_technical.noraDoubleDoseToday = isDoubleDose;
-    up[activeTab].sofa_data_technical.noraModalShown_date = today;
+    // 2. Salva o status e o valor
+    p.sofa_data_technical.noraDoubleDoseToday = isDoubleDose;
+    p.sofa_data_technical.noraModalShown_date = today;
+    p.hd_monitoramento[currentNoraHour].noraRate = currentNoraRate;
 
-    // 2. Salva o valor que o técnico digitou originalmente
-    up[activeTab].hd_monitoramento[currentNoraHour].noraRate = currentNoraRate;
-
+    // 3. Atualiza a tela instantaneamente
+    up[activeTab] = p;
     setPatients(up);
-    save(up[activeTab]);
+
+    // 4. A AUDITORIA CIRÚRGICA: Define a etiqueta e salva TUDO de uma vez!
+    const mensagemAuditoria = isDoubleDose 
+      ? "Segurança/Drogas: Confirmou uso de Noradrenalina DOBRADA (8 amp/250mL)" 
+      : "Segurança/Drogas: Confirmou uso de Noradrenalina PADRÃO (4 amp/250mL)";
+      
+    save(p, mensagemAuditoria);
     
-    // 3. Fecha o popup
+    // 5. Fecha o popup e limpa os estados
     setShowNoraModal(false);
-    
-    // Limpa os estados temporários
     setCurrentNoraHour("");
     setCurrentNoraRate("");
   };

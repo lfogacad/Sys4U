@@ -3,7 +3,8 @@ import { AlertCircle, Check, X } from 'lucide-react';
 
 const SepsisModal = ({
   showSepsisModal,
-  handleSepsisResponse
+  handleSepsisResponse,
+  handleBlurSave // <-- 1. Adicionado o bisturi da Caixa Preta aqui
 }) => {
   if (!showSepsisModal) return null;
 
@@ -24,7 +25,11 @@ const SepsisModal = ({
         
         <div className="flex gap-4">
           <button
-            onClick={() => handleSepsisResponse(true)}
+            onClick={() => {
+              // 2. AUDITORIA: Carimba a confirmação e chama a função
+              handleBlurSave("Segurança/Sepse: Acionou Protocolo Sepsis-3 (Confirmou suspeita de infecção)");
+              handleSepsisResponse(true);
+            }}
             className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-red-600 text-white px-5 py-4 rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm text-sm"
           >
             <Check size={20} />
@@ -32,7 +37,11 @@ const SepsisModal = ({
             <span className="text-[10px] opacity-80">(Iniciar Sepsis-3)</span>
           </button>
           <button
-            onClick={() => handleSepsisResponse(false)}
+            onClick={() => {
+              // 3. AUDITORIA: Carimba o descarte e chama a função
+              handleBlurSave("Segurança/Sepse: Descartou infecção (Alta de SOFA por outra causa clínica)");
+              handleSepsisResponse(false);
+            }}
             className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-slate-200 text-slate-700 px-5 py-4 rounded-xl font-bold hover:bg-slate-300 transition-colors text-sm"
           >
             <X size={20} />
