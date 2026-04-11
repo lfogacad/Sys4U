@@ -4721,6 +4721,7 @@ const navButtons = allNavButtons.filter((btn) => {
         setPatients={setPatients}
         syncLabsFromHistory={syncLabsFromHistory}
         save={save}
+        handleBlurSave={handleBlurSave}
         handleAddCustomExam={handleAddCustomExam}
       />
 

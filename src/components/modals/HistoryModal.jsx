@@ -16,6 +16,7 @@ const HistoryModal = ({
   setPatients,
   syncLabsFromHistory,
   save,
+  handleBlurSave,
   handleAddCustomExam
 }) => {
   if (!showHistoryModal) return null;
@@ -120,25 +121,36 @@ const HistoryModal = ({
                   {timelineDates.map((d, colIndex) => (
                     <td key={d} className="p-0 border-r border-slate-200">
                       <input
-                        id={`exam-input-${rowIndex}-${colIndex}`} // O Endereço (Coordenada) da célula
+                        id={`exam-input-${rowIndex}-${colIndex}`}
                         className="w-full h-full text-center p-2 outline-none focus:bg-blue-100 focus:font-bold transition-colors bg-transparent"
                         disabled={!isOverviewEditable}
                         value={currentPatient.examHistory[d]?.[ex] || ""}
-                        onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)} // Reflexo Neurológico Injetado
+                        onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
+                        
+                        // 1. BLINDAGEM DE MEMÓRIA (Evita sumir letras)
                         onChange={(e) => {
-                          const up = [...patients];
-                          if (!up[activeTab].examHistory[d]) up[activeTab].examHistory[d] = {};
-                          up[activeTab].examHistory[d][ex] = e.target.value;
-                          
-                          // Sincroniza apenas exames do painel principal (ignora os customizados nessa sincronização)
-                          if (!isCustom) {
-                            const s = syncLabsFromHistory(up[activeTab]);
-                            up[activeTab] = s;
-                          }
-                          
-                          setPatients(up);
+                          const val = e.target.value;
+                          setPatients(prev => {
+                            const up = [...prev];
+                            const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda
+                            
+                            if (!p.examHistory) p.examHistory = {};
+                            if (!p.examHistory[d]) p.examHistory[d] = {};
+                            p.examHistory[d][ex] = val;
+                            
+                            // Sincroniza os painéis principais se não for customizado
+                            if (!isCustom && typeof syncLabsFromHistory === "function") {
+                              up[activeTab] = syncLabsFromHistory(p);
+                            } else {
+                              up[activeTab] = p;
+                            }
+                            
+                            return up;
+                          });
                         }}
-                        onBlur={() => save(patients[activeTab])}
+                        
+                        // 2. AUDITORIA: Carimba exatamente o Exame e a Data!
+                        onBlur={() => handleBlurSave(`Histórico Lab: Editou ${ex} (Data: ${formatDateDDMM(d)})`)}
                       />
                     </td>
                   ))}
