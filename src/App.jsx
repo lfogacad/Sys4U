@@ -2651,30 +2651,34 @@ const getBestGlasgowForSOFA = (p) => {
   };
 
   const updateNested = (g, f, v) => {
-    const up = [...patients];
-    if (!up[activeTab][g]) up[activeTab][g] = {};
-    up[activeTab][g][f] = v;
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda e segura
+      
+      if (!p[g]) p[g] = {};
+      p[g][f] = v;
 
-    // AUTO-CÁLCULO: Perdas Insensíveis ao inserir o peso
-    if (g === "nutri" && f === "peso") {
-      const wNum = safeNumber(v);
-      if (!up[activeTab].bh) up[activeTab].bh = {};
-      up[activeTab].bh.insensibleLoss =
-        wNum > 0 ? Math.round(wNum * 0.5 * 24) : 0;
-    }
-
-    // AUTO-CÁLCULO: Peso Predito ao inserir a altura
-    if (g === "nutri" && f === "altura") {
-      const pp = calculatePesoPredito(v, up[activeTab].sexo);
-      if (pp) {
-        up[activeTab].nutri.pesoPredito = pp;
-      } else if (!v) {
-        up[activeTab].nutri.pesoPredito = ""; // Limpa se apagar a altura
+      // AUTO-CÁLCULO: Perdas Insensíveis ao inserir o peso
+      if (g === "nutri" && f === "peso") {
+        const wNum = safeNumber(v);
+        if (!p.bh) p.bh = {};
+        p.bh.insensibleLoss = wNum > 0 ? Math.round(wNum * 0.5 * 24) : 0;
       }
-    }
 
-    setPatients(up);
-    save(up[activeTab]);
+      // AUTO-CÁLCULO: Peso Predito ao inserir a altura
+      if (g === "nutri" && f === "altura") {
+        const pp = calculatePesoPredito(v, p.sexo);
+        if (pp) {
+          p.nutri.pesoPredito = pp;
+        } else if (!v) {
+          p.nutri.pesoPredito = ""; // Limpa se apagar a altura
+        }
+      }
+
+      up[activeTab] = p;
+      return up;
+    });
+    // O save() foi extirpado daqui! A auditoria específica do onBlur fará o trabalho.
   };
 
   const updateHDMonitoramento = (hora, campo, valor) => {
@@ -2733,20 +2737,28 @@ const getBestGlasgowForSOFA = (p) => {
     }
     p.physio.suporte = newSuporte;
     setPatients(up);
-    save(p);
   };
 
-  const toggleArrayItem = (g, f, item) => {
-    const up = [...patients];
-    if (!up[activeTab][g]) up[activeTab][g] = {};
-    let arr = up[activeTab][g][f];
-    if (!Array.isArray(arr)) {
-      arr = [];
-    }
-    if (arr.includes(item)) up[activeTab][g][f] = arr.filter((i) => i !== item);
-    else up[activeTab][g][f] = [...arr, item];
-    setPatients(up);
-    save(up[activeTab]);
+  const toggleArrayItem = (cat, field, val) => {
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda e segura
+      
+      if (!p[cat]) p[cat] = {};
+      if (!Array.isArray(p[cat][field])) {
+        p[cat][field] = [];
+      }
+      
+      if (p[cat][field].includes(val)) {
+        p[cat][field] = p[cat][field].filter((item) => item !== val);
+      } else {
+        p[cat][field].push(val);
+      }
+      
+      up[activeTab] = p;
+      return up;
+    });
+    // O save() foi extirpado daqui! A auditoria específica do onBlur fará o trabalho.
   };
 
   // ========================================================================
