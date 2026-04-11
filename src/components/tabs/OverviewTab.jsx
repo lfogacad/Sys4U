@@ -258,7 +258,18 @@ const OverviewTab = ({
             {userProfile?.role === "Médico" && <Edit3 size={12} className="text-yellow-600" />}
           </div>
           {userProfile?.role === "Médico" ? (
-            <textarea value={currentPatient.anotacoes} onChange={(e) => updateP("anotacoes", e.target.value)} className="w-full bg-transparent border-0 outline-none text-sm text-slate-700 resize-y min-h-[100px] focus:ring-0" placeholder="Digite aqui..." />
+            <textarea 
+              value={currentPatient.anotacoes || ""} 
+              
+              // 1. Atualiza apenas a tela enquanto o médico digita
+              onChange={(e) => updateP("anotacoes", e.target.value)} 
+              
+              // 2. Dispara o salvamento e a auditoria ao clicar fora do campo
+              onBlur={() => handleBlurSave("Visita Multi: Editou Anotações / Pendências")} 
+              
+              className="w-full bg-transparent border-0 outline-none text-sm text-slate-700 resize-y min-h-[100px] focus:ring-0" 
+              placeholder="Digite aqui..." 
+            />
           ) : (
             <p className="text-sm whitespace-pre-wrap min-h-[50px] text-left">{currentPatient.anotacoes || "Sem pendências."}</p>
           )}

@@ -2640,7 +2640,6 @@ const getBestGlasgowForSOFA = (p) => {
     }
 
     setPatients(up);
-    save(up[activeTab]);
   };
 
   const updateNested = (g, f, v) => {
