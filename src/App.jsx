@@ -3130,7 +3130,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     const up = [...patients];
     up[activeTab] = r;
     setPatients(up);
-    save(r);
+    save(r, "Médico: Realizou a Admissão Completa do Paciente (Pré-UTI, SAPS 3 e Exame Físico)");
 
     setShowAdmissionModal(false);
     // A tela de copiar texto final continua recebendo a Admissão Completa
@@ -3174,20 +3174,12 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
   const handleFinalizeNursingAdmission = () => {
     const reqBraden = [
-      "braden_percepcao",
-      "braden_umidade",
-      "braden_atividade",
-      "braden_mobilidade",
-      "braden_nutricao",
-      "braden_friccao",
+      "braden_percepcao", "braden_umidade", "braden_atividade",
+      "braden_mobilidade", "braden_nutricao", "braden_friccao",
     ];
     const reqMorse = [
-      "morse_historico",
-      "morse_diagnostico",
-      "morse_auxilio",
-      "morse_terapiaIV",
-      "morse_marcha",
-      "morse_estadoMental",
+      "morse_historico", "morse_diagnostico", "morse_auxilio",
+      "morse_terapiaIV", "morse_marcha", "morse_estadoMental",
     ];
 
     for (let k of [...reqBraden, ...reqMorse]) {
@@ -3203,19 +3195,23 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       }
     }
 
+    // 1. BLINDAGEM DE MEMÓRIA (Evita bugs do React)
     const up = [...patients];
-    const p = up[activeTab];
+    const p = JSON.parse(JSON.stringify(up[activeTab])); 
+    
     if (!p.enfermagem) p.enfermagem = {};
     Object.keys(nursingData).forEach((k) => {
       p.enfermagem[k] = nursingData[k];
     });
+    
+    up[activeTab] = p;
     setPatients(up);
-    save(p);
 
-    const bradenSum = reqBraden.reduce(
-      (s, k) => s + parseInt(nursingData[k]),
-      0
-    );
+    // 2. A CAIXA PRETA: Carimba a admissão da enfermagem de uma vez só!
+    save(p, "Enfermagem: Realizou a Admissão Completa (Escalas Braden e Morse, Dispositivos e Cuidados)");
+
+    // --- O RESTANTE DA FUNÇÃO CONTINUA INTACTO ---
+    const bradenSum = reqBraden.reduce((s, k) => s + parseInt(nursingData[k]), 0);
     let bradenRisk = "";
     if (bradenSum <= 9) bradenRisk = "Risco Altíssimo";
     else if (bradenSum <= 12) bradenRisk = "Risco Alto";
@@ -3230,8 +3226,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     else morseRisk = "Risco Alto";
 
     const getLabel = (optArray, val) =>
-      optArray.find((o) => String(o.value) === String(val))?.label ||
-      String(val);
+      optArray.find((o) => String(o.value) === String(val))?.label || String(val);
 
     let resumoMedico = "Não registrada pelo plantonista médico.";
     if (p.historiaClinica) {
@@ -3241,7 +3236,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       if (match && match[1]) {
         resumoMedico = match[1].trim();
       } else {
-        resumoMedico = p.historiaClinica; // Fallback caso o padrão mude
+        resumoMedico = p.historiaClinica; 
       }
     }
 
@@ -3259,63 +3254,32 @@ Hemodiálise: ${nursingData.hemodialise ? "Sim" : "Não"}
 Precauções: ${nursingData.precaucao || "-"}
 
 DISPOSITIVOS INVASIVOS:
-AVP: ${nursingData.avpLocal || "-"} ${
-      nursingData.avpData ? `(${formatDateDDMM(nursingData.avpData)})` : ""
-    }
-CVC/PICC: ${nursingData.cvcLocal || "-"} ${
-      nursingData.cvcData ? `(${formatDateDDMM(nursingData.cvcData)})` : ""
-    }
+AVP: ${nursingData.avpLocal || "-"} ${nursingData.avpData ? `(${formatDateDDMM(nursingData.avpData)})` : ""}
+CVC/PICC: ${nursingData.cvcLocal || "-"} ${nursingData.cvcData ? `(${formatDateDDMM(nursingData.cvcData)})` : ""}
 SVD: ${nursingData.svd ? `Sim (${formatDateDDMM(nursingData.svdData)})` : "Não"}
-SNE: ${nursingData.sneCm ? `${nursingData.sneCm} cm` : "-"} ${
-      nursingData.sneData ? `(${formatDateDDMM(nursingData.sneData)})` : ""
-    }
+SNE: ${nursingData.sneCm ? `${nursingData.sneCm} cm` : "-"} ${nursingData.sneData ? `(${formatDateDDMM(nursingData.sneData)})` : ""}
 Drenos: ${nursingData.drenoTipo || "-"}
 
 PELE E CURATIVOS:
 Lesões: ${nursingData.lesaoLocal || "-"}
-Curativos: ${nursingData.curativoTipo || "-"} ${
-      nursingData.curativoData
-        ? `(${formatDateDDMM(nursingData.curativoData)})`
-        : ""
-    }
+Curativos: ${nursingData.curativoTipo || "-"} ${nursingData.curativoData ? `(${formatDateDDMM(nursingData.curativoData)})` : ""}
 
 ESCALA DE BRADEN:
-Percepção Sensorial: ${getLabel(
-      BRADEN_OPTIONS.percepcao,
-      nursingData.braden_percepcao
-    )}
+Percepção Sensorial: ${getLabel(BRADEN_OPTIONS.percepcao, nursingData.braden_percepcao)}
 Umidade: ${getLabel(BRADEN_OPTIONS.umidade, nursingData.braden_umidade)}
 Atividade: ${getLabel(BRADEN_OPTIONS.atividade, nursingData.braden_atividade)}
-Mobilidade: ${getLabel(
-      BRADEN_OPTIONS.mobilidade,
-      nursingData.braden_mobilidade
-    )}
+Mobilidade: ${getLabel(BRADEN_OPTIONS.mobilidade, nursingData.braden_mobilidade)}
 Nutrição: ${getLabel(BRADEN_OPTIONS.nutricao, nursingData.braden_nutricao)}
-Fricção e Cisalhamento: ${getLabel(
-      BRADEN_OPTIONS.friccao,
-      nursingData.braden_friccao
-    )}
+Fricção e Cisalhamento: ${getLabel(BRADEN_OPTIONS.friccao, nursingData.braden_friccao)}
 >> Total Braden: ${bradenSum} (${bradenRisk})
 
 ESCALA DE MORSE:
-Histórico de quedas: ${getLabel(
-      MORSE_OPTIONS.historico,
-      nursingData.morse_historico
-    )}
-Diagnóstico secundário: ${getLabel(
-      MORSE_OPTIONS.diagnostico,
-      nursingData.morse_diagnostico
-    )}
+Histórico de quedas: ${getLabel(MORSE_OPTIONS.historico, nursingData.morse_historico)}
+Diagnóstico secundário: ${getLabel(MORSE_OPTIONS.diagnostico, nursingData.morse_diagnostico)}
 Auxílio na marcha: ${getLabel(MORSE_OPTIONS.auxilio, nursingData.morse_auxilio)}
-Terapia endovenosa: ${getLabel(
-      MORSE_OPTIONS.terapiaIV,
-      nursingData.morse_terapiaIV
-    )}
+Terapia endovenosa: ${getLabel(MORSE_OPTIONS.terapiaIV, nursingData.morse_terapiaIV)}
 Marcha: ${getLabel(MORSE_OPTIONS.marcha, nursingData.morse_marcha)}
-Estado mental: ${getLabel(
-      MORSE_OPTIONS.estadoMental,
-      nursingData.morse_estadoMental
-    )}
+Estado mental: ${getLabel(MORSE_OPTIONS.estadoMental, nursingData.morse_estadoMental)}
 >> Total Morse: ${morseSum} (${morseRisk})`;
 
     setShowNursingModal(false);
@@ -3381,10 +3345,12 @@ dataIntubacao: p.dataIntubacao || "",
   };
 
   const handleFinalizePhysioAdmission = () => {
-    // Clonagem fisiológica padrão React (Preserva datas e a integridade do save!)
+    // 1. BLINDAGEM DE MEMÓRIA (Evita bugs do React com Cópia Profunda)
     const up = [...patients];
-    const p = { ...up[activeTab] };
-    p.physio = { ...(p.physio || {}) };
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    
+    if (!p.physio) p.physio = {};
+
     p.physio.admissao_estadoGeral = physioData.estadoGeral;
     p.physio.admissao_sistemaNervoso = physioData.sistemaNervoso;
     p.physio.admissao_sistemaRespiratorio = physioData.sistemaRespiratorio;
@@ -3408,12 +3374,8 @@ dataIntubacao: p.dataIntubacao || "",
     p.physio.relIE = physioData.relIE;
     p.physio.filtroHMEF = physioData.filtroHMEF;
     
-    // CORREÇÃO: Nomes alinhados com o Modal e o Painel Principal
     p.physio.dataHMEF = physioData.dataHMEF; 
-    
     p.physio.sistemaFechado = physioData.sistemaFechado;
-    
-    // CORREÇÃO: Nomes alinhados com o Modal e o Painel Principal
     p.physio.dataSFA = physioData.dataSFA; 
     
     p.physio.cuff = physioData.cuff;
@@ -3467,8 +3429,11 @@ dataIntubacao: p.dataIntubacao || "",
 
     up[activeTab] = p;
     setPatients(up);
-    save(p);
+    
+    // 2. A CAIXA PRETA: Carimba a admissão da fisio de uma vez só!
+    save(p, "Fisioterapia: Realizou a Admissão Completa (Avaliação Inicial, Parâmetros Ventilatórios e Escalas)");
 
+    // --- O RESTANTE DA FUNÇÃO (GERADOR DE TEXTO) CONTINUA INTACTO ---
     const mrcText = physioData.mrcScore ? `\nESCORE MRC: ${physioData.mrcScore}` : "";
     const imsText = physioData.ims ? `\nICU MOBILITY SCALE (IMS): ${physioData.ims}` : "";
     
