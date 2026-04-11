@@ -4647,7 +4647,6 @@ const navButtons = allNavButtons.filter((btn) => {
                   activeTab={activeTab}
                   setPatients={setPatients}
                   save={save}
-                  handleBlurSave={handleBlurSave}
                   userProfile={userProfile}
                 />
               )}
