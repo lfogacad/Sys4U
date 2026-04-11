@@ -2591,15 +2591,17 @@ const getBestGlasgowForSOFA = (p) => {
         // Identifica quem está logado fazendo a alteração
         const nomeUsuario = userProfile?.name || user?.email || "Usuário Desconhecido";
         const perfilUsuario = userProfile?.role || "Sistema";
+        
+        // Puxa o número do conselho do perfil do usuário (Ajuste a palavra se necessário)
+        const numeroConselho = userProfile?.conselho || userProfile?.crm || "Não informado";
 
         // Cria o carimbo de auditoria
         const logAuditoria = {
           data: new Date().toISOString(),
           usuario: nomeUsuario,
           perfil: perfilUsuario,
+          conselho: numeroConselho,
           acao: contextoAcao,
-          // Se o senhor quiser rastrear algo específico futuramente, 
-          // os dados da alteração podem ser injetados aqui!
         };
 
         // 4. Salva o log na SUBCOLEÇÃO "auditoria" dentro deste leito específico
