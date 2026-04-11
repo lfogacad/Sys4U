@@ -62,7 +62,12 @@ import {
   Check,
   Target,
 } from "lucide-react";
-import { auth, db, firebaseError, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, signOut, onAuthStateChanged, sendPasswordResetEmail, collection, doc, setDoc, getDoc, onSnapshot } from "./config/firebase";
+// 1. Ferramentas de Banco de Dados (Vêm direto do Firebase) - Olha o addDoc aqui!
+import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, addDoc } from "firebase/firestore";
+// 2. Ferramentas de Autenticação (Vêm direto do Firebase)
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
+// 3. Suas Credenciais do Hospital (Vêm do seu arquivo local)
+import { auth, db, firebaseError } from "./config/firebase";
 import { getAutoSOFA2 } from "./utils/core";
 import PhysioDashboard from './features/physio/PhysioDashboard';
 import NutriDashboard from './features/nutri/NutriDashboard';
@@ -2571,22 +2576,53 @@ const getBestGlasgowForSOFA = (p) => {
 };
 
   // Updates
-  // Função Save blindada contra rejeição do Firebase (Filtra undefined)
-  const save = async (p) => {
+  const save = async (p, contextoAcao = "Atualização Geral de Prontuário") => {
     if (user && db) {
       try {
-        // O Firebase rejeita salvar se houver qualquer "undefined" no objeto.
-        // Esse comando converte o objeto inteiro e limpa todas as "toxinas" vazias antes de enviar.
+        // 1. Assepsia dos dados (limpa undefined)
         const pacienteSeguro = JSON.parse(JSON.stringify(p));
         
-        await setDoc(doc(db, "leitos_uti", `bed_${p.id}`), pacienteSeguro);
-        // console.log("Salvamento concluído com sucesso no Banco!"); // Pode descomentar para ver o log
+        // 2. SALVAMENTO CLÍNICO: Usamos o { merge: true }
+        // Isso avisa o Firebase: "Atualize só os campos que o médico mexeu, não apague o resto!"
+        const docRef = doc(db, "leitos_uti", `bed_${p.id}`);
+        await setDoc(docRef, pacienteSeguro, { merge: true });
+
+        // 3. RASTREABILIDADE (A Caixa Preta): 
+        // Identifica quem está logado fazendo a alteração
+        const nomeUsuario = userProfile?.name || user?.email || "Usuário Desconhecido";
+        const perfilUsuario = userProfile?.role || "Sistema";
+
+        // Cria o carimbo de auditoria
+        const logAuditoria = {
+          data: new Date().toISOString(),
+          usuario: nomeUsuario,
+          perfil: perfilUsuario,
+          acao: contextoAcao,
+          // Se o senhor quiser rastrear algo específico futuramente, 
+          // os dados da alteração podem ser injetados aqui!
+        };
+
+        // 4. Salva o log na SUBCOLEÇÃO "auditoria" dentro deste leito específico
+        // Caminho: leitos_uti -> bed_X -> auditoria -> [novo_documento_gerado_agora]
+        const auditoriaRef = collection(db, "leitos_uti", `bed_${p.id}`, "auditoria");
+        await addDoc(auditoriaRef, logAuditoria);
+
       } catch (error) {
         console.error("ALERTA CRÍTICO: Falha ao gravar no Banco de Dados:", error);
         alert("Erro ao salvar! O banco de dados rejeitou a gravação. Verifique a sua conexão.");
       }
     }
   };
+
+  // --- O GATILHO DE SALVAMENTO SEGURO COM AUDITORIA ---
+  const handleBlurSave = (contexto = "Atualização de Prontuário") => {
+    // Verifica se existe um paciente selecionado na aba atual
+    if (patients && patients[activeTab]) {
+      // Chama a função save passando o paciente e a etiqueta do que foi feito
+      save(patients[activeTab], contexto); 
+    }
+  };
+
   const updateP = (f, v) => {
     const up = [...patients];
     up[activeTab][f] = v;
@@ -4454,6 +4490,7 @@ const navButtons = allNavButtons.filter((btn) => {
                 getDaysD1={getDaysD1}
                 setShowSapsDetailsModal={setShowSapsDetailsModal}
                 getTempoVMText={getTempoVMText}
+                handleBlurSave={handleBlurSave}
                 calculateDiurese12hMlKgH={calculateDiurese12hMlKgH}
               />
 
@@ -4478,6 +4515,7 @@ const navButtons = allNavButtons.filter((btn) => {
                 setShowHistoryModal={setShowHistoryModal}
                 formatDateDDMM={formatDateDDMM}
                 updateLab={updateLab}
+                handleBlurSave={handleBlurSave}
                 userProfile={userProfile}
                 updateP={updateP}
               />
@@ -4491,6 +4529,7 @@ const navButtons = allNavButtons.filter((btn) => {
                   activeTab={activeTab}
                   setPatients={setPatients}
                   updateNested={updateNested}
+                  handleBlurSave={handleBlurSave}
                   updateP={updateP}
                   clearDate={clearDate}
                   historyOpen={historyOpen}
@@ -4515,6 +4554,7 @@ const navButtons = allNavButtons.filter((btn) => {
                   isEditable={isEditable}
                   handleNursingAdmission={handleNursingAdmission}
                   updateNested={updateNested}
+                  handleBlurSave={handleBlurSave}
                   generateNursingAI_Evolution={generateNursingAI_Evolution}
                   isNursingRole={isNursingRole}
                   isGeneratingNursingAI={isGeneratingNursingAI}
@@ -4535,6 +4575,7 @@ const navButtons = allNavButtons.filter((btn) => {
                   clearDate={clearDate}
                   updateP={updateP}
                   updateNested={updateNested}
+                  handleBlurSave={handleBlurSave}
                   setShowVmFlowsheet={setShowVmFlowsheet}
                   handleSuporteChange={handleSuporteChange}
                   toggleArrayItem={toggleArrayItem}
@@ -4553,6 +4594,7 @@ const navButtons = allNavButtons.filter((btn) => {
                   currentPatient={currentPatient}
                   isEditable={isEditable}
                   updateNested={updateNested}
+                  handleBlurSave={handleBlurSave}
                   toggleArrayItem={toggleArrayItem}
                 />
               )}
@@ -4563,6 +4605,7 @@ const navButtons = allNavButtons.filter((btn) => {
                   currentPatient={currentPatient}
                   isEditable={isEditable}
                   updateNested={updateNested}
+                  handleBlurSave={handleBlurSave}
                   toggleArrayItem={toggleArrayItem}
                 />
               )}
@@ -4587,6 +4630,7 @@ const navButtons = allNavButtons.filter((btn) => {
                   handleAutoCalcInsensible={handleAutoCalcInsensible}
                   updateBH={updateBH}
                   updateNested={updateNested}
+                  handleBlurSave={handleBlurSave}
                   setCurrentNoraHour={setCurrentNoraHour}
                   setCurrentNoraRate={setCurrentNoraRate}
                   setShowNoraModal={setShowNoraModal}
@@ -4603,6 +4647,7 @@ const navButtons = allNavButtons.filter((btn) => {
                   activeTab={activeTab}
                   setPatients={setPatients}
                   save={save}
+                  handleBlurSave={handleBlurSave}
                   userProfile={userProfile}
                 />
               )}

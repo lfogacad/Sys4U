@@ -15,6 +15,7 @@ const PhysioDashboard = ({
   clearDate,
   updateP,
   updateNested,
+  handleBlurSave,
   setShowVmFlowsheet,
   handleSuporteChange,
   toggleArrayItem,
@@ -471,7 +472,15 @@ const PhysioDashboard = ({
               <label className="text-xs font-bold text-red-600 uppercase mb-2 block flex items-center gap-1">
                 <Shield size={14} /> Intercorrências do Plantão
               </label>
-              <textarea className="w-full p-3 border border-red-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-red-300 h-20 resize-y" value={currentPatient.physio?.intercorrencias || ""} onChange={(e) => updateNested("physio", "intercorrencias", e.target.value)} placeholder="Descreva quedas de saturação, autoextubação, rolhas, instabilidade hemodinâmica nas manobras..." />
+              <textarea 
+                className="w-full p-3 border border-red-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-red-300 h-20 resize-y" 
+                value={currentPatient.physio?.intercorrencias || ""} 
+                
+                onChange={(e) => updateNested("physio", "intercorrencias", e.target.value)} 
+                onBlur={() => handleBlurSave("Fisioterapia: Editou as Intercorrências")} 
+                
+                placeholder="Descreva quedas de saturação, autoextubação, rolhas, instabilidade hemodinâmica nas manobras..." 
+              />
             </div>
             <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-100 shadow-sm">
               <label className="text-xs font-bold text-cyan-700 uppercase mb-2 block flex items-center gap-1">
