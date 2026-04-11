@@ -2624,22 +2624,28 @@ const getBestGlasgowForSOFA = (p) => {
   };
 
   const updateP = (f, v) => {
-    const up = [...patients];
-    up[activeTab][f] = v;
+    // Usamos o 'prev' para garantir que estamos pegando a memória EXATA daquele milissegundo
+    setPatients(prev => {
+      const up = [...prev];
+      // Criamos um clone seguro do paciente atual para não confundir o React
+      const pacienteAtualizado = { ...up[activeTab] }; 
+      
+      pacienteAtualizado[f] = v;
 
-    // AUTO-CÁLCULO: Recalcular Peso Predito se o sexo for alterado e já houver altura
-    if (f === "sexo") {
-      const hVal = up[activeTab].nutri?.altura;
-      if (hVal) {
-        const pp = calculatePesoPredito(hVal, v);
-        if (pp) {
-          if (!up[activeTab].nutri) up[activeTab].nutri = {};
-          up[activeTab].nutri.pesoPredito = pp;
+      // AUTO-CÁLCULO: Recalcular Peso Predito
+      if (f === "sexo") {
+        const hVal = pacienteAtualizado.nutri?.altura;
+        if (hVal) {
+          const pp = calculatePesoPredito(hVal, v);
+          if (pp) {
+            pacienteAtualizado.nutri = { ...pacienteAtualizado.nutri, pesoPredito: pp };
+          }
         }
       }
-    }
 
-    setPatients(up);
+      up[activeTab] = pacienteAtualizado;
+      return up; // Atualiza a tela perfeitamente e sem engasgos
+    });
   };
 
   const updateNested = (g, f, v) => {

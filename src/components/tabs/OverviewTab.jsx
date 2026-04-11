@@ -23,6 +23,7 @@ const OverviewTab = ({
   setShowHistoryModal,
   formatDateDDMM,
   updateLab,
+  handleBlurSave,
   userProfile,
   updateP
 }) => {
