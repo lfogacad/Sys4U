@@ -247,7 +247,17 @@ const OverviewTab = ({
                   <div className="text-left py-2 font-medium">{ex}</div>
                   <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs.dayBefore[key]}</div>
                   <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs.yesterday[key]}</div>
-                  <input className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none" value={currentPatient.labs.today[key] || ""} onChange={(e) => updateLab("today", key, e.target.value)} />
+                  
+                  {/* O nosso campo de input auditado! */}
+                  <input 
+                    className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none" 
+                    value={currentPatient.labs.today[key] || ""} 
+                    
+                    onChange={(e) => updateLab("today", key, e.target.value)} 
+                    
+                    // A MÁGICA AQUI: Ele usa a variável 'ex' para carimbar o nome exato do exame!
+                    onBlur={() => handleBlurSave(`Laboratório: Editou ${ex}`)} 
+                  />
                 </React.Fragment>
               );
             })}

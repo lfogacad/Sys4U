@@ -2749,46 +2749,65 @@ const getBestGlasgowForSOFA = (p) => {
     save(up[activeTab]);
   };
 
+  // ========================================================================
+  // GRUPO A: FUNÇÕES DE DIGITAÇÃO (Sem 'save' imediato, preparadas para onBlur)
+  // ========================================================================
+
   const updateLab = (per, f, v) => {
-    const up = [...patients];
-    const p = up[activeTab];
-    if (!p.labs) p.labs = { today: {}, yesterday: {}, dayBefore: {} };
-    if (!p.labs[per]) p.labs[per] = {};
-    p.labs[per][f] = v;
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda e segura
 
-    const dMap = {
-      today: p.labs.today.date,
-      yesterday: p.labs.yesterday.date,
-      dayBefore: p.labs.dayBefore.date,
-    };
-    const td = dMap[per];
+      if (!p.labs) p.labs = { today: {}, yesterday: {}, dayBefore: {} };
+      if (!p.labs[per]) p.labs[per] = {};
+      p.labs[per][f] = v;
 
-    if (td) {
-      if (!p.examHistory[td]) p.examHistory[td] = {};
-      const mapShortToFull = {
-        leuco: "Leucócitos",
-        ureia: "Ureia",
-        creat: "Creatinina",
-        na: "Na (Sódio)",
-        k: "K (Potássio)",
+      const dMap = {
+        today: p.labs.today.date,
+        yesterday: p.labs.yesterday.date,
+        dayBefore: p.labs.dayBefore.date,
       };
-      const fullKey = mapShortToFull[f];
-      if (fullKey) p.examHistory[td][fullKey] = v;
-    }
-    setPatients(up);
-    save(p);
+      const td = dMap[per];
+
+      if (td) {
+        if (!p.examHistory) p.examHistory = {};
+        if (!p.examHistory[td]) p.examHistory[td] = {};
+        const mapShortToFull = {
+          leuco: "Leucócitos",
+          ureia: "Ureia",
+          creat: "Creatinina",
+          na: "Na (Sódio)",
+          k: "K (Potássio)",
+        };
+        const fullKey = mapShortToFull[f];
+        if (fullKey) p.examHistory[td][fullKey] = v;
+      }
+      
+      up[activeTab] = p;
+      return up;
+    });
+    // O 'save' foi removido! A auditoria acontecerá pelo onBlur no <input>
   };
 
   const updateAntibiotic = (i, f, v) => {
-    const up = [...patients];
-    up[activeTab].antibiotics[i][f] = v;
-    setPatients(up);
-    save(up[activeTab]);
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda
+      p.antibiotics[i][f] = v;
+      up[activeTab] = p;
+      return up;
+    });
+    // O 'save' foi removido! A auditoria acontecerá pelo onBlur no <input>
   };
+
+
+  // ========================================================================
+  // GRUPO B: BOTÕES DE AÇÃO IMEDIATA (Esses salvam e auditam na hora do clique!)
+  // ========================================================================
 
   const clearAntibiotic = (i) => {
     const up = [...patients];
-    const p = up[activeTab];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
     const atb = p.antibiotics[i];
 
     // Arquivar no histórico antes de limpar
@@ -2806,32 +2825,39 @@ const getBestGlasgowForSOFA = (p) => {
     }
 
     p.antibiotics[i] = { name: "", date: "" };
+    up[activeTab] = p;
     setPatients(up);
-    save(p);
+    
+    // Salva e carimba na auditoria instantaneamente
+    save(p, "Farmácia: Arquivou/Limpou Antibiótico"); 
   };
 
   const deleteATBHistoryItem = (id) => {
-    if (
-      !window.confirm(
-        "Excluir este antibiótico do histórico de forma permanente?"
-      )
-    )
-      return;
+    if (!window.confirm("Excluir este antibiótico do histórico de forma permanente?")) return;
+    
     const up = [...patients];
-    const p = up[activeTab];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
     if (p.antibioticsHistory) {
       p.antibioticsHistory = p.antibioticsHistory.filter((h) => h.id !== id);
+      up[activeTab] = p;
       setPatients(up);
-      save(p);
+      
+      // Salva e carimba na auditoria instantaneamente
+      save(p, "Farmácia: Excluiu item do Histórico de ATB");
     }
   };
 
   const clearDate = (field) => {
     const up = [...patients];
-    up[activeTab][field] = "";
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    p[field] = "";
+    up[activeTab] = p;
     setPatients(up);
-    save(up[activeTab]);
+    
+    // Salva e carimba na auditoria instantaneamente
+    save(p, "Sistema: Limpou Campo de Data");
   };
+
   const handleClearData = () => {
     if (
       window.confirm(
@@ -2842,7 +2868,9 @@ const getBestGlasgowForSOFA = (p) => {
       const up = [...patients];
       up[activeTab] = r;
       setPatients(up);
-      save(r);
+      
+      // Essa é uma das ações mais críticas! Auditada na hora.
+      save(r, "Gestão de Leitos: Liberou o Leito (Limpeza Total)");
     }
   };
 
