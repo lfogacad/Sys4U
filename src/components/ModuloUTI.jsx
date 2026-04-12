@@ -24,8 +24,6 @@ import {
   import { 
     EXAM_ROWS, 
     BH_HOURS, 
-    reqBraden, 
-    reqMorse, 
     BRADEN_OPTIONS, 
     MORSE_OPTIONS 
   } from '../constants/clinicalLists';
