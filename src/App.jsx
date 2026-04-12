@@ -5334,7 +5334,16 @@ const AppRouter = () => {
       setIsRegistering(false);
       alert("Profissional cadastrado com sucesso!");
     } catch (err) {
-      setAuthError("Erro ao registrar.");
+      console.error("ERRO COMPLETO DO FIREBASE:", err);
+      
+      // Traduzindo o erro do Firebase para o usuário:
+      if (err.code === 'auth/email-already-in-use') {
+        setAuthError("Este e-mail já está cadastrado no sistema.");
+      } else if (err.code === 'auth/weak-password') {
+        setAuthError("A senha precisa ter pelo menos 6 caracteres.");
+      } else {
+        setAuthError("Erro na admissão: " + err.message); // Mostra o erro real
+      }
     } finally {
       setIsLoading(false);
     }
@@ -5402,8 +5411,31 @@ if (!user) {
   );
 }
 
-  // C. Logado, mas precisa escolher o Hospital (Seletor de Contexto)
-  if (userProfile && !unidadeAtiva) {
+// C. Logado, mas precisa escolher o Hospital (Seletor de Contexto)
+  // O Administrador passa direto. Outros perfis precisam selecionar a unidade.
+  if (userProfile && !unidadeAtiva && userProfile.perfil !== "Administrador") {
+    
+    // Trava de segurança: Se o médico recém-cadastrado ainda não tem vínculos
+    if (!userProfile.vinculos || userProfile.vinculos.length === 0) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+          <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md text-center border border-slate-100">
+            <h2 className="text-2xl font-black text-slate-800 mb-2">Acesso em Análise</h2>
+            <p className="text-slate-500 mb-6 font-medium">
+              Seu cadastro foi realizado, mas você ainda não foi vinculado a nenhuma unidade de saúde. Aguarde a liberação da diretoria.
+            </p>
+            <button 
+              onClick={() => signOut(auth)} 
+              className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-8 rounded-xl transition-colors"
+            >
+              Voltar ao Início
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Se tiver vínculos, mostra a tela de seleção normal
     return <SeletorUnidade userProfile={userProfile} onSelectUnit={(v) => setUnidadeAtiva(v)} />;
   }
 
