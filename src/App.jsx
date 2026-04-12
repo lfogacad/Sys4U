@@ -97,6 +97,8 @@ import OverviewTab from './components/tabs/OverviewTab';
 import SeletorUnidade from "./components/SeletorUnidade";
 import HeaderGlobal from "./components/HeaderGlobal";
 import ServiceHub from "./components/ServiceHub";
+import TelaLogin from "./components/TelaLogin";
+import TelaCadastro from "./components/TelaCadastro";
 
 // --- ÍCONE PERSONALIZADO ---
 function NurseCap(props) {
@@ -4863,59 +4865,6 @@ const navButtons = allNavButtons.filter((btn) => {
   // NOVOS MÓDULOS DA V2 (PRONTUÁRIO ELETRÔNICO)
   // ==========================================
   
-  // 1. TELA DE LOGIN
-  const LoginScreen = ({ email, setEmail, password, setPassword, handleLogin, authError, isLoading }) => {
-    return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
-        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border-t-8 border-blue-600">
-          <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg rotate-3">
-               <Activity size={32} className="text-white" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-black text-center text-slate-800 mb-1 uppercase tracking-tight">HospitalOS V2</h1>
-          <p className="text-center text-slate-400 text-sm mb-8 font-medium italic">Sistema de Gestão de Cuidados Críticos</p>
-  
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Acesso Institucional</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu@email.com"
-                className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 transition-all text-slate-700"
-                required
-              />
-            </div>
-  
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Senha de Segurança</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 transition-all text-slate-700"
-                required
-              />
-            </div>
-  
-            {authError && <p className="text-red-500 text-xs font-bold text-center bg-red-50 py-2 rounded-lg">{authError}</p>}
-  
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-lg shadow-blue-200 shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-              {isLoading ? <Loader2 className="animate-spin" /> : "ACESSAR SISTEMA"}
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  };
-  
   // 3. TELA DE RECEPÇÃO (BUSCA E CADASTRO)
   const ModuloRecepcao = ({ userProfile }) => {
     const navigate = useNavigate();
@@ -5431,26 +5380,24 @@ const AppRouter = () => {
 
 // B. Se não está logado (Login ou Cadastro)
 if (!user) {
-  return (
-    <LoginScreen 
-      email={email} 
-      setEmail={setEmail} 
-      password={password} 
-      setPassword={setPassword} 
-      handleLogin={handleLogin} 
-      authError={authError} 
+  return isRegistering ? (
+    <TelaCadastro 
+      email={email} setEmail={setEmail}
+      password={password} setPassword={setPassword}
+      newName={newName} setNewName={setNewName}
+      newRole={newRole} setNewRole={setNewRole}
+      newConselho={newConselho} setNewConselho={setNewConselho}
+      masterCodeInput={masterCodeInput} setMasterCodeInput={setMasterCodeInput}
+      handleRegister={handleRegister} setIsRegistering={setIsRegistering}
+      authError={authError} isLoading={isLoading}
+    />
+  ) : (
+    <TelaLogin 
+      email={email} setEmail={setEmail}
+      password={password} setPassword={setPassword}
+      handleLogin={handleLogin} handleResetPassword={handleResetPassword}
+      setIsRegistering={setIsRegistering} authError={authError}
       isLoading={isLoading}
-      // Se o seu LoginScreen também tiver a tela de cadastro e redefinição de senha embutidos, passe essas funções:
-      isRegistering={isRegistering}
-      setIsRegistering={setIsRegistering}
-      handleRegister={handleRegister}
-      handleResetPassword={handleResetPassword}
-      newName={newName}
-      setNewName={setNewName}
-      newConselho={newConselho}
-      setNewConselho={setNewConselho}
-      masterCodeInput={masterCodeInput}
-      setMasterCodeInput={setMasterCodeInput}
     />
   );
 }
