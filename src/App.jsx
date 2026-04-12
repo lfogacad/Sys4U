@@ -4012,7 +4012,7 @@ if (!user) {
             />
 
             {/* 3. UTI */}
-            <Route path="/uti/*" element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} />
+            <Route path="/uti/*" element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} handleLogout={handleLogout} />} />
             
             {/* 4. Painel Gestor (CATRACA: Apenas Administrador) */}
             <Route 
