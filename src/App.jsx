@@ -1,6 +1,6 @@
 import './index.css';
 import React, { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "./config/firebase";
@@ -37,6 +37,8 @@ class ErrorBoundary extends React.Component {
 }
 
 const AppRouter = () => {
+  const location = useLocation(); // Agora funciona porque o BrowserRouter está no Wrapper
+  
   // 1. Estados Globais
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -68,7 +70,6 @@ const AppRouter = () => {
               setUnidadeAtiva(data.vinculos[0]);
             }
           } else {
-            // Trava de segurança: Se não achar o perfil no banco, desloga para não bugar a tela
             console.error("Perfil não encontrado no Firestore.");
             await signOut(auth);
           }
@@ -85,9 +86,8 @@ const AppRouter = () => {
     return () => unsubscribe();
   }, []);
 
-  // --- MOTORES DE AUTENTICAÇÃO ---
   const handleLogin = async (e) => {
-    e.preventDefault(); // Isso impede a tela de piscar!
+    e.preventDefault();
     setIsLoading(true);
     setAuthError(null);
     try {
@@ -135,7 +135,6 @@ const AppRouter = () => {
     window.location.href = "/"; 
   };
 
-  // --- RENDERIZAÇÃO DAS TELAS ---
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-bold text-emerald-600 animate-pulse">Sincronizando Ecossistema...</div>;
   }
@@ -161,7 +160,6 @@ const AppRouter = () => {
   }
 
   if (!unidadeAtiva && userProfile?.perfil !== "Administrador") {
-    // Se ele ainda não tem vínculo, mostra aviso
     if (!userProfile.vinculos || userProfile.vinculos.length === 0) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -176,29 +174,37 @@ const AppRouter = () => {
     return <SeletorUnidade userProfile={userProfile} onSelectUnit={setUnidadeAtiva} />;
   }
 
-  // --- ROTEAMENTO OFICIAL ---
+  // --- LÓGICA DE LIMPEZA DO CABEÇALHO ---
+  const isUTIPage = location.pathname.startsWith('/uti');
+
   return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50">
+      {/* O HeaderGlobal só aparece se NÃO for a página da UTI */}
+      {!isUTIPage && (
         <HeaderGlobal user={userProfile} unidade={unidadeAtiva} onSignOut={handleLogout} />
-        <main className="p-6">
-          <Routes>
-            <Route path="/hub" element={userProfile?.perfil === "Administrador" ? <ServiceHub userProfile={userProfile} /> : <Navigate to="/" />} />
-            <Route path="/uti/*" element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} handleLogout={handleLogout} />} />
-            <Route path="/admin" element={userProfile?.perfil === "Administrador" ? <ModuloAdmin userProfile={userProfile} /> : <Navigate to="/" />} />
-            <Route path="/recepcao" element={<ModuloRecepcao userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} />
-            <Route path="/" element={<Navigate to={userProfile?.perfil === "Administrador" ? "/hub" : "/uti"} />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+      )}
+      
+      {/* Removemos o p-6 (espaçamento) quando estiver na UTI para ganhar tela cheia */}
+      <main className={`${isUTIPage ? 'p-0' : 'p-6'}`}>
+        <Routes>
+          <Route path="/hub" element={userProfile?.perfil === "Administrador" ? <ServiceHub userProfile={userProfile} /> : <Navigate to="/" />} />
+          <Route path="/uti/*" element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} handleLogout={handleLogout} />} />
+          <Route path="/admin" element={userProfile?.perfil === "Administrador" ? <ModuloAdmin userProfile={userProfile} /> : <Navigate to="/" />} />
+          <Route path="/recepcao" element={<ModuloRecepcao userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} />
+          <Route path="/" element={<Navigate to={userProfile?.perfil === "Administrador" ? "/hub" : "/uti"} />} />
+        </Routes>
+      </main>
+    </div>
   );
 };
 
+// --- WRAPPER FINAL COM BROWSERROUTER NO TOPO ---
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
-      <AppRouter />
+      <BrowserRouter>
+        <AppRouter />
+      </BrowserRouter>
     </ErrorBoundary>
   );
 }

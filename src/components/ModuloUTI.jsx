@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { doc, setDoc, deleteDoc, collection, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, collection, onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
     Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple, 
@@ -79,6 +79,22 @@ function NurseCap(props) {
   );
 }
 
+// Esta função garante que, se o banco de dados não tiver algum campo (ex: exames novos), 
+// o sistema use o valor padrão e não trave a tela.
+const mergePatientData = (base, incoming) => {
+  return {
+    ...base,
+    ...incoming,
+    // Garantimos que objetos internos não sumam
+    neuro: { ...(base.neuro || {}), ...(incoming.neuro || {}) },
+    cardio: { ...(base.cardio || {}), ...(incoming.cardio || {}) },
+    resp: { ...(base.resp || {}), ...(incoming.resp || {}) },
+    bh: { ...(base.bh || {}), ...(incoming.bh || {}) },
+    saps3: { ...(base.saps3 || {}), ...(incoming.saps3 || {}) },
+    exames: { ...(base.exames || {}), ...(incoming.exames || {}) }
+  };
+};
+
 const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     const location = useLocation();
     const [pdfReady, setPdfReady] = useState(false);
@@ -135,6 +151,55 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
     const bhTotals = calculateTotals(displayedBH);
 
+    // --- ESTADOS DA FILA DE ESPERA ---
+    const [waitingList, setWaitingList] = useState([]);
+    const [showQueueModal, setShowQueueModal] = useState(false);
+    const [selectedBedForAdmission, setSelectedBedForAdmission] = useState(null);
+    
+    // --- SINCRONIZAÇÃO DOS LEITOS COM O FIREBASE ---
+    useEffect(() => {
+      if (!db) return;
+  
+      // Criamos uma escuta na coleção de leitos
+      const q = collection(db, "leitos_uti");
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        // Começamos com um array de leitos padrão (vazios)
+        // Ajuste o '10' para a quantidade de leitos que o senhor tiver
+        const updatedPatients = Array(10).fill(null).map((_, i) => defaultPatient(i));
+  
+        snapshot.forEach((doc) => {
+          // O id do documento é 'bed_0', 'bed_1', etc. 
+          // Extraímos o número para saber em qual posição do array colocar
+          const bedIndex = parseInt(doc.id.replace('bed_', ''));
+          if (bedIndex >= 0 && bedIndex < updatedPatients.length) {
+            updatedPatients[bedIndex] = mergePatientData(defaultPatient(bedIndex), doc.data());
+          }
+        });
+  
+        console.log("Leitos sincronizados com a nuvem!");
+        setPatients(updatedPatients);
+      });
+  
+      // Para de ouvir quando o componente for fechado (logout)
+      return () => unsubscribe();
+    }, []);
+
+    // Efeito para buscar a fila de espera da UTI em tempo real
+    useEffect(() => {
+      if (!db) return;
+      const q = query(
+        collection(db, "fila_espera"), 
+        where("setorDestino", "==", "UTI"),
+        where("status", "==", "aguardando")
+      );
+      
+      return onSnapshot(q, (snap) => {
+        const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setWaitingList(list);
+      });
+    }, []);
+
     useEffect(() => {
       if (!user || !db) return;
       return onSnapshot(collection(db, "leitos_uti"), (snap) => {
@@ -188,6 +253,28 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       }
     }, [patients, activeTab, viewMode, currentPatient, userProfile]);
 
+    // Efeito para capturar dados vindos da Recepção assim que a tela carrega
+  useEffect(() => {
+    const incoming = location.state?.incomingPatient;
+    
+    if (incoming && !admissionData.nome) { // Se tem paciente vindo e o form está vazio
+      console.log("Detectado paciente da recepção:", incoming);
+      
+      setAdmissionData({
+        nome: incoming.nome || "",
+        sexo: incoming.sexo || "",
+        dataNascimento: incoming.dataNascimento || incoming.nascimento || "",
+        origem: incoming.procedencia || incoming.origem || "Recepção",
+        // Campos em branco para o médico preencher
+        historia: "", exameGeral: "", diagAgudos: "", conduta: "",
+        saps_comorbidades: [],
+      });
+      
+      // Abre o modal automaticamente para facilitar a vida do médico
+      setShowAdmissionModal(true);
+    }
+  }, [location.state, admissionData.nome]);
+
     const gasoCols = [...Object.keys(currentPatient.gasometriaHistory || {}), ...(currentPatient.customGasometriaCols || []), ...getLast10Days()];
     const uniqueGasoCols = [...new Set(gasoCols)].sort().reverse();
 
@@ -214,6 +301,53 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         const up = [...patients];
         up[activeTab] = { ...up[activeTab], [field]: value };
         setPatients(up);
+    };
+
+    // Função disparada ao clicar no "Admitir" do leito vazio
+    const handleOpenQueue = (bedId) => {
+      setSelectedBedForAdmission(bedId);
+      setShowQueueModal(true);
+    };
+
+    // Função que efetiva a internação (tira da fila e põe no leito)
+    const bindPatientToBed = async (patientFromQueue) => {
+      try {
+        const bedIndex = selectedBedForAdmission;
+        
+        const newPatientRecord = {
+          ...defaultPatient(bedIndex), 
+          id: bedIndex,
+          nome: patientFromQueue.nome,
+          cpf: patientFromQueue.cpf,
+          dataNascimento: patientFromQueue.dataNascimento,
+          sexo: patientFromQueue.sexo,
+          dataInternacao: getManausDateStr(),
+          procedencia: patientFromQueue.origem || "Recepção",
+          statusInternacao: "Aguardando Admissão Médica" 
+        };
+        
+        // 1. Salva no Firebase
+        await setDoc(doc(db, "leitos_uti", `bed_${bedIndex}`), newPatientRecord);
+        
+        // 2. A PEÇA QUE FALTAVA: Atualiza a tela (React) na mesma hora!
+        const up = [...patients];
+        up[bedIndex] = newPatientRecord;
+        setPatients(up);
+        
+        // 3. Remove o paciente da Fila de Espera
+        await updateDoc(doc(db, "fila_espera", patientFromQueue.id), {
+          status: "internado",
+          leitoAtribuido: bedIndex,
+          dataInternada: serverTimestamp()
+        });
+  
+        setShowQueueModal(false);
+        alert(`${patientFromQueue.nome} foi vinculado ao Leito ${bedIndex + 1}.`);
+        
+      } catch (error) {
+        console.error("Erro na internação:", error);
+        alert("Falha ao vincular paciente ao leito.");
+      }
     };
 
     const toggleSAPSComorbidade = (c) => {
@@ -391,55 +525,36 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     };
 
     const handleAdmitPatient = () => {
-      // Verifica se veio alguém da recepção no "encaminhamento"
-      const incoming = location.state?.incomingPatient;
+      // MUDANÇA CRUCIAL: Pega os dados do paciente que já está na maca do leito!
+      const p = currentPatient;
+      
+      console.log(">>> CLICOU EM ADMITIR! Puxando dados do leito:", p);
   
       setAdmissionData({
-        nome: incoming ? incoming.nome : "", // Se vier da recepção, já preenche o nome!
-        sexo: "",
-        dataNascimento: incoming ? incoming.nascimento : "", // E a data de nascimento!
-        origem: "",
-        historia: "",
-        exameGeral: "",
-        exameACV: "",
-        exameAR: "",
-        exameABD: "",
-        exameExtremidades: "",
-        exameNeuro: "",
-        ecg_ao: "",
-        ecg_rv: "",
-        ecg_rm: "",
-        ecg_basal_ao: "",
-        ecg_basal_rv: "",
-        ecg_basal_rm: "",
-        rass: "",
-        pupilas: "",
-        dva: false,
-        drogasDVA: [],
-        sedacao: false,
-        drogasSedacao: [],
-        medicamentos: "",
-        conscienciaBasal: "",
-        mobilidadeBasal: "",
-        examesComplementares: "",
-        diagAgudos: "",
-        diagCronicos: "",
-        conduta: "",
-        // CAMPOS ATUALIZADOS DO SAPS 3
-        saps_origem: "",
-        saps_dias: "",
-        saps_motivo: "",
-        saps_sistema: "",
-        saps_infeccao: "",
-        saps_sitioInfeccao: "",
-        saps_cirurgiaUrgente: false,
-        saps_imunossupressao: false,
+        // Puxa o que foi preenchido na hora de vincular da Fila de Espera
+        nome: p?.nome || "",
+        sexo: p?.sexo || "",
+        dataNascimento: p?.dataNascimento || "",
+        origem: p?.procedencia || "Recepção",
+        
+        // Restante dos campos zerados para o médico preencher
+        historia: "", exameGeral: "", exameACV: "", exameAR: "", 
+        exameABD: "", exameExtremidades: "", exameNeuro: "",
+        ecg_ao: "", ecg_rv: "", ecg_rm: "", ecg_basal_ao: "", ecg_basal_rv: "", ecg_basal_rm: "",
+        rass: "", pupilas: "", dva: false, drogasDVA: [],
+        sedacao: false, drogasSedacao: [], medicamentos: "",
+        conscienciaBasal: "", mobilidadeBasal: "", examesComplementares: "",
+        diagAgudos: "", diagCronicos: "", conduta: "",
+        saps_origem: "", saps_dias: "", saps_motivo: "", saps_sistema: "",
+        saps_infeccao: "", saps_sitioInfeccao: "",
+        saps_cirurgiaUrgente: false, saps_imunossupressao: false,
         saps_comorbidades: [],
       });
+  
       setShowAdmissionModal(true);
     };
 
-    const handleFinalizeAdmission = () => {
+    const handleFinalizeAdmission = async () => {
       if (!admissionData.nome || !admissionData.nome.trim()) {
         return alert(
           "O preenchimento do NOME é obrigatório para admitir o paciente."
@@ -447,6 +562,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       }
   
       const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
+      r.statusInternacao = "Ativo"; // Libera o cadeado da Aba Médica
       r.nome = admissionData.nome.trim().toUpperCase();
       r.sexo = admissionData.sexo || "";
       r.dataNascimento = admissionData.dataNascimento || "";
@@ -556,7 +672,13 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   
       // Agora a Aba Médica recebe apenas o resumo
       r.historiaClinica = historiaAbaMedica;
-  
+      // --- A CHAVE MESTRA: SALVANDO NA NUVEM ---
+    try {
+      await setDoc(doc(db, "leitos_uti", `bed_${activeTab}`), r);
+    } catch (error) {
+      console.error("Erro ao salvar admissão na nuvem:", error);
+    }
+    // -----------------------------------------
       const up = [...patients];
       up[activeTab] = r;
       setPatients(up);
@@ -1552,14 +1674,38 @@ ${condutas}`;
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
-                        <div className="flex items-center bg-white rounded-full p-1.5 pr-2 shadow-lg gap-3">
-                            <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center text-white"><User size={20} /></div>
-                            <div className="flex flex-col text-right hidden md:flex min-w-[120px]">
-                                <span className="text-sm font-bold text-slate-800">{userProfile?.name || "Dr. Luciano"}</span>
-                                <span className="text-xs text-slate-500">{userProfile?.role}</span>
-                            </div>
-                            <button onClick={handleLogout} className="w-10 h-10 rounded-full bg-teal-100 hover:bg-red-100 text-red-600 flex items-center justify-center transition-colors"><LogOut size={18} /></button>
+                      <div className="bg-white rounded-full p-1.5 flex items-center gap-3 shadow-md border border-teal-100/50">
+                        {/* Ícone Lateral */}
+                        <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center text-white shadow-inner">
+                          <User size={20} />
                         </div>
+                    
+                        {/* Bloco de Identificação Formal */}
+                        <div className="flex flex-col pr-2 min-w-[160px]">
+                          <span className="text-[13px] font-black text-slate-800 leading-tight">
+                            {userProfile?.nome || "Usuário"}
+                          </span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                              {userProfile?.perfil || "Médico"}
+                            </span>
+                            <span className="text-[10px] font-medium text-slate-500">
+                              {userProfile?.conselho} {userProfile?.numeroConselho}
+                            </span>
+                          </div>
+                        </div>
+                    
+                        {/* Divisor e Botão de Sair */}
+                        <div className="h-8 w-[1px] bg-slate-100 mx-1"></div>
+                        
+                        <button 
+                          onClick={handleLogout}
+                          title="Sair do Sistema"
+                          className="w-10 h-10 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all duration-300 active:scale-90"
+                        >
+                          <LogOut size={18} />
+                        </button>
+                      </div>
                     </div>
                 </div>
             </div>
@@ -1602,32 +1748,84 @@ ${condutas}`;
                         <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px]">
                             {!currentPatient.nome ? (
                                 <div className="flex flex-col items-center justify-center h-full text-slate-500 py-20">
-                                    <UserPlus size={64} className="mb-4 text-slate-300" />
-                                    <h3 className="text-xl font-bold">Leito Vazio</h3>
-                                    <button onClick={() => setShowAdmissionModal(true)} className="mt-4 bg-teal-600 text-white px-6 py-2 rounded-xl font-bold">Admitir Paciente</button>
+                                <UserPlus size={64} className="mb-4 text-slate-300" />
+                                <h3 className="text-xl font-bold text-slate-700">Leito Vazio</h3>
+                                <p className="text-slate-400 mb-6 text-sm">Nenhum paciente ocupando este leito no momento.</p>
+                                
+                                {/* AQUI ESTÁ A MÁGICA: Agora ele chama a Fila de Espera passando o número do leito! */}
+                                <button 
+                                    onClick={() => handleOpenQueue(activeTab)} 
+                                    className="mt-4 bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-colors"
+                                >
+                                    Puxar Paciente da Fila
+                                </button>
                                 </div>
                             ) : (
                                 <>
-                                    {viewMode === "management" && <ManagementTab patients={patients} calculateSAPS3Score={calculateSAPS3Score} getDaysD1={getDaysD1} handleBlurSave={handleBlurSave} />}
-                                    {viewMode === "overview" && <OverviewTab currentPatient={currentPatient} isOverviewEditable={isOverviewEditable} handleBlurSave={handleBlurSave} updateP={updateP} />}
-                                    {viewMode === "medical" && <MedicalDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} updateP={updateP} handleBlurSave={handleBlurSave} abrirChecklistEvolucao={abrirChecklistEvolucao} />}
+                                    {/* ABA: VISITA MULTI / OVERVIEW */}
+                                    {viewMode === "overview" && (
+                                      currentPatient.statusInternacao === "Aguardando Admissão Médica" ? (
+                                        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 mt-4">
+                                          <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 text-3xl">
+                                            👥
+                                          </div>
+                                          <h3 className="text-xl font-bold text-slate-800">Aguardando Admissão</h3>
+                                          <p className="text-slate-500 mb-6 text-center max-w-sm">
+                                            O paciente <b>{currentPatient.nome}</b> já foi vinculado ao leito, mas a Visita Multi será liberada assim que o médico finalizar a Admissão.
+                                          </p>
+                                        </div>
+                                      ) : (
+                                        <OverviewTab 
+                                          currentPatient={currentPatient} 
+                                          isOverviewEditable={isOverviewEditable} 
+                                          handleBlurSave={handleBlurSave} 
+                                          updateP={updateP} 
+                                        />
+                                      )
+                                    )}
+                                    
+                                    {/* ABA: GESTÃO / MANAGEMENT */}
+                                    {viewMode === "management" && (
+                                      <ManagementTab 
+                                        patients={patients} 
+                                        calculateSAPS3Score={calculateSAPS3Score} 
+                                        getDaysD1={getDaysD1} 
+                                        handleBlurSave={handleBlurSave} 
+                                      />
+                                    )}
+                                    {viewMode === "medical" && (
+                                      currentPatient.statusInternacao === "Aguardando Admissão Médica" ? (
+                                        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 mt-4">
+                                          <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+                                            {/* Usando um ícone ou um emoji de estetoscópio caso não tenha o Lucide importado aí */}
+                                            <span className="text-4xl">🩺</span>
+                                          </div>
+                                          <h3 className="text-xl font-bold text-slate-800">Paciente Aguardando Admissão</h3>
+                                          <p className="text-slate-500 mb-6 text-center max-w-sm">
+                                            O paciente foi vinculado a este leito. É obrigatório realizar a admissão formal antes de acessar a tela de evolução diária.
+                                          </p>
+                                          <button 
+                                            onClick={handleAdmitPatient}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition-transform active:scale-95"
+                                          >
+                                            Iniciar Admissão Médica
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <MedicalDashboard 
+                                          currentPatient={currentPatient} 
+                                          isEditable={isEditable} 
+                                          updateNested={updateNested} 
+                                          updateP={updateP} 
+                                          handleBlurSave={handleBlurSave} 
+                                        />
+                                      )
+                                    )}
                                     {viewMode === "nursing" && <NursingDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} />}
                                     {viewMode === "physio" && <PhysioDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} handleGeneratePhysioEvo={handleGeneratePhysioEvo} />}
                                     {viewMode === "nutri" && <NutriDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
                                     {viewMode === "speech" && <SpeechDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
-                                    {viewMode === "tech" && (
-                                                              <TechDashboard 
-                                                                currentPatient={currentPatient} 
-                                                                displayedBH={displayedBH} 
-                                                                bhTotals={bhTotals} 
-                                                                isBHReadOnly={isBHReadOnly} 
-                                                                updateBH={updateBH} 
-                                                                handleNextDayBH={handleNextDayBH}
-                                                                setCurrentNoraHour={setCurrentNoraHour} 
-                                                                setCurrentNoraRate={setCurrentNoraRate} 
-                                                                setShowNoraModal={setShowNoraModal}
-                                                              />
-                                                            )}
+                                    {viewMode === "tech" && (<TechDashboard currentPatient={currentPatient} displayedBH={displayedBH} bhTotals={bhTotals} isBHReadOnly={isBHReadOnly} updateBH={updateBH} handleNextDayBH={handleNextDayBH} setCurrentNoraHour={setCurrentNoraHour} setCurrentNoraRate={setCurrentNoraRate} setShowNoraModal={setShowNoraModal} />)}
                                     {viewMode === "hemodialysis" && <HemoDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} />}
                                 </>
                             )}
@@ -1713,7 +1911,48 @@ ${condutas}`;
               setGeneratedAdmissionText={setGeneratedAdmissionText}
               copyToClipboardFallback={copyToClipboardFallback}
             />
-      
+            
+            {/* MODAL: FILA DE ESPERA DA UTI */}
+            {showQueueModal && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-100">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-800">Fila de Espera: UTI</h3>
+                      <p className="text-sm text-slate-500">Selecione o paciente para o <b>Leito {selectedBedForAdmission + 1}</b></p>
+                    </div>
+                    <button onClick={() => setShowQueueModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">FECHAR</button>
+                  </div>
+                  
+                  <div className="p-4 max-h-[400px] overflow-y-auto">
+                    {waitingList.length === 0 ? (
+                      <div className="text-center py-10 text-slate-400">
+                        <p className="italic">Nenhum paciente aguardando vaga na UTI no momento.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {waitingList.map((p) => (
+                          <button 
+                            key={p.id}
+                            onClick={() => bindPatientToBed(p)}
+                            className="w-full p-4 bg-white border-2 border-slate-100 rounded-2xl text-left hover:border-emerald-500 hover:bg-emerald-50 transition-all flex justify-between items-center group"
+                          >
+                            <div>
+                              <p className="font-black text-slate-700 group-hover:text-emerald-700">{p.nome}</p>
+                              <p className="text-xs text-slate-500">CPF: {p.cpf} | Origem: {p.origem}</p>
+                            </div>
+                            <div className="bg-emerald-100 text-emerald-600 p-2 rounded-lg">
+                              <span className="text-xs font-bold">ADMITIR</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* MODAL: PROCESSAMENTO EM LOTE (IA) */}
             <BulkProcessingModal
               showBulkModal={showBulkModal}

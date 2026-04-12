@@ -1,20 +1,23 @@
 import React, { useState } from "react";
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, getDocs, setDoc, addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { db } from "../config/firebase";
-import { ArrowLeft, Activity, Search, Loader2, UserPlus, CheckCircle, AlertTriangle } from "lucide-react";
-import { formatarDataBR } from "../utils/core"; 
+import { ArrowLeft, Activity, Search, Loader2, UserPlus, CheckCircle, AlertTriangle, Send } from "lucide-react";
+import { formatarDataBR } from "../utils/core";
 
-const ModuloRecepcao = ({ userProfile, unidadeAtiva }) => {
+const ModuloRecepcao = ({ userProfile }) => {
   const navigate = useNavigate();
   
-  // Estados da Busca
   const [cpf, setCpf] = useState('');
   const [status, setStatus] = useState('idle'); 
   const [patient, setPatient] = useState(null);
-
-  // Estados do Cadastro
   const [view, setView] = useState('search'); 
+
+  // Modal de Encaminhamento
+  const [showSectorModal, setShowSectorModal] = useState(false);
+  const [setorDestino, setSetorDestino] = useState('');
+  const [isForwarding, setIsForwarding] = useState(false);
+
   const [formData, setFormData] = useState({
     cpf: '', cns: '', passaporte: '', nome: '', nomeSocial: '', dataNascimento: '',
     sexo: '', identidadeGenero: '', nomeMae: '', nomePai: '',
@@ -23,24 +26,56 @@ const ModuloRecepcao = ({ userProfile, unidadeAtiva }) => {
     telefone: '', telefoneContatos: '', endereco: '', responsavelLegal: '', alergias: ''
   });
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     e.preventDefault();
     if (cpf.length < 11) return alert("Digite um CPF válido (somente números)");
     setStatus('searching');
 
-    // Simulando busca (Pode conectar ao Firebase para buscar paciente existente)
-    setTimeout(() => {
-      if (cpf === '12345678900') {
-        setPatient({ nome: 'João da Silva', nascimento: '1980-05-15', cpf: '12345678900' });
+    try {
+      // 1. Busca o cadastro base
+      const q = query(collection(db, "pacientes"), where("cpf", "==", cpf));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const docData = querySnapshot.docs[0].data();
+        const foundPatient = { ...docData, id: querySnapshot.docs[0].id };
+
+        // 2. TRIAGEM DE SEGURANÇA: Verifica se ele já está internado ou na fila
+        const qLeitos = query(collection(db, "leitos_uti"), where("cpf", "==", cpf));
+        const qFila = query(collection(db, "fila_espera"), where("cpf", "==", cpf), where("status", "==", "aguardando"));
+        
+        const [leitosSnap, filaSnap] = await Promise.all([
+          getDocs(qLeitos),
+          getDocs(qFila)
+        ]);
+
+        if (!leitosSnap.empty || !filaSnap.empty) {
+          // PACIENTE JÁ ESTÁ NO SISTEMA ATIVO
+          setPatient(foundPatient);
+          setStatus('already_admitted'); 
+          return;
+        }
+
+        // Paciente livre para internar
+        setPatient(foundPatient);
         setStatus('found');
       } else {
         setStatus('not_found');
       }
-    }, 1000);
+    } catch (error) {
+      console.error("Erro ao buscar:", error);
+      alert("Erro ao consultar o banco de dados.");
+      setStatus('idle');
+    }
   };
 
-  const handleOpenRegister = () => {
-    setFormData(prev => ({ ...prev, cpf: cpf }));
+  const handleOpenRegister = (isEditing = false) => {
+    if (isEditing && patient) {
+      setFormData(patient); // Preenche a ficha com os dados do paciente achado
+    } else {
+      setFormData(prev => ({ ...prev, cpf: cpf })); // Novo cadastro
+      setPatient(null);
+    }
     setView('register');
   };
 
@@ -49,66 +84,81 @@ const ModuloRecepcao = ({ userProfile, unidadeAtiva }) => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSavePatient = async (e) => {
+  // Salva a ficha E abre o modal para escolher o setor
+  const handleSaveAndPrepareForward = async (e) => {
     e.preventDefault();
-  
-    const perfisAutorizados = ["Médico", "Enfermeiro", "Recepcionista", "Administrador", "Gestor"];
-    if (!perfisAutorizados.includes(userProfile?.perfil || userProfile?.role)) {
-      return alert("Acesso Negado: Perfil sem permissão para cadastro.");
-    }
-  
-    if (!formData.nome || !formData.cpf) {
-      return alert("Nome e CPF são obrigatórios para abrir o prontuário.");
-    }
-  
+    if (!formData.nome || !formData.cpf) return alert("Nome e CPF são obrigatórios.");
+    
     try {
-      setStatus('searching'); 
-  
-      const q = query(collection(db, "pacientes"), where("cpf", "==", formData.cpf));
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        setStatus('idle');
-        return alert("Atenção: Este CPF já possui cadastro ativo no sistema.");
+      let currentPatientId = patient?.id;
+
+      // Se NÃO tem ID, é um paciente novo. Salva no banco.
+      if (!currentPatientId) {
+        const docRef = await addDoc(collection(db, "pacientes"), {
+          ...formData, status: "Ativo", cadastradoPor: userProfile.nome || "Admin", dataCriacao: serverTimestamp()
+        });
+        currentPatientId = docRef.id;
+        setPatient({ ...formData, id: currentPatientId });
+      } else {
+        // Se já tem ID, só atualiza os dados dele (edição)
+        await updateDoc(doc(db, "pacientes", currentPatientId), formData);
+        setPatient({ ...formData, id: currentPatientId });
       }
-  
-      const docRef = await addDoc(collection(db, "pacientes"), {
-        ...formData,
-        status: "Ativo",
-        cadastradoPor: userProfile.nome || userProfile.name,
-        dataCriacao: serverTimestamp()
-      });
-  
-      await addDoc(collection(db, "logs"), {
-        acao: `Cadastro: Novo paciente ${formData.nome}`,
-        conselho: userProfile.conselho || "N/A",
-        data: new Date().toISOString(),
-        perfil: userProfile.perfil || userProfile.role,
-        usuario: userProfile.nome || userProfile.name,
-        pacienteId: docRef.id
-      });
-  
-      alert("Paciente cadastrado com sucesso!");
-  
-      setPatient({ ...formData, id: docRef.id });
-      setStatus('found');
-      setView('search');
-  
+
+      // Tudo salvo, agora pergunta o setor!
+      setShowSectorModal(true);
+
     } catch (error) {
-      console.error("Erro na operação:", error);
-      alert("Erro ao conectar com o banco de dados.");
+      console.error("Erro ao salvar:", error);
+      alert("Erro ao salvar a ficha do paciente.");
+    }
+  };
+
+  // Envia para a Sala de Espera da UTI/PS/Enfermaria
+  const handleConfirmForward = async () => {
+    if (!setorDestino) return alert("Selecione um setor de destino!");
+    setIsForwarding(true);
+
+    try {
+        // Usar setDoc com o ID do paciente garante que ele tenha apenas UMA vaga na fila
+        await setDoc(doc(db, "fila_espera", patient.id), {
+          pacienteId: patient.id,
+          nome: formData.nome,
+          cpf: formData.cpf,
+          dataNascimento: formData.dataNascimento,
+          sexo: formData.sexo,
+          origem: "Recepção",
+          setorDestino: setorDestino,
+          status: "aguardando",
+          encaminhadoPor: userProfile.nome || "Admin",
+          timestamp: serverTimestamp()
+        });
+  
+        alert(`Paciente encaminhado para a Sala de Espera da ${setorDestino} com sucesso!`);
+      
+      // Limpa a tela para o próximo paciente
+      setShowSectorModal(false);
+      setView('search');
+      setCpf('');
+      setPatient(null);
       setStatus('idle');
+      setSetorDestino('');
+
+    } catch (error) {
+      console.error("Erro ao encaminhar:", error);
+      alert("Erro ao encaminhar paciente.");
+    } finally {
+      setIsForwarding(false);
     }
   };
 
   // ==========================================
-  // TELA DE CADASTRO (Restaurada na íntegra)
+  // TELA DE CADASTRO E REVISÃO
   // ==========================================
   if (view === 'register') {
     return (
-      <div className="min-h-screen bg-slate-50 p-6 pb-20">
+      <div className="min-h-screen bg-slate-50 p-6 pb-20 relative">
         <div className="max-w-5xl mx-auto">
-          {/* Cabeçalho do Cadastro */}
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
               <button onClick={() => setView('search')} className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-100 transition-colors">
@@ -116,18 +166,18 @@ const ModuloRecepcao = ({ userProfile, unidadeAtiva }) => {
               </button>
               <div>
                 <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-                  <UserPlus className="text-emerald-500" /> Cadastro de Paciente
+                  <UserPlus className="text-emerald-500" /> {patient?.id ? "Revisão de Ficha Cadastral" : "Novo Cadastro"}
                 </h2>
-                <p className="text-sm text-slate-500">Preencha os dados demográficos e clínicos básicos.</p>
+                <p className="text-sm text-slate-500">Revise os dados e encaminhe para o setor de internação.</p>
               </div>
             </div>
-            <button onClick={handleSavePatient} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors">
-              <CheckCircle size={18} /> Salvar Ficha
+            <button onClick={handleSaveAndPrepareForward} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors">
+              <Send size={18} /> Salvar e Encaminhar
             </button>
           </div>
 
           {/* O Formulário Completo */}
-          <form className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 space-y-8" onSubmit={handleSavePatient}>
+          <form className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 space-y-8" onSubmit={handleSaveAndPrepareForward}>
             
             {/* Bloco 1: Identificação Básica */}
             <div>
@@ -262,6 +312,31 @@ const ModuloRecepcao = ({ userProfile, unidadeAtiva }) => {
             </div>
           </form>
         </div>
+
+        {/* MODAL DE ESCOLHA DO SETOR */}
+        {showSectorModal && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl">
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Encaminhar Paciente</h3>
+              <p className="text-slate-500 text-sm mb-6">Para qual setor o paciente <b>{formData.nome}</b> será enviado?</p>
+              
+              <div className="space-y-3 mb-6">
+                {['UTI', 'Pronto Socorro', 'Enfermaria', 'Centro Cirúrgico'].map(setor => (
+                  <button key={setor} onClick={() => setSetorDestino(setor)} className={`w-full p-4 rounded-xl font-bold border-2 transition-all text-left flex justify-between items-center ${setorDestino === setor ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 hover:border-emerald-200 bg-white text-slate-600'}`}>
+                    {setor} {setorDestino === setor && <CheckCircle size={20} className="text-emerald-500" />}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={() => setShowSectorModal(false)} className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl">Cancelar</button>
+                <button onClick={handleConfirmForward} disabled={!setorDestino || isForwarding} className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2">
+                  {isForwarding ? <Loader2 className="animate-spin" size={20} /> : "Encaminhar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -284,8 +359,8 @@ const ModuloRecepcao = ({ userProfile, unidadeAtiva }) => {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
           <h3 className="font-bold text-slate-700 mb-4 text-lg">Buscar Paciente</h3>
           <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-4">
-            <input type="text" placeholder="Digite o CPF (somente números)" className="flex-1 p-4 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 text-lg font-mono tracking-widest" value={cpf} onChange={(e) => setCpf(e.target.value.replace(/\D/g, ''))} maxLength="11" />
-            <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
+            <input type="text" placeholder="Digite o CPF" className="flex-1 p-4 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:border-emerald-500 text-lg font-mono tracking-widest" value={cpf} onChange={(e) => setCpf(e.target.value.replace(/\D/g, ''))} maxLength="11" />
+            <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2">
               <Search size={20} /> Buscar
             </button>
           </form>
@@ -298,27 +373,43 @@ const ModuloRecepcao = ({ userProfile, unidadeAtiva }) => {
         )}
 
         {status === 'found' && patient && (
-          <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="bg-blue-50 p-6 rounded-2xl border border-blue-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Paciente Encontrado</p>
+              <p className="text-xs font-bold text-blue-600 uppercase mb-1">Paciente Localizado</p>
               <h4 className="text-2xl font-black text-slate-800">{patient.nome}</h4>
-              <p className="text-sm text-slate-600 mt-1">Data Nasc: <b>{patient.nascimento ? formatarDataBR(patient.nascimento) : "-"}</b> | CPF: <b>{patient.cpf}</b></p>
+              <p className="text-sm text-slate-600 mt-1">Data Nasc: <b>{patient.dataNascimento ? formatarDataBR(patient.dataNascimento) : "-"}</b> | CPF: <b>{patient.cpf}</b></p>
             </div>
-            <button onClick={() => navigate('/uti', { state: { incomingPatient: patient } })} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold shadow-sm transition-colors w-full sm:w-auto">
-              Iniciar Internação
+            <button onClick={() => handleOpenRegister(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold shadow-sm transition-colors w-full sm:w-auto">
+              Revisar Ficha e Internar
             </button>
+          </div>
+        )}
+
+        {/* AVISO DE PACIENTE JÁ INTERNADO */}
+        {status === 'already_admitted' && patient && (
+          <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-in fade-in zoom-in duration-300">
+            <div className="flex items-center gap-4">
+              <div className="bg-amber-100 p-3 rounded-full text-amber-600">
+                <AlertTriangle size={32} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-amber-600 uppercase mb-1">Internação Ativa Detectada</p>
+                <h4 className="text-2xl font-black text-slate-800">{patient.nome}</h4>
+                <p className="text-sm text-slate-600 mt-1">Este paciente já consta como <b>Internado</b> ou na <b>Fila de Espera</b>.</p>
+              </div>
+            </div>
+            <div className="bg-amber-100 text-amber-700 px-6 py-3 rounded-xl font-bold border border-amber-200">
+               Ação Bloqueada
+            </div>
           </div>
         )}
 
         {status === 'not_found' && (
           <div className="bg-white p-10 rounded-2xl shadow-sm border border-dashed border-slate-300 text-center">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
-              <UserPlus size={32} />
-            </div>
             <h4 className="text-lg font-bold text-slate-800 mb-2">Paciente não localizado</h4>
             <p className="text-sm text-slate-500 mb-6">Não há registros para o CPF <b>{cpf}</b>.</p>
-            <button onClick={handleOpenRegister} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 mx-auto transition-colors">
-              <UserPlus size={20} /> Cadastrar Novo Paciente
+            <button onClick={() => handleOpenRegister(false)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 mx-auto transition-colors">
+              <UserPlus size={20} /> Iniciar Novo Cadastro
             </button>
           </div>
         )}
