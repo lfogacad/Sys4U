@@ -99,6 +99,7 @@ import HeaderGlobal from "./components/HeaderGlobal";
 import ServiceHub from "./components/ServiceHub";
 import TelaLogin from "./components/TelaLogin";
 import TelaCadastro from "./components/TelaCadastro";
+import ModuloAdmin from "./components/ModuloAdmin";
 
 // --- ÍCONE PERSONALIZADO ---
 function NurseCap(props) {
@@ -5269,6 +5270,16 @@ const AppRouter = () => {
   const [newConselho, setNewConselho] = useState("");
   const [masterCodeInput, setMasterCodeInput] = useState("");
 
+  // Função para limpar o cache e a URL ao sair
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      window.location.href = "/"; // Força a limpeza da URL e o recarregamento
+    } catch (error) {
+      console.error("Erro ao sair:", error);
+    }
+  };
+
   // --- 2. EFEITO DE MONITORAMENTO ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -5444,29 +5455,29 @@ if (!user) {
     <BrowserRouter>
       <div className="min-h-screen bg-slate-50">
         {/* O Header fica fora das rotas para aparecer fixo no topo de todas as telas */}
-        <HeaderGlobal user={userProfile} unidade={unidadeAtiva} onSignOut={() => signOut(auth)} />
+        <HeaderGlobal user={userProfile} unidade={unidadeAtiva} onSignOut={handleLogout} />
         
         <main className="p-6">
-          <Routes>
+        <Routes>
             {/* 1. Recepção */}
-            <Route 
-              path="/recepcao" 
-              element={<ModuloRecepcao userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} 
-            />
+            <Route path="/recepcao" element={<ModuloRecepcao userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} />
             
-            {/* 2. Hub (Painel do Administrador ou Visão Geral) */}
+            {/* 2. Hub (CATRACA: Apenas Administrador entra. Senão, volta pro início) */}
             <Route 
               path="/hub" 
-              element={<ServiceHub userProfile={userProfile} />} 
+              element={userProfile?.perfil === "Administrador" ? <ServiceHub userProfile={userProfile} /> : <Navigate to="/" />} 
             />
 
             {/* 3. UTI */}
-            <Route 
-              path="/uti/*" 
-              element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} />}
-            />
+            <Route path="/uti/*" element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} />
             
-            {/* 4. A ROTA INTELIGENTE (O Grande Switch) */}
+            {/* 4. Painel Gestor (CATRACA: Apenas Administrador) */}
+            <Route 
+              path="/admin" 
+              element={userProfile?.perfil === "Administrador" ? <ModuloAdmin userProfile={userProfile} /> : <Navigate to="/" />} 
+            />
+
+            {/* 5. A ROTA INTELIGENTE (O Grande Switch) */}
             <Route 
               path="/" 
               element={
