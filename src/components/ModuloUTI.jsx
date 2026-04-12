@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
     Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple, 
@@ -19,7 +19,7 @@ import {
     getDaysD0, getDaysD1, getTempoVMText, calculateEvacDays, 
     calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, 
     calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf, 
-    analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3
+    analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, formatExamName
   } from '../utils/core';
   import { 
     EXAM_ROWS, 
@@ -35,8 +35,27 @@ import PhysioDashboard from '../features/physio/PhysioDashboard';
 import NutriDashboard from '../features/nutri/NutriDashboard';
 import SpeechDashboard from '../features/speech/SpeechDashboard';
 import HemoDashboard from '../features/hemo/HemoDashboard';
-import ManagementTab from './tabs/ManagementTab'; // Verifique se o caminho está correto
-import OverviewTab from './tabs/OverviewTab';     // Verifique se o caminho está correto
+import ManagementTab from './tabs/ManagementTab';
+import OverviewTab from './tabs/OverviewTab';
+
+// ==========================================
+// IMPORTAÇÃO DOS MODAIS (Pop-ups do Sistema)
+// ==========================================
+import HistoryModal from './modals/HistoryModal'; 
+import ATBHistoryModal from './modals/ATBHistoryModal';
+import NursingAdmissionModal from './modals/NursingAdmissionModal';
+import PhysioAdmissionModal from './modals/PhysioAdmissionModal';
+import GeneratedPhysioTextModal from './modals/GeneratedPhysioTextModal';
+import MedicalAdmissionModal from './modals/MedicalAdmissionModal';
+import GeneratedAdmissionTextModal from './modals/GeneratedAdmissionTextModal';
+import BulkProcessingModal from './modals/BulkProcessingModal';
+import IndividualUploadModal from './modals/IndividualUploadModal';
+import SapsDetailsModal from './modals/SapsDetailsModal';
+import VmFlowsheetModal from './modals/VmFlowsheetModal';
+import PhysioEvoModal from './modals/PhysioEvoModal';
+import ChecklistEvoModal from './modals/ChecklistEvoModal';
+import NoraModal from './modals/NoraModal';
+import SepsisModal from './modals/SepsisModal';
 
 // ÍCONE PERSONALIZADO DE ENFERMAGEM
 function NurseCap(props) {
@@ -83,6 +102,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
     const [showAdmissionModal, setShowAdmissionModal] = useState(false);
     const [showNursingModal, setShowNursingModal] = useState(false);
+    const [showPhysioModal, setShowPhysioModal] = useState(false);
     const [showPhysioEvoModal, setShowPhysioEvoModal] = useState(false);
     const [physioEvoText, setPhysioEvoText] = useState("");
     const [showSapsDetailsModal, setShowSapsDetailsModal] = useState(null);
@@ -110,6 +130,10 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     const [confirmNewPassword, setConfirmNewPassword] = useState("");
     const [changePasswordError, setChangePasswordError] = useState("");
 
+    const rawPatient = patients[activeTab] || defaultPatient(0);
+    const currentPatient = ensureBHStructure(rawPatient); 
+    const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
+    const bhTotals = calculateTotals(displayedBH);
 
     useEffect(() => {
       if (!user || !db) return;
@@ -163,11 +187,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         }
       }
     }, [patients, activeTab, viewMode, currentPatient, userProfile]);
-
-    const rawPatient = patients[activeTab] || defaultPatient(0);
-    const currentPatient = ensureBHStructure(rawPatient); 
-    const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
-    const bhTotals = calculateTotals(displayedBH);
 
     const gasoCols = [...Object.keys(currentPatient.gasometriaHistory || {}), ...(currentPatient.customGasometriaCols || []), ...getLast10Days()];
     const uniqueGasoCols = [...new Set(gasoCols)].sort().reverse();
@@ -338,6 +357,37 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       
       // Salva e carimba na auditoria instantaneamente
       save(p, "Sistema: Limpou Campo de Data");
+    };
+
+    const confirmIndividualUpload = async (processedData) => {
+      // Blindagem de memória
+      const up = [...patients];
+      const p = JSON.parse(JSON.stringify(up[activeTab]));
+      
+      // Se o paciente ainda não tem a pasta de documentos, nós a criamos
+      if (!p.documentos) p.documentos = [];
+      
+      // Adiciona o novo documento processado na ficha do paciente
+      p.documentos.push({
+        id: Date.now().toString(),
+        data: processedData.date || getManausDateStr(),
+        categoria: processedData.category || "Outros",
+        textoExtraido: processedData.text || "",
+        resumoIA: processedData.aiSummary || "",
+        nomeArquivo: processedData.fileName || "documento_anexado.pdf"
+      });
+      
+      // Atualiza a tela
+      up[activeTab] = p;
+      setPatients(up);
+      
+      // Salva no banco de dados e gera o carimbo de auditoria
+      save(p, `Recepção/Upload: Anexou novo documento (${processedData.category || "Outros"})`);
+      
+      // Fecha a janela e limpa os dados temporários
+      setShowIndividualUploadModal(false);
+      setPendingUploadData(null);
+      alert("Documento salvo e anexado ao prontuário com sucesso!");
     };
 
     const handleAdmitPatient = () => {

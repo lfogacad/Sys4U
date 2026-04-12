@@ -799,3 +799,14 @@ export const getSOFAMortality = (score) => {
   
     return score;
   };
+
+  // Função para formatar datas na Recepção (YYYY-MM-DD para DD/MM/YYYY)
+export const formatarDataBR = (data) => {
+  if (!data) return "";
+  // Verifica se a data já vem com hífen (padrão do input type="date")
+  if (data.includes("-")) {
+    const [ano, mes, dia] = data.split("-");
+    return `${dia}/${mes}/${ano}`;
+  }
+  return data;
+};
