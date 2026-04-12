@@ -105,7 +105,17 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           }
         }
         return false;
-      };  
+      };
+      
+      // GARANTIR QUE O TÉCNICO NÃO FIQUE PRESO NUMA ABA INVISÍVEL
+      useEffect(() => {
+        if (userProfile?.role === "Técnico em Enfermagem") {
+          const abasPermitidas = ["tech", "hemodialysis"];
+          if (!abasPermitidas.includes(viewMode)) {
+            setViewMode("tech"); // Se cair numa aba proibida, redireciona para a dele
+          }
+        }
+      }, [userProfile?.role, viewMode]);
   
     // =========================================================================
     // PASSO 2: FUNÇÕES DO TIMEOUT CLÍNICO (ARQUITETURA POR SISTEMAS)
