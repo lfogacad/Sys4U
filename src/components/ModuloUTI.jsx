@@ -19,8 +19,16 @@ import {
     getDaysD0, getDaysD1, getTempoVMText, calculateEvacDays, 
     calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, 
     calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf, 
-    analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, EXAM_ROWS, BH_HOURS, reqBraden, reqMorse
+    analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3
   } from '../utils/core';
+  import { 
+    EXAM_ROWS, 
+    BH_HOURS, 
+    reqBraden, 
+    reqMorse, 
+    BRADEN_OPTIONS, 
+    MORSE_OPTIONS 
+  } from '../constants/clinicalLists';
 
 // Dashboards e Tabs
 import MedicalDashboard from '../features/medical/MedicalDashboard';
