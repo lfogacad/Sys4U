@@ -62,8 +62,8 @@ import {
   Check,
   Target,
 } from "lucide-react";
-// 1. Ferramentas de Banco de Dados (Vêm direto do Firebase) - Olha o addDoc aqui!
-import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, addDoc } from "firebase/firestore";
+// 1. Ferramentas de Banco de Dados (Vêm direto do Firebase)
+import { collection, serverTimestamp, query, where, doc, setDoc, getDoc, getDocs, onSnapshot, updateDoc, arrayUnion, addDoc } from "firebase/firestore";
 // 2. Ferramentas de Autenticação (Vêm direto do Firebase)
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
 // 3. Suas Credenciais do Hospital (Vêm do seu arquivo local)
@@ -94,6 +94,9 @@ import NoraModal from './components/modals/NoraModal';
 import SepsisModal from './components/modals/SepsisModal';
 import ManagementTab from './components/tabs/ManagementTab';
 import OverviewTab from './components/tabs/OverviewTab';
+import SeletorUnidade from "./components/SeletorUnidade";
+import HeaderGlobal from "./components/HeaderGlobal";
+import ServiceHub from "./components/ServiceHub";
 
 // --- ÍCONE PERSONALIZADO ---
 function NurseCap(props) {
@@ -4913,63 +4916,6 @@ const navButtons = allNavButtons.filter((btn) => {
     );
   };
   
-  // 2. TELA DE SELEÇÃO DE SERVIÇOS (HUB)
-  const ServiceHub = ({ userProfile }) => {
-    const navigate = useNavigate();
-    const role = userProfile?.role || "";
-  
-    // Definição de permissões por botão
-    const canSeeUTI = true; // Quase todos veem a UTI, mas o conteúdo dentro muda
-    const canSeeRecepcao = ["Administrador", "Gestor", "Médico", "Enfermeiro"].includes(role);
-    const canSeeFinanceiro = ["Administrador", "Gestor"].includes(role);
-  
-    return (
-      <div className="min-h-screen bg-slate-50 p-6 md:p-12">
-        <div className="max-w-5xl mx-auto">
-          <header className="mb-12">
-            <h2 className="text-4xl font-black text-slate-800 tracking-tighter">Central de Serviços</h2>
-            <p className="text-slate-500 font-medium">Bem-vindo, {userProfile?.name}. Selecione sua área de atuação:</p>
-          </header>
-  
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* BOTÃO UTI - Geralmente visível para todos da assistência */}
-            {canSeeUTI && (
-              <button onClick={() => navigate('/uti')} className="group p-8 bg-white border-b-4 border-blue-600 rounded-3xl shadow-sm hover:shadow-2xl transition-all text-left">
-                <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Activity size={32} />
-                </div>
-                <h3 className="font-black text-xl text-slate-800 mb-2">UTI ADULTO</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">Gestão de leitos, evoluções clínicas e balanço hídrico.</p>
-              </button>
-            )}
-  
-            {/* BOTÃO RECEPÇÃO - Escondido para técnicos, por exemplo */}
-            {canSeeRecepcao && (
-              <button onClick={() => navigate('/recepcao')} className="group p-8 bg-white border-b-4 border-emerald-500 rounded-3xl shadow-sm hover:shadow-2xl transition-all text-left">
-                <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Search size={32} />
-                </div>
-                <h3 className="font-black text-xl text-slate-800 mb-2">RECEPÇÃO</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">Admissão de novos pacientes e busca por CPF/CNS.</p>
-              </button>
-            )}
-  
-            {/* BOTÃO GESTÃO - Só Diretores/Administradores */}
-            {canSeeFinanceiro && (
-              <button className="group p-8 bg-white border-b-4 border-purple-500 rounded-3xl shadow-sm hover:shadow-2xl transition-all text-left">
-                <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Gauge size={32} />
-                </div>
-                <h3 className="font-black text-xl text-slate-800 mb-2">DASHBOARD GESTOR</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">Indicadores de mortalidade, ocupação e custos hospitalares.</p>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-  
   // 3. TELA DE RECEPÇÃO (BUSCA E CADASTRO)
   const ModuloRecepcao = ({ userProfile }) => {
     const navigate = useNavigate();
@@ -5016,23 +4962,65 @@ const navButtons = allNavButtons.filter((btn) => {
       setFormData(prev => ({ ...prev, [name]: value }));
     };
   
-    const handleSavePatient = (e) => {
+    const handleSavePatient = async (e) => {
       e.preventDefault();
-      if (!formData.nome || !formData.dataNascimento) {
-        return alert("Preencha ao menos o Nome e a Data de Nascimento.");
+    
+      // Verificação de Segurança (RBAC)
+      const perfisAutorizados = ["Médico", "Enfermeiro", "Recepcionista", "Administrador", "Gestor"];
+      if (!perfisAutorizados.includes(userProfile?.perfil)) {
+        return alert("Acesso Negado: Perfil sem permissão para cadastro.");
       }
-      
-      // Aqui no futuro o senhor salvaria no Firebase (setDoc...)
-      // Por enquanto, vamos simular o sucesso e já preparar para a internação
-      alert("Paciente cadastrado com sucesso no sistema!");
-      
-      setPatient({ 
-        nome: formData.nome, 
-        nascimento: formData.dataNascimento, 
-        cpf: formData.cpf 
-      });
-      setStatus('found');
-      setView('search');
+    
+      if (!formData.nome || !formData.cpf) {
+        return alert("Nome e CPF são obrigatórios para abrir o prontuário.");
+      }
+    
+      try {
+        setStatus('searching'); // Feedback visual de "processando"
+    
+        // Evita duplicidade: checa se o CPF já existe no hospital
+        const q = query(collection(db, "pacientes"), where("cpf", "==", formData.cpf));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          setStatus('idle');
+          return alert("Atenção: Este CPF já possui cadastro ativo no sistema.");
+        }
+    
+        // Grava o paciente na coleção "pacientes"
+        const docRef = await addDoc(collection(db, "pacientes"), {
+          ...formData,
+          status: "Ativo",
+          cadastradoPor: userProfile.nome,
+          dataCriacao: serverTimestamp()
+        });
+    
+        // REGISTRO NA CAIXA PRETA (LOGS)
+        await addDoc(collection(db, "logs"), {
+          acao: `Cadastro: Novo paciente ${formData.nome}`,
+          conselho: userProfile.conselho || "N/A",
+          data: new Date().toISOString(), // Fuso 0 (Zulu Time)
+          perfil: userProfile.perfil,
+          usuario: userProfile.nome,
+          pacienteId: docRef.id
+        });
+    
+        alert("Paciente cadastrado com sucesso e auditoria registrada!");
+    
+        // Atualiza o estado local para mostrar o paciente encontrado
+        setPatient({ 
+          ...formData,
+          id: docRef.id 
+        });
+        
+        setStatus('found');
+        setView('search');
+    
+      } catch (error) {
+        console.error("Erro na operação:", error);
+        alert("Erro ao conectar com o banco de dados.");
+        setStatus('idle');
+      }
     };
   
     // ==========================================
@@ -5315,59 +5303,100 @@ const navButtons = allNavButtons.filter((btn) => {
     }
   }
 
-  // --- 4. O NOVO CÉREBRO (ROTEADOR COM AUTH) ---
-  const AppRouter = () => {
-    // Estados de Autenticação movidos para o topo
-    const [user, setUser] = useState(null);
-    const [userProfile, setUserProfile] = useState(null);
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [authError, setAuthError] = useState(null);
-    const [isLoading, setIsLoading] = useState(true); // Começa carregando para checar o Firebase
-    
-    const [isRegistering, setIsRegistering] = useState(false);
+// --- 4. O NOVO CÉREBRO (ROTEADOR COM AUTH) ---
+const AppRouter = () => {
+  // --- 1. ESTADOS DE AUTENTICAÇÃO E PERFIL ---
+  const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [unidadeAtiva, setUnidadeAtiva] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const [isRegistering, setIsRegistering] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("Médico");
   const [newConselho, setNewConselho] = useState("");
   const [masterCodeInput, setMasterCodeInput] = useState("");
 
+  // --- 2. EFEITO DE MONITORAMENTO ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setIsLoading(true);
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        try {
+          // Busca o perfil completo no Firestore usando o UID do login
+          const docRef = doc(db, "usuarios", firebaseUser.uid);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setUserProfile(data);
+            
+            // SELETOR INTELIGENTE: Se tiver apenas 1 hospital vinculado, entra direto!
+            if (data.vinculos && data.vinculos.length === 1) {
+              setUnidadeAtiva(data.vinculos[0]);
+            }
+          } else {
+            // SE NÃO ACHAR O PERFIL NO BANCO DE DADOS:
+            console.error("Perfil não encontrado no Firestore para este UID.");
+            alert("Acesso negado: Seu usuário foi autenticado, mas seu perfil não foi encontrado no banco de dados. Fale com o Administrador.");
+            await signOut(auth); // Desloga o usuário para ele não ficar preso
+          }
+        } catch (error) {
+          console.error("Erro ao carregar prontuário do usuário:", error);
+          alert("Erro de conexão com o banco de dados. Verifique as regras do Firestore.");
+          await signOut(auth);
+        }
+      } else {
+        setUser(null);
+        setUserProfile(null);
+        setUnidadeAtiva(null);
+      }
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- 3. AÇÕES (LOGIN, REGISTRO E SENHA) ---
+
   const handleRegister = async (e) => {
     e.preventDefault();
     if (!auth || !db) return setAuthError("Erro de sistema.");
-    if (masterCodeInput !== CODIGO_MESTRE_RT) return setAuthError("Código Mestre Inválido");
-    
+    if (masterCodeInput !== "123456") return setAuthError("Código Mestre Inválido");
     if (!newConselho || newConselho.trim() === "") return setAuthError("Número do Conselho obrigatório.");
 
     setIsLoading(true);
     try {
       const c = await createUserWithEmailAndPassword(auth, email, password);
-      await setDoc(doc(db, "users_roles", c.user.uid), {
-        name: newName,
-        role: newRole,
-        conselho: newConselho,
-        email,
+      await setDoc(doc(db, "usuarios", c.user.uid), {
+        nome: newName,
+        perfil: newRole,
+        conselho: "CRM",
+        numeroConselho: newConselho,
+        email: email,
+        dataCriacao: new Date().toISOString(),
+        vinculos: [],
         isFirstLogin: true,
       });
       await signOut(auth);
       setIsRegistering(false);
       alert("Profissional cadastrado com sucesso!");
     } catch (err) {
-      setAuthError("Erro ao registrar. Verifique os dados.");
+      setAuthError("Erro ao registrar.");
     } finally {
       setIsLoading(false);
     }
   };
 
-   // --- LÓGICA DE ACESSO UNIFICADA ---
-
-  // 1. Função de Login
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setAuthError(null);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // O useEffect abaixo detectará o login e atualizará o estado automaticamente
     } catch (err) {
       setAuthError("Email ou senha incorretos.");
     } finally {
@@ -5375,113 +5404,111 @@ const navButtons = allNavButtons.filter((btn) => {
     }
   };
 
-  // 2. Função de Redefinir Senha
+  // Movi esta função para dentro do AppRouter
   const handleResetPassword = async (e) => {
     e.preventDefault();
     if (!email) return setAuthError("Preencha o email para redefinir.");
     try {
       await sendPasswordResetEmail(auth, email);
-      alert("Email de redefinição enviado! Verifique sua caixa de entrada.");
+      alert("Email de redefinição enviado!");
     } catch (err) {
-      setAuthError("Erro ao enviar email de recuperação.");
+      setAuthError("Erro ao recuperar senha.");
     }
   };
 
-  // 3. Função de Logout
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      // Resetar os estados locais por segurança
-      setUser(null);
-      setUserProfile(null);
-      // Redirecionamento forçado se o sistema não detectar a mudança de estado
-      window.location.href = "/"; 
-    } catch (err) {
-      console.error("Erro ao sair:", err);
-    }
-  };
+// --- 4. RENDERIZAÇÃO (O FLUXO DE TELAS) ---
 
-  // 4. Vigilância do Firebase (O "Vigia" do Portão)
-  useEffect(() => {
-    if (!auth) return;
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      setIsLoading(true);
-      if (u) {
-        setUser(u);
-        if (db) {
-          try {
-            const docRef = doc(db, "users_roles", u.uid);
-            const snap = await getDoc(docRef);
-            if (snap.exists()) {
-              setUserProfile(snap.data());
-            }
-          } catch (err) {
-            console.error("Erro ao carregar perfil:", err);
-          }
-        }
-      } else {
-        setUser(null);
-        setUserProfile(null);
-      }
-      setIsLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 5. Tela de Carregamento (Splash Screen)
-  if (isLoading && !user) {
+  // A. Tela de Espera
+  if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 flex-col gap-4">
-        <Loader2 className="animate-spin text-blue-600" size={48} />
-        <p className="text-slate-500 font-bold animate-pulse">Sincronizando Banco de Dados...</p>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center animate-pulse font-bold text-emerald-600">
+          Acessando Ecossistema Sys4U...
+        </div>
       </div>
     );
   }
-  
-    return (
-      <BrowserRouter>
-        <Routes>
-          {/* ROTA INICIAL: Se logado vai pro Hub, se não, Login */}
-          <Route 
-            path="/" 
-            element={
-              user ? <Navigate to="/hub" /> : 
-              <LoginScreen 
-                email={email} setEmail={setEmail} 
-                password={password} setPassword={setPassword} 
-                handleLogin={handleLogin} authError={authError} 
-                isLoading={isLoading} 
-              />
-            } 
-          />
-  
-          {/* HUB: Só entra se estiver logado */}
-          <Route 
-            path="/hub" 
-            element={user ? <ServiceHub userProfile={userProfile} handleLogout={handleLogout} /> : <Navigate to="/" />} 
-          />
-  
-          {/* UTI: Passamos o perfil do usuário para a UTI saber o que mostrar */}
-          <Route 
-            path="/uti/*" 
-            element={user ? <ModuloUTI user={user} userProfile={userProfile} handleLogout={handleLogout} /> : <Navigate to="/" />}
-          />
-  
-          {/* RECEPÇÃO: Só para quem tem permissão */}
-          <Route 
-            path="/recepcao" 
-            element={user ? <ModuloRecepcao userProfile={userProfile} /> : <Navigate to="/" />} 
-          />
-        </Routes>
-      </BrowserRouter>
-    );
-  };
-  
-  // 5. O WRAPPER FINAL
-  export default function AppWrapper() {
-    return (
-      <ErrorBoundary>
-        <AppRouter />
-      </ErrorBoundary>
-    );
+
+// B. Se não está logado (Login ou Cadastro)
+if (!user) {
+  return (
+    <LoginScreen 
+      email={email} 
+      setEmail={setEmail} 
+      password={password} 
+      setPassword={setPassword} 
+      handleLogin={handleLogin} 
+      authError={authError} 
+      isLoading={isLoading}
+      // Se o seu LoginScreen também tiver a tela de cadastro e redefinição de senha embutidos, passe essas funções:
+      isRegistering={isRegistering}
+      setIsRegistering={setIsRegistering}
+      handleRegister={handleRegister}
+      handleResetPassword={handleResetPassword}
+      newName={newName}
+      setNewName={setNewName}
+      newConselho={newConselho}
+      setNewConselho={setNewConselho}
+      masterCodeInput={masterCodeInput}
+      setMasterCodeInput={setMasterCodeInput}
+    />
+  );
+}
+
+  // C. Logado, mas precisa escolher o Hospital (Seletor de Contexto)
+  if (userProfile && !unidadeAtiva) {
+    return <SeletorUnidade userProfile={userProfile} onSelectUnit={(v) => setUnidadeAtiva(v)} />;
   }
+
+  // D. HOSPITAL SELECIONADO: Acesso Completo ao Sistema com Rotas
+  return (
+    <BrowserRouter>
+      <div className="min-h-screen bg-slate-50">
+        {/* O Header fica fora das rotas para aparecer fixo no topo de todas as telas */}
+        <HeaderGlobal user={userProfile} unidade={unidadeAtiva} onSignOut={() => signOut(auth)} />
+        
+        <main className="p-6">
+          <Routes>
+            {/* 1. Recepção */}
+            <Route 
+              path="/recepcao" 
+              element={<ModuloRecepcao userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} 
+            />
+            
+            {/* 2. Hub (Painel do Administrador ou Visão Geral) */}
+            <Route 
+              path="/hub" 
+              element={<ServiceHub userProfile={userProfile} />} 
+            />
+
+            {/* 3. UTI */}
+            <Route 
+              path="/uti/*" 
+              element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} />}
+            />
+            
+            {/* 4. A ROTA INTELIGENTE (O Grande Switch) */}
+            <Route 
+              path="/" 
+              element={
+                !userProfile ? <div className="animate-pulse">Sincronizando perfil...</div> :
+                userProfile.perfil === "Administrador" ? <Navigate to="/hub" /> :
+                userProfile.perfil === "Médico" ? <Navigate to="/uti" /> :
+                <Navigate to="/recepcao" />
+              } 
+            />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
+  );
+}; // <--- FECHAMENTO ÚNICO E DEFINITIVO DO APPROUTER
+
+// --- 5. O WRAPPER FINAL ---
+export default function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <AppRouter />
+    </ErrorBoundary>
+  );
+}
