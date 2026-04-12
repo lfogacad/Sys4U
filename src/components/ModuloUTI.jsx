@@ -89,7 +89,23 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     const [showChecklistEvo, setShowChecklistEvo] = useState(false);
     const [checkData, setCheckData] = useState({ estadoGeral: "REG", usaDva: false, dvas: [], usaSedacao: false, sedativos: [], rass: "", glasgow: "", atbs: "" });
   
-  
+    const checkLossBH = (bh, lossName) => {
+        if (!bh || !bh.losses) return false;
+        
+        // Gera as 24h dinamicamente para o módulo ser independente
+        const hours = Array.from({ length: 24 }, (_, i) => ((i + 7) % 24).toString().padStart(2, "0") + ":00");
+        
+        for (let h of hours) {
+          const val = String(bh.losses[h]?.[lossName] || "").trim().toLowerCase();
+          const numVal = parseFloat(val.replace(",", "."));
+          
+          // Detecta se houve perda (valor numérico > 0 OU cruzes/texto)
+          if (["sim", "s", "+", "++", "+++"].some(term => val.includes(term)) || (!isNaN(numVal) && numVal > 0)) {
+            return true;
+          }
+        }
+        return false;
+      };  
   
     // =========================================================================
     // PASSO 2: FUNÇÕES DO TIMEOUT CLÍNICO (ARQUITETURA POR SISTEMAS)

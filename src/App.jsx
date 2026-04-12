@@ -1418,20 +1418,6 @@ const calculateEvacDays = (dateStr) => {
   return diff.replace("D", "") + " dias";
 };
 
-const checkLossBH = (bh, lossName) => {
-  if (!bh || !bh.losses) return false;
-  // BH_HOURS já está definido no seu código, vamos usá-lo para varrer o dia
-  for (let h of BH_HOURS) {
-    const val = String(bh.losses[h]?.[lossName] || "").trim().toLowerCase();
-    const numVal = parseFloat(val.replace(",", "."));
-    // Detecta se houve perda (seja por valor numérico > 0 ou por cruzes/texto)
-    if (["sim", "s", "+", "++", "+++"].some(term => val.includes(term)) || (!isNaN(numVal) && numVal > 0)) {
-      return true;
-    }
-  }
-  return false;
-};
-
 // CÁLCULO DE PESO PREDITO (ARDSNet)
 const calculatePesoPredito = (altura, sexo) => {
   const h = safeNumber(altura);
@@ -2837,16 +2823,6 @@ ${physioData.condutas}`;
     }
     setPatients(up);
     save(p);
-  };
-
-  const checkLossBH = (bh, lossName) => {
-    if (!bh || !bh.losses) return false;
-    const hours = Array.from({ length: 24 }, (_, i) => ((i + 7) % 24).toString().padStart(2, "0") + ":00");
-    for (let h of hours) {
-      const val = String(bh.losses[h]?.[lossName] || "").trim().toLowerCase();
-      if (val !== "" && val !== "0" && val !== "não" && val !== "n") return true;
-    }
-    return false;
   };
 
   const generateAIEvolution = async (dadosDoTimeout = null) => {
