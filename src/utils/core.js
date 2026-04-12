@@ -144,6 +144,61 @@ export const calculateGlasgowTotal = (p) => {
   return ao + rv + rm;
 };
 
+export const limparHDMedica = (e) => {
+  if (e) e.preventDefault();
+  if (!window.confirm("ATENÇÃO: Deseja apagar toda a Prescrição Médica e a Evolução da Nefrologia?")) return;
+
+  // Faz a cópia oficial igual ao Balanço Hídrico
+  const up = [...patients];
+  const p = { ...up[activeTab] };
+
+  // Zera a prescrição com o objeto padrão vazio
+  p.hd_prescricao = {
+    duracao: "", temperatura: "", uf: "", anticoagulacao: "", priming: "",
+    sodio: "", fluxo_sangue: "", fluxo_dialisato: "", dialisador: "", obs: "",
+    nefro: "", tec_nefro: "", plant_m: "", plant_t: "", plant_n: ""
+  };
+
+  // Zera só a evolução do médico
+  if (!p.hd_anotacoes) p.hd_anotacoes = {};
+  p.hd_anotacoes.nefro_texto = "";
+
+  // Atualiza a tela e SALVA NO FIREBASE (A Mágica!)
+  up[activeTab] = p;
+  setPatients(up);
+  save(p); 
+};
+
+export const limparHDTecnico = (e) => {
+  if (e) e.preventDefault();
+  if (!window.confirm("ATENÇÃO: Deseja apagar todos os Controles, Balanço, Acessos e Insumos da enfermagem?")) return;
+
+  // Faz a cópia oficial igual ao Balanço Hídrico
+  const up = [...patients];
+  const p = { ...up[activeTab] };
+
+  // Zera tudo do técnico usando os objetos padrões vazios
+  p.hd_monitoramento = {};
+  p.hd_balanco = { entradas: "", final: "" };
+  p.hd_acesso = {
+    fav_local: "", fremito: "", puncao: "", cateter_tipo: "", cateter_local: "",
+    insercao: "", previo: "", fluxo: "", curativo: [], intercorrencias: ""
+  };
+  p.hd_insumos = {};
+
+  // Mantém o texto do médico, mas limpa as anotações do técnico
+  if (!p.hd_anotacoes) p.hd_anotacoes = {};
+  p.hd_anotacoes.inicio = "";
+  p.hd_anotacoes.termino = "";
+  p.hd_anotacoes.texto = "";
+  p.hd_anotacoes.tecnico = "";
+
+  // Atualiza a tela e SALVA NO FIREBASE (A Mágica!)
+  up[activeTab] = p;
+  setPatients(up);
+  save(p);
+};
+
 export const getMissingSAPS3 = (patient) => {
   const missing = [];
   const s3 = patient.saps3 || {};
