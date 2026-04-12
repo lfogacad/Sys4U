@@ -2358,26 +2358,31 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
   }, [userProfile]);
 
   const handleForceChangePassword = async (e) => {
-  e.preventDefault();
-  if (!auth || !db || !user) return;
-  if (newPassword !== confirmNewPassword) return alert("As senhas não coincidem.");
-  if (newPassword.length < 6) return alert("A senha deve ter no mínimo 6 caracteres.");
-    
-    try {
-      await updatePassword(user, newPassword);
-      await setDoc(
-        doc(db, "users_roles", user.uid),
-        { isFirstLogin: false },
-        { merge: true }
-      );
-      setShowForceChangePassword(false);
-      alert("Senha atualizada com sucesso!");
-    } catch (error) {
-      alert("Erro ao atualizar. Tente novamente.");
-    } finally {
-      setIsLoading(false); // <--- Termina o carregamento
-    }
-  };
+    e.preventDefault();
+    if (!auth || !db || !user) return;
+    if (newPassword !== confirmNewPassword) return alert("As senhas não coincidem.");
+    if (newPassword.length < 6) return alert("A senha deve ter no mínimo 6 caracteres.");
+      
+      try {
+        setIsLoading(true); // Opcional: inicia o loading
+        await updatePassword(user, newPassword);
+        
+        // A CURA: Agora aponta para a coleção correta!
+        await setDoc(
+          doc(db, "usuarios", user.uid),
+          { isFirstLogin: false },
+          { merge: true }
+        );
+        
+        setShowForceChangePassword(false);
+        alert("Senha atualizada com sucesso!");
+      } catch (error) {
+        console.error("Erro ao atualizar senha:", error);
+        alert("Erro ao atualizar. Tente novamente.");
+      } finally {
+        setIsLoading(false); 
+      }
+    };
 
   useEffect(() => {
     if (!user || !db) return;
