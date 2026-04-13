@@ -1476,12 +1476,7 @@ const analyzeTextWithGemini = async (text) => {
 
   let lastErrorMsg = "Erro desconhecido";
 
-  const modelsToTry = [
-    "gemini-2.5-flash-preview-09-2025",
-    "gemini-2.5-flash",
-    "gemini-1.5-flash",
-    "gemini-1.0-pro", // Fallback de segurança infalível
-  ];
+  const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
 
   for (const model of modelsToTry) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -3747,11 +3742,7 @@ ${physioData.condutas}`;
       Regra Crítica TGI: Se a tag [TGI] pedir para omitir, escreva apenas "A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO]." Não escreva "ausência de vômitos".`;
 
       // 9. LOOP DE MODELOS
-      const models = [
-        "gemini-2.5-flash-preview-09-2025",
-        "gemini-2.5-flash",
-        "gemini-1.5-flash",
-      ];
+      const models = ["gemini-1.5-flash", "gemini-1.5-pro"];
       
       for (const model of models) {
         try {
@@ -3910,7 +3901,7 @@ ${condutas}`;
 
     try {
       const promptText = buildNursingAIPrompt(currentPatient);
-      const modelsToTry = ["gemini-2.5-flash-preview-09-2025", "gemini-2.5-flash", "gemini-1.5-flash"];
+      const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];;
 
       for (const model of modelsToTry) {
         try {

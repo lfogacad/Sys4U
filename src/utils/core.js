@@ -554,7 +554,7 @@ export const analyzeTextWithGemini = async (text) => {
   JSON: { "patientName": "", "date": "YYYY-MM-DD", "results": {} }`;
 
   let lastErrorMsg = "Erro desconhecido";
-  const modelsToTry = ["gemini-2.5-flash-preview-09-2025", "gemini-2.5-flash", "gemini-1.5-flash"];
+  const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];;
 
   for (const model of modelsToTry) {
     for (let attempt = 0; attempt < 2; attempt++) {
