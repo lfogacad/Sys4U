@@ -116,7 +116,7 @@ function NurseCap(props) {
 // Se hospedar externamente, coloque a sua API Key do Google AI Studio aqui dentro. No Canvas, deixe vazio.
 const apiKeyMed = import.meta.env.VITE_GEMINI_API_KEY_MED;
 const apiKeyEnf = import.meta.env.VITE_GEMINI_API_KEY_ENF;
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY; // Mantém para o leitor de PDF
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 const PROFISSOES = [
   "Médico",
