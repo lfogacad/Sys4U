@@ -1444,7 +1444,9 @@ const extractTextFromPdf = async (file) => {
   return txt;
 };
 
-// IA INSISTENTE COM FILTRO ESTRITO ANTI-PAPAGAIO E ANTI-HISTÓRICO
+// ============================================================================
+// 1. IA INSISTENTE COM FILTRO ESTRITO ANTI-PAPAGAIO E ANTI-HISTÓRICO
+// ============================================================================
 const analyzeTextWithGemini = async (text) => {
   const prompt = `
       Você é um assistente médico especializado na extração de dados de laudos laboratoriais.
@@ -1475,13 +1477,12 @@ const analyzeTextWithGemini = async (text) => {
       }`;
 
   let lastErrorMsg = "Erro desconhecido";
-
   const modelsToTry = ["gemini-2.5-flash"];
 
   for (const model of modelsToTry) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const currentKey = apiKey || window.apiKey || "";
+        const currentKey = apiKey || window.apiKey || import.meta.env.VITE_GEMINI_API_KEY || "";
         const r = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
           {
@@ -1497,8 +1498,7 @@ const analyzeTextWithGemini = async (text) => {
         if (d.error) {
           lastErrorMsg = d.error.message || JSON.stringify(d.error);
           if (d.error.code === 400 || d.error.code === 403) {
-            lastErrorMsg =
-              "Chave de API inválida ou ausente. O sistema precisa de uma API Key válida para conectar à IA.";
+            lastErrorMsg = "Chave de API inválida ou ausente. Verifique o .env ou o Vercel.";
             break;
           }
           if (
@@ -1508,13 +1508,14 @@ const analyzeTextWithGemini = async (text) => {
           ) {
             break;
           }
-          await new Promise((res) => setTimeout(res, 500));
+          // AUMENTADO PARA 2 SEGUNDOS: Se der erro (ex: 429), a IA respira antes de tentar de novo
+          await new Promise((res) => setTimeout(res, 2000));
           continue;
         }
 
         if (!d.candidates || !d.candidates[0] || !d.candidates[0].content) {
           lastErrorMsg = "Resposta da IA veio vazia.";
-          await new Promise((res) => setTimeout(res, 500));
+          await new Promise((res) => setTimeout(res, 2000));
           continue;
         }
 
@@ -1529,17 +1530,61 @@ const analyzeTextWithGemini = async (text) => {
         return JSON.parse(rawText);
       } catch (e) {
         lastErrorMsg = e.message || String(e);
-        await new Promise((res) => setTimeout(res, 500));
+        await new Promise((res) => setTimeout(res, 2000));
       }
     }
     if (lastErrorMsg.includes("Chave de API")) break;
   }
 
   console.error("Fallback Manual Ativado. Erro final:", lastErrorMsg);
-  const manual = parseManual(text);
+  // Garanta que a função parseManual exista no seu código, ou retorne um objeto vazio caso não tenha
+  const manual = typeof parseManual === 'function' ? parseManual(text) : { results: {} };
   manual.isFallback = true;
   manual.errorReason = lastErrorMsg;
   return manual;
+};
+
+
+// ============================================================================
+// 2. A FILA DE ATENDIMENTO (Obrigatório para ler 10 pacientes sem Erro 429)
+// ============================================================================
+// Chame esta função quando o senhor clicar no botão "Ler Todos os Exames"
+const processarExamesSequencial = async (listaDePacientes) => {
+  console.log("Iniciando leitura em lote. Cadenciando pacientes...");
+  const resultadosFinais = [];
+
+  for (let i = 0; i < listaDePacientes.length; i++) {
+    const paciente = listaDePacientes[i];
+    console.log(`Lendo laudo ${i + 1} de ${listaDePacientes.length}...`);
+
+    try {
+      // Chama a IA e espera ela terminar a leitura deste paciente
+      const resultado = await analyzeTextWithGemini(paciente.textoDoLaudo);
+      
+      resultadosFinais.push({ 
+        id: paciente.id, 
+        dados: resultado, 
+        status: 'sucesso' 
+      });
+
+      // A VACINA ANTI-BLOQUEIO: O sistema dorme por 1.5 segundos (1500ms) 
+      // antes de mandar o próximo paciente. Isso zera a cota do Google.
+      if (i < listaDePacientes.length - 1) {
+        await new Promise(res => setTimeout(res, 1500));
+      }
+
+    } catch (err) {
+      console.error(`Erro no paciente ${i + 1}:`, err);
+      resultadosFinais.push({ 
+        id: paciente.id, 
+        error: err.message, 
+        status: 'erro' 
+      });
+    }
+  }
+
+  console.log("Mutirão finalizado!", resultadosFinais);
+  return resultadosFinais; // Use isso para atualizar a tela/banco de dados
 };
 
 const parseManual = (text) => {
