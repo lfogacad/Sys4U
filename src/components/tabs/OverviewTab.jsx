@@ -1,6 +1,6 @@
 import React from 'react';
 import { Activity, ChevronDown, ChevronRight, Wind, Utensils, Brain, HeartPulse, Droplets, Clock, Table as TableIcon, Edit3 } from 'lucide-react';
-import { BH_HOURS } from '../../constants/clinicalLists'; // Ajuste o caminho conforme sua estrutura
+import { BH_HOURS } from '../../constants/clinicalLists'; 
 
 const OverviewTab = ({
   viewMode,
@@ -193,15 +193,17 @@ const OverviewTab = ({
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
           <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2"><Brain size={14} /> Neurológico</h4>
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <p>Glasgow: <b>{currentPatient.neuro.glasgowAO ? calculateGlasgowTotal(currentPatient) : "-"}</b></p>
-            <p>RASS: <b>{currentPatient.neuro.rass || "-"}</b></p>
+            {/* CORREÇÃO: Ponto de interrogação adicionado */}
+            <p>Glasgow: <b>{currentPatient.neuro?.glasgowAO ? calculateGlasgowTotal(currentPatient) : "-"}</b></p>
+            <p>RASS: <b>{currentPatient.neuro?.rass || "-"}</b></p>
           </div>
         </div>
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
           <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2"><HeartPulse size={14} /> Cardiovascular</h4>
           <div className="text-sm">
-            <p>DVA: {currentPatient.cardio.dva ? "Sim" : "Não"}</p>
-            <p>Drogas: <span className={currentPatient.cardio.dva && currentPatient.cardio.drogasDVA?.length > 0 ? "text-red-600 font-bold" : ""}>{renderValue(currentPatient.cardio.drogasDVA)}</span></p>
+            {/* CORREÇÃO: Ponto de interrogação adicionado */}
+            <p>DVA: {currentPatient.cardio?.dva ? "Sim" : "Não"}</p>
+            <p>Drogas: <span className={currentPatient.cardio?.dva && currentPatient.cardio?.drogasDVA?.length > 0 ? "text-red-600 font-bold" : ""}>{renderValue(currentPatient.cardio?.drogasDVA)}</span></p>
           </div>
         </div>
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -221,7 +223,8 @@ const OverviewTab = ({
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
-          {currentPatient.antibiotics.map((a, i) => a.name && (
+          {/* CORREÇÃO: Validação adicionada caso antibiotics não exista na admissão */}
+          {(currentPatient.antibiotics || []).map((a, i) => a.name && (
             <span key={i} className="text-xs font-bold bg-white border border-orange-200 px-2 py-1 rounded-lg text-orange-700">{a.name} ({getDaysD0(a.date)})</span>
           ))}
         </div>
@@ -237,25 +240,22 @@ const OverviewTab = ({
         <fieldset disabled={!isOverviewEditable} className="min-w-0 border-0 p-0 m-0">
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
             <div className="font-bold text-left pt-6">EXAME</div>
-            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{formatDateDDMM(currentPatient.labs.dayBefore.date)}</div>
-            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{formatDateDDMM(currentPatient.labs.yesterday.date)}</div>
-            <div className="bg-blue-100 p-1 rounded font-bold text-blue-600">{formatDateDDMM(currentPatient.labs.today.date)}</div>
+            {/* CORREÇÕES GERAIS no Laboratório */}
+            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{formatDateDDMM(currentPatient.labs?.dayBefore?.date)}</div>
+            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{formatDateDDMM(currentPatient.labs?.yesterday?.date)}</div>
+            <div className="bg-blue-100 p-1 rounded font-bold text-blue-600">{formatDateDDMM(currentPatient.labs?.today?.date)}</div>
             {["Leucócitos", "Ureia", "Creatinina", "Na (Sódio)", "K (Potássio)"].map((ex) => {
               const key = ex === "Leucócitos" ? "leuco" : ex === "Ureia" ? "ureia" : ex === "Creatinina" ? "creat" : ex.includes("Na") ? "na" : "k";
               return (
                 <React.Fragment key={ex}>
                   <div className="text-left py-2 font-medium">{ex}</div>
-                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs.dayBefore[key]}</div>
-                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs.yesterday[key]}</div>
+                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.dayBefore?.[key] || ""}</div>
+                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.yesterday?.[key] || ""}</div>
                   
-                  {/* O nosso campo de input auditado! */}
                   <input 
                     className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none" 
-                    value={currentPatient.labs.today[key] || ""} 
-                    
+                    value={currentPatient.labs?.today?.[key] || ""} 
                     onChange={(e) => updateLab("today", key, e.target.value)} 
-                    
-                    // A MÁGICA AQUI: Ele usa a variável 'ex' para carimbar o nome exato do exame!
                     onBlur={() => handleBlurSave(`Laboratório: Editou ${ex}`)} 
                   />
                 </React.Fragment>
@@ -271,13 +271,8 @@ const OverviewTab = ({
           {userProfile?.role === "Médico" ? (
             <textarea 
               value={currentPatient.anotacoes || ""} 
-              
-              // 1. Atualiza apenas a tela enquanto o médico digita
               onChange={(e) => updateP("anotacoes", e.target.value)} 
-              
-              // 2. Dispara o salvamento e a auditoria ao clicar fora do campo
               onBlur={() => handleBlurSave("Visita Multi: Editou Anotações / Pendências")} 
-              
               className="w-full bg-transparent border-0 outline-none text-sm text-slate-700 resize-y min-h-[100px] focus:ring-0" 
               placeholder="Digite aqui..." 
             />

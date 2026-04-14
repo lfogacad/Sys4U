@@ -602,42 +602,93 @@ export const parseManual = (text) => {
 };
 
 export const analyzeTextWithGemini = async (text) => {
-  const prompt = `Você é um assistente médico especialista... 
-  REGRAS: 1. EXAMES NÃO REALIZADOS NÃO INCLUIR. 5. APENAS NÚMEROS...
-  CHAVES: ${EXAM_ROWS.join(", ")}
-  TEXTO: """${text.substring(0, 50000)}"""
-  JSON: { "patientName": "", "date": "YYYY-MM-DD", "results": {} }`;
+  // Mantive a sua lógica dinâmica de EXAM_ROWS caso esteja usando ela na V2!
+  // Mas certifique-se de que a variável EXAM_ROWS esteja definida no topo do seu core.js
+  const prompt = `
+      Você é um assistente médico especializado na extração de dados de laudos laboratoriais.
+      Sua tarefa é analisar o texto do laudo abaixo e extrair o nome do paciente, a data de liberação e os resultados.
+
+      REGRAS CRÍTICAS DE SEGURANÇA:
+      1. EXAMES NÃO REALIZADOS: Se um exame não constar no laudo atual, NÃO O INCLUA no JSON.
+      2. EFEITO PAPAGAIO: JAMAIS invente valores ou preencha com dados de exemplo. Se não achar, omita a chave.
+      3. HISTÓRICO: Capture EXCLUSIVAMENTE o resultado atual. Ignore colunas de exames anteriores ou valores de referência.
+      4. NÃO REAGENTE: Se o resultado for "não reagente", "ausente" ou "amostra não reagente", use "ÑR".
+      5. NÚMEROS: Extraia apenas o valor numérico final, mantendo a vírgula (ex: "12,5" ou "148").
+      6. DHL: Frequentemente listado no laudo como "L.D.H. - DESIDROGENASE LÁCTICA". Capture o valor e use a chave "DHL".
+      7. URINÁLISE/EAS: Ao ler a seção de Urinálise (Urina Tipo I), procure apenas a contagem de leucócitos (ou piócitos) e use a chave "EAS (Leuco/c)".
+
+      CHAVES PERMITIDAS (use exatamente estes nomes se encontrar o exame):
+      "Hemoglobina", "Hematócrito", "Leucócitos", "Basófilos", "Eosinófilos", "Bastões", "Segmentados", "Linfócitos", "Monócitos", "Plaquetas", "PCR", "Ureia", "Creatinina", "Na (Sódio)", "K (Potássio)", "TGO (AST)", "TGP (ALT)", "GamaGT", "Bilirrubina Total", "Bilirrubina Direta", "Bilirrubina Indireta", "Amilase", "Lipase", "Fosfatase Alcalina", "Troponina", "CPK Total", "CK-MB", "RNI", "TTPA", "Proteínas Totais", "Albumina", "Ácido úrico", "Ferritina", "DHL", "EAS (Leuco/c)", "HBV", "HCV", "HIV", "VDRL"
+      
+      TEXTO DO LAUDO: 
+      """${text.substring(0, 50000)}"""
+      
+      RETORNE APENAS UM JSON VÁLIDO NO FORMATO ABAIXO:
+      {
+        "patientName": "Nome do Paciente",
+        "date": "YYYY-MM-DD",
+        "results": {
+          "Chave Encontrada": "Valor Extraído"
+        }
+      }`;
 
   let lastErrorMsg = "Erro desconhecido";
-  const modelsToTry = ["gemini-2.5-flash-preview-09-2025", "gemini-2.5-flash", "gemini-1.5-flash"];
+  const modelsToTry = ["gemini-2.5-flash"];
 
   for (const model of modelsToTry) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const currentKey = apiKey || window.apiKey || "";
+        // CORREÇÃO: Adicionada a leitura do .env (Vite/Vercel)
+        const currentKey = apiKey || window.apiKey || import.meta.env.VITE_GEMINI_API_KEY || "";
+        
         const r = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+          }
         );
         const d = await r.json();
+
         if (d.error) {
           lastErrorMsg = d.error.message || JSON.stringify(d.error);
-          if (d.error.code === 400 || d.error.code === 403) break;
+          if (d.error.code === 400 || d.error.code === 403) {
+            lastErrorMsg = "Chave de API inválida ou ausente. Verifique o .env ou o Vercel.";
+            break;
+          }
+          if (lastErrorMsg.includes("not found") || d.error.code === 404) break;
+          
+          // Pausa VIP adicionada
+          await new Promise((res) => setTimeout(res, 500));
           continue;
         }
+
+        if (!d.candidates || !d.candidates[0] || !d.candidates[0].content) {
+          lastErrorMsg = "Resposta da IA veio vazia.";
+          await new Promise((res) => setTimeout(res, 500));
+          continue;
+        }
+
         let rawText = d.candidates[0].content.parts[0].text;
         const startIdx = rawText.indexOf("{");
         const endIdx = rawText.lastIndexOf("}");
-        if (startIdx !== -1 && endIdx !== -1) rawText = rawText.substring(startIdx, endIdx + 1);
+        
+        if (startIdx !== -1 && endIdx !== -1) {
+          rawText = rawText.substring(startIdx, endIdx + 1);
+        }
+        
         return JSON.parse(rawText);
       } catch (e) {
         lastErrorMsg = e.message || String(e);
+        await new Promise((res) => setTimeout(res, 500));
       }
     }
     if (lastErrorMsg.includes("Chave de API")) break;
   }
+
   console.error("Fallback Manual Ativado. Erro final:", lastErrorMsg);
-  const manual = parseManual(text);
+  const manual = typeof parseManual === 'function' ? parseManual(text) : { results: {} };
   manual.isFallback = true;
   manual.errorReason = lastErrorMsg;
   return manual;

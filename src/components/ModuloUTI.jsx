@@ -155,6 +155,108 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     const [waitingList, setWaitingList] = useState([]);
     const [showQueueModal, setShowQueueModal] = useState(false);
     const [selectedBedForAdmission, setSelectedBedForAdmission] = useState(null);
+
+    const handleBulkUpload = async (e) => {
+      const files = Array.from(e.target.files);
+      e.target.value = null; 
+      
+      if (files.length === 0) return;
+      
+      setIsProcessingBulk(true);
+      setShowBulkModal(true);
+
+      const initialProgress = files.map((f) => ({
+        status: "loading",
+        msg: `Iniciando leitura de ${f.name}...`,
+      }));
+      setBulkProgress(initialProgress);
+
+      const promessasDeLeitura = files.map(async (file, fileIndex) => {
+        try {
+          setBulkProgress((prev) => {
+            const n = [...prev];
+            n[fileIndex] = { status: "loading", msg: `IA Lendo ${file.name}...` };
+            return n;
+          });
+
+          const txt = await extractTextFromPdf(file);
+          const json = await analyzeTextWithGemini(txt);
+          
+          const extName = normalizeName(json.patientName || "");
+          const date = json.date || getManausDateStr();
+          let matchIdx = -1;
+
+          patients.forEach((p, idx) => {
+            const bedName = normalizeName(p.nome);
+            if (bedName.length > 3 && extName.length > 3) {
+              if (extName.includes(bedName) || bedName.includes(extName)) {
+                matchIdx = idx;
+              } else {
+                const parts = bedName.split(" ");
+                if (
+                  parts.length >= 2 &&
+                  extName.includes(parts[0]) &&
+                  extName.includes(parts[parts.length - 1])
+                ) {
+                  matchIdx = idx;
+                }
+              }
+            }
+          });
+
+          if (matchIdx !== -1) {
+            setPatients((curr) => {
+              const list = [...curr];
+              const target = list[matchIdx];
+              if (!target.examHistory[date]) target.examHistory[date] = {};
+              
+              Object.keys(json.results || {}).forEach((k) => {
+                if (json.results[k]) {
+                  target.examHistory[date][k] = json.results[k];
+                }
+              });
+              
+              list[matchIdx] = syncLabsFromHistory(target);
+              
+              if (user && db) {
+                setDoc(doc(db, "leitos_uti", `bed_${target.id}`), target);
+              }
+              return list;
+            });
+
+            setBulkProgress((prev) => {
+              const n = [...prev];
+              n[fileIndex] = {
+                status: json.isFallback ? "error" : "success",
+                msg: `${
+                  json.isFallback ? `⚠️ IA Offline (${json.errorReason}):` : "✅"
+                } ${json.patientName} (${formatDateDDMM(date)}) -> Leito ${matchIdx + 1}`,
+              };
+              return n;
+            });
+            
+          } else {
+            setBulkProgress((prev) => {
+              const n = [...prev];
+              n[fileIndex] = {
+                status: "error",
+                msg: `⚠️ ${json.patientName || "?"}: Não encontrado na UTI.`,
+              };
+              return n;
+            });
+          }
+        } catch (e) {
+          setBulkProgress((prev) => {
+            const n = [...prev];
+            n[fileIndex] = { status: "error", msg: `❌ Erro ao processar ${file.name}` };
+            return n;
+          });
+        }
+      });
+
+      await Promise.all(promessasDeLeitura);
+      setIsProcessingBulk(false);
+    };
     
     // --- SINCRONIZAÇÃO DOS LEITOS COM O FIREBASE ---
     useEffect(() => {
@@ -1159,9 +1261,7 @@ ${physioData.condutas}`;
 
       // 9. LOOP DE MODELOS
       const models = [
-        "gemini-2.5-flash-preview-09-2025",
-        "gemini-2.5-flash",
-        "gemini-1.5-flash",
+        "gemini-1.5-pro",
       ];
       
       for (const model of models) {
@@ -1359,7 +1459,7 @@ ${condutas}`;
 
     try {
       const promptText = buildNursingAIPrompt(currentPatient);
-      const modelsToTry = ["gemini-2.5-flash-preview-09-2025", "gemini-2.5-flash", "gemini-1.5-flash"];
+      const modelsToTry = ["gemini-2.5-flash"];
 
       for (const model of modelsToTry) {
         try {
