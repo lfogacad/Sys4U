@@ -1508,14 +1508,14 @@ const analyzeTextWithGemini = async (text) => {
           ) {
             break;
           }
-          // AUMENTADO PARA 2 SEGUNDOS: Se der erro (ex: 429), a IA respira antes de tentar de novo
-          await new Promise((res) => setTimeout(res, 2000));
+          // Reduzido para 500ms: Como estamos no modo pago, se houver falha de rede, a IA tenta novamente bem rápido
+          await new Promise((res) => setTimeout(res, 500));
           continue;
         }
 
         if (!d.candidates || !d.candidates[0] || !d.candidates[0].content) {
           lastErrorMsg = "Resposta da IA veio vazia.";
-          await new Promise((res) => setTimeout(res, 2000));
+          await new Promise((res) => setTimeout(res, 500));
           continue;
         }
 
@@ -1530,14 +1530,13 @@ const analyzeTextWithGemini = async (text) => {
         return JSON.parse(rawText);
       } catch (e) {
         lastErrorMsg = e.message || String(e);
-        await new Promise((res) => setTimeout(res, 2000));
+        await new Promise((res) => setTimeout(res, 500));
       }
     }
     if (lastErrorMsg.includes("Chave de API")) break;
   }
 
   console.error("Fallback Manual Ativado. Erro final:", lastErrorMsg);
-  // Garanta que a função parseManual exista no seu código, ou retorne um objeto vazio caso não tenha
   const manual = typeof parseManual === 'function' ? parseManual(text) : { results: {} };
   manual.isFallback = true;
   manual.errorReason = lastErrorMsg;
@@ -1546,45 +1545,38 @@ const analyzeTextWithGemini = async (text) => {
 
 
 // ============================================================================
-// 2. A FILA DE ATENDIMENTO (Obrigatório para ler 10 pacientes sem Erro 429)
+// 2. A FILA DE ATENDIMENTO VIP (Leitura Simultânea / Paralela)
 // ============================================================================
-// Chame esta função quando o senhor clicar no botão "Ler Todos os Exames"
-const processarExamesSequencial = async (listaDePacientes) => {
-  console.log("Iniciando leitura em lote. Cadenciando pacientes...");
-  const resultadosFinais = [];
-
-  for (let i = 0; i < listaDePacientes.length; i++) {
-    const paciente = listaDePacientes[i];
-    console.log(`Lendo laudo ${i + 1} de ${listaDePacientes.length}...`);
-
+// Renomeei para processarExamesEmParalelo para refletir a nova velocidade
+const processarExamesEmParalelo = async (listaDePacientes) => {
+  console.log("Iniciando leitura SIMULTÂNEA. Disparando todos os pacientes de uma vez...");
+  
+  // O map() cria uma lista de tarefas (Promessas) para todos os pacientes ao mesmo tempo,
+  // sem esperar um terminar para começar o outro.
+  const promessasDeLeitura = listaDePacientes.map(async (paciente) => {
     try {
-      // Chama a IA e espera ela terminar a leitura deste paciente
       const resultado = await analyzeTextWithGemini(paciente.textoDoLaudo);
-      
-      resultadosFinais.push({ 
+      return { 
         id: paciente.id, 
         dados: resultado, 
         status: 'sucesso' 
-      });
-
-      // A VACINA ANTI-BLOQUEIO: O sistema dorme por 1.5 segundos (1500ms) 
-      // antes de mandar o próximo paciente. Isso zera a cota do Google.
-      if (i < listaDePacientes.length - 1) {
-        await new Promise(res => setTimeout(res, 1500));
-      }
-
+      };
     } catch (err) {
-      console.error(`Erro no paciente ${i + 1}:`, err);
-      resultadosFinais.push({ 
+      console.error(`Erro no paciente ${paciente.id}:`, err);
+      return { 
         id: paciente.id, 
         error: err.message, 
         status: 'erro' 
-      });
+      };
     }
-  }
+  });
 
-  console.log("Mutirão finalizado!", resultadosFinais);
-  return resultadosFinais; // Use isso para atualizar a tela/banco de dados
+  // O Promise.all "manda a ordem" para a IA processar todos simultaneamente
+  // e só avança para a próxima linha quando o último laudo for entregue.
+  const resultadosFinais = await Promise.all(promessasDeLeitura);
+
+  console.log("Mutirão simultâneo finalizado!", resultadosFinais);
+  return resultadosFinais; 
 };
 
 const parseManual = (text) => {
@@ -2285,96 +2277,121 @@ ${p.physio?.planoMetas || "Sem planos descritos."}
     setPendingUploadData(null);
   };
 
-  const handleBulkUpload = async (e) => {
+const handleBulkUpload = async (e) => {
     const files = Array.from(e.target.files);
     e.target.value = null;
+    
     if (files.length === 0) return;
     if (!pdfReady) {
       alert("Aguarde carregamento do PDF...");
       return;
     }
+
     setIsProcessingBulk(true);
     setShowBulkModal(true);
-    setBulkProgress([]);
-    setTimeout(async () => {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        setBulkProgress((prev) => [
-          ...prev,
-          { status: "loading", msg: `Lendo ${file.name}...` },
-        ]);
-        try {
-          const txt = await extractTextFromPdf(file);
-          const json = await analyzeTextWithGemini(txt);
-          const extName = normalizeName(json.patientName || "");
-          const date = json.date || getManausDateStr();
-          let matchIdx = -1;
-          patients.forEach((p, idx) => {
-            const bedName = normalizeName(p.nome);
-            if (bedName.length > 3 && extName.length > 3) {
-              if (extName.includes(bedName) || bedName.includes(extName)) {
+
+    // 1. Preparamos o painel de progresso com todos os arquivos "em andamento"
+    // Isso é vital para a interface não piscar com vários arquivos processando juntos.
+    const initialProgress = files.map((f) => ({
+      status: "loading",
+      msg: `Iniciando leitura de ${f.name}...`,
+    }));
+    setBulkProgress(initialProgress);
+
+    // 2. Criamos as tarefas paralelas. O .map dispara TODAS ao mesmo tempo.
+    const promessasDeLeitura = files.map(async (file, fileIndex) => {
+      try {
+        // Atualiza a tela avisando que a IA pegou este arquivo
+        setBulkProgress((prev) => {
+          const n = [...prev];
+          n[fileIndex] = { status: "loading", msg: `IA Lendo ${file.name}...` };
+          return n;
+        });
+
+        const txt = await extractTextFromPdf(file);
+        const json = await analyzeTextWithGemini(txt); // Chama a nossa IA VIP
+        
+        const extName = normalizeName(json.patientName || "");
+        const date = json.date || getManausDateStr();
+        let matchIdx = -1;
+
+        // Lógica de busca de paciente (mantida idêntica à sua)
+        patients.forEach((p, idx) => {
+          const bedName = normalizeName(p.nome);
+          if (bedName.length > 3 && extName.length > 3) {
+            if (extName.includes(bedName) || bedName.includes(extName)) {
+              matchIdx = idx;
+            } else {
+              const parts = bedName.split(" ");
+              if (
+                parts.length >= 2 &&
+                extName.includes(parts[0]) &&
+                extName.includes(parts[parts.length - 1])
+              ) {
                 matchIdx = idx;
-              } else {
-                const parts = bedName.split(" ");
-                if (
-                  parts.length >= 2 &&
-                  extName.includes(parts[0]) &&
-                  extName.includes(parts[parts.length - 1])
-                ) {
-                  matchIdx = idx;
-                }
               }
             }
+          }
+        });
+
+        if (matchIdx !== -1) {
+          // Atualiza o banco de dados e a tela do leito
+          setPatients((curr) => {
+            const list = [...curr];
+            const target = list[matchIdx];
+            if (!target.examHistory[date]) target.examHistory[date] = {};
+            
+            Object.keys(json.results || {}).forEach((k) => {
+              if (json.results[k]) {
+                target.examHistory[date][k] = json.results[k];
+              }
+            });
+            
+            list[matchIdx] = syncLabsFromHistory(target);
+            
+            if (user && db) {
+              setDoc(doc(db, "leitos_uti", `bed_${target.id}`), target);
+            }
+            return list;
           });
 
-          if (matchIdx !== -1) {
-            setPatients((curr) => {
-              const list = [...curr];
-              const target = list[matchIdx];
-              if (!target.examHistory[date]) target.examHistory[date] = {};
-              Object.keys(json.results || {}).forEach((k) => {
-                if (json.results[k])
-                  target.examHistory[date][k] = json.results[k];
-              });
-              list[matchIdx] = syncLabsFromHistory(target);
-              if (user && db)
-                setDoc(doc(db, "leitos_uti", `bed_${target.id}`), target);
-              return list;
-            });
-            setBulkProgress((prev) => {
-              const n = [...prev];
-              n[n.length - 1] = {
-                status: json.isFallback ? "error" : "success",
-                msg: `${
-                  json.isFallback
-                    ? `⚠️ IA Offline (${json.errorReason}):`
-                    : "✅"
-                } ${json.patientName} (${formatDateDDMM(date)}) -> Leito ${
-                  matchIdx + 1
-                }`,
-              };
-              return n;
-            });
-          } else {
-            setBulkProgress((prev) => {
-              const n = [...prev];
-              n[n.length - 1] = {
-                status: "error",
-                msg: `⚠️ ${json.patientName || "?"}: Não encontrado.`,
-              };
-              return n;
-            });
-          }
-        } catch (e) {
+          // Atualiza a linha DESTE arquivo específico no painel de progresso
           setBulkProgress((prev) => {
             const n = [...prev];
-            n[n.length - 1] = { status: "error", msg: `❌ Erro ao ler PDF` };
+            n[fileIndex] = {
+              status: json.isFallback ? "error" : "success",
+              msg: `${
+                json.isFallback ? `⚠️ IA Offline (${json.errorReason}):` : "✅"
+              } ${json.patientName} (${formatDateDDMM(date)}) -> Leito ${matchIdx + 1}`,
+            };
+            return n;
+          });
+          
+        } else {
+          // Paciente não encontrado
+          setBulkProgress((prev) => {
+            const n = [...prev];
+            n[fileIndex] = {
+              status: "error",
+              msg: `⚠️ ${json.patientName || "?"}: Não encontrado na UTI.`,
+            };
             return n;
           });
         }
+      } catch (e) {
+        // Erro fatal no PDF
+        setBulkProgress((prev) => {
+          const n = [...prev];
+          n[fileIndex] = { status: "error", msg: `❌ Erro ao processar ${file.name}` };
+          return n;
+        });
       }
-      setIsProcessingBulk(false);
-    }, 100);
+    });
+
+    // 3. A MÁGICA: O sistema espera TODAS as promessas terminarem juntas
+    await Promise.all(promessasDeLeitura);
+    
+    setIsProcessingBulk(false);
   };
 
   // AUTH
