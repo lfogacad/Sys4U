@@ -1934,33 +1934,126 @@ ${condutas}`;
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0">
-        <div className="relative z-40 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 border border-white">
+      {/* ========================================== */}
+      {/* CORPO PRINCIPAL (LEITOS + ABAS LATERAIS) */}
+      {/* ========================================== */}
+      <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0 print:p-0">
+        
+        {/* BARRA DE LEITOS (Design Main) */}
+        <div className="relative z-40 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 scrollbar-hide print:hidden border border-white">
           {patients.map((p, idx) => {
+            // Se o senhor tiver regra de esconder o leito 11, coloque aqui (Ex: if (p.leito === 11 && !isAdmin) return null;)
             const isActive = activeTab === idx;
             return (
-              <button key={idx} onClick={() => setActiveTab(idx)}
-                className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold border flex flex-col items-center justify-center transition-all ${isActive ? "bg-teal-600 text-white scale-105" : "bg-slate-50 text-slate-500"}`}>
-                <span className="text-[9px] uppercase">Leito</span>
-                <span className="text-xl">{p.leito}</span>
+              <button
+                key={p.id || idx}
+                onClick={() => setActiveTab(idx)}
+                className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center ${
+                  isActive
+                    ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
+                    : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
+                }`}
+              >
+                <span className="text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">Leito</span>
+                <span className="text-xl leading-none">{p.leito}</span>
               </button>
             );
           })}
         </div>
 
+        {/* CONTAINER DE DUAS COLUNAS NO PC */}
         <div className="flex flex-col md:flex-row gap-4 md:gap-6 relative mt-2">
+          
+          {/* FUNDO DE HEXÁGONOS */}
+          <img 
+            src="/hexagons.svg" 
+            alt="Hexágonos" 
+            className="absolute -top-6 right-0 md:-right-40 w-[280px] md:w-[350px] opacity-5 pointer-events-none z-0" 
+            onError={(e) => e.target.style.display = 'none'}
+          />
+
+          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE (Carrossel 3D Mobile) */}
           <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
-            <div ref={navScrollRef} onScroll={handleNavScroll} className="flex overflow-x-auto md:flex-col gap-2 pb-4 md:pb-0 items-center">
-              {visibleNavButtons.map((btn) => (
-                <button key={btn.id} onClick={() => setViewMode(btn.id)}
-                  className={`w-12 h-12 flex items-center justify-center rounded-2xl border transition-all ${viewMode === btn.id ? "bg-teal-600 text-white" : "bg-white text-slate-400"}`} title={btn.label}>
-                  {btn.icon}
-                </button>
-              ))}
+            <div className="relative mb-6 md:mb-0 print:hidden">
+
+              <div
+                ref={navScrollRef}
+                // SUTURA: px-[40vw] garante que mesmo com 1 ou 2 abas, você consiga "deslizar" ela para fora do centro
+                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center px-[40vw] md:px-0`}
+              >
+                {visibleNavButtons.map((btn, index) => {
+                  const isActive = viewMode === btn.id;
+                  
+                  // Lógica 3D do Mobile
+                  const isExpandedMobile = window.innerWidth < 768 && centerTab === btn.id;
+                  const centerIndex = visibleNavButtons.findIndex(b => b.id === (centerTab || visibleNavButtons[0]?.id));
+                  const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
+                  const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
+
+                  return (
+                    <div
+                      key={btn.id}
+                      id={`nav-${btn.id}`}
+                      style={{ zIndex: zIndexCascata }} 
+                      className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out 
+                        ${window.innerWidth < 768 ? '-ml-5 first:ml-0' : ''} 
+                        hover:z-[100]
+                      `}
+                    >
+                      <button
+                        onClick={() => {
+                          const isMobile = window.innerWidth < 768;
+                          if (isMobile) {
+                            if (centerTab !== btn.id) {
+                               const el = document.getElementById(`nav-${btn.id}`);
+                               if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                            } else {
+                               setViewMode(btn.id);
+                            }
+                          } else {
+                            setViewMode(btn.id);
+                          }
+                        }}
+                        className={`flex items-center h-12 md:h-12 min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
+                          ${
+                            isActive
+                              ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
+                              : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm"
+                          }
+                          ${isExpandedMobile ? "w-[160px]" : "w-12"}
+                          md:w-12 md:hover:w-[180px]
+                        `}
+                        title={btn.label}
+                      >
+                        {/* ÍCONE */}
+                        <div className={`flex-shrink-0 flex items-center justify-center w-12 h-12 transition-transform duration-300 ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                          <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
+                            {btn.icon}
+                          </div>
+                        </div>
+
+                        {/* TEXTO */}
+                        <div
+                          className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+                            ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
+                          `}
+                        >
+                          <span className="text-xs md:text-sm font-bold tracking-wide">
+                            {btn.label}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <div className="flex-1 min-w-0 relative z-30">
+          {/* ========================================== */}
+          {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
+          {/* ========================================== */}
+          <div className="flex-1 w-full min-w-0">
             <div className="sticky top-0 z-40 bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <h2 className="text-lg font-extrabold text-teal-600 uppercase">{currentPatient.nome || "LEITO DISPONÍVEL"}</h2>
