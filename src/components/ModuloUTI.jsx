@@ -3,30 +3,30 @@ import { useLocation } from 'react-router-dom';
 import { doc, setDoc, deleteDoc, collection, onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
-    Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple, 
-    Droplets, Syringe, Pill, Thermometer, Scale, Gauge, Move,
-    Activity, ClipboardCheck, FileText, FileCheck, Target, 
-    Printer, Bot, BrainCircuit, Sparkles, Mic, Table, UploadCloud, 
-    FolderInput, List, Copy, User, Search, ArrowLeft, X, PlusCircle, 
-    Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle, 
-    Loader2, ChevronRight, ChevronDown, Clock, RotateCcw, Filter, 
-    CalendarX, UserPlus, LogOut
-  } from "lucide-react";
+  Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
+  Droplets, Syringe, Pill, Thermometer, Scale, Gauge, Move,
+  Activity, ClipboardCheck, FileText, FileCheck, Target,
+  Printer, Bot, BrainCircuit, Sparkles, Mic, Table, UploadCloud,
+  FolderInput, List, Copy, User, Search, ArrowLeft, X, PlusCircle,
+  Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle,
+  Loader2, ChevronRight, ChevronDown, Clock, RotateCcw, Filter,
+  CalendarX, UserPlus, LogOut
+} from "lucide-react";
 
-import { 
-    getManausDateStr, formatDateDDMM, getLast10Days, calculateTotals, 
-    safeNumber, defaultPatient, ensureBHStructure, calculateAge, 
-    getDaysD0, getDaysD1, getTempoVMText, calculateEvacDays, 
-    calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, 
-    calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf, 
-    analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, formatExamName
-  } from '../utils/core';
-  import { 
-    EXAM_ROWS, 
-    BH_HOURS, 
-    BRADEN_OPTIONS, 
-    MORSE_OPTIONS 
-  } from '../constants/clinicalLists';
+import {
+  getManausDateStr, formatDateDDMM, getLast10Days, calculateTotals,
+  safeNumber, defaultPatient, ensureBHStructure, calculateAge,
+  getDaysD0, getDaysD1, getTempoVMText, calculateEvacDays,
+  calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH,
+  calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf,
+  analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, formatExamName
+} from '../utils/core';
+import {
+  EXAM_ROWS,
+  BH_HOURS,
+  BRADEN_OPTIONS,
+  MORSE_OPTIONS
+} from '../constants/clinicalLists';
 
 // Dashboards e Tabs
 import MedicalDashboard from '../features/medical/MedicalDashboard';
@@ -41,7 +41,7 @@ import OverviewTab from './tabs/OverviewTab';
 // ==========================================
 // IMPORTAÇÃO DOS MODAIS (Pop-ups do Sistema)
 // ==========================================
-import HistoryModal from './modals/HistoryModal'; 
+import HistoryModal from './modals/HistoryModal';
 import ATBHistoryModal from './modals/ATBHistoryModal';
 import NursingAdmissionModal from './modals/NursingAdmissionModal';
 import PhysioAdmissionModal from './modals/PhysioAdmissionModal';
@@ -96,273 +96,272 @@ const mergePatientData = (base, incoming) => {
 };
 
 const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
-    const location = useLocation();
-    const [pdfReady, setPdfReady] = useState(false);
-    const [historyOpen, setHistoryOpen] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState(0);
-    const [viewMode, setViewMode] = useState("overview");
-    const [viewingPreviousBH, setViewingPreviousBH] = useState(false);
-    const [showHistoryModal, setShowHistoryModal] = useState(false);
-    const [showATBHistoryModal, setShowATBHistoryModal] = useState(false);
-    const [showBulkModal, setShowBulkModal] = useState(false);
-    const [bulkUploadLogs, setBulkProgress] = useState([]);
-    const [isProcessingBulk, setIsProcessingBulk] = useState(false);
-    const [pdfProcessingStatus, setPdfProcessingStatus] = useState("");
-    const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-    const [aiEvolution, setAiEvolution] = useState("");
-    const [showIndividualUploadModal, setShowIndividualUploadModal] = useState(false);
-    const [pendingUploadData, setPendingUploadData] = useState(null);
-    const [centerTab, setCenterTab] = useState(null);
-    const navScrollRef = useRef(null);
-    const [isGeneratingNursingAI, setIsGeneratingNursingAI] = useState(false);
+  const location = useLocation();
+  const [pdfReady, setPdfReady] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+  const [viewMode, setViewMode] = useState("overview");
+  const [viewingPreviousBH, setViewingPreviousBH] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showATBHistoryModal, setShowATBHistoryModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkUploadLogs, setBulkProgress] = useState([]);
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  const [pdfProcessingStatus, setPdfProcessingStatus] = useState("");
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [aiEvolution, setAiEvolution] = useState("");
+  const [showIndividualUploadModal, setShowIndividualUploadModal] = useState(false);
+  const [pendingUploadData, setPendingUploadData] = useState(null);
+  const [centerTab, setCenterTab] = useState(null);
+  const navScrollRef = useRef(null);
+  const [isGeneratingNursingAI, setIsGeneratingNursingAI] = useState(false);
 
-    const [showAdmissionModal, setShowAdmissionModal] = useState(false);
-    const [showNursingModal, setShowNursingModal] = useState(false);
-    const [showPhysioModal, setShowPhysioModal] = useState(false);
-    const [showPhysioEvoModal, setShowPhysioEvoModal] = useState(false);
-    const [physioEvoText, setPhysioEvoText] = useState("");
-    const [showSapsDetailsModal, setShowSapsDetailsModal] = useState(null);
-    const [showVmFlowsheet, setShowVmFlowsheet] = useState(false);
-    const [showChecklistEvo, setShowChecklistEvo] = useState(false);
-    const [checkData, setCheckData] = useState({ estadoGeral: "REG", usaDva: false, dvas: [], usaSedacao: false, sedativos: [], rass: "", glasgow: "", atbs: "" });
+  const [showAdmissionModal, setShowAdmissionModal] = useState(false);
+  const [showNursingModal, setShowNursingModal] = useState(false);
+  const [showPhysioModal, setShowPhysioModal] = useState(false);
+  const [showPhysioEvoModal, setShowPhysioEvoModal] = useState(false);
+  const [physioEvoText, setPhysioEvoText] = useState("");
+  const [showSapsDetailsModal, setShowSapsDetailsModal] = useState(null);
+  const [showVmFlowsheet, setShowVmFlowsheet] = useState(false);
+  const [showChecklistEvo, setShowChecklistEvo] = useState(false);
+  const [checkData, setCheckData] = useState({ estadoGeral: "REG", usaDva: false, dvas: [], usaSedacao: false, sedativos: [], rass: "", glasgow: "", atbs: "" });
 
-    const [patients, setPatients] = useState(Array(11).fill(null).map((_, i) => defaultPatient(i)));
-    const [showSepsisModal, setShowSepsisModal] = useState(false);
+  const [patients, setPatients] = useState(Array(11).fill(null).map((_, i) => defaultPatient(i)));
+  const [showSepsisModal, setShowSepsisModal] = useState(false);
 
-    const [admissionData, setAdmissionData] = useState({});
-    const [generatedAdmissionText, setGeneratedAdmissionText] = useState("");
-    const [nursingData, setNursingData] = useState({});
-    const [physioData, setPhysioData] = useState({});
-    const [generatedPhysioText, setGeneratedPhysioText] = useState("");
-    
-    // Para o Modal de Noradrenalina
-    const [showNoraModal, setShowNoraModal] = useState(false);
-    const [currentNoraHour, setCurrentNoraHour] = useState("");
-    const [currentNoraRate, setCurrentNoraRate] = useState("");
-    
-    // Para a Troca de Senha
-    const [showForceChangePassword, setShowForceChangePassword] = useState(false);
-    const [newPassword, setNewPassword] = useState("");
-    const [confirmNewPassword, setConfirmNewPassword] = useState("");
-    const [changePasswordError, setChangePasswordError] = useState("");
+  const [admissionData, setAdmissionData] = useState({});
+  const [generatedAdmissionText, setGeneratedAdmissionText] = useState("");
+  const [nursingData, setNursingData] = useState({});
+  const [physioData, setPhysioData] = useState({});
+  const [generatedPhysioText, setGeneratedPhysioText] = useState("");
 
-    const rawPatient = patients[activeTab] || defaultPatient(0);
-    const currentPatient = ensureBHStructure(rawPatient); 
-    const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
-    const bhTotals = calculateTotals(displayedBH);
+  // Para o Modal de Noradrenalina
+  const [showNoraModal, setShowNoraModal] = useState(false);
+  const [currentNoraHour, setCurrentNoraHour] = useState("");
+  const [currentNoraRate, setCurrentNoraRate] = useState("");
 
-    // --- ESTADOS DA FILA DE ESPERA ---
-    const [waitingList, setWaitingList] = useState([]);
-    const [showQueueModal, setShowQueueModal] = useState(false);
-    const [selectedBedForAdmission, setSelectedBedForAdmission] = useState(null);
+  // Para a Troca de Senha
+  const [showForceChangePassword, setShowForceChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [changePasswordError, setChangePasswordError] = useState("");
 
-    const handleBulkUpload = async (e) => {
-      const files = Array.from(e.target.files);
-      e.target.value = null; 
-      
-      if (files.length === 0) return;
-      
-      setIsProcessingBulk(true);
-      setShowBulkModal(true);
+  const rawPatient = patients[activeTab] || defaultPatient(0);
+  const currentPatient = ensureBHStructure(rawPatient);
+  const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
+  const bhTotals = calculateTotals(displayedBH);
 
-      const initialProgress = files.map((f) => ({
-        status: "loading",
-        msg: `Iniciando leitura de ${f.name}...`,
-      }));
-      setBulkProgress(initialProgress);
+  // --- ESTADOS DA FILA DE ESPERA ---
+  const [waitingList, setWaitingList] = useState([]);
+  const [showQueueModal, setShowQueueModal] = useState(false);
+  const [selectedBedForAdmission, setSelectedBedForAdmission] = useState(null);
 
-      const promessasDeLeitura = files.map(async (file, fileIndex) => {
-        try {
-          setBulkProgress((prev) => {
-            const n = [...prev];
-            n[fileIndex] = { status: "loading", msg: `IA Lendo ${file.name}...` };
-            return n;
-          });
+  const handleBulkUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    e.target.value = null;
 
-          const txt = await extractTextFromPdf(file);
-          const json = await analyzeTextWithGemini(txt);
-          
-          const extName = normalizeName(json.patientName || "");
-          const date = json.date || getManausDateStr();
-          let matchIdx = -1;
+    if (files.length === 0) return;
 
-          patients.forEach((p, idx) => {
-            const bedName = normalizeName(p.nome);
-            if (bedName.length > 3 && extName.length > 3) {
-              if (extName.includes(bedName) || bedName.includes(extName)) {
+    setIsProcessingBulk(true);
+    setShowBulkModal(true);
+
+    const initialProgress = files.map((f) => ({
+      status: "loading",
+      msg: `Iniciando leitura de ${f.name}...`,
+    }));
+    setBulkProgress(initialProgress);
+
+    const promessasDeLeitura = files.map(async (file, fileIndex) => {
+      try {
+        setBulkProgress((prev) => {
+          const n = [...prev];
+          n[fileIndex] = { status: "loading", msg: `IA Lendo ${file.name}...` };
+          return n;
+        });
+
+        const txt = await extractTextFromPdf(file);
+        const json = await analyzeTextWithGemini(txt);
+
+        const extName = normalizeName(json.patientName || "");
+        const date = json.date || getManausDateStr();
+        let matchIdx = -1;
+
+        patients.forEach((p, idx) => {
+          const bedName = normalizeName(p.nome);
+          if (bedName.length > 3 && extName.length > 3) {
+            if (extName.includes(bedName) || bedName.includes(extName)) {
+              matchIdx = idx;
+            } else {
+              const parts = bedName.split(" ");
+              if (
+                parts.length >= 2 &&
+                extName.includes(parts[0]) &&
+                extName.includes(parts[parts.length - 1])
+              ) {
                 matchIdx = idx;
-              } else {
-                const parts = bedName.split(" ");
-                if (
-                  parts.length >= 2 &&
-                  extName.includes(parts[0]) &&
-                  extName.includes(parts[parts.length - 1])
-                ) {
-                  matchIdx = idx;
-                }
               }
             }
+          }
+        });
+
+        if (matchIdx !== -1) {
+          setPatients((curr) => {
+            const list = [...curr];
+            const target = list[matchIdx];
+            if (!target.examHistory[date]) target.examHistory[date] = {};
+
+            Object.keys(json.results || {}).forEach((k) => {
+              if (json.results[k]) {
+                target.examHistory[date][k] = json.results[k];
+              }
+            });
+
+            list[matchIdx] = syncLabsFromHistory(target);
+
+            if (user && db) {
+              setDoc(doc(db, "leitos_uti", `bed_${target.id}`), target);
+            }
+            return list;
           });
 
-          if (matchIdx !== -1) {
-            setPatients((curr) => {
-              const list = [...curr];
-              const target = list[matchIdx];
-              if (!target.examHistory[date]) target.examHistory[date] = {};
-              
-              Object.keys(json.results || {}).forEach((k) => {
-                if (json.results[k]) {
-                  target.examHistory[date][k] = json.results[k];
-                }
-              });
-              
-              list[matchIdx] = syncLabsFromHistory(target);
-              
-              if (user && db) {
-                setDoc(doc(db, "leitos_uti", `bed_${target.id}`), target);
-              }
-              return list;
-            });
-
-            setBulkProgress((prev) => {
-              const n = [...prev];
-              n[fileIndex] = {
-                status: json.isFallback ? "error" : "success",
-                msg: `${
-                  json.isFallback ? `⚠️ IA Offline (${json.errorReason}):` : "✅"
-                } ${json.patientName} (${formatDateDDMM(date)}) -> Leito ${matchIdx + 1}`,
-              };
-              return n;
-            });
-            
-          } else {
-            setBulkProgress((prev) => {
-              const n = [...prev];
-              n[fileIndex] = {
-                status: "error",
-                msg: `⚠️ ${json.patientName || "?"}: Não encontrado na UTI.`,
-              };
-              return n;
-            });
-          }
-        } catch (e) {
           setBulkProgress((prev) => {
             const n = [...prev];
-            n[fileIndex] = { status: "error", msg: `❌ Erro ao processar ${file.name}` };
+            n[fileIndex] = {
+              status: json.isFallback ? "error" : "success",
+              msg: `${json.isFallback ? `⚠️ IA Offline (${json.errorReason}):` : "✅"
+                } ${json.patientName} (${formatDateDDMM(date)}) -> Leito ${matchIdx + 1}`,
+            };
+            return n;
+          });
+
+        } else {
+          setBulkProgress((prev) => {
+            const n = [...prev];
+            n[fileIndex] = {
+              status: "error",
+              msg: `⚠️ ${json.patientName || "?"}: Não encontrado na UTI.`,
+            };
             return n;
           });
         }
-      });
-
-      await Promise.all(promessasDeLeitura);
-      setIsProcessingBulk(false);
-    };
-    
-    // --- SINCRONIZAÇÃO DOS LEITOS COM O FIREBASE ---
-    useEffect(() => {
-      if (!db) return;
-  
-      // Criamos uma escuta na coleção de leitos
-      const q = collection(db, "leitos_uti");
-      
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        // Começamos com um array de leitos padrão (vazios)
-        // Ajuste o '10' para a quantidade de leitos que o senhor tiver
-        const updatedPatients = Array(10).fill(null).map((_, i) => defaultPatient(i));
-  
-        snapshot.forEach((doc) => {
-          // O id do documento é 'bed_0', 'bed_1', etc. 
-          // Extraímos o número para saber em qual posição do array colocar
-          const bedIndex = parseInt(doc.id.replace('bed_', ''));
-          if (bedIndex >= 0 && bedIndex < updatedPatients.length) {
-            updatedPatients[bedIndex] = mergePatientData(defaultPatient(bedIndex), doc.data());
-          }
+      } catch (e) {
+        setBulkProgress((prev) => {
+          const n = [...prev];
+          n[fileIndex] = { status: "error", msg: `❌ Erro ao processar ${file.name}` };
+          return n;
         });
-  
-        console.log("Leitos sincronizados com a nuvem!");
-        setPatients(updatedPatients);
-      });
-  
-      // Para de ouvir quando o componente for fechado (logout)
-      return () => unsubscribe();
-    }, []);
+      }
+    });
 
-    // Efeito para buscar a fila de espera da UTI em tempo real
-    useEffect(() => {
-      if (!db) return;
-      const q = query(
-        collection(db, "fila_espera"), 
-        where("setorDestino", "==", "UTI"),
-        where("status", "==", "aguardando")
-      );
-      
-      return onSnapshot(q, (snap) => {
-        const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setWaitingList(list);
-      });
-    }, []);
+    await Promise.all(promessasDeLeitura);
+    setIsProcessingBulk(false);
+  };
 
-    useEffect(() => {
-      if (!user || !db) return;
-      return onSnapshot(collection(db, "leitos_uti"), (snap) => {
-        const up = [...patients];
-        let ch = false;
-        snap.forEach((d) => {
-          const dt = d.data();
-          // A MÁGICA AQUI: Mudamos de < 10 para < 11 para incluir o Leito Teste!
-          if (dt.id >= 0 && dt.id < 11) {
-            const sp = mergePatientData(defaultPatient(dt.id), dt);
-            up[dt.id] = syncLabsFromHistory(sp);
-            ch = true;
-          }
-        });
-        if (ch) setPatients(up);
-      });
-    }, [user]);
+  // --- SINCRONIZAÇÃO DOS LEITOS COM O FIREBASE ---
+  useEffect(() => {
+    if (!db) return;
 
-    useEffect(() => {
-      const isMedico = userProfile ? userProfile.role === "Médico" : true; 
-  
-      if (viewMode === "medical" && currentPatient && isMedico) {
-        const currentSofa = getAutoSOFA2(currentPatient);
-        const basalSofa = parseInt(currentPatient.sofa_data_technical?.baseline_sofa || 0);
-  
-        let referenceSofa = currentPatient.sofa_data_technical?.reference_sofa_for_sepsis;
-        referenceSofa = referenceSofa !== undefined ? parseInt(referenceSofa) : basalSofa;
-  
-        // FILTRO DE SEGURANÇA: Verifica se a queda do SOFA é por falta de dados (início de plantão)
-        const isPlantaoZerado = !currentPatient.bh?.vitals || Object.keys(currentPatient.bh.vitals).length === 0;
-  
-        // 1. O REARME CLÍNICO (Apenas se o dia NÃO estiver zerado)
-        if (currentSofa < referenceSofa && !isPlantaoZerado) {
-          const p = { ...currentPatient };
-          if (!p.sofa_data_technical) p.sofa_data_technical = {};
-          p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
-          p.sofa_data_technical.last_alerted_sofa = null; 
-          
-          const up = [...patients];
-          up[activeTab] = p;
-          setPatients(up);
-          return; 
+    // Criamos uma escuta na coleção de leitos
+    const q = collection(db, "leitos_uti");
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      // Começamos com um array de leitos padrão (vazios)
+      // Ajuste o '10' para a quantidade de leitos que o senhor tiver
+      const updatedPatients = Array(10).fill(null).map((_, i) => defaultPatient(i));
+
+      snapshot.forEach((doc) => {
+        // O id do documento é 'bed_0', 'bed_1', etc. 
+        // Extraímos o número para saber em qual posição do array colocar
+        const bedIndex = parseInt(doc.id.replace('bed_', ''));
+        if (bedIndex >= 0 && bedIndex < updatedPatients.length) {
+          updatedPatients[bedIndex] = mergePatientData(defaultPatient(bedIndex), doc.data());
         }
-  
-        // 2. O GATILHO SEPSIS-3
-        if (currentSofa - referenceSofa >= 2) {
-          if (currentPatient.sofa_data_technical?.last_alerted_sofa !== currentSofa) {
-            setShowSepsisModal(true);
-          }
+      });
+
+      console.log("Leitos sincronizados com a nuvem!");
+      setPatients(updatedPatients);
+    });
+
+    // Para de ouvir quando o componente for fechado (logout)
+    return () => unsubscribe();
+  }, []);
+
+  // Efeito para buscar a fila de espera da UTI em tempo real
+  useEffect(() => {
+    if (!db) return;
+    const q = query(
+      collection(db, "fila_espera"),
+      where("setorDestino", "==", "UTI"),
+      where("status", "==", "aguardando")
+    );
+
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setWaitingList(list);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user || !db) return;
+    return onSnapshot(collection(db, "leitos_uti"), (snap) => {
+      const up = [...patients];
+      let ch = false;
+      snap.forEach((d) => {
+        const dt = d.data();
+        // A MÁGICA AQUI: Mudamos de < 10 para < 11 para incluir o Leito Teste!
+        if (dt.id >= 0 && dt.id < 11) {
+          const sp = mergePatientData(defaultPatient(dt.id), dt);
+          up[dt.id] = syncLabsFromHistory(sp);
+          ch = true;
+        }
+      });
+      if (ch) setPatients(up);
+    });
+  }, [user]);
+
+  useEffect(() => {
+    const isMedico = userProfile ? userProfile.role === "Médico" : true;
+
+    if (viewMode === "medical" && currentPatient && isMedico) {
+      const currentSofa = getAutoSOFA2(currentPatient);
+      const basalSofa = parseInt(currentPatient.sofa_data_technical?.baseline_sofa || 0);
+
+      let referenceSofa = currentPatient.sofa_data_technical?.reference_sofa_for_sepsis;
+      referenceSofa = referenceSofa !== undefined ? parseInt(referenceSofa) : basalSofa;
+
+      // FILTRO DE SEGURANÇA: Verifica se a queda do SOFA é por falta de dados (início de plantão)
+      const isPlantaoZerado = !currentPatient.bh?.vitals || Object.keys(currentPatient.bh.vitals).length === 0;
+
+      // 1. O REARME CLÍNICO (Apenas se o dia NÃO estiver zerado)
+      if (currentSofa < referenceSofa && !isPlantaoZerado) {
+        const p = { ...currentPatient };
+        if (!p.sofa_data_technical) p.sofa_data_technical = {};
+        p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
+        p.sofa_data_technical.last_alerted_sofa = null;
+
+        const up = [...patients];
+        up[activeTab] = p;
+        setPatients(up);
+        return;
+      }
+
+      // 2. O GATILHO SEPSIS-3
+      if (currentSofa - referenceSofa >= 2) {
+        if (currentPatient.sofa_data_technical?.last_alerted_sofa !== currentSofa) {
+          setShowSepsisModal(true);
         }
       }
-    }, [patients, activeTab, viewMode, currentPatient, userProfile]);
+    }
+  }, [patients, activeTab, viewMode, currentPatient, userProfile]);
 
-    // Efeito para capturar dados vindos da Recepção assim que a tela carrega
+  // Efeito para capturar dados vindos da Recepção assim que a tela carrega
   useEffect(() => {
     const incoming = location.state?.incomingPatient;
-    
+
     if (incoming && !admissionData.nome) { // Se tem paciente vindo e o form está vazio
       console.log("Detectado paciente da recepção:", incoming);
-      
+
       setAdmissionData({
         nome: incoming.nome || "",
         sexo: incoming.sexo || "",
@@ -372,361 +371,360 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         historia: "", exameGeral: "", diagAgudos: "", conduta: "",
         saps_comorbidades: [],
       });
-      
+
       // Abre o modal automaticamente para facilitar a vida do médico
       setShowAdmissionModal(true);
     }
   }, [location.state, admissionData.nome]);
 
-    const gasoCols = [...Object.keys(currentPatient.gasometriaHistory || {}), ...(currentPatient.customGasometriaCols || []), ...getLast10Days()];
-    const uniqueGasoCols = [...new Set(gasoCols)].sort().reverse();
+  const gasoCols = [...Object.keys(currentPatient.gasometriaHistory || {}), ...(currentPatient.customGasometriaCols || []), ...getLast10Days()];
+  const uniqueGasoCols = [...new Set(gasoCols)].sort().reverse();
 
-    // --- FUNÇÕES DE PERSISTÊNCIA ---
-    const save = async (updatedPatient, logMsg = "Alteração no Prontuário") => {
-        if (!db || !updatedPatient) return;
-        try {
-            await setDoc(doc(db, "leitos_uti", `bed_${updatedPatient.id}`), updatedPatient, { merge: true });
-            console.log(`[AUDITORIA]: ${logMsg}`);
-        } catch (err) { console.error("Erro ao salvar:", err); }
-    };
+  // --- FUNÇÕES DE PERSISTÊNCIA ---
+  const save = async (updatedPatient, logMsg = "Alteração no Prontuário") => {
+    if (!db || !updatedPatient) return;
+    try {
+      await setDoc(doc(db, "leitos_uti", `bed_${updatedPatient.id}`), updatedPatient, { merge: true });
+      console.log(`[AUDITORIA]: ${logMsg}`);
+    } catch (err) { console.error("Erro ao salvar:", err); }
+  };
 
-    const updateNested = (category, subfield, value) => {
-        const up = [...patients];
-        const p = { ...up[activeTab] };
-        if (!p[category]) p[category] = {};
-        if (subfield) p[category][subfield] = value;
-        else p[category] = value;
-        up[activeTab] = p;
-        setPatients(up);
-    };
+  const updateNested = (category, subfield, value) => {
+    const up = [...patients];
+    const p = { ...up[activeTab] };
+    if (!p[category]) p[category] = {};
+    if (subfield) p[category][subfield] = value;
+    else p[category] = value;
+    up[activeTab] = p;
+    setPatients(up);
+  };
 
-    const updateP = (field, value) => {
-        const up = [...patients];
-        up[activeTab] = { ...up[activeTab], [field]: value };
-        setPatients(up);
-    };
+  const updateP = (field, value) => {
+    const up = [...patients];
+    up[activeTab] = { ...up[activeTab], [field]: value };
+    setPatients(up);
+  };
 
-    // Função disparada ao clicar no "Admitir" do leito vazio
-    const handleOpenQueue = (bedId) => {
-      setSelectedBedForAdmission(bedId);
-      setShowQueueModal(true);
-    };
+  // Função disparada ao clicar no "Admitir" do leito vazio
+  const handleOpenQueue = (bedId) => {
+    setSelectedBedForAdmission(bedId);
+    setShowQueueModal(true);
+  };
 
-    // Função que efetiva a internação (tira da fila e põe no leito)
-    const bindPatientToBed = async (patientFromQueue) => {
-      try {
-        const bedIndex = selectedBedForAdmission;
-        
-        const newPatientRecord = {
-          ...defaultPatient(bedIndex), 
-          id: bedIndex,
-          nome: patientFromQueue.nome,
-          cpf: patientFromQueue.cpf,
-          dataNascimento: patientFromQueue.dataNascimento,
-          sexo: patientFromQueue.sexo,
-          dataInternacao: getManausDateStr(),
-          procedencia: patientFromQueue.origem || "Recepção",
-          statusInternacao: "Aguardando Admissão Médica" 
-        };
-        
-        // 1. Salva no Firebase
-        await setDoc(doc(db, "leitos_uti", `bed_${bedIndex}`), newPatientRecord);
-        
-        // 2. A PEÇA QUE FALTAVA: Atualiza a tela (React) na mesma hora!
-        const up = [...patients];
-        up[bedIndex] = newPatientRecord;
-        setPatients(up);
-        
-        // 3. Remove o paciente da Fila de Espera
-        await updateDoc(doc(db, "fila_espera", patientFromQueue.id), {
-          status: "internado",
-          leitoAtribuido: bedIndex,
-          dataInternada: serverTimestamp()
-        });
-  
-        setShowQueueModal(false);
-        alert(`${patientFromQueue.nome} foi vinculado ao Leito ${bedIndex + 1}.`);
-        
-      } catch (error) {
-        console.error("Erro na internação:", error);
-        alert("Falha ao vincular paciente ao leito.");
-      }
-    };
+  // Função que efetiva a internação (tira da fila e põe no leito)
+  const bindPatientToBed = async (patientFromQueue) => {
+    try {
+      const bedIndex = selectedBedForAdmission;
 
-    const toggleSAPSComorbidade = (c) => {
-      setAdmissionData((prev) => {
-        const arr = prev.saps_comorbidades || [];
-        return arr.includes(c) 
-          ? { ...prev, saps_comorbidades: arr.filter((i) => i !== c) }
-          : { ...prev, saps_comorbidades: [...arr, c] };
-      });
-    };
-
-    const getAdmissionData = (p) => {
-      // 1. Tenta buscar dados salvos explicitamente na admissão médica
-      // 2. Se não houver, tenta buscar o primeiro registro do histórico de SSVV
-      // 3. Como último recurso, usa os dados atuais (mas avisa o usuário)
-      
-      const admissionVitals = p.medical?.vitalsAtAdmission || {};
-      const hasAdmissionData = Object.keys(admissionVitals).length > 0;
-    
-      return {
-        temp: admissionVitals.temp || p.admissaoTemp || 36,
-        fc: admissionVitals.fc || p.admissaoFC || 80,
-        pas: admissionVitals.pas || p.admissaoPAS || 120,
-        pam: admissionVitals.pam || p.admissaoPAM || 80,
-        spo2: admissionVitals.spo2 || p.admissaoSpO2 || 95,
-        isFallback: !hasAdmissionData
+      const newPatientRecord = {
+        ...defaultPatient(bedIndex),
+        id: bedIndex,
+        nome: patientFromQueue.nome,
+        cpf: patientFromQueue.cpf,
+        dataNascimento: patientFromQueue.dataNascimento,
+        sexo: patientFromQueue.sexo,
+        dataInternacao: getManausDateStr(),
+        procedencia: patientFromQueue.origem || "Recepção",
+        statusInternacao: "Aguardando Admissão Médica"
       };
+
+      // 1. Salva no Firebase
+      await setDoc(doc(db, "leitos_uti", `bed_${bedIndex}`), newPatientRecord);
+
+      // 2. A PEÇA QUE FALTAVA: Atualiza a tela (React) na mesma hora!
+      const up = [...patients];
+      up[bedIndex] = newPatientRecord;
+      setPatients(up);
+
+      // 3. Remove o paciente da Fila de Espera
+      await updateDoc(doc(db, "fila_espera", patientFromQueue.id), {
+        status: "internado",
+        leitoAtribuido: bedIndex,
+        dataInternada: serverTimestamp()
+      });
+
+      setShowQueueModal(false);
+      alert(`${patientFromQueue.nome} foi vinculado ao Leito ${bedIndex + 1}.`);
+
+    } catch (error) {
+      console.error("Erro na internação:", error);
+      alert("Falha ao vincular paciente ao leito.");
+    }
+  };
+
+  const toggleSAPSComorbidade = (c) => {
+    setAdmissionData((prev) => {
+      const arr = prev.saps_comorbidades || [];
+      return arr.includes(c)
+        ? { ...prev, saps_comorbidades: arr.filter((i) => i !== c) }
+        : { ...prev, saps_comorbidades: [...arr, c] };
+    });
+  };
+
+  const getAdmissionData = (p) => {
+    // 1. Tenta buscar dados salvos explicitamente na admissão médica
+    // 2. Se não houver, tenta buscar o primeiro registro do histórico de SSVV
+    // 3. Como último recurso, usa os dados atuais (mas avisa o usuário)
+
+    const admissionVitals = p.medical?.vitalsAtAdmission || {};
+    const hasAdmissionData = Object.keys(admissionVitals).length > 0;
+
+    return {
+      temp: admissionVitals.temp || p.admissaoTemp || 36,
+      fc: admissionVitals.fc || p.admissaoFC || 80,
+      pas: admissionVitals.pas || p.admissaoPAS || 120,
+      pam: admissionVitals.pam || p.admissaoPAM || 80,
+      spo2: admissionVitals.spo2 || p.admissaoSpO2 || 95,
+      isFallback: !hasAdmissionData
+    };
+  };
+
+  const clearAntibiotic = (i) => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    const atb = p.antibiotics[i];
+
+    // Arquivar no histórico antes de limpar
+    if (atb && atb.name) {
+      if (!p.antibioticsHistory) p.antibioticsHistory = [];
+      const dDiff = calculateDaysDiff(atb.date, true);
+      const daysUsed = dDiff === "Err" ? "?" : dDiff.replace("D", "");
+      p.antibioticsHistory.push({
+        id: Date.now() + "_" + Math.random().toString(36).substr(2, 9),
+        name: atb.name,
+        startDate: atb.date,
+        endDate: getManausDateStr(),
+        duration: `${daysUsed} dia(s)`,
+      });
+    }
+
+    p.antibiotics[i] = { name: "", date: "" };
+    up[activeTab] = p;
+    setPatients(up);
+
+    // Salva e carimba na auditoria instantaneamente
+    save(p, "Farmácia: Arquivou/Limpou Antibiótico");
+  };
+
+  const handleSepsisResponse = (hasInfection) => {
+    const p = { ...currentPatient };
+    if (!p.sofa_data_technical) p.sofa_data_technical = {};
+
+    const currentSofa = getAutoSOFA2(p);
+
+    // Salva exatamente o nível de gravidade em que estamos alertando
+    p.sofa_data_technical.last_alerted_sofa = currentSofa;
+
+    // A nova referência passa a ser esse SOFA alto. Só apita de novo se subir MAIS 2 pontos.
+    p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
+
+    // Se o médico disser sim, acende o banner
+    p.sofa_data_technical.sepsis_protocol_active = hasInfection;
+
+    const up = [...patients];
+    up[activeTab] = p;
+    setPatients(up);
+    if (user && db) setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
+
+    setShowSepsisModal(false);
+  };
+
+  const updateLab = (date, exam, value) => {
+    const up = [...patients];
+    const p = up[activeTab];
+    if (!p.examHistory[date]) p.examHistory[date] = {};
+    p.examHistory[date][exam] = value;
+    up[activeTab] = syncLabsFromHistory(p);
+    setPatients(up);
+  };
+
+  const updateAntibiotic = (i, f, v) => {
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda
+      p.antibiotics[i][f] = v;
+      up[activeTab] = p;
+      return up;
+    });
+    // O 'save' foi removido! A auditoria acontecerá pelo onBlur no <input>
+  };
+
+  const handleNextDayBH = () => {
+    if (!window.confirm("Deseja fechar o balanço atual e iniciar um novo dia?")) return;
+
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    const { accumulated } = calculateTotals(p.bh || {});
+    p.bh_previous = { ...(p.bh || {}) };
+    p.bh = {
+      date: getManausDateStr(),
+      accumulated: accumulated || 0,
+      insensibleLoss: p.bh?.insensibleLoss || 0,
+      gains: {}, losses: {}, irrigation: {}, vitals: {}, customGains: p.bh?.customGains || [], customLosses: p.bh?.customLosses || [],
     };
 
-    const clearAntibiotic = (i) => {
-      const up = [...patients];
-      const p = JSON.parse(JSON.stringify(up[activeTab]));
-      const atb = p.antibiotics[i];
-  
-      // Arquivar no histórico antes de limpar
-      if (atb && atb.name) {
-        if (!p.antibioticsHistory) p.antibioticsHistory = [];
-        const dDiff = calculateDaysDiff(atb.date, true);
-        const daysUsed = dDiff === "Err" ? "?" : dDiff.replace("D", "");
-        p.antibioticsHistory.push({
-          id: Date.now() + "_" + Math.random().toString(36).substr(2, 9),
-          name: atb.name,
-          startDate: atb.date,
-          endDate: getManausDateStr(),
-          duration: `${daysUsed} dia(s)`,
-        });
-      }
-  
-      p.antibiotics[i] = { name: "", date: "" };
+    up[activeTab] = p;
+    setPatients(up);
+    save(p, "Balanço Hídrico: Fechou o dia (Balanço de 24h)");
+  };
+
+  const deleteATBHistoryItem = (id) => {
+    if (!window.confirm("Excluir este antibiótico do histórico de forma permanente?")) return;
+
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    if (p.antibioticsHistory) {
+      p.antibioticsHistory = p.antibioticsHistory.filter((h) => h.id !== id);
       up[activeTab] = p;
       setPatients(up);
-      
+
       // Salva e carimba na auditoria instantaneamente
-      save(p, "Farmácia: Arquivou/Limpou Antibiótico"); 
+      save(p, "Farmácia: Excluiu item do Histórico de ATB");
+    }
+  };
+
+  const clearDate = (field) => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    p[field] = "";
+    up[activeTab] = p;
+    setPatients(up);
+
+    // Salva e carimba na auditoria instantaneamente
+    save(p, "Sistema: Limpou Campo de Data");
+  };
+
+  const confirmIndividualUpload = async (processedData) => {
+    // Blindagem de memória
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    // Se o paciente ainda não tem a pasta de documentos, nós a criamos
+    if (!p.documentos) p.documentos = [];
+
+    // Adiciona o novo documento processado na ficha do paciente
+    p.documentos.push({
+      id: Date.now().toString(),
+      data: processedData.date || getManausDateStr(),
+      categoria: processedData.category || "Outros",
+      textoExtraido: processedData.text || "",
+      resumoIA: processedData.aiSummary || "",
+      nomeArquivo: processedData.fileName || "documento_anexado.pdf"
+    });
+
+    // Atualiza a tela
+    up[activeTab] = p;
+    setPatients(up);
+
+    // Salva no banco de dados e gera o carimbo de auditoria
+    save(p, `Recepção/Upload: Anexou novo documento (${processedData.category || "Outros"})`);
+
+    // Fecha a janela e limpa os dados temporários
+    setShowIndividualUploadModal(false);
+    setPendingUploadData(null);
+    alert("Documento salvo e anexado ao prontuário com sucesso!");
+  };
+
+  const handleAdmitPatient = () => {
+    // MUDANÇA CRUCIAL: Pega os dados do paciente que já está na maca do leito!
+    const p = currentPatient;
+
+    console.log(">>> CLICOU EM ADMITIR! Puxando dados do leito:", p);
+
+    setAdmissionData({
+      // Puxa o que foi preenchido na hora de vincular da Fila de Espera
+      nome: p?.nome || "",
+      sexo: p?.sexo || "",
+      dataNascimento: p?.dataNascimento || "",
+      origem: p?.procedencia || "Recepção",
+
+      // Restante dos campos zerados para o médico preencher
+      historia: "", exameGeral: "", exameACV: "", exameAR: "",
+      exameABD: "", exameExtremidades: "", exameNeuro: "",
+      ecg_ao: "", ecg_rv: "", ecg_rm: "", ecg_basal_ao: "", ecg_basal_rv: "", ecg_basal_rm: "",
+      rass: "", pupilas: "", dva: false, drogasDVA: [],
+      sedacao: false, drogasSedacao: [], medicamentos: "",
+      conscienciaBasal: "", mobilidadeBasal: "", examesComplementares: "",
+      diagAgudos: "", diagCronicos: "", conduta: "",
+      saps_origem: "", saps_dias: "", saps_motivo: "", saps_sistema: "",
+      saps_infeccao: "", saps_sitioInfeccao: "",
+      saps_cirurgiaUrgente: false, saps_imunossupressao: false,
+      saps_comorbidades: [],
+    });
+
+    setShowAdmissionModal(true);
+  };
+
+  const handleFinalizeAdmission = async () => {
+    if (!admissionData.nome || !admissionData.nome.trim()) {
+      return alert(
+        "O preenchimento do NOME é obrigatório para admitir o paciente."
+      );
+    }
+
+    const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
+    r.statusInternacao = "Ativo"; // Libera o cadeado da Aba Médica
+    r.nome = admissionData.nome.trim().toUpperCase();
+    r.sexo = admissionData.sexo || "";
+    r.dataNascimento = admissionData.dataNascimento || "";
+    r.dataInternacao = getManausDateStr();
+    r.bh.date = getManausDateStr();
+    r.procedencia = admissionData.origem;
+    r.diagnostico = admissionData.diagAgudos;
+    r.comorbidades = admissionData.diagCronicos;
+
+    const getVal = (s) => parseInt(s?.split(" ")[0]) || 0;
+    const ao = getVal(admissionData.ecg_ao);
+    const rv = admissionData.ecg_rv?.startsWith("T")
+      ? 1
+      : getVal(admissionData.ecg_rv);
+    const rm = getVal(admissionData.ecg_rm);
+    const totalEcg =
+      admissionData.ecg_ao || admissionData.ecg_rv || admissionData.ecg_rm
+        ? ao + rv + rm
+        : null;
+    const ecgText =
+      totalEcg !== null
+        ? `${totalEcg} (AO:${ao} RV:${admissionData.ecg_rv?.startsWith("T") ? "T" : rv
+        } RM:${rm})`
+        : "-";
+
+    r.neuro.glasgowAO = admissionData.ecg_ao;
+    r.neuro.glasgowRV = admissionData.ecg_rv;
+    r.neuro.glasgowRM = admissionData.ecg_rm;
+    r.neuro.glasgowBasalAO = admissionData.ecg_basal_ao;
+    r.neuro.glasgowBasalRV = admissionData.ecg_basal_rv;
+    r.neuro.glasgowBasalRM = admissionData.ecg_basal_rm;
+    r.neuro.rass = admissionData.rass;
+
+    r.cardio.dva = admissionData.dva;
+    r.cardio.drogasDVA = admissionData.drogasDVA || [];
+
+    r.neuro.sedacao = admissionData.sedacao;
+    r.neuro.drogasSedacao = admissionData.drogasSedacao || [];
+
+    r.saps3 = {
+      origemMapped: admissionData.saps_origem,
+      diasHospital: admissionData.saps_dias,
+      motivoAdmissao: admissionData.saps_motivo,
+      sistemaRazao: admissionData.saps_sistema,
+      infeccaoAdmissao: admissionData.saps_infeccao,
+      sitioInfeccao: admissionData.saps_sitioInfeccao,
+      cirurgiaUrgente: admissionData.saps_cirurgiaUrgente,
+      imunossupressao: admissionData.saps_imunossupressao,
+      comorbidades: admissionData.saps_comorbidades || [],
     };
 
-    const handleSepsisResponse = (hasInfection) => {
-      const p = { ...currentPatient };
-      if (!p.sofa_data_technical) p.sofa_data_technical = {};
-  
-      const currentSofa = getAutoSOFA2(p);
-  
-      // Salva exatamente o nível de gravidade em que estamos alertando
-      p.sofa_data_technical.last_alerted_sofa = currentSofa;
-      
-      // A nova referência passa a ser esse SOFA alto. Só apita de novo se subir MAIS 2 pontos.
-      p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
-  
-      // Se o médico disser sim, acende o banner
-      p.sofa_data_technical.sepsis_protocol_active = hasInfection;
-  
-      const up = [...patients];
-      up[activeTab] = p;
-      setPatients(up);
-      if (user && db) setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
-  
-      setShowSepsisModal(false);
-    };
+    // Lógica para montar a linha do Glasgow Basal no texto
+    const basalAo = parseInt(admissionData.ecg_basal_ao?.split(" ")[0]) || 0;
+    const basalRv = admissionData.ecg_basal_rv?.startsWith("T") ? 1 : (parseInt(admissionData.ecg_basal_rv?.split(" ")[0]) || 0);
+    const basalRm = parseInt(admissionData.ecg_basal_rm?.split(" ")[0]) || 0;
+    const totalBasal = (basalAo || basalRv || basalRm) ? (basalAo + basalRv + basalRm) : null;
 
-    const updateLab = (date, exam, value) => {
-        const up = [...patients];
-        const p = up[activeTab];
-        if (!p.examHistory[date]) p.examHistory[date] = {};
-        p.examHistory[date][exam] = value;
-        up[activeTab] = syncLabsFromHistory(p);
-        setPatients(up);
-    };
+    const basalText = (admissionData.rass && totalBasal !== null) ? `  |  ECG Pré-Sedação: ${totalBasal}` : "";
 
-    const updateAntibiotic = (i, f, v) => {
-      setPatients(prev => {
-        const up = [...prev];
-        const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda
-        p.antibiotics[i][f] = v;
-        up[activeTab] = p;
-        return up;
-      });
-      // O 'save' foi removido! A auditoria acontecerá pelo onBlur no <input>
-    };
-
-    const handleNextDayBH = () => {
-      if (!window.confirm("Deseja fechar o balanço atual e iniciar um novo dia?")) return;
-      
-      const up = [...patients];
-      const p = JSON.parse(JSON.stringify(up[activeTab])); 
-      
-      const { accumulated } = calculateTotals(p.bh || {});
-      p.bh_previous = { ...(p.bh || {}) };
-      p.bh = {
-        date: getManausDateStr(),
-        accumulated: accumulated || 0,
-        insensibleLoss: p.bh?.insensibleLoss || 0,
-        gains: {}, losses: {}, irrigation: {}, vitals: {}, customGains: p.bh?.customGains || [], customLosses: p.bh?.customLosses || [],
-      };
-      
-      up[activeTab] = p;
-      setPatients(up);
-      save(p, "Balanço Hídrico: Fechou o dia (Balanço de 24h)");
-    };
-
-    const deleteATBHistoryItem = (id) => {
-      if (!window.confirm("Excluir este antibiótico do histórico de forma permanente?")) return;
-      
-      const up = [...patients];
-      const p = JSON.parse(JSON.stringify(up[activeTab]));
-      if (p.antibioticsHistory) {
-        p.antibioticsHistory = p.antibioticsHistory.filter((h) => h.id !== id);
-        up[activeTab] = p;
-        setPatients(up);
-        
-        // Salva e carimba na auditoria instantaneamente
-        save(p, "Farmácia: Excluiu item do Histórico de ATB");
-      }
-    };
-
-    const clearDate = (field) => {
-      const up = [...patients];
-      const p = JSON.parse(JSON.stringify(up[activeTab]));
-      p[field] = "";
-      up[activeTab] = p;
-      setPatients(up);
-      
-      // Salva e carimba na auditoria instantaneamente
-      save(p, "Sistema: Limpou Campo de Data");
-    };
-
-    const confirmIndividualUpload = async (processedData) => {
-      // Blindagem de memória
-      const up = [...patients];
-      const p = JSON.parse(JSON.stringify(up[activeTab]));
-      
-      // Se o paciente ainda não tem a pasta de documentos, nós a criamos
-      if (!p.documentos) p.documentos = [];
-      
-      // Adiciona o novo documento processado na ficha do paciente
-      p.documentos.push({
-        id: Date.now().toString(),
-        data: processedData.date || getManausDateStr(),
-        categoria: processedData.category || "Outros",
-        textoExtraido: processedData.text || "",
-        resumoIA: processedData.aiSummary || "",
-        nomeArquivo: processedData.fileName || "documento_anexado.pdf"
-      });
-      
-      // Atualiza a tela
-      up[activeTab] = p;
-      setPatients(up);
-      
-      // Salva no banco de dados e gera o carimbo de auditoria
-      save(p, `Recepção/Upload: Anexou novo documento (${processedData.category || "Outros"})`);
-      
-      // Fecha a janela e limpa os dados temporários
-      setShowIndividualUploadModal(false);
-      setPendingUploadData(null);
-      alert("Documento salvo e anexado ao prontuário com sucesso!");
-    };
-
-    const handleAdmitPatient = () => {
-      // MUDANÇA CRUCIAL: Pega os dados do paciente que já está na maca do leito!
-      const p = currentPatient;
-      
-      console.log(">>> CLICOU EM ADMITIR! Puxando dados do leito:", p);
-  
-      setAdmissionData({
-        // Puxa o que foi preenchido na hora de vincular da Fila de Espera
-        nome: p?.nome || "",
-        sexo: p?.sexo || "",
-        dataNascimento: p?.dataNascimento || "",
-        origem: p?.procedencia || "Recepção",
-        
-        // Restante dos campos zerados para o médico preencher
-        historia: "", exameGeral: "", exameACV: "", exameAR: "", 
-        exameABD: "", exameExtremidades: "", exameNeuro: "",
-        ecg_ao: "", ecg_rv: "", ecg_rm: "", ecg_basal_ao: "", ecg_basal_rv: "", ecg_basal_rm: "",
-        rass: "", pupilas: "", dva: false, drogasDVA: [],
-        sedacao: false, drogasSedacao: [], medicamentos: "",
-        conscienciaBasal: "", mobilidadeBasal: "", examesComplementares: "",
-        diagAgudos: "", diagCronicos: "", conduta: "",
-        saps_origem: "", saps_dias: "", saps_motivo: "", saps_sistema: "",
-        saps_infeccao: "", saps_sitioInfeccao: "",
-        saps_cirurgiaUrgente: false, saps_imunossupressao: false,
-        saps_comorbidades: [],
-      });
-  
-      setShowAdmissionModal(true);
-    };
-
-    const handleFinalizeAdmission = async () => {
-      if (!admissionData.nome || !admissionData.nome.trim()) {
-        return alert(
-          "O preenchimento do NOME é obrigatório para admitir o paciente."
-        );
-      }
-  
-      const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
-      r.statusInternacao = "Ativo"; // Libera o cadeado da Aba Médica
-      r.nome = admissionData.nome.trim().toUpperCase();
-      r.sexo = admissionData.sexo || "";
-      r.dataNascimento = admissionData.dataNascimento || "";
-      r.dataInternacao = getManausDateStr();
-      r.bh.date = getManausDateStr();
-      r.procedencia = admissionData.origem;
-      r.diagnostico = admissionData.diagAgudos;
-      r.comorbidades = admissionData.diagCronicos;
-  
-      const getVal = (s) => parseInt(s?.split(" ")[0]) || 0;
-      const ao = getVal(admissionData.ecg_ao);
-      const rv = admissionData.ecg_rv?.startsWith("T")
-        ? 1
-        : getVal(admissionData.ecg_rv);
-      const rm = getVal(admissionData.ecg_rm);
-      const totalEcg =
-        admissionData.ecg_ao || admissionData.ecg_rv || admissionData.ecg_rm
-          ? ao + rv + rm
-          : null;
-      const ecgText =
-        totalEcg !== null
-          ? `${totalEcg} (AO:${ao} RV:${
-              admissionData.ecg_rv?.startsWith("T") ? "T" : rv
-            } RM:${rm})`
-          : "-";
-  
-      r.neuro.glasgowAO = admissionData.ecg_ao;
-      r.neuro.glasgowRV = admissionData.ecg_rv;
-      r.neuro.glasgowRM = admissionData.ecg_rm;
-      r.neuro.glasgowBasalAO = admissionData.ecg_basal_ao;
-      r.neuro.glasgowBasalRV = admissionData.ecg_basal_rv;
-      r.neuro.glasgowBasalRM = admissionData.ecg_basal_rm;
-      r.neuro.rass = admissionData.rass;
-  
-      r.cardio.dva = admissionData.dva;
-      r.cardio.drogasDVA = admissionData.drogasDVA || [];
-  
-      r.neuro.sedacao = admissionData.sedacao;
-      r.neuro.drogasSedacao = admissionData.drogasSedacao || [];
-  
-      r.saps3 = {
-        origemMapped: admissionData.saps_origem,
-        diasHospital: admissionData.saps_dias,
-        motivoAdmissao: admissionData.saps_motivo,
-        sistemaRazao: admissionData.saps_sistema,
-        infeccaoAdmissao: admissionData.saps_infeccao,
-        sitioInfeccao: admissionData.saps_sitioInfeccao,
-        cirurgiaUrgente: admissionData.saps_cirurgiaUrgente,
-        imunossupressao: admissionData.saps_imunossupressao,
-        comorbidades: admissionData.saps_comorbidades || [],
-      };
-  
-      // Lógica para montar a linha do Glasgow Basal no texto
-      const basalAo = parseInt(admissionData.ecg_basal_ao?.split(" ")[0]) || 0;
-      const basalRv = admissionData.ecg_basal_rv?.startsWith("T") ? 1 : (parseInt(admissionData.ecg_basal_rv?.split(" ")[0]) || 0);
-      const basalRm = parseInt(admissionData.ecg_basal_rm?.split(" ")[0]) || 0;
-      const totalBasal = (basalAo || basalRv || basalRm) ? (basalAo + basalRv + basalRm) : null;
-      
-      const basalText = (admissionData.rass && totalBasal !== null) ? `  |  ECG Pré-Sedação: ${totalBasal}` : "";
-  
-      const text = `ADMISSÃO NA UTI
+    const text = `ADMISSÃO NA UTI
   NOME: ${admissionData.nome?.toUpperCase() || "-"} (SEXO: ${admissionData.sexo || "-"})
   ORIGEM: ${admissionData.origem || "-"}
   
@@ -763,69 +761,69 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   
       CONDUTA:
   ${admissionData.conduta || "-"}`;
-  
-      // Criando o bloco filtrado apenas com o que importa para o dia a dia
-      const historiaAbaMedica = `${admissionData.historia || "-"}
+
+    // Criando o bloco filtrado apenas com o que importa para o dia a dia
+    const historiaAbaMedica = `${admissionData.historia || "-"}
   
   MEDICAMENTOS DE USO HABITUAL:
   ${admissionData.medicamentos || "-"}
   
   NÍVEL DE CONSCIÊNCIA BASAL: ${admissionData.conscienciaBasal || "-"}
   MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
-  
-      // Agora a Aba Médica recebe apenas o resumo
-      r.historiaClinica = historiaAbaMedica;
-      // --- A CHAVE MESTRA: SALVANDO NA NUVEM ---
+
+    // Agora a Aba Médica recebe apenas o resumo
+    r.historiaClinica = historiaAbaMedica;
+    // --- A CHAVE MESTRA: SALVANDO NA NUVEM ---
     try {
       await setDoc(doc(db, "leitos_uti", `bed_${activeTab}`), r);
     } catch (error) {
       console.error("Erro ao salvar admissão na nuvem:", error);
     }
     // -----------------------------------------
-      const up = [...patients];
-      up[activeTab] = r;
-      setPatients(up);
-      save(r, "Médico: Realizou a Admissão Completa do Paciente (Pré-UTI, SAPS 3 e Exame Físico)");
-  
-      setShowAdmissionModal(false);
-      // A tela de copiar texto final continua recebendo a Admissão Completa
-      setGeneratedAdmissionText(text); 
-      setViewMode("medical");
-    };
+    const up = [...patients];
+    up[activeTab] = r;
+    setPatients(up);
+    save(r, "Médico: Realizou a Admissão Completa do Paciente (Pré-UTI, SAPS 3 e Exame Físico)");
 
-    const handleNursingAdmission = () => {
-      const p = patients[activeTab].enfermagem || {};
-      setNursingData({
-        dor: p.dor || "",
-        hemodialise: p.hemodialise || false,
-        precaucao: p.precaucao || "",
-        avpLocal: p.avpLocal || "",
-        avpData: p.avpData || "",
-        cvcLocal: p.cvcLocal || "",
-        cvcData: p.cvcData || "",
-        svd: p.svd || false,
-        svdData: p.svdData || "",
-        sneCm: p.sneCm || "",
-        sneData: p.sneData || "",
-        drenoTipo: p.drenoTipo || "",
-        lesaoLocal: p.lesaoLocal || "",
-        curativoTipo: p.curativoTipo || "",
-        curativoData: p.curativoData || "",
-        braden_percepcao: p.braden_percepcao ?? "",
-        braden_umidade: p.braden_umidade ?? "",
-        braden_atividade: p.braden_atividade ?? "",
-        braden_mobilidade: p.braden_mobilidade ?? "",
-        braden_nutricao: p.braden_nutricao ?? "",
-        braden_friccao: p.braden_friccao ?? "",
-        morse_historico: p.morse_historico ?? "",
-        morse_diagnostico: p.morse_diagnostico ?? "",
-        morse_auxilio: p.morse_auxilio ?? "",
-        morse_terapiaIV: p.morse_terapiaIV ?? "",
-        morse_marcha: p.morse_marcha ?? "",
-        morse_estadoMental: p.morse_estadoMental ?? "",
-      });
-      setShowNursingModal(true);
-    };
+    setShowAdmissionModal(false);
+    // A tela de copiar texto final continua recebendo a Admissão Completa
+    setGeneratedAdmissionText(text);
+    setViewMode("medical");
+  };
+
+  const handleNursingAdmission = () => {
+    const p = patients[activeTab].enfermagem || {};
+    setNursingData({
+      dor: p.dor || "",
+      hemodialise: p.hemodialise || false,
+      precaucao: p.precaucao || "",
+      avpLocal: p.avpLocal || "",
+      avpData: p.avpData || "",
+      cvcLocal: p.cvcLocal || "",
+      cvcData: p.cvcData || "",
+      svd: p.svd || false,
+      svdData: p.svdData || "",
+      sneCm: p.sneCm || "",
+      sneData: p.sneData || "",
+      drenoTipo: p.drenoTipo || "",
+      lesaoLocal: p.lesaoLocal || "",
+      curativoTipo: p.curativoTipo || "",
+      curativoData: p.curativoData || "",
+      braden_percepcao: p.braden_percepcao ?? "",
+      braden_umidade: p.braden_umidade ?? "",
+      braden_atividade: p.braden_atividade ?? "",
+      braden_mobilidade: p.braden_mobilidade ?? "",
+      braden_nutricao: p.braden_nutricao ?? "",
+      braden_friccao: p.braden_friccao ?? "",
+      morse_historico: p.morse_historico ?? "",
+      morse_diagnostico: p.morse_diagnostico ?? "",
+      morse_auxilio: p.morse_auxilio ?? "",
+      morse_terapiaIV: p.morse_terapiaIV ?? "",
+      morse_marcha: p.morse_marcha ?? "",
+      morse_estadoMental: p.morse_estadoMental ?? "",
+    });
+    setShowNursingModal(true);
+  };
 
   const handlePhysioAdmission = () => {
     const p = patients[activeTab].physio || {};
@@ -873,7 +871,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 • Sedestação no leito/à beira do leito/poltrona - ortostatismo/marcha assistida/deambulação;
 
 Paciente apresentou boa tolerância às manobras, sem intercorrências hemodinâmicas. Melhora discreta da expansibilidade torácica e redução de secreção espessa em vias aéreas. Mantida estabilidade dos sinais vitais durante todo atendimento.`,
-dataIntubacao: p.dataIntubacao || "",
+      dataIntubacao: p.dataIntubacao || "",
       numeroTOT: p.totNumero || "",
       rimaFixacao: p.totRima || "",
       // --- PUXANDO OS DADOS DA SECREÇÃO BASAL SALVA ---
@@ -889,7 +887,7 @@ dataIntubacao: p.dataIntubacao || "",
     // 1. BLINDAGEM DE MEMÓRIA (Evita bugs do React com Cópia Profunda)
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
-    
+
     if (!p.physio) p.physio = {};
 
     p.physio.admissao_estadoGeral = physioData.estadoGeral;
@@ -899,7 +897,7 @@ dataIntubacao: p.dataIntubacao || "",
     p.physio.admissao_sistemaDigestivo = physioData.sistemaDigestivo;
     p.physio.admissao_sistemaMusculoesqueletico = physioData.sistemaMusculoesqueletico;
     p.physio.admissao_funcionalidade = physioData.funcionalidade;
-    
+
     // Salva o MRC e o IMS no painel principal da fisio também!
     p.physio.mrcScore = physioData.mrcScore;
     p.physio.icuMobilityScale = physioData.ims;
@@ -914,18 +912,18 @@ dataIntubacao: p.dataIntubacao || "",
     p.physio.tIns = physioData.tIns;
     p.physio.relIE = physioData.relIE;
     p.physio.filtroHMEF = physioData.filtroHMEF;
-    
-    p.physio.dataHMEF = physioData.dataHMEF; 
+
+    p.physio.dataHMEF = physioData.dataHMEF;
     p.physio.sistemaFechado = physioData.sistemaFechado;
-    p.physio.dataSFA = physioData.dataSFA; 
-    
+    p.physio.dataSFA = physioData.dataSFA;
+
     p.physio.cuff = physioData.cuff;
     p.physio.admissao_condutas = physioData.condutas;
-    p.dataIntubacao = physioData.dataIntubacao; 
-    
+    p.dataIntubacao = physioData.dataIntubacao;
+
     p.physio.totNumero = physioData.numeroTOT;
     p.physio.totRima = physioData.rimaFixacao;
-    
+
     // Transferindo a avaliação por sistemas da Admissão para o Dia a Dia
     p.physio.estadoGeral = physioData.estadoGeral;
     p.physio.sistemaNervoso = physioData.sistemaNervoso;
@@ -933,30 +931,30 @@ dataIntubacao: p.dataIntubacao || "",
     p.physio.sistemaCardiovascular = physioData.sistemaCardiovascular;
     p.physio.sistemaDigestivo = physioData.sistemaDigestivo;
     p.physio.sistemaMusculoesqueletico = physioData.sistemaMusculoesqueletico;
-    
+
     // --- TRANSFERINDO OS DADOS DA SECREÇÃO BASAL ---
     p.physio.secrecao = physioData.secrecao;
     p.physio.secrecaoAspecto = physioData.secrecaoAspecto;
     p.physio.secrecaoColoracao = physioData.secrecaoColoracao;
     p.physio.secrecaoQtd = physioData.secrecaoQtd;
-    
+
     // --- MÁGICA DA GASOMETRIA AUTOMÁTICA ---
     if (physioData.gasoHora) {
       if (!p.gasometriaHistory) p.gasometriaHistory = {};
       if (!p.customGasometriaCols) p.customGasometriaCols = [];
-      
+
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, '0');
       const mm = String(today.getMonth() + 1).padStart(2, '0');
       const colName = `${dd}/${mm} - ${physioData.gasoHora}`;
-      
+
       // Cria a coluna nova na tabela de Gasometria
       if (!p.customGasometriaCols.includes(colName)) {
         p.customGasometriaCols.unshift(colName);
       }
-      
+
       if (!p.gasometriaHistory[colName]) p.gasometriaHistory[colName] = {};
-      
+
       // Injeta os valores
       if (physioData.gaso_pH) p.gasometriaHistory[colName]["pH"] = physioData.gaso_pH;
       if (physioData.gaso_pCO2) p.gasometriaHistory[colName]["pCO2"] = physioData.gaso_pCO2;
@@ -970,14 +968,14 @@ dataIntubacao: p.dataIntubacao || "",
 
     up[activeTab] = p;
     setPatients(up);
-    
+
     // 2. A CAIXA PRETA: Carimba a admissão da fisio de uma vez só!
     save(p, "Fisioterapia: Realizou a Admissão Completa (Avaliação Inicial, Parâmetros Ventilatórios e Escalas)");
 
     // --- O RESTANTE DA FUNÇÃO (GERADOR DE TEXTO) CONTINUA INTACTO ---
     const mrcText = physioData.mrcScore ? `\nESCORE MRC: ${physioData.mrcScore}` : "";
     const imsText = physioData.ims ? `\nICU MOBILITY SCALE (IMS): ${physioData.ims}` : "";
-    
+
     let suporteText = "";
     if (physioData.suporte) {
       if (physioData.suporte === "VM") {
@@ -985,7 +983,7 @@ dataIntubacao: p.dataIntubacao || "",
         if (physioData.parametro === "VCV") paramText = `Vt: ${physioData.volCorrente || "-"}ml`;
         else if (physioData.parametro === "PCV") paramText = `PC: ${physioData.pressaoControlada || "-"}cmH2O`;
         else if (physioData.parametro === "PSV") paramText = `PS: ${physioData.pressaoSuporte || "-"}cmH2O`;
-        
+
         suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | ${paramText} | PEEP: ${physioData.peep || "-"} | FR: ${physioData.fr || "-"} | T.ins: ${physioData.tIns || "-"} | I:E: ${physioData.relIE || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
       } else if (physioData.suporte === "VNI") {
         suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
@@ -1000,21 +998,21 @@ dataIntubacao: p.dataIntubacao || "",
 
     let airwayText = "";
     let itensAirway = [];
-    
+
     if (physioData.suporte === "VM") {
       if (physioData.dataIntubacao) itensAirway.push(`Intubação: ${physioData.dataIntubacao ? formatDateDDMM(physioData.dataIntubacao) : "-"}`);
       if (physioData.numeroTOT) itensAirway.push(`TOT Nº: ${physioData.numeroTOT}`);
       if (physioData.rimaFixacao) itensAirway.push(`Rima: ${physioData.rimaFixacao}cm`);
     }
-    
+
     if (physioData.cuff) itensAirway.push(`Cuff: ${physioData.cuff} cmH2O`);
     if (physioData.filtroHMEF) itensAirway.push(`Filtro HMEF (Troca: ${physioData.dataHMEF ? formatDateDDMM(physioData.dataHMEF) : "Não informada"})`);
     if (physioData.sistemaFechado) itensAirway.push(`Sist. Fechado de Aspiração (Troca: ${physioData.dataSFA ? formatDateDDMM(physioData.dataSFA) : "Não informada"})`);
-    
+
     if (itensAirway.length > 0) {
       airwayText = `\nVIA AÉREA E DISPOSITIVOS: ${itensAirway.join(" | ")}`;
     }
-    
+
     const gasoText = physioData.gasoHora ? `\n\nGASOMETRIA DE ADMISSÃO (${physioData.gasoHora}):\npH: ${physioData.gaso_pH || "-"} | pCO2: ${physioData.gaso_pCO2 || "-"} | PaO2: ${physioData.gaso_PaO2 || "-"} | BE: ${physioData.gaso_BE || "-"} | HCO3: ${physioData.gaso_HCO3 || "-"} | SatO2: ${physioData.gaso_SatO2 || "-"} | FiO2: ${physioData.gaso_FiO2 || "-"} | P/F: ${physioData.gaso_PF || "-"}` : "";
 
     // --- BUSCANDO DADOS MÉDICOS DA ADMISSÃO ---
@@ -1093,7 +1091,7 @@ ${physioData.condutas}`;
     const up = [...patients];
     const p = up[activeTab];
     const calc = calculateSAPS3Score(p);
-    
+
     // 1. TRAVA O SAPS 3 (O código original do senhor)
     if (!p.saps3) p.saps3 = {};
     p.saps3.isLocked = true;
@@ -1120,7 +1118,7 @@ ${physioData.condutas}`;
   };
 
   const handleUnlockSAPS3 = () => {
-    if(!window.confirm("Atenção: Destravar o SAPS 3 fará com que a pontuação seja recalculada com os dados atuais de sinais e exames. Deseja continuar?")) return;
+    if (!window.confirm("Atenção: Destravar o SAPS 3 fará com que a pontuação seja recalculada com os dados atuais de sinais e exames. Deseja continuar?")) return;
     const up = [...patients];
     const p = up[activeTab];
     if (p.saps3) {
@@ -1130,7 +1128,7 @@ ${physioData.condutas}`;
     save(p);
   };
 
-  
+
 
   const generateAIEvolution = async (dadosDoTimeout = null) => {
     setIsGeneratingAI(true);
@@ -1151,12 +1149,12 @@ ${physioData.condutas}`;
       // --- IDENTIFICAÇÃO DE GÊNERO ---
       const isFem = currentPatient.sexo === 'F';
       const sexoPaciente = isFem ? 'A paciente' : 'O paciente';
-      const mantemSe = 'Mantém-se'; 
+      const mantemSe = 'Mantém-se';
 
       // 1. SINAIS VITAIS (Aba Técnico)
       const vitals = currentPatient.bh?.vitals || {};
       let tempMax = 0, spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
-      
+
       Object.values(vitals).forEach((v) => {
         if (!v) return;
         const t = safeNum(v["Temp (ºC)"]); if (t > tempMax) tempMax = t;
@@ -1169,7 +1167,7 @@ ${physioData.condutas}`;
 
       const tempStatus = tempMax >= 37.8 ? "febril" : "afebril";
       const spo2Status = (spo2Min <= 92 && spo2Min > 0) ? "com baixa SpO2" : "mantendo boa SpO2";
-      
+
       // Ajuste de gênero para FC e PA
       const fcStatus = fcMax > 100 ? (isFem ? "taquicárdica" : "taquicárdico") : (fcMin > 0 && fcMin < 60 ? (isFem ? "bradicárdica" : "bradicárdico") : (isFem ? "eucárdica" : "eucárdico"));
       const paStatus = (pasMin > 0 && pasMin < 90) ? "com hipotensão" : (pasMax > 160 ? (isFem ? "hipertensa" : "hipertenso") : "com bom controle pressórico");
@@ -1177,7 +1175,7 @@ ${physioData.condutas}`;
       // 2. ESTADO GERAL E NEURO (Janela Pop-up)
       const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
       const egExtenso = egSalvo === "BEG" ? "BEG" : (egSalvo === "MEG" ? "MEG" : "REG");
-      
+
       // Ajuste de gênero para sedação
       const sedacaoText = currentPatient.neuro?.sedacao ? (isFem ? "sedada" : "sedado") : "sem sedação";
 
@@ -1186,11 +1184,11 @@ ${physioData.condutas}`;
       const suporteText = suporte === "VM" ? "em VM por TOT" : `em uso de ${suporte}`;
 
       // 4. HEMODINÂMICO (Calculadora Nora e DVA Pop-up)
-      const usaDVA = currentPatient.cardio?.dva === true; 
-      
+      const usaDVA = currentPatient.cardio?.dva === true;
+
       // Ajuste de gênero para compensado(a)
       let hemodinamicaStatus = usaDVA ? (isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado") : "Hemodinamicamente estável";
-      
+
       if (currentPatient.bh?.gains && typeof BH_HOURS !== 'undefined') {
         let noraVals = [];
         BH_HOURS.forEach(h => {
@@ -1221,7 +1219,7 @@ ${physioData.condutas}`;
       const evacDaysStr = typeof calculateEvacDays === 'function' ? calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao) : "-";
       const temVomitoBH = typeof checkLossBH === 'function' ? checkLossBH(currentPatient.bh, "Vômitos") : false;
       const temDiarreiaBH = typeof checkLossBH === 'function' ? checkLossBH(currentPatient.bh, "Diarreia") : false;
-      
+
       let tgiDescricao = "";
       if (temVomitoBH && temDiarreiaBH) tgiDescricao = "com episódios de vômito e diarreia";
       else if (temVomitoBH) tgiDescricao = "com episódio de vômito";
@@ -1264,7 +1262,7 @@ ${physioData.condutas}`;
       const models = [
         "gemini-1.5-pro",
       ];
-      
+
       for (const model of models) {
         try {
           const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`, {
@@ -1297,7 +1295,7 @@ ${physioData.condutas}`;
     setIsGeneratingAI(false);
   };
 
-    // ==========================================
+  // ==========================================
   // FUNÇÕES PARA LIMPAR A HEMODIÁLISE (PADRÃO OFICIAL DO SISTEMA)
   // ==========================================
   const resetHDMedica = () => {
@@ -1305,7 +1303,7 @@ ${physioData.condutas}`;
       const up = [...patients];
       // Puxa o padrão vazio oficial do sistema
       up[activeTab].hd_prescricao = defaultPatient(activeTab).hd_prescricao;
-      
+
       if (up[activeTab].hd_anotacoes) {
         up[activeTab].hd_anotacoes.nefro_texto = "";
       }
@@ -1318,12 +1316,12 @@ ${physioData.condutas}`;
     if (window.confirm("ATENÇÃO: Deseja apagar Controles, Balanço e Insumos?")) {
       const up = [...patients];
       const def = defaultPatient(activeTab); // Padrão vazio oficial
-      
+
       up[activeTab].hd_monitoramento = def.hd_monitoramento;
       up[activeTab].hd_balanco = def.hd_balanco;
       up[activeTab].hd_acesso = def.hd_acesso;
       up[activeTab].hd_insumos = def.hd_insumos;
-      
+
       if (up[activeTab].hd_anotacoes) {
         up[activeTab].hd_anotacoes.inicio = "";
         up[activeTab].hd_anotacoes.termino = "";
@@ -1340,25 +1338,25 @@ ${physioData.condutas}`;
   // ==========================================
   const buildNursingAIPrompt = (p) => {
     const vitals = p.bh?.vitals && Object.values(p.bh.vitals).length > 0
-        ? Object.values(p.bh.vitals).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
-        : { "PAS": "NT", "PAD": "NT", "FC (bpm)": "NT", "FR (irpm)": "NT", "SpO2 (%)": "NT", "Temp (ºC)": "NT" };
-    
+      ? Object.values(p.bh.vitals).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+      : { "PAS": "NT", "PAD": "NT", "FC (bpm)": "NT", "FR (irpm)": "NT", "SpO2 (%)": "NT", "Temp (ºC)": "NT" };
+
     const glasgowAO = p.neuro?.glasgowAO ? parseInt(p.neuro.glasgowAO) : 0;
     const glasgowRV = p.neuro?.glasgowRV?.startsWith("T") ? 1 : (parseInt(p.neuro?.glasgowRV) || 0);
     const glasgowRM = p.neuro?.glasgowRM ? parseInt(p.neuro.glasgowRM) : 0;
     const glasgowTotal = (glasgowAO + glasgowRV + glasgowRM) || "NT";
     const rass = p.neuro?.rass || "NT";
     const sedacao = p.neuro?.sedacao ? `SIM (${p.neuro?.drogasSedacao?.join(", ") || "N/A"})` : "NÃO";
-    
+
     // REGRA DO NEURO: Define se vai mandar RASS ou Glasgow
-    const neuroInfo = p.neuro?.sedacao 
-        ? `Sedação: ${sedacao}. RASS: ${rass}` 
-        : `Sem sedação contínua. Glasgow Total: ${glasgowTotal}`;
+    const neuroInfo = p.neuro?.sedacao
+      ? `Sedação: ${sedacao}. RASS: ${rass}`
+      : `Sem sedação contínua. Glasgow Total: ${glasgowTotal}`;
 
     // REGRA RESPIRATÓRIA: Foram removidos a FiO2 e PEEP da visualização da IA para evitar que ela descreva parâmetros
     const suporteVM = p.physio?.suporte || "Ar Ambiente";
     const secrecao = p.physio?.secrecao ? `SIM (${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"})` : "NÃO";
-    
+
     const dva = p.cardio?.dva ? `SIM (${p.cardio?.drogasDVA?.join(", ") || "N/A"})` : "NÃO";
     const nutriVia = p.nutri?.via || "NT";
     const nutriDieta = p.nutri?.tipoDieta || "NT";
@@ -1395,8 +1393,8 @@ ${physioData.condutas}`;
         } else if (last3.length >= 3) {
           instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
         }
-        hemodinamicaStatus = instavel 
-          ? "com Instabilidade Hemodinâmica" 
+        hemodinamicaStatus = instavel
+          ? "com Instabilidade Hemodinâmica"
           : "Compensado hemodinamicamente";
       }
     }
@@ -1480,7 +1478,7 @@ ${condutas}`;
             if (lastError.includes("not found") || d.error.code === 404) continue;
             break;
           }
-          
+
           const aiResponse = d.candidates?.[0]?.content?.parts?.[0]?.text;
           if (aiResponse) {
             updateNested("enfermagem", "anotacoes", aiResponse);
@@ -1498,7 +1496,55 @@ ${condutas}`;
     } finally {
       setIsGeneratingNursingAI(false);
     }
-  };  
+  };
+
+  const handleGeneratePhysioEvo = () => {
+    alert("O Médico Especialista (IA) da Fisioterapia está sendo preparado e chegará em breve!");
+  };
+
+  // --- FUNÇÃO: TROCA DE SUPORTE VENTILATÓRIO ---
+  const handleSuporteChange = (novoSuporte) => {
+    // 1. Atualiza o nome do suporte escolhido
+    updateNested("physio", "suporte", novoSuporte);
+      
+    // 2. Limpa os parâmetros antigos (para não sobrar PEEP da VM se o paciente for para o Ar Ambiente)
+    updateNested("physio", "parametro", "");
+    updateNested("physio", "peep", "");
+    updateNested("physio", "fiO2", "");
+    updateNested("physio", "volCorrente", "");
+    updateNested("physio", "pressaoControlada", "");
+    updateNested("physio", "pressaoSuporte", "");
+  };
+
+  // --- 1. Calcular a Data de Troca (Ex: Filtro HMEF vence em 168h / 7 dias) ---
+    const calculateExchangeDate = (dateString, hoursToAdd) => {
+      if (!dateString) return "";
+      // Ajusta para o meio-dia para evitar bugs de fuso horário no JavaScript
+      const d = new Date(dateString + 'T12:00:00'); 
+      d.setHours(d.getHours() + hoursToAdd);
+      
+      // Formata a data de saída para DD/MM/AA
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yy = String(d.getFullYear()).slice(-2);
+      
+      return `${dd}/${mm}/${yy}`;
+    };
+
+    // --- 2. Verificar se o dispositivo está vencido (Fica vermelho na tela) ---
+    const isDeviceExpired = (dateString, maxHours) => {
+      if (!dateString) return false;
+      const deviceDate = new Date(dateString + 'T12:00:00');
+      const now = new Date();
+      // Diferença em milissegundos convertida para horas
+      const diffInHours = (now - deviceDate) / (1000 * 60 * 60);
+      return diffInHours >= maxHours;
+    };
+
+    // --- 3. Acionar a Impressora para a Gasometria ---
+    const handlePrintGasometria = () => {
+      window.print();
+    };
 
   const resetPhysio = () => {
     if (
@@ -1512,7 +1558,7 @@ ${condutas}`;
       save(up[activeTab]);
     }
   };
-  
+
   const handleFinalizeNursingAdmission = () => {
     const reqBraden = [
       "braden_percepcao", "braden_umidade", "braden_atividade",
@@ -1592,10 +1638,10 @@ ${condutas}`;
     };
 
     p.physio.vmFlowsheet.push(newEntry);
-    
+
     up[activeTab] = p;
     setPatients(up);
-    
+
     // Como criar uma coluna é uma ação de clique de botão, salvamos na hora!
     save(p, "Fisioterapia: Adicionou nova coluna de avaliação no Mapa VM");
   };
@@ -1645,60 +1691,60 @@ ${condutas}`;
     // O 'save' não está aqui porque a digitação salva no onBlur do input!
   };
 
-    const toggleArrayItem = (category, field, value) => {
-        const up = [...patients];
-        const p = up[activeTab];
-        if (!p[category]) p[category] = {};
-        let arr = Array.isArray(p[category][field]) ? [...p[category][field]] : [];
-        if (arr.includes(value)) arr = arr.filter(i => i !== value);
-        else arr.push(value);
-        p[category][field] = arr;
-        setPatients(up);
-    };
+  const toggleArrayItem = (category, field, value) => {
+    const up = [...patients];
+    const p = up[activeTab];
+    if (!p[category]) p[category] = {};
+    let arr = Array.isArray(p[category][field]) ? [...p[category][field]] : [];
+    if (arr.includes(value)) arr = arr.filter(i => i !== value);
+    else arr.push(value);
+    p[category][field] = arr;
+    setPatients(up);
+  };
 
-    const handleBlurSave = () => save(patients[activeTab], "Auto-save on blur");
+  const handleBlurSave = () => save(patients[activeTab], "Auto-save on blur");
 
-    const handleClearData = async () => {
-        if (!window.confirm("Deseja realmente LIMPAR todos os dados deste leito?")) return;
-        const empty = defaultPatient(activeTab);
-        const up = [...patients];
-        up[activeTab] = empty;
-        setPatients(up);
-        await deleteDoc(doc(db, "leitos_uti", `bed_${empty.id}`));
-    };
+  const handleClearData = async () => {
+    if (!window.confirm("Deseja realmente LIMPAR todos os dados deste leito?")) return;
+    const empty = defaultPatient(activeTab);
+    const up = [...patients];
+    up[activeTab] = empty;
+    setPatients(up);
+    await deleteDoc(doc(db, "leitos_uti", `bed_${empty.id}`));
+  };
 
-    const handlePrintHistory = () => {
-      // Essa função geralmente abre uma janela de impressão do histórico.
-      // Cole aqui o conteúdo original do seu App.jsx (que criava o window.open, montava o HTML e chamava window.print()).
-      alert("Função de impressão em desenvolvimento para o novo módulo.");
-    };
-  
-    const handleNoraModalResponse = (isDoubleDose) => {
-      const up = [...patients];
-      const p = JSON.parse(JSON.stringify(up[activeTab]));
-      const today = getManausDateStr(); 
-  
-      if (!p.sofa_data_technical) p.sofa_data_technical = {};
-      if (!p.hd_monitoramento) p.hd_monitoramento = {};
-      if (!p.hd_monitoramento[currentNoraHour]) p.hd_monitoramento[currentNoraHour] = {};
-  
-      p.sofa_data_technical.noraDoubleDoseToday = isDoubleDose;
-      p.sofa_data_technical.noraModalShown_date = today;
-      p.hd_monitoramento[currentNoraHour].noraRate = currentNoraRate;
-  
-      up[activeTab] = p;
-      setPatients(up);
-  
-      const mensagemAuditoria = isDoubleDose 
-        ? "Segurança/Drogas: Confirmou uso de Noradrenalina DOBRADA (8 amp/250mL)" 
-        : "Segurança/Drogas: Confirmou uso de Noradrenalina PADRÃO (4 amp/250mL)";
-        
-      save(p, mensagemAuditoria);
-      
-      setShowNoraModal(false);
-      setCurrentNoraHour("");
-      setCurrentNoraRate("");
-    };
+  const handlePrintHistory = () => {
+    // Essa função geralmente abre uma janela de impressão do histórico.
+    // Cole aqui o conteúdo original do seu App.jsx (que criava o window.open, montava o HTML e chamava window.print()).
+    alert("Função de impressão em desenvolvimento para o novo módulo.");
+  };
+
+  const handleNoraModalResponse = (isDoubleDose) => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    const today = getManausDateStr();
+
+    if (!p.sofa_data_technical) p.sofa_data_technical = {};
+    if (!p.hd_monitoramento) p.hd_monitoramento = {};
+    if (!p.hd_monitoramento[currentNoraHour]) p.hd_monitoramento[currentNoraHour] = {};
+
+    p.sofa_data_technical.noraDoubleDoseToday = isDoubleDose;
+    p.sofa_data_technical.noraModalShown_date = today;
+    p.hd_monitoramento[currentNoraHour].noraRate = currentNoraRate;
+
+    up[activeTab] = p;
+    setPatients(up);
+
+    const mensagemAuditoria = isDoubleDose
+      ? "Segurança/Drogas: Confirmou uso de Noradrenalina DOBRADA (8 amp/250mL)"
+      : "Segurança/Drogas: Confirmou uso de Noradrenalina PADRÃO (4 amp/250mL)";
+
+    save(p, mensagemAuditoria);
+
+    setShowNoraModal(false);
+    setCurrentNoraHour("");
+    setCurrentNoraRate("");
+  };
 
   // --- LÓGICA DE INTERFACE (RBAC - Filtro de Abas) ---
   const allNavButtons = [
@@ -1719,59 +1765,59 @@ ${condutas}`;
   const navButtons = allNavButtons.filter((btn) => {
     // Se o userProfile ainda não carregou (está nulo), mostramos tudo por segurança 
     // ou nada até carregar. Aqui vamos deixar passar se for nulo para não quebrar a tela.
-    if (!userProfile) return true; 
+    if (!userProfile) return true;
 
     if (userProfile.perfil === "Técnico em Enfermagem") {
       return btn.id === "tech" || btn.id === "hemodialysis";
     }
-    return true; 
+    return true;
   });
 
-    const handleNavScroll = () => {
-        if (!navScrollRef.current || window.innerWidth >= 768) return;
-        const container = navScrollRef.current;
-        const centerPosition = container.scrollLeft + container.clientWidth / 2;
-        let closest = null;
-        let minDistance = Infinity;
-        Array.from(container.children).forEach((child) => {
-            if (!child.id || !child.id.startsWith('nav-')) return;
-            const childCenter = child.offsetLeft + child.clientWidth / 2;
-            const distance = Math.abs(centerPosition - childCenter);
-            if (distance < minDistance) { minDistance = distance; closest = child.id.replace('nav-', ''); }
-        });
-        if (closest && closest !== centerTab) setCenterTab(closest);
-    };
+  const handleNavScroll = () => {
+    if (!navScrollRef.current || window.innerWidth >= 768) return;
+    const container = navScrollRef.current;
+    const centerPosition = container.scrollLeft + container.clientWidth / 2;
+    let closest = null;
+    let minDistance = Infinity;
+    Array.from(container.children).forEach((child) => {
+      if (!child.id || !child.id.startsWith('nav-')) return;
+      const childCenter = child.offsetLeft + child.clientWidth / 2;
+      const distance = Math.abs(centerPosition - childCenter);
+      if (distance < minDistance) { minDistance = distance; closest = child.id.replace('nav-', ''); }
+    });
+    if (closest && closest !== centerTab) setCenterTab(closest);
+  };
 
-// --- RBAC (Controle de Acessos com Chave Mestra) ---
-    // Blindagem: Aceita tanto 'role' quanto 'perfil' vindo do Firebase
-    const userRole = userProfile?.role || userProfile?.perfil; 
-    
-    const isDev = userRole === "Desenvolvedor";
+  // --- RBAC (Controle de Acessos com Chave Mestra) ---
+  // Blindagem: Aceita tanto 'role' quanto 'perfil' vindo do Firebase
+  const userRole = userProfile?.role || userProfile?.perfil;
 
-    // O Desenvolvedor herda automaticamente os poderes de todos os perfis
-    const isDocRole = isDev || userRole === "Médico" || userRole === "Gestor" || userRole === "Administrador";
-    
-    const isNursingRole = isDev || userRole === "Enfermeiro" || userRole === "Técnico em Enfermagem" || userRole === "Gestor" || userRole === "Administrador";
-    
-    const isAdmin = isDev || userRole === "Administrador";
+  const isDev = userRole === "Desenvolvedor";
 
-    // Regras de Edição: Adicionamos a Enfermagem aqui para ela poder editar as próprias abas!
-    const isEditable = isDev || isDocRole || isNursingRole; 
-    
-    const isOverviewEditable = isDev || isDocRole || isNursingRole;
-    
-    const canCloseDay = isDev || userRole === "Enfermeiro" || isOverviewEditable;
-    
-    const isBHReadOnly = viewingPreviousBH || !isEditable;
+  // O Desenvolvedor herda automaticamente os poderes de todos os perfis
+  const isDocRole = isDev || userRole === "Médico" || userRole === "Gestor" || userRole === "Administrador";
 
-    // Menus Visíveis
-    const visibleNavButtons = userRole === "Técnico em Enfermagem"
-        ? navButtons.filter(btn => btn.id === "tech" || btn.id === "hemodialysis")
-        : navButtons;
+  const isNursingRole = isDev || userRole === "Enfermeiro" || userRole === "Técnico em Enfermagem" || userRole === "Gestor" || userRole === "Administrador";
 
-    return (
-        <div className="min-h-screen bg-gray-100 font-sans pb-20 relative bg-hexagon-pattern bg-repeat">
-            <style>{`
+  const isAdmin = isDev || userRole === "Administrador";
+
+  // Regras de Edição: Adicionamos a Enfermagem aqui para ela poder editar as próprias abas!
+  const isEditable = isDev || isDocRole || isNursingRole;
+
+  const isOverviewEditable = isDev || isDocRole || isNursingRole;
+
+  const canCloseDay = isDev || userRole === "Enfermeiro" || isOverviewEditable;
+
+  const isBHReadOnly = viewingPreviousBH || !isEditable;
+
+  // Menus Visíveis
+  const visibleNavButtons = userRole === "Técnico em Enfermagem"
+    ? navButtons.filter(btn => btn.id === "tech" || btn.id === "hemodialysis")
+    : navButtons;
+
+  return (
+    <div className="min-h-screen bg-gray-100 font-sans pb-20 relative bg-hexagon-pattern bg-repeat">
+      <style>{`
                 @media print {
                     @page { size: portrait; margin: 10mm; }
                     .print\\:hidden { display: none !important; }
@@ -1779,400 +1825,428 @@ ${condutas}`;
                 }
             `}</style>
 
-            <div id="original-header" className="relative z-30 pb-36 pt-8 px-4 md:px-8 shadow-xl print:hidden bg-teal-700">
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
-                    <div className="flex items-center gap-4">
-                        <img src="/logobranca.png" alt="Logo" className="w-16 h-16 object-contain" />
-                        <div className="flex flex-col text-white">
-                            <h1 className="text-xl md:text-2xl font-bold">UTI Municipal de Ariquemes</h1>
-                            <p className="text-xs opacity-80">Sys4U - Gestão Hospitalar</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="bg-white rounded-full p-1.5 flex items-center gap-3 shadow-md border border-teal-100/50">
-                        {/* Ícone Lateral */}
-                        <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center text-white shadow-inner">
-                          <User size={20} />
-                        </div>
-                    
-                        {/* Bloco de Identificação Formal */}
-                        <div className="flex flex-col pr-2 min-w-[160px]">
-                          <span className="text-[13px] font-black text-slate-800 leading-tight">
-                            {userProfile?.nome || "Usuário"}
-                          </span>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                              {userProfile?.perfil || "Médico"}
-                            </span>
-                            <span className="text-[10px] font-medium text-slate-500">
-                              {userProfile?.conselho} {userProfile?.numeroConselho}
-                            </span>
-                          </div>
-                        </div>
-                    
-                        {/* Divisor e Botão de Sair */}
-                        <div className="h-8 w-[1px] bg-slate-100 mx-1"></div>
-                        
-                        <button 
-                          onClick={handleLogout}
-                          title="Sair do Sistema"
-                          className="w-10 h-10 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all duration-300 active:scale-90"
-                        >
-                          <LogOut size={18} />
-                        </button>
-                      </div>
-                    </div>
-                </div>
+      <div id="original-header" className="relative z-30 pb-36 pt-8 px-4 md:px-8 shadow-xl print:hidden bg-teal-700">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
+          <div className="flex items-center gap-4">
+            <img src="/logobranca.png" alt="Logo" className="w-16 h-16 object-contain" />
+            <div className="flex flex-col text-white">
+              <h1 className="text-xl md:text-2xl font-bold">UTI Municipal de Ariquemes</h1>
+              <p className="text-xs opacity-80">Sys4U - Gestão Hospitalar</p>
             </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="bg-white rounded-full p-1.5 flex items-center gap-3 shadow-md border border-teal-100/50">
+              {/* Ícone Lateral */}
+              <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center text-white shadow-inner">
+                <User size={20} />
+              </div>
 
-            <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0">
-                <div className="relative z-40 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 border border-white">
-                    {patients.map((p, idx) => {
-                        const isActive = activeTab === idx;
-                        return (
-                            <button key={idx} onClick={() => setActiveTab(idx)}
-                                className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold border flex flex-col items-center justify-center transition-all ${isActive ? "bg-teal-600 text-white scale-105" : "bg-slate-50 text-slate-500"}`}>
-                                <span className="text-[9px] uppercase">Leito</span>
-                                <span className="text-xl">{p.leito}</span>
-                            </button>
-                        );
-                    })}
-                </div>
-
-                <div className="flex flex-col md:flex-row gap-4 md:gap-6 relative mt-2">
-                    <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
-                        <div ref={navScrollRef} onScroll={handleNavScroll} className="flex overflow-x-auto md:flex-col gap-2 pb-4 md:pb-0 items-center">
-                            {visibleNavButtons.map((btn) => (
-                                <button key={btn.id} onClick={() => setViewMode(btn.id)}
-                                    className={`w-12 h-12 flex items-center justify-center rounded-2xl border transition-all ${viewMode === btn.id ? "bg-teal-600 text-white" : "bg-white text-slate-400"}`} title={btn.label}>
-                                    {btn.icon}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="flex-1 min-w-0 relative z-30">
-                        <div className="sticky top-0 z-40 bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <h2 className="text-lg font-extrabold text-teal-600 uppercase">{currentPatient.nome || "LEITO DISPONÍVEL"}</h2>
-                                {currentPatient.nome && <button onClick={handleClearData} className="text-slate-300 hover:text-red-500"><Trash2 size={18} /></button>}
-                            </div>
-                            <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold">Leito {currentPatient.leito}</span>
-                        </div>
-
-                        <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px]">
-                            {!currentPatient.nome ? (
-                                <div className="flex flex-col items-center justify-center h-full text-slate-500 py-20">
-                                <UserPlus size={64} className="mb-4 text-slate-300" />
-                                <h3 className="text-xl font-bold text-slate-700">Leito Vazio</h3>
-                                <p className="text-slate-400 mb-6 text-sm">Nenhum paciente ocupando este leito no momento.</p>
-                                
-                                {/* AQUI ESTÁ A MÁGICA: Agora ele chama a Fila de Espera passando o número do leito! */}
-                                <button 
-                                    onClick={() => handleOpenQueue(activeTab)} 
-                                    className="mt-4 bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-colors"
-                                >
-                                    Puxar Paciente da Fila
-                                </button>
-                                </div>
-                            ) : (
-                                <>
-                                    {/* ABA: VISITA MULTI / OVERVIEW */}
-                                    {viewMode === "overview" && (
-                                      currentPatient.statusInternacao === "Aguardando Admissão Médica" ? (
-                                        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 mt-4">
-                                          <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 text-3xl">
-                                            👥
-                                          </div>
-                                          <h3 className="text-xl font-bold text-slate-800">Aguardando Admissão</h3>
-                                          <p className="text-slate-500 mb-6 text-center max-w-sm">
-                                            O paciente <b>{currentPatient.nome}</b> já foi vinculado ao leito, mas a Visita Multi será liberada assim que o médico finalizar a Admissão.
-                                          </p>
-                                        </div>
-                                      ) : (
-                                      <OverviewTab 
-                                        currentPatient={currentPatient} 
-                                        viewMode={viewMode} // ou activeTab (depende de como o senhor chamou aí em cima)
-                                        handleBlurSave={handleBlurSave} 
-                                        updateP={updateP} 
-                                        
-                                        // --- Ferramentas e Cálculos que faltavam ---
-                                        handleUnlockSAPS3={handleUnlockSAPS3}
-                                        getMissingSAPS3={getMissingSAPS3}
-                                        handleLockSAPS3={handleLockSAPS3}
-                                        getDaysD1={getDaysD1}
-                                        getTempoVMText={getTempoVMText}
-                                        historyOpen={historyOpen}
-                                        setHistoryOpen={setHistoryOpen}
-                                        calculateEvacDays={calculateEvacDays}
-                                        calculateGlasgowTotal={calculateGlasgowTotal}
-                                        renderValue={renderValue}
-                                        calculateDiurese12hMlKgH={calculateDiurese12hMlKgH}
-                                        calculateCreatinineClearance={calculateCreatinineClearance}
-                                        setShowATBHistoryModal={setShowATBHistoryModal}
-                                        getDaysD0={getDaysD0}
-                                        setShowHistoryModal={setShowHistoryModal}
-                                        formatDateDDMM={formatDateDDMM}
-                                        updateLab={updateLab}
-                                        userProfile={userProfile}
-                                        isOverviewEditable={isOverviewEditable} 
-                                      />
-                                      )
-                                    )}
-                                    
-                                    {/* ABA: GESTÃO / MANAGEMENT */}
-                                    {viewMode === "management" && (
-                                      <ManagementTab 
-                                        patients={patients} 
-                                        calculateSAPS3Score={calculateSAPS3Score} 
-                                        getDaysD1={getDaysD1} 
-                                        handleBlurSave={handleBlurSave} 
-                                      />
-                                    )}
-                                    {viewMode === "medical" && (
-                                      currentPatient.statusInternacao === "Aguardando Admissão Médica" ? (
-                                        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 mt-4">
-                                          <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
-                                            {/* Usando um ícone ou um emoji de estetoscópio caso não tenha o Lucide importado aí */}
-                                            <span className="text-4xl">🩺</span>
-                                          </div>
-                                          <h3 className="text-xl font-bold text-slate-800">Paciente Aguardando Admissão</h3>
-                                          <p className="text-slate-500 mb-6 text-center max-w-sm">
-                                            O paciente foi vinculado a este leito. É obrigatório realizar a admissão formal antes de acessar a tela de evolução diária.
-                                          </p>
-                                          <button 
-                                            onClick={handleAdmitPatient}
-                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition-transform active:scale-95"
-                                          >
-                                            Iniciar Admissão Médica
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <MedicalDashboard 
-                                          currentPatient={currentPatient} 
-                                          isEditable={isEditable} 
-                                          updateNested={updateNested} 
-                                          updateP={updateP} 
-                                          handleBlurSave={handleBlurSave} 
-                                        />
-                                      )
-                                    )}
-                                    {viewMode === "nursing" && (
-                                      <NursingDashboard 
-                                        currentPatient={currentPatient} 
-                                        isEditable={isEditable} 
-                                        updateNested={updateNested} 
-                                        handleBlurSave={handleBlurSave} 
-                                        
-                                        // 👇 A MÁGICA MUDA AQUI: Em vez de setViewMode, usamos setShowNursingModal 👇
-                                        handleNursingAdmission={() => setShowNursingModal(true)} 
-                                        
-                                        generateNursingAI_Evolution={generateNursingAI_Evolution}
-                                        isNursingRole={isNursingRole}
-                                        isGeneratingNursingAI={isGeneratingNursingAI}
-                                      />
-                                    )}
-                                    {viewMode === "physio" && <PhysioDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} handleGeneratePhysioEvo={handleGeneratePhysioEvo} />}
-                                    {viewMode === "nutri" && <NutriDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
-                                    {viewMode === "speech" && <SpeechDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
-                                    {viewMode === "tech" && (<TechDashboard currentPatient={currentPatient} displayedBH={displayedBH} bhTotals={bhTotals} isBHReadOnly={isBHReadOnly} updateBH={updateBH} handleNextDayBH={handleNextDayBH} setCurrentNoraHour={setCurrentNoraHour} setCurrentNoraRate={setCurrentNoraRate} setShowNoraModal={setShowNoraModal} />)}
-                                    {viewMode === "hemodialysis" && <HemoDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} />}
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </main>
-
-            {/* MODAL: HISTÓRICO DE EXAMES LABORATORIAIS */}
-            <HistoryModal
-              showHistoryModal={showHistoryModal}
-              setShowHistoryModal={setShowHistoryModal}
-              currentPatient={currentPatient}
-              handlePrintHistory={handlePrintHistory}
-              formatDateDDMM={formatDateDDMM}
-              getLast10Days={getLast10Days}
-              EXAM_ROWS={EXAM_ROWS}
-              formatExamName={formatExamName}
-              isOverviewEditable={isOverviewEditable}
-              patients={patients}
-              activeTab={activeTab}
-              setPatients={setPatients}
-              syncLabsFromHistory={syncLabsFromHistory}
-              save={save}
-              handleBlurSave={handleBlurSave}
-              handleAddCustomExam={handleAddCustomExam}
-            />
-      
-            {/* MODAL: HISTÓRICO DE ANTIBIÓTICOS */}
-            <ATBHistoryModal
-              showATBHistoryModal={showATBHistoryModal}
-              setShowATBHistoryModal={setShowATBHistoryModal}
-              currentPatient={currentPatient}
-              formatDateDDMM={formatDateDDMM}
-              isDocRole={isDocRole}
-              deleteATBHistoryItem={deleteATBHistoryItem}
-            />
-      
-            {/* MODAL: ADMISSÃO DE ENFERMAGEM */}
-            <NursingAdmissionModal
-              showNursingModal={showNursingModal}
-              setShowNursingModal={setShowNursingModal}
-              activeTab={activeTab}
-              nursingData={nursingData}
-              setNursingData={setNursingData}
-              handleBlurSave={handleBlurSave}
-              handleFinalizeNursingAdmission={handleFinalizeNursingAdmission}
-            />
-           
-           {/* MODAL: ADMISSÃO DE FISIOTERAPIA */}
-           <PhysioAdmissionModal
-              showPhysioModal={showPhysioModal}
-              setShowPhysioModal={setShowPhysioModal}
-              activeTab={activeTab}
-              physioData={physioData}
-              setPhysioData={setPhysioData}
-              handleBlurSave={handleBlurSave}
-              handleFinalizePhysioAdmission={handleFinalizePhysioAdmission}
-            />
-      
-            {/* MODAL: TEXTO GERADO PÓS-ADMISSÃO FISIO */}
-            <GeneratedPhysioTextModal
-              generatedPhysioText={generatedPhysioText}
-              setGeneratedPhysioText={setGeneratedPhysioText}
-              copyToClipboardFallback={copyToClipboardFallback}
-            />
-      
-            {/* MODAL: ADMISSÃO (FORMULÁRIO MÉDICO) */}
-            <MedicalAdmissionModal
-              showAdmissionModal={showAdmissionModal}
-              setShowAdmissionModal={setShowAdmissionModal}
-              activeTab={activeTab}
-              admissionData={admissionData}
-              setAdmissionData={setAdmissionData}
-              handleBlurSave={handleBlurSave}
-              toggleSAPSComorbidade={toggleSAPSComorbidade}
-              handleFinalizeAdmission={handleFinalizeAdmission}
-            />
-      
-            {/* MODAL: TEXTO GERADO PÓS-ADMISSÃO E ENFERMAGEM */}
-            <GeneratedAdmissionTextModal
-              generatedAdmissionText={generatedAdmissionText}
-              setGeneratedAdmissionText={setGeneratedAdmissionText}
-              copyToClipboardFallback={copyToClipboardFallback}
-            />
-            
-            {/* MODAL: FILA DE ESPERA DA UTI */}
-            {showQueueModal && (
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-100">
-                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                    <div>
-                      <h3 className="text-xl font-bold text-slate-800">Fila de Espera: UTI</h3>
-                      <p className="text-sm text-slate-500">Selecione o paciente para o <b>Leito {selectedBedForAdmission + 1}</b></p>
-                    </div>
-                    <button onClick={() => setShowQueueModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">FECHAR</button>
-                  </div>
-                  
-                  <div className="p-4 max-h-[400px] overflow-y-auto">
-                    {waitingList.length === 0 ? (
-                      <div className="text-center py-10 text-slate-400">
-                        <p className="italic">Nenhum paciente aguardando vaga na UTI no momento.</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {waitingList.map((p) => (
-                          <button 
-                            key={p.id}
-                            onClick={() => bindPatientToBed(p)}
-                            className="w-full p-4 bg-white border-2 border-slate-100 rounded-2xl text-left hover:border-emerald-500 hover:bg-emerald-50 transition-all flex justify-between items-center group"
-                          >
-                            <div>
-                              <p className="font-black text-slate-700 group-hover:text-emerald-700">{p.nome}</p>
-                              <p className="text-xs text-slate-500">CPF: {p.cpf} | Origem: {p.origem}</p>
-                            </div>
-                            <div className="bg-emerald-100 text-emerald-600 p-2 rounded-lg">
-                              <span className="text-xs font-bold">ADMITIR</span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+              {/* Bloco de Identificação Formal */}
+              <div className="flex flex-col pr-2 min-w-[160px]">
+                <span className="text-[13px] font-black text-slate-800 leading-tight">
+                  {userProfile?.nome || "Usuário"}
+                </span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    {userProfile?.perfil || "Médico"}
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-500">
+                    {userProfile?.conselho} {userProfile?.numeroConselho}
+                  </span>
                 </div>
               </div>
-            )}
 
-            {/* MODAL: PROCESSAMENTO EM LOTE (IA) */}
-            <BulkProcessingModal
-              showBulkModal={showBulkModal}
-              setShowBulkModal={setShowBulkModal}
-              isProcessingBulk={isProcessingBulk}
-              bulkUploadLogs={bulkUploadLogs}
-            />
-      
-            {/* MODAL: CONFIRMAÇÃO UPLOAD INDIVIDUAL PDF */}
-            <IndividualUploadModal
-              showIndividualUploadModal={showIndividualUploadModal}
-              setShowIndividualUploadModal={setShowIndividualUploadModal}
-              pendingUploadData={pendingUploadData}
-              setPendingUploadData={setPendingUploadData}
-              formatDateDDMM={formatDateDDMM}
-              patients={patients}
-              activeTab={activeTab}
-              confirmIndividualUpload={confirmIndividualUpload}
-            />
-      
-            {/* MODAL: DETALHES DO SAPS 3 */}
-            <SapsDetailsModal
-              showSapsDetailsModal={showSapsDetailsModal}
-              setShowSapsDetailsModal={setShowSapsDetailsModal}
-            />
-      
-            {/* MODAL: MAPA DE VENTILAÇÃO MECÂNICA */}
-            <VmFlowsheetModal
-              showVmFlowsheet={showVmFlowsheet}
-              setShowVmFlowsheet={setShowVmFlowsheet}
-              currentPatient={currentPatient}
-              handleAddVmEntry={handleAddVmEntry}
-              handleBlurSave={handleBlurSave}
-              updateVmEntry={updateVmEntry}
-            />
-      
-            {/* MODAL: GERADOR DE EVOLUÇÃO DA FISIOTERAPIA */}
-            <PhysioEvoModal
-              showPhysioEvoModal={showPhysioEvoModal}
-              setShowPhysioEvoModal={setShowPhysioEvoModal}
-              currentPatient={currentPatient}
-              physioEvoText={physioEvoText}
-              setPhysioEvoText={setPhysioEvoText}
-            />
-      
-            {/* MODAL: CHECKLIST PRÉ-EVOLUÇÃO (TIMEOUT CLÍNICO) */}
-            <ChecklistEvoModal
-              showChecklistEvo={showChecklistEvo}
-              setShowChecklistEvo={setShowChecklistEvo}
-              currentPatient={currentPatient}
-              updateNested={updateNested}
-              updateP={updateP}
-              confirmarEGerar={generateAIEvolution}
-            />
-            
-            {/* MODAL: AUDITORIA DE NORADRENALINA */}
-            <NoraModal
-              showNoraModal={showNoraModal}
-              handleBlurSave={handleBlurSave}
-              handleNoraModalResponse={handleNoraModalResponse}
-            />
-      
-              {/* MODAL: ALERTA DE SEPSE (Sepsis-3) */}
-            <SepsisModal
-              showSepsisModal={showSepsisModal}
-              handleBlurSave={handleBlurSave}
-              handleSepsisResponse={handleSepsisResponse}
-            />
+              {/* Divisor e Botão de Sair */}
+              <div className="h-8 w-[1px] bg-slate-100 mx-1"></div>
+
+              <button
+                onClick={handleLogout}
+                title="Sair do Sistema"
+                className="w-10 h-10 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all duration-300 active:scale-90"
+              >
+                <LogOut size={18} />
+              </button>
+            </div>
+          </div>
         </div>
-    );
+      </div>
+
+      <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0">
+        <div className="relative z-40 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 border border-white">
+          {patients.map((p, idx) => {
+            const isActive = activeTab === idx;
+            return (
+              <button key={idx} onClick={() => setActiveTab(idx)}
+                className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold border flex flex-col items-center justify-center transition-all ${isActive ? "bg-teal-600 text-white scale-105" : "bg-slate-50 text-slate-500"}`}>
+                <span className="text-[9px] uppercase">Leito</span>
+                <span className="text-xl">{p.leito}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-4 md:gap-6 relative mt-2">
+          <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
+            <div ref={navScrollRef} onScroll={handleNavScroll} className="flex overflow-x-auto md:flex-col gap-2 pb-4 md:pb-0 items-center">
+              {visibleNavButtons.map((btn) => (
+                <button key={btn.id} onClick={() => setViewMode(btn.id)}
+                  className={`w-12 h-12 flex items-center justify-center rounded-2xl border transition-all ${viewMode === btn.id ? "bg-teal-600 text-white" : "bg-white text-slate-400"}`} title={btn.label}>
+                  {btn.icon}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0 relative z-30">
+            <div className="sticky top-0 z-40 bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-extrabold text-teal-600 uppercase">{currentPatient.nome || "LEITO DISPONÍVEL"}</h2>
+                {currentPatient.nome && <button onClick={handleClearData} className="text-slate-300 hover:text-red-500"><Trash2 size={18} /></button>}
+              </div>
+              <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold">Leito {currentPatient.leito}</span>
+            </div>
+
+            <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px]">
+              {!currentPatient.nome ? (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 py-20">
+                  <UserPlus size={64} className="mb-4 text-slate-300" />
+                  <h3 className="text-xl font-bold text-slate-700">Leito Vazio</h3>
+                  <p className="text-slate-400 mb-6 text-sm">Nenhum paciente ocupando este leito no momento.</p>
+
+                  {/* AQUI ESTÁ A MÁGICA: Agora ele chama a Fila de Espera passando o número do leito! */}
+                  <button
+                    onClick={() => handleOpenQueue(activeTab)}
+                    className="mt-4 bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-colors"
+                  >
+                    Puxar Paciente da Fila
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* ABA: VISITA MULTI / OVERVIEW */}
+                  {viewMode === "overview" && (
+                    currentPatient.statusInternacao === "Aguardando Admissão Médica" ? (
+                      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 mt-4">
+                        <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 text-3xl">
+                          👥
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-800">Aguardando Admissão</h3>
+                        <p className="text-slate-500 mb-6 text-center max-w-sm">
+                          O paciente <b>{currentPatient.nome}</b> já foi vinculado ao leito, mas a Visita Multi será liberada assim que o médico finalizar a Admissão.
+                        </p>
+                      </div>
+                    ) : (
+                      <OverviewTab
+                        currentPatient={currentPatient}
+                        viewMode={viewMode} // ou activeTab (depende de como o senhor chamou aí em cima)
+                        handleBlurSave={handleBlurSave}
+                        updateP={updateP}
+
+                        // --- Ferramentas e Cálculos que faltavam ---
+                        handleUnlockSAPS3={handleUnlockSAPS3}
+                        getMissingSAPS3={getMissingSAPS3}
+                        handleLockSAPS3={handleLockSAPS3}
+                        getDaysD1={getDaysD1}
+                        getTempoVMText={getTempoVMText}
+                        historyOpen={historyOpen}
+                        setHistoryOpen={setHistoryOpen}
+                        calculateEvacDays={calculateEvacDays}
+                        calculateGlasgowTotal={calculateGlasgowTotal}
+                        renderValue={renderValue}
+                        calculateDiurese12hMlKgH={calculateDiurese12hMlKgH}
+                        calculateCreatinineClearance={calculateCreatinineClearance}
+                        setShowATBHistoryModal={setShowATBHistoryModal}
+                        getDaysD0={getDaysD0}
+                        setShowHistoryModal={setShowHistoryModal}
+                        formatDateDDMM={formatDateDDMM}
+                        updateLab={updateLab}
+                        userProfile={userProfile}
+                        isOverviewEditable={isOverviewEditable}
+                      />
+                    )
+                  )}
+
+                  {/* ABA: GESTÃO / MANAGEMENT */}
+                  {viewMode === "management" && (
+                    <ManagementTab
+                      patients={patients}
+                      calculateSAPS3Score={calculateSAPS3Score}
+                      getDaysD1={getDaysD1}
+                      handleBlurSave={handleBlurSave}
+                    />
+                  )}
+                  {viewMode === "medical" && (
+                    currentPatient.statusInternacao === "Aguardando Admissão Médica" ? (
+                      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 mt-4">
+                        <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+                          {/* Usando um ícone ou um emoji de estetoscópio caso não tenha o Lucide importado aí */}
+                          <span className="text-4xl">🩺</span>
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-800">Paciente Aguardando Admissão</h3>
+                        <p className="text-slate-500 mb-6 text-center max-w-sm">
+                          O paciente foi vinculado a este leito. É obrigatório realizar a admissão formal antes de acessar a tela de evolução diária.
+                        </p>
+                        <button
+                          onClick={handleAdmitPatient}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition-transform active:scale-95"
+                        >
+                          Iniciar Admissão Médica
+                        </button>
+                      </div>
+                    ) : (
+                      <MedicalDashboard
+                        currentPatient={currentPatient}
+                        isEditable={isEditable}
+                        updateNested={updateNested}
+                        updateP={updateP}
+                        handleBlurSave={handleBlurSave}
+                      />
+                    )
+                  )}
+                  {viewMode === "nursing" && (
+                    <NursingDashboard
+                      currentPatient={currentPatient}
+                      isEditable={isEditable}
+                      updateNested={updateNested}
+                      handleBlurSave={handleBlurSave}
+
+                      // 👇 A MÁGICA MUDA AQUI: Em vez de setViewMode, usamos setShowNursingModal 👇
+                      handleNursingAdmission={() => setShowNursingModal(true)}
+
+                      generateNursingAI_Evolution={generateNursingAI_Evolution}
+                      isNursingRole={isNursingRole}
+                      isGeneratingNursingAI={isGeneratingNursingAI}
+                    />
+                  )}
+                  {viewMode === "physio" && (
+                    <PhysioDashboard
+                      currentPatient={currentPatient}
+                      isEditable={isEditable}
+                      uniqueGasoCols={uniqueGasoCols}
+                      patients={patients}
+                      activeTab={activeTab}
+                      setPatients={setPatients}
+                      save={save}
+
+                      // 👇 O botão de Admissão da Fisio (Ligado no modal!)
+                      handlePhysioAdmission={() => setShowPhysioModal(true)}
+
+                      // 👇 As calculadoras e ferramentas que estavam faltando:
+                      clearDate={clearDate}
+                      updateP={updateP}
+                      updateNested={updateNested}
+                      handleBlurSave={handleBlurSave}
+                      setShowVmFlowsheet={setShowVmFlowsheet}
+                      handleSuporteChange={handleSuporteChange}
+                      toggleArrayItem={toggleArrayItem}
+                      calculateExchangeDate={calculateExchangeDate}
+                      isDeviceExpired={isDeviceExpired}
+                      handlePrintGasometria={handlePrintGasometria}
+                      handleGeneratePhysioEvo={handleGeneratePhysioEvo}
+                      getTempoVMText={getTempoVMText}
+                      isOverviewEditable={isOverviewEditable}
+                    />
+                  )}
+                  {viewMode === "nutri" && <NutriDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
+                  {viewMode === "speech" && <SpeechDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
+                  {viewMode === "tech" && (<TechDashboard currentPatient={currentPatient} displayedBH={displayedBH} bhTotals={bhTotals} isBHReadOnly={isBHReadOnly} updateBH={updateBH} handleNextDayBH={handleNextDayBH} setCurrentNoraHour={setCurrentNoraHour} setCurrentNoraRate={setCurrentNoraRate} setShowNoraModal={setShowNoraModal} />)}
+                  {viewMode === "hemodialysis" && <HemoDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} />}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* MODAL: HISTÓRICO DE EXAMES LABORATORIAIS */}
+      <HistoryModal
+        showHistoryModal={showHistoryModal}
+        setShowHistoryModal={setShowHistoryModal}
+        currentPatient={currentPatient}
+        handlePrintHistory={handlePrintHistory}
+        formatDateDDMM={formatDateDDMM}
+        getLast10Days={getLast10Days}
+        EXAM_ROWS={EXAM_ROWS}
+        formatExamName={formatExamName}
+        isOverviewEditable={isOverviewEditable}
+        patients={patients}
+        activeTab={activeTab}
+        setPatients={setPatients}
+        syncLabsFromHistory={syncLabsFromHistory}
+        save={save}
+        handleBlurSave={handleBlurSave}
+        handleAddCustomExam={handleAddCustomExam}
+      />
+
+      {/* MODAL: HISTÓRICO DE ANTIBIÓTICOS */}
+      <ATBHistoryModal
+        showATBHistoryModal={showATBHistoryModal}
+        setShowATBHistoryModal={setShowATBHistoryModal}
+        currentPatient={currentPatient}
+        formatDateDDMM={formatDateDDMM}
+        isDocRole={isDocRole}
+        deleteATBHistoryItem={deleteATBHistoryItem}
+      />
+
+      {/* MODAL: ADMISSÃO DE ENFERMAGEM */}
+      <NursingAdmissionModal
+        showNursingModal={showNursingModal}
+        setShowNursingModal={setShowNursingModal}
+        activeTab={activeTab}
+        nursingData={nursingData}
+        setNursingData={setNursingData}
+        handleBlurSave={handleBlurSave}
+        handleFinalizeNursingAdmission={handleFinalizeNursingAdmission}
+      />
+
+      {/* MODAL: ADMISSÃO DE FISIOTERAPIA */}
+      <PhysioAdmissionModal
+        showPhysioModal={showPhysioModal}
+        setShowPhysioModal={setShowPhysioModal}
+        activeTab={activeTab}
+        physioData={physioData}
+        setPhysioData={setPhysioData}
+        handleBlurSave={handleBlurSave}
+        handleFinalizePhysioAdmission={handleFinalizePhysioAdmission}
+      />
+
+      {/* MODAL: TEXTO GERADO PÓS-ADMISSÃO FISIO */}
+      <GeneratedPhysioTextModal
+        generatedPhysioText={generatedPhysioText}
+        setGeneratedPhysioText={setGeneratedPhysioText}
+        copyToClipboardFallback={copyToClipboardFallback}
+      />
+
+      {/* MODAL: ADMISSÃO (FORMULÁRIO MÉDICO) */}
+      <MedicalAdmissionModal
+        showAdmissionModal={showAdmissionModal}
+        setShowAdmissionModal={setShowAdmissionModal}
+        activeTab={activeTab}
+        admissionData={admissionData}
+        setAdmissionData={setAdmissionData}
+        handleBlurSave={handleBlurSave}
+        toggleSAPSComorbidade={toggleSAPSComorbidade}
+        handleFinalizeAdmission={handleFinalizeAdmission}
+      />
+
+      {/* MODAL: TEXTO GERADO PÓS-ADMISSÃO E ENFERMAGEM */}
+      <GeneratedAdmissionTextModal
+        generatedAdmissionText={generatedAdmissionText}
+        setGeneratedAdmissionText={setGeneratedAdmissionText}
+        copyToClipboardFallback={copyToClipboardFallback}
+      />
+
+      {/* MODAL: FILA DE ESPERA DA UTI */}
+      {showQueueModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-100">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Fila de Espera: UTI</h3>
+                <p className="text-sm text-slate-500">Selecione o paciente para o <b>Leito {selectedBedForAdmission + 1}</b></p>
+              </div>
+              <button onClick={() => setShowQueueModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">FECHAR</button>
+            </div>
+
+            <div className="p-4 max-h-[400px] overflow-y-auto">
+              {waitingList.length === 0 ? (
+                <div className="text-center py-10 text-slate-400">
+                  <p className="italic">Nenhum paciente aguardando vaga na UTI no momento.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {waitingList.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => bindPatientToBed(p)}
+                      className="w-full p-4 bg-white border-2 border-slate-100 rounded-2xl text-left hover:border-emerald-500 hover:bg-emerald-50 transition-all flex justify-between items-center group"
+                    >
+                      <div>
+                        <p className="font-black text-slate-700 group-hover:text-emerald-700">{p.nome}</p>
+                        <p className="text-xs text-slate-500">CPF: {p.cpf} | Origem: {p.origem}</p>
+                      </div>
+                      <div className="bg-emerald-100 text-emerald-600 p-2 rounded-lg">
+                        <span className="text-xs font-bold">ADMITIR</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PROCESSAMENTO EM LOTE (IA) */}
+      <BulkProcessingModal
+        showBulkModal={showBulkModal}
+        setShowBulkModal={setShowBulkModal}
+        isProcessingBulk={isProcessingBulk}
+        bulkUploadLogs={bulkUploadLogs}
+      />
+
+      {/* MODAL: CONFIRMAÇÃO UPLOAD INDIVIDUAL PDF */}
+      <IndividualUploadModal
+        showIndividualUploadModal={showIndividualUploadModal}
+        setShowIndividualUploadModal={setShowIndividualUploadModal}
+        pendingUploadData={pendingUploadData}
+        setPendingUploadData={setPendingUploadData}
+        formatDateDDMM={formatDateDDMM}
+        patients={patients}
+        activeTab={activeTab}
+        confirmIndividualUpload={confirmIndividualUpload}
+      />
+
+      {/* MODAL: DETALHES DO SAPS 3 */}
+      <SapsDetailsModal
+        showSapsDetailsModal={showSapsDetailsModal}
+        setShowSapsDetailsModal={setShowSapsDetailsModal}
+      />
+
+      {/* MODAL: MAPA DE VENTILAÇÃO MECÂNICA */}
+      <VmFlowsheetModal
+        showVmFlowsheet={showVmFlowsheet}
+        setShowVmFlowsheet={setShowVmFlowsheet}
+        currentPatient={currentPatient}
+        handleAddVmEntry={handleAddVmEntry}
+        handleBlurSave={handleBlurSave}
+        updateVmEntry={updateVmEntry}
+      />
+
+      {/* MODAL: GERADOR DE EVOLUÇÃO DA FISIOTERAPIA */}
+      <PhysioEvoModal
+        showPhysioEvoModal={showPhysioEvoModal}
+        setShowPhysioEvoModal={setShowPhysioEvoModal}
+        currentPatient={currentPatient}
+        physioEvoText={physioEvoText}
+        setPhysioEvoText={setPhysioEvoText}
+      />
+
+      {/* MODAL: CHECKLIST PRÉ-EVOLUÇÃO (TIMEOUT CLÍNICO) */}
+      <ChecklistEvoModal
+        showChecklistEvo={showChecklistEvo}
+        setShowChecklistEvo={setShowChecklistEvo}
+        currentPatient={currentPatient}
+        updateNested={updateNested}
+        updateP={updateP}
+        confirmarEGerar={generateAIEvolution}
+      />
+
+      {/* MODAL: AUDITORIA DE NORADRENALINA */}
+      <NoraModal
+        showNoraModal={showNoraModal}
+        handleBlurSave={handleBlurSave}
+        handleNoraModalResponse={handleNoraModalResponse}
+      />
+
+      {/* MODAL: ALERTA DE SEPSE (Sepsis-3) */}
+      <SepsisModal
+        showSepsisModal={showSepsisModal}
+        handleBlurSave={handleBlurSave}
+        handleSepsisResponse={handleSepsisResponse}
+      />
+    </div>
+  );
 };
 
 export default ModuloUTI;
