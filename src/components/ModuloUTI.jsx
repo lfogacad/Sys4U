@@ -1856,46 +1856,78 @@ ${condutas}`;
                 }
             `}</style>
 
-      <div id="original-header" className="relative z-30 pb-36 pt-8 px-4 md:px-8 shadow-xl print:hidden bg-teal-700">
+      {/* CABEÇALHO SUPERIOR - DESIGN DA MAIN COM DADOS DA V2 */}
+      <div
+        id="original-header"
+        className="relative z-30 pb-36 pt-8 px-4 md:px-8 shadow-xl print:hidden bg-[#008f8f] bg-[url('/logodagua.svg')] bg-cover bg-center bg-no-repeat"
+      >
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
+          
+          {/* LADO ESQUERDO DO CABEÇALHO: Logo e Títulos RESTAURADOS */}
           <div className="flex items-center gap-4">
-            <img src="/logobranca.png" alt="Logo" className="w-16 h-16 object-contain" />
-            <div className="flex flex-col text-white">
-              <h1 className="text-xl md:text-2xl font-bold">UTI Municipal de Ariquemes</h1>
-              <p className="text-xs opacity-80">Sys4U - Gestão Hospitalar</p>
+            <img 
+              src="/logobranca.png" 
+              alt="Sys4U Logo" 
+              className="w-16 h-16 object-contain"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'flex';
+              }}
+            />
+            <div className="hidden w-16 h-16 border-2 border-white/50 rounded-xl items-center justify-center text-white">
+              <Activity size={32} />
+            </div>
+
+            <div className="flex flex-col">
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-white shadow-sm">
+                UTI Municipal de Ariquemes
+              </h1>
+              <hr className="border-white/40 my-1" />
+              <p className="text-white text-xs md:text-sm font-medium opacity-95 shadow-sm">
+                Sys4U - Desenvolvimento de Sistemas
+              </p>
             </div>
           </div>
+
+          {/* LADO DIREITO DO CABEÇALHO: Upload de Lote e Cápsula de Usuário */}
           <div className="flex items-center gap-4">
-            <div className="bg-white rounded-full p-1.5 flex items-center gap-3 shadow-md border border-teal-100/50">
-              {/* Ícone Lateral */}
-              <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center text-white shadow-inner">
+            {/* BOTÃO DE UPLOAD (Vindo da Main) */}
+            <label
+              className="bg-white/10 hover:bg-white/20 p-2.5 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm"
+              title="Upload Lote"
+            >
+              <FolderInput size={20} />
+              <input
+                type="file"
+                multiple
+                accept="application/pdf"
+                className="hidden"
+                onChange={handleBulkUpload}
+              />
+            </label>
+
+            {/* CÁPSULA DE USUÁRIO (Design Main + Dados V2) */}
+            <div className="flex items-center bg-white rounded-full p-1.5 pr-2 shadow-lg gap-3">
+              <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center text-white shadow-inner">
                 <User size={20} />
               </div>
-
-              {/* Bloco de Identificação Formal */}
-              <div className="flex flex-col pr-2 min-w-[160px]">
-                <span className="text-[13px] font-black text-slate-800 leading-tight">
-                  {userProfile?.nome || "Usuário"}
+              
+              <div className="flex flex-col text-right hidden md:flex min-w-[120px]">
+                <span className="text-sm font-bold text-slate-800 leading-tight">
+                  {userProfile?.nome || user?.email || "Usuário"}
                 </span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                    {userProfile?.perfil || "Médico"}
-                  </span>
-                  <span className="text-[10px] font-medium text-slate-500">
-                    {userProfile?.conselho} {userProfile?.numeroConselho}
-                  </span>
-                </div>
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-tight">
+                  {userProfile?.perfil || "Médico"} {userProfile?.conselho ? `- ${userProfile.conselho} ${userProfile.numeroConselho || ''}` : ''}
+                </span>
               </div>
 
-              {/* Divisor e Botão de Sair */}
-              <div className="h-8 w-[1px] bg-slate-100 mx-1"></div>
-
+              {/* BOTÃO DE SAIR (Design Main - Redondo e Verde/Teal) */}
               <button
-                onClick={handleLogout}
+                onClick={handleLogout} 
+                className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 flex items-center justify-center text-white transition-colors shadow-sm ml-2"
                 title="Sair do Sistema"
-                className="w-10 h-10 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all duration-300 active:scale-90"
               >
-                <LogOut size={18} />
+                 <LogOut size={18} />
               </button>
             </div>
           </div>
