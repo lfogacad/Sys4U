@@ -159,7 +159,15 @@ const AppRouter = () => {
     return <TrocaSenhaObrigatoria user={user} userProfile={userProfile} setUserProfile={setUserProfile} />;
   }
 
-  if (!unidadeAtiva && userProfile?.perfil !== "Administrador") {
+// --- CRACHÁ MASTER (Administrador e Desenvolvedor têm acesso ao mapa geral) ---
+  const isSuperUser = userProfile?.perfil === "Administrador" || userProfile?.perfil === "Desenvolvedor";
+
+  if (userProfile?.isFirstLogin) {
+    return <TrocaSenhaObrigatoria user={user} userProfile={userProfile} setUserProfile={setUserProfile} />;
+  }
+
+  // O SuperUser ignora o bloqueio de falta de vínculos para poder configurar o sistema
+  if (!unidadeAtiva && !isSuperUser) {
     if (!userProfile.vinculos || userProfile.vinculos.length === 0) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -187,11 +195,14 @@ const AppRouter = () => {
       {/* Removemos o p-6 (espaçamento) quando estiver na UTI para ganhar tela cheia */}
       <main className={`${isUTIPage ? 'p-0' : 'p-6'}`}>
         <Routes>
-          <Route path="/hub" element={userProfile?.perfil === "Administrador" ? <ServiceHub userProfile={userProfile} /> : <Navigate to="/" />} />
+          {/* O isSuperUser agora libera o ServiceHub e o ModuloAdmin para o Desenvolvedor */}
+          <Route path="/hub" element={isSuperUser ? <ServiceHub userProfile={userProfile} /> : <Navigate to="/" />} />
           <Route path="/uti/*" element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} handleLogout={handleLogout} />} />
-          <Route path="/admin" element={userProfile?.perfil === "Administrador" ? <ModuloAdmin userProfile={userProfile} /> : <Navigate to="/" />} />
+          <Route path="/admin" element={isSuperUser ? <ModuloAdmin userProfile={userProfile} /> : <Navigate to="/" />} />
           <Route path="/recepcao" element={<ModuloRecepcao userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} />
-          <Route path="/" element={<Navigate to={userProfile?.perfil === "Administrador" ? "/hub" : "/uti"} />} />
+          
+          {/* Se for SuperUser, o destino padrão após o login é o Hub, caso contrário, vai para a UTI */}
+          <Route path="/" element={<Navigate to={isSuperUser ? "/hub" : "/uti"} />} />
         </Routes>
       </main>
     </div>

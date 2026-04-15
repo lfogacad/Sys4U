@@ -148,6 +148,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [changePasswordError, setChangePasswordError] = useState("");
 
+  const [showPatientDataModal, setShowPatientDataModal] = useState(false);
+
   const rawPatient = patients[activeTab] || defaultPatient(0);
   const currentPatient = ensureBHStructure(rawPatient);
   const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
@@ -367,7 +369,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         nome: incoming.nome || "",
         sexo: incoming.sexo || "",
         dataNascimento: incoming.dataNascimento || incoming.nascimento || "",
-        origem: incoming.procedencia || incoming.origem || "Recepção",
+        origem: incoming.procedencia || incoming.origem || "",
         // Campos em branco para o médico preencher
         historia: "", exameGeral: "", diagAgudos: "", conduta: "",
         saps_comorbidades: [],
@@ -638,7 +640,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       nome: p?.nome || "",
       sexo: p?.sexo || "",
       dataNascimento: p?.dataNascimento || "",
-      origem: p?.procedencia || "Recepção",
+      origem: p?.procedencia === "Recepção" ? "" : (p?.procedencia || ""),
 
       // Restante dos campos zerados para o médico preencher
       historia: "", exameGeral: "", exameACV: "", exameAR: "",
@@ -654,6 +656,13 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       saps_comorbidades: [],
     });
 
+    setShowAdmissionModal(true);
+  };
+
+  // --- REABRIR ADMISSÃO MÉDICA ---
+  const handleEditAdmission = () => {
+    // Apenas levanta o modal novamente. Não zeramos a prancheta para não apagar
+    // o que o médico já tinha digitado caso ele só queira corrigir uma palavra.
     setShowAdmissionModal(true);
   };
 
@@ -725,43 +734,42 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
     const basalText = (admissionData.rass && totalBasal !== null) ? `  |  ECG Pré-Sedação: ${totalBasal}` : "";
 
-    const text = `ADMISSÃO NA UTI
-  NOME: ${admissionData.nome?.toUpperCase() || "-"} (SEXO: ${admissionData.sexo || "-"})
-  ORIGEM: ${admissionData.origem || "-"}
+    const text = 
+`ADMISSÃO
+ORIGEM: ${admissionData.origem || "-"}
+      
+HISTÓRIA CLÍNICA:
+${admissionData.historia || "-"}
+      
+EXAME FÍSICO:
+GERAL: ${admissionData.exameGeral || "-"}
+ACV: ${admissionData.exameACV || "-"}
+AR: ${admissionData.exameAR || "-"}
+ABD.: ${admissionData.exameABD || "-"}
+EXTREMIDADES: ${admissionData.exameExtremidades || "-"}
+NEURO: ${admissionData.exameNeuro || "-"}  |  ECG Atual: ${ecgText}  |  RASS: ${admissionData.rass || "-"}${basalText}
+PUPILAS: ${admissionData.pupilas || "-"}
   
-  HISTÓRIA CLÍNICA:
-  ${admissionData.historia || "-"}
-  
-  EXAME FÍSICO:
-  GERAL: ${admissionData.exameGeral || "-"}
-  ACV: ${admissionData.exameACV || "-"}
-  AR: ${admissionData.exameAR || "-"}
-  ABD.: ${admissionData.exameABD || "-"}
-  EXTREMIDADES: ${admissionData.exameExtremidades || "-"}
-  NEURO: ${admissionData.exameNeuro || "-"}  |  ECG Atual: ${ecgText}  |  RASS: ${admissionData.rass || "-"}${basalText}
-  PUPILAS: ${admissionData.pupilas || "-"}
-  
-  SUPORTE:
-  SEDAÇÃO: ${admissionData.sedacao ? (admissionData.drogasSedacao?.length > 0 ? admissionData.drogasSedacao.join(", ") : "Sim (não especificadas)") : "Não"}
-  DVA: ${admissionData.dva ? (admissionData.drogasDVA?.length > 0 ? admissionData.drogasDVA.join(", ") : "Sim (não especificadas)") : "Não"}
-  
-  MEDICAMENTOS DE USO HABITUAL:
-  ${admissionData.medicamentos || "-"}
-  
-  NÍVEL DE CONSCIÊNCIA BASAL: ${admissionData.conscienciaBasal || "-"}
-  NÍVEL DE MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}
-  
-  EXAMES COMPLEMENTARES:
-  ${admissionData.examesComplementares || "-"}
-  
-  DIAGNÓSTICOS AGUDOS:
-  ${admissionData.diagAgudos || "-"}
-  
-  DIAGNÓSTICOS CRÔNICOS:
-  ${admissionData.diagCronicos || "-"}
-  
-      CONDUTA:
-  ${admissionData.conduta || "-"}`;
+SEDAÇÃO: ${admissionData.sedacao ? (admissionData.drogasSedacao?.length > 0 ? admissionData.drogasSedacao.join(", ") : "Sim (não especificadas)") : "Não"}
+DVA: ${admissionData.dva ? (admissionData.drogasDVA?.length > 0 ? admissionData.drogasDVA.join(", ") : "Sim (não especificadas)") : "Não"}
+   
+MEDICAMENTOS DE USO HABITUAL:
+${admissionData.medicamentos || "-"}
+   
+NÍVEL DE CONSCIÊNCIA BASAL: ${admissionData.conscienciaBasal || "-"}
+NÍVEL DE MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}
+      
+EXAMES COMPLEMENTARES:
+${admissionData.examesComplementares || "-"}
+      
+DIAGNÓSTICOS AGUDOS:
+${admissionData.diagAgudos || "-"}
+      
+DIAGNÓSTICOS CRÔNICOS:
+${admissionData.diagCronicos || "-"}
+      
+CONDUTA:
+${admissionData.conduta || "-"}`;
 
     // Criando o bloco filtrado apenas com o que importa para o dia a dia
     const historiaAbaMedica = `${admissionData.historia || "-"}
@@ -2091,16 +2099,43 @@ ${condutas}`;
             </div>
           </div>
 
-          {/* ========================================== */}
+{/* ========================================== */}
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
           {/* ========================================== */}
           <div className="flex-1 w-full min-w-0">
             <div className="sticky top-0 z-40 bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <h2 className="text-lg font-extrabold text-teal-600 uppercase">{currentPatient.nome || "LEITO DISPONÍVEL"}</h2>
-                {currentPatient.nome && <button onClick={handleClearData} className="text-slate-300 hover:text-red-500"><Trash2 size={18} /></button>}
+              
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* O NOME AGORA É UM BOTÃO */}
+                <button 
+                  onClick={() => currentPatient.nome && setShowPatientDataModal(true)}
+                  className={`text-lg font-extrabold text-teal-600 uppercase transition-all flex items-center gap-2 ${
+                    currentPatient.nome ? "hover:text-teal-800 cursor-pointer hover:scale-[1.01]" : "cursor-default"
+                  }`}
+                  title={currentPatient.nome ? "Ver dados cadastrais" : ""}
+                >
+                  {currentPatient.nome || "LEITO DISPONÍVEL"}
+                  {currentPatient.nome && <FileText size={16} className="text-teal-400 opacity-50" />}
+                </button>
+                
+                {/* BOTÃO DA LIXEIRA */}
+                {currentPatient.nome && (
+                  <button onClick={handleClearData} className="text-slate-300 hover:text-red-500 transition-colors" title="Liberar Leito">
+                    <Trash2 size={18} />
+                  </button>
+                )}
+
+                {/* --- NOVA CÁPSULA DE IDADE --- */}
+                {currentPatient.dataNascimento && (
+                  <span className="bg-teal-600 text-white px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm">
+                    {calculateAge(currentPatient.dataNascimento)} anos
+                  </span>
+                )}
               </div>
-              <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold">Leito {currentPatient.leito}</span>
+              
+              <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold whitespace-nowrap">
+                Leito {currentPatient.leito}
+              </span>
             </div>
 
             <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px]">
@@ -2197,6 +2232,7 @@ ${condutas}`;
                         updateNested={updateNested}
                         updateP={updateP}
                         handleBlurSave={handleBlurSave}
+                        handleEditAdmission={handleEditAdmission}
                       />
                     )
                   )}
@@ -2467,6 +2503,67 @@ ${condutas}`;
         handleBlurSave={handleBlurSave}
         handleSepsisResponse={handleSepsisResponse}
       />
+
+      {/* MODAL DE DADOS CADASTRAIS (SOMENTE LEITURA) */}
+      {showPatientDataModal && (
+        <div className="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-popIn">
+            <div className="bg-teal-600 p-4 text-white flex justify-between items-center">
+              <h3 className="font-bold flex items-center gap-2">
+                <User size={20} /> Dados Cadastrais do Paciente
+              </h3>
+              <button onClick={() => setShowPatientDataModal(false)} className="hover:bg-teal-700 p-1 rounded">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Nome Completo</label>
+                  <p className="font-bold text-slate-800 uppercase">{currentPatient.nome}</p>
+                </div>
+                
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Data de Nascimento</label>
+                  <p className="font-bold text-slate-800">
+                    {currentPatient.dataNascimento ? currentPatient.dataNascimento.split('-').reverse().join('/') : "-"}
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Idade Atual</label>
+                  <p className="font-bold text-slate-800">{currentPatient.dataNascimento ? `${calculateAge(currentPatient.dataNascimento)} anos` : "-"}</p>
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Sexo</label>
+                  <p className="font-bold text-slate-800">{currentPatient.sexo === "M" ? "Masculino" : currentPatient.sexo === "F" ? "Feminino" : "-"}</p>
+                </div>
+
+                <div className="col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Procedência/Origem</label>
+                  <p className="font-bold text-slate-800">{currentPatient.procedencia || "Não informada"}</p>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 mt-4">
+                <p className="text-[11px] text-amber-700 font-medium leading-relaxed italic">
+                  * Estes dados foram importados da Recepção/Fila de Espera. Para alterações cadastrais críticas, consulte a Recepção.
+                </p>
+              </div>
+              
+              <button 
+                onClick={() => setShowPatientDataModal(false)}
+                className="w-full bg-slate-800 text-white font-bold py-3 rounded-xl mt-2 hover:bg-slate-900 transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -48,8 +48,8 @@ const ServiceHub = ({ userProfile }) => {
     }
   ];
 
-  // Filtra módulos se não for admin
-  const modulosVisiveis = modulos.filter(m => !m.somenteAdmin || userProfile?.perfil === 'Administrador');
+  // Filtra módulos se não for admin/desenvolvedor
+ const modulosVisiveis = modulos.filter(m => !m.somenteAdmin || userProfile?.perfil === 'Administrador' || userProfile?.perfil === 'Desenvolvedor');
 
   return (
     <div className="max-w-6xl mx-auto">
