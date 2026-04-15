@@ -36,6 +36,7 @@ import NutriDashboard from '../features/nutri/NutriDashboard';
 import SpeechDashboard from '../features/speech/SpeechDashboard';
 import HemoDashboard from '../features/hemo/HemoDashboard';
 import ManagementTab from './tabs/ManagementTab';
+import TechDashboard from '../features/tech/TechDashboard';
 import OverviewTab from './tabs/OverviewTab';
 
 // ==========================================
@@ -1546,6 +1547,36 @@ ${condutas}`;
       window.print();
     };
 
+// --- FERRAMENTAS DO BALANÇO HÍDRICO (TÉCNICO) ---
+
+    // 1. Função Vital: Atualizar células do BH
+    const updateBH = (hour, category, item, value) => {
+      setPatients(prev => {
+        const up = [...prev];
+        const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda
+        
+        // Garante que o BH atual existe
+        if (!p.bh) p.bh = { date: getManausDateStr(), gains: {}, losses: {}, vitals: {}, irrigation: {} };
+        if (!p.bh[category]) p.bh[category] = {};
+        
+        // Se for irrigação, não tem "item", é direto na hora
+        if (category === "irrigation") {
+          p.bh.irrigation[hour] = value;
+        } else {
+          if (!p.bh[category][hour]) p.bh[category][hour] = {};
+          p.bh[category][hour][item] = value;
+        }
+        
+        up[activeTab] = p;
+        return up;
+      });
+    };
+
+    // 2. Imprimir Balanço Hídrico
+    const handlePrintBH = () => {
+      window.print();
+    };
+
   const resetPhysio = () => {
     if (
       window.confirm(
@@ -2049,7 +2080,32 @@ ${condutas}`;
                   )}
                   {viewMode === "nutri" && <NutriDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
                   {viewMode === "speech" && <SpeechDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
-                  {viewMode === "tech" && (<TechDashboard currentPatient={currentPatient} displayedBH={displayedBH} bhTotals={bhTotals} isBHReadOnly={isBHReadOnly} updateBH={updateBH} handleNextDayBH={handleNextDayBH} setCurrentNoraHour={setCurrentNoraHour} setCurrentNoraRate={setCurrentNoraRate} setShowNoraModal={setShowNoraModal} />)}
+                  {viewMode === "tech" && (
+                    <TechDashboard 
+                      currentPatient={currentPatient} 
+                      patients={patients}
+                      activeTab={activeTab}
+                      setPatients={setPatients}
+                      save={save}
+                      isEditable={isEditable}
+                      viewingPreviousBH={viewingPreviousBH}
+                      setViewingPreviousBH={setViewingPreviousBH}
+                      displayedBH={displayedBH} 
+                      bhTotals={bhTotals} 
+                      isBHReadOnly={isBHReadOnly} 
+                      canCloseDay={canCloseDay}
+                      
+                      // As funções que criamos agora e faltavam:
+                      handleNextDayBH={handleNextDayBH} 
+                      handlePrintBH={handlePrintBH}
+                      updateBH={updateBH} 
+                      updateNested={updateNested}
+                      setCurrentNoraHour={setCurrentNoraHour} 
+                      setCurrentNoraRate={setCurrentNoraRate} 
+                      setShowNoraModal={setShowNoraModal} 
+                      handleBlurSave={handleBlurSave}
+                    />
+                  )}
                   {viewMode === "hemodialysis" && <HemoDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} />}
                 </>
               )}
