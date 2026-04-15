@@ -115,6 +115,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     const [pendingUploadData, setPendingUploadData] = useState(null);
     const [centerTab, setCenterTab] = useState(null);
     const navScrollRef = useRef(null);
+    const [isGeneratingNursingAI, setIsGeneratingNursingAI] = useState(false);
 
     const [showAdmissionModal, setShowAdmissionModal] = useState(false);
     const [showNursingModal, setShowNursingModal] = useState(false);
@@ -1741,16 +1742,30 @@ ${condutas}`;
         if (closest && closest !== centerTab) setCenterTab(closest);
     };
 
-    // RBAC
-    const isDocRole = userProfile?.role === "Médico" || userProfile?.role === "Gestor" || userProfile?.role === "Administrador";
-    const isNursingRole = userProfile?.role === "Enfermeiro" || userProfile?.role === "Técnico em Enfermagem" || userProfile?.role === "Gestor" || userProfile?.role === "Administrador";
-    const isAdmin = userProfile?.role === "Administrador";
-    const isEditable = isDocRole; // Simplificado para exemplo
-    const isOverviewEditable = isDocRole;
-    const canCloseDay = userProfile?.role === "Enfermeiro" || isOverviewEditable;
+// --- RBAC (Controle de Acessos com Chave Mestra) ---
+    // Blindagem: Aceita tanto 'role' quanto 'perfil' vindo do Firebase
+    const userRole = userProfile?.role || userProfile?.perfil; 
+    
+    const isDev = userRole === "Desenvolvedor";
+
+    // O Desenvolvedor herda automaticamente os poderes de todos os perfis
+    const isDocRole = isDev || userRole === "Médico" || userRole === "Gestor" || userRole === "Administrador";
+    
+    const isNursingRole = isDev || userRole === "Enfermeiro" || userRole === "Técnico em Enfermagem" || userRole === "Gestor" || userRole === "Administrador";
+    
+    const isAdmin = isDev || userRole === "Administrador";
+
+    // Regras de Edição: Adicionamos a Enfermagem aqui para ela poder editar as próprias abas!
+    const isEditable = isDev || isDocRole || isNursingRole; 
+    
+    const isOverviewEditable = isDev || isDocRole || isNursingRole;
+    
+    const canCloseDay = isDev || userRole === "Enfermeiro" || isOverviewEditable;
+    
     const isBHReadOnly = viewingPreviousBH || !isEditable;
 
-    const visibleNavButtons = userProfile?.role === "Técnico em Enfermagem"
+    // Menus Visíveis
+    const visibleNavButtons = userRole === "Técnico em Enfermagem"
         ? navButtons.filter(btn => btn.id === "tech" || btn.id === "hemodialysis")
         : navButtons;
 
@@ -1875,12 +1890,33 @@ ${condutas}`;
                                           </p>
                                         </div>
                                       ) : (
-                                        <OverviewTab 
-                                          currentPatient={currentPatient} 
-                                          isOverviewEditable={isOverviewEditable} 
-                                          handleBlurSave={handleBlurSave} 
-                                          updateP={updateP} 
-                                        />
+                                      <OverviewTab 
+                                        currentPatient={currentPatient} 
+                                        viewMode={viewMode} // ou activeTab (depende de como o senhor chamou aí em cima)
+                                        handleBlurSave={handleBlurSave} 
+                                        updateP={updateP} 
+                                        
+                                        // --- Ferramentas e Cálculos que faltavam ---
+                                        handleUnlockSAPS3={handleUnlockSAPS3}
+                                        getMissingSAPS3={getMissingSAPS3}
+                                        handleLockSAPS3={handleLockSAPS3}
+                                        getDaysD1={getDaysD1}
+                                        getTempoVMText={getTempoVMText}
+                                        historyOpen={historyOpen}
+                                        setHistoryOpen={setHistoryOpen}
+                                        calculateEvacDays={calculateEvacDays}
+                                        calculateGlasgowTotal={calculateGlasgowTotal}
+                                        renderValue={renderValue}
+                                        calculateDiurese12hMlKgH={calculateDiurese12hMlKgH}
+                                        calculateCreatinineClearance={calculateCreatinineClearance}
+                                        setShowATBHistoryModal={setShowATBHistoryModal}
+                                        getDaysD0={getDaysD0}
+                                        setShowHistoryModal={setShowHistoryModal}
+                                        formatDateDDMM={formatDateDDMM}
+                                        updateLab={updateLab}
+                                        userProfile={userProfile}
+                                        isOverviewEditable={isOverviewEditable} 
+                                      />
                                       )
                                     )}
                                     
@@ -1921,7 +1957,21 @@ ${condutas}`;
                                         />
                                       )
                                     )}
-                                    {viewMode === "nursing" && <NursingDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} />}
+                                    {viewMode === "nursing" && (
+                                      <NursingDashboard 
+                                        currentPatient={currentPatient} 
+                                        isEditable={isEditable} 
+                                        updateNested={updateNested} 
+                                        handleBlurSave={handleBlurSave} 
+                                        
+                                        // 👇 A MÁGICA MUDA AQUI: Em vez de setViewMode, usamos setShowNursingModal 👇
+                                        handleNursingAdmission={() => setShowNursingModal(true)} 
+                                        
+                                        generateNursingAI_Evolution={generateNursingAI_Evolution}
+                                        isNursingRole={isNursingRole}
+                                        isGeneratingNursingAI={isGeneratingNursingAI}
+                                      />
+                                    )}
                                     {viewMode === "physio" && <PhysioDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} handleGeneratePhysioEvo={handleGeneratePhysioEvo} />}
                                     {viewMode === "nutri" && <NutriDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
                                     {viewMode === "speech" && <SpeechDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}

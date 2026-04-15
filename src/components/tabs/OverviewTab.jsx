@@ -27,7 +27,9 @@ const OverviewTab = ({
   userProfile,
   updateP
 }) => {
-  if (viewMode !== "overview") return null;
+  // Se o ModuloUTI não mandar o viewMode, ou não for overview, esconde.
+  if (viewMode && viewMode !== "overview") return null;
+  if (!currentPatient) return null;
 
   return (
     <div className="space-y-6 animate-fadeIn text-left">
@@ -38,7 +40,7 @@ const OverviewTab = ({
       </div>
 
       <fieldset disabled={!isOverviewEditable} className="min-w-0 border-0 p-0 m-0">
-        {/* CARTÃO SAPS 3 NOVO NA VISITA MULTI */}
+        {/* CARTÃO SAPS 3 */}
         <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 mb-4 shadow-sm">
           <div className="flex justify-between items-center mb-2">
             <h4 className="text-xs font-bold text-purple-800 uppercase flex items-center gap-2">
@@ -65,7 +67,7 @@ const OverviewTab = ({
           ) : (
             <div className="bg-white p-3 rounded-lg border border-purple-200">
               {(() => {
-                const missing = getMissingSAPS3(currentPatient);
+                const missing = typeof getMissingSAPS3 === 'function' ? getMissingSAPS3(currentPatient) : [];
                 const isReady = missing.length === 0;
                 return (
                   <div className="flex flex-col gap-2">
@@ -95,8 +97,8 @@ const OverviewTab = ({
           <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Comorbidades / HPP</h4>
           <p className="text-sm">{currentPatient.comorbidades || "Nenhuma registrada."}</p>
           <div className="flex gap-4 mt-2 text-xs font-bold text-slate-500 border-t pt-2 border-slate-200">
-            <span>Internação: {getDaysD1(currentPatient.dataInternacao)}</span>
-            <span className="text-cyan-700">Tempo de VM: {getTempoVMText(currentPatient)}</span>
+            <span>Internação: {typeof getDaysD1 === 'function' ? getDaysD1(currentPatient.dataInternacao) : "-"}</span>
+            <span className="text-cyan-700">Tempo de VM: {typeof getTempoVMText === 'function' ? getTempoVMText(currentPatient) : "-"}</span>
           </div>
         </div>
       </fieldset>
@@ -112,6 +114,7 @@ const OverviewTab = ({
         )}
       </div>
 
+      {/* LINHA 1: VENTILAÇÃO, NUTRIÇÃO E ELIMINAÇÕES */}
       <div className="grid md:grid-cols-3 gap-4 mt-4">
         <div className="p-4 bg-cyan-50 border border-cyan-100 rounded-xl">
           <h4 className="font-bold text-cyan-800 mb-2 flex items-center gap-2"><Wind size={16} /> Ventilação</h4>
@@ -152,7 +155,7 @@ const OverviewTab = ({
         {(() => {
           const checkLossBH = (bh, lossName) => {
             if (!bh || !bh.losses) return false;
-            for (let h of BH_HOURS) {
+            for (let h of BH_HOURS || []) {
               const val = String(bh.losses[h]?.[lossName] || "").trim().toLowerCase();
               const numVal = parseFloat(val);
               if (["sim", "s"].includes(val) || val.includes("+") || (!isNaN(numVal) && numVal > 0)) return true;
@@ -174,7 +177,7 @@ const OverviewTab = ({
           else if (vomitoHoje) vomitoText = "Hoje";
           else if (vomitoOntem) vomitoText = "Ontem";
 
-          const evacResult = calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao);
+          const evacResult = typeof calculateEvacDays === 'function' ? calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao) : "-";
           const diasSemEvacuar = parseInt(String(evacResult).replace(/\D/g, ""), 10);
           const isConstipado = !isNaN(diasSemEvacuar) && diasSemEvacuar > 2 && !String(evacResult).toLowerCase().includes("hoje") && !String(evacResult).toLowerCase().includes("ontem");
 
@@ -189,32 +192,32 @@ const OverviewTab = ({
         })()}
       </div>
 
+      {/* LINHA 2: NEUROLÓGICO, CARDIO E RENAL */}
       <div className="grid md:grid-cols-3 gap-4">
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
           <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2"><Brain size={14} /> Neurológico</h4>
           <div className="grid grid-cols-2 gap-2 text-sm">
-            {/* CORREÇÃO: Ponto de interrogação adicionado */}
-            <p>Glasgow: <b>{currentPatient.neuro?.glasgowAO ? calculateGlasgowTotal(currentPatient) : "-"}</b></p>
+            <p>Glasgow: <b>{currentPatient.neuro?.glasgowAO && typeof calculateGlasgowTotal === 'function' ? calculateGlasgowTotal(currentPatient) : "-"}</b></p>
             <p>RASS: <b>{currentPatient.neuro?.rass || "-"}</b></p>
           </div>
         </div>
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
           <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2"><HeartPulse size={14} /> Cardiovascular</h4>
           <div className="text-sm">
-            {/* CORREÇÃO: Ponto de interrogação adicionado */}
             <p>DVA: {currentPatient.cardio?.dva ? "Sim" : "Não"}</p>
-            <p>Drogas: <span className={currentPatient.cardio?.dva && currentPatient.cardio?.drogasDVA?.length > 0 ? "text-red-600 font-bold" : ""}>{renderValue(currentPatient.cardio?.drogasDVA)}</span></p>
+            <p>Drogas: <span className={currentPatient.cardio?.dva && currentPatient.cardio?.drogasDVA?.length > 0 ? "text-red-600 font-bold" : ""}>{typeof renderValue === 'function' ? renderValue(currentPatient.cardio?.drogasDVA) : "-"}</span></p>
           </div>
         </div>
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
           <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2"><Droplets size={14} /> Renal / BH</h4>
           <div className="flex flex-col gap-2 text-sm">
-            <p>Diurese (Últ. 12h): <b>{calculateDiurese12hMlKgH(currentPatient)}</b> ml/kg/h</p>
-            <p>Clearance Cr: <b>{calculateCreatinineClearance(currentPatient)}</b> {calculateCreatinineClearance(currentPatient) !== "Falta Sexo" && calculateCreatinineClearance(currentPatient) !== "---" ? "ml/min" : ""}</p>
+            <p>Diurese (Últ. 12h): <b>{typeof calculateDiurese12hMlKgH === 'function' ? calculateDiurese12hMlKgH(currentPatient) : "-"}</b> ml/kg/h</p>
+            <p>Clearance Cr: <b>{typeof calculateCreatinineClearance === 'function' ? calculateCreatinineClearance(currentPatient) : "-"}</b> {typeof calculateCreatinineClearance === 'function' && calculateCreatinineClearance(currentPatient) !== "Falta Sexo" && calculateCreatinineClearance(currentPatient) !== "---" ? "ml/min" : ""}</p>
           </div>
         </div>
       </div>
 
+      {/* ANTIBIÓTICOS */}
       <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl">
         <div className="flex justify-between items-center mb-2">
           <h4 className="text-xs font-bold text-orange-600 uppercase">Antibióticos Ativos</h4>
@@ -223,13 +226,13 @@ const OverviewTab = ({
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
-          {/* CORREÇÃO: Validação adicionada caso antibiotics não exista na admissão */}
           {(currentPatient.antibiotics || []).map((a, i) => a.name && (
-            <span key={i} className="text-xs font-bold bg-white border border-orange-200 px-2 py-1 rounded-lg text-orange-700">{a.name} ({getDaysD0(a.date)})</span>
+            <span key={i} className="text-xs font-bold bg-white border border-orange-200 px-2 py-1 rounded-lg text-orange-700">{a.name} ({typeof getDaysD0 === 'function' ? getDaysD0(a.date) : ""})</span>
           ))}
         </div>
       </div>
 
+      {/* LABORATÓRIO E ANOTAÇÕES */}
       <div className="pt-4 border-t space-y-4">
         <div className="flex justify-between items-center mb-2">
           <h3 className="font-bold text-blue-800">Laboratório</h3>
@@ -240,29 +243,30 @@ const OverviewTab = ({
         <fieldset disabled={!isOverviewEditable} className="min-w-0 border-0 p-0 m-0">
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
             <div className="font-bold text-left pt-6">EXAME</div>
-            {/* CORREÇÕES GERAIS no Laboratório */}
-            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{formatDateDDMM(currentPatient.labs?.dayBefore?.date)}</div>
-            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{formatDateDDMM(currentPatient.labs?.yesterday?.date)}</div>
-            <div className="bg-blue-100 p-1 rounded font-bold text-blue-600">{formatDateDDMM(currentPatient.labs?.today?.date)}</div>
+            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.dayBefore?.date) : "-"}</div>
+            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.yesterday?.date) : "-"}</div>
+            <div className="bg-blue-100 p-1 rounded font-bold text-blue-600">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.today?.date) : "-"}</div>
+            
             {["Leucócitos", "Ureia", "Creatinina", "Na (Sódio)", "K (Potássio)"].map((ex) => {
               const key = ex === "Leucócitos" ? "leuco" : ex === "Ureia" ? "ureia" : ex === "Creatinina" ? "creat" : ex.includes("Na") ? "na" : "k";
               return (
                 <React.Fragment key={ex}>
                   <div className="text-left py-2 font-medium">{ex}</div>
-                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.dayBefore?.[key] || ""}</div>
-                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.yesterday?.[key] || ""}</div>
+                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.dayBefore?.[key] || "-"}</div>
+                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.yesterday?.[key] || "-"}</div>
                   
                   <input 
                     className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none" 
                     value={currentPatient.labs?.today?.[key] || ""} 
                     onChange={(e) => updateLab("today", key, e.target.value)} 
-                    onBlur={() => handleBlurSave(`Laboratório: Editou ${ex}`)} 
+                    onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave(`Laboratório: Editou ${ex}`) : null} 
                   />
                 </React.Fragment>
               );
             })}
           </div>
         </fieldset>
+        
         <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
           <div className="flex justify-between mb-2">
             <h4 className="text-xs font-bold text-yellow-600 uppercase">Anotações / Pendências</h4>
@@ -272,7 +276,7 @@ const OverviewTab = ({
             <textarea 
               value={currentPatient.anotacoes || ""} 
               onChange={(e) => updateP("anotacoes", e.target.value)} 
-              onBlur={() => handleBlurSave("Visita Multi: Editou Anotações / Pendências")} 
+              onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave("Visita Multi: Editou Anotações / Pendências") : null} 
               className="w-full bg-transparent border-0 outline-none text-sm text-slate-700 resize-y min-h-[100px] focus:ring-0" 
               placeholder="Digite aqui..." 
             />

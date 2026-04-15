@@ -12,23 +12,40 @@ const NursingDashboard = ({
   isNursingRole,
   isGeneratingNursingAI
 }) => {
-  return (
-    <fieldset disabled={!isEditable} className="space-y-6 animate-fadeIn min-w-0 border-0 p-0 m-0">
+return (
+    <div className="space-y-6 animate-fadeIn text-left">
+      {/* 1. SE A ADMISSÃO NÃO FOI FEITA, MOSTRAMOS O BOTÃO LIVRE DO FIELDSET */}
       {!currentPatient.enfermagem?.braden_percepcao ? (
         <div className="flex flex-col items-center justify-center py-16 px-4 bg-white rounded-xl border-2 border-dashed border-orange-200 shadow-sm print:hidden">
-          <Shield size={64} className="text-orange-300 mb-4" />
+          <AlertTriangle size={64} className="text-orange-300 mb-4" />
           <h3 className="text-xl font-bold text-slate-700 mb-2 text-center">Admissão de Enfermagem Pendente</h3>
           <p className="text-sm text-slate-500 mb-6 text-center max-w-md">
-            O paciente já foi alocado no leito pela equipe médica, mas a avaliação inicial de enfermagem (Escalas de Braden e Morse) ainda não foi realizada.
+            O paciente já foi alocado no leito, mas a avaliação inicial de enfermagem (Escalas de Braden e Morse) ainda não foi realizada.
           </p>
+          
           <button
-            onClick={(e) => { e.preventDefault(); handleNursingAdmission(); }}
-            className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-green-700 flex items-center gap-2 transition-all transform hover:scale-105"
+            onClick={(e) => { 
+              e.preventDefault(); 
+              handleNursingAdmission(); 
+            }}
+            // Adicionei uma opacidade se o médico não puder clicar, só para ficar claro visualmente
+            disabled={!isEditable} 
+            className={`px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${
+              isEditable 
+                ? "bg-green-600 text-white shadow-lg hover:bg-green-700 transform hover:scale-105" 
+                : "bg-slate-300 text-slate-500 cursor-not-allowed"
+            }`}
           >
             <UserPlus size={20} /> Iniciar Admissão de Enfermagem
           </button>
+          
+          {!isEditable && (
+             <p className="text-xs text-red-500 mt-3">Somente o perfil "Enfermeiro" pode iniciar a admissão.</p>
+          )}
         </div>
       ) : (
+        /* 2. SE A ADMISSÃO JÁ FOI FEITA, AÍ SIM ABRIMOS O FIELDSET PARA OS DADOS */
+        <fieldset disabled={!isEditable} className="min-w-0 border-0 p-0 m-0">
         <>
           <div className="flex justify-end print:hidden">
             <button
@@ -314,8 +331,9 @@ const NursingDashboard = ({
             />
           </div>
         </>
+      </fieldset>
       )}
-    </fieldset>
+    </div>
   );
 };
 
