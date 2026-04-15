@@ -1131,15 +1131,21 @@ ${physioData.condutas}`;
 
 
 
-  const generateAIEvolution = async (dadosDoTimeout = null) => {
+const generateAIEvolution = async (dadosDoTimeout = null) => {
     setIsGeneratingAI(true);
     let success = false;
     let lastError = "Iniciando...";
 
     try {
-      const currentKey = apiKeyMed || apiKey || window.apiKey || "";
-      if (!currentKey || currentKey.length < 10) {
-        throw new Error("Chave de API ausente ou inválida.");
+      // AQUI GARANTIMOS QUE ELE PUXE DIRETO DO VITE, ALÉM DAS PROPS
+      const envKey = import.meta.env.VITE_GEMINI_API_KEY_MED; // <- MUDE AQUI PARA O NOME EXATO QUE ESTÁ NA SUA VERCEL
+      const currentKey = envKey || apiKeyMed || apiKey || window.apiKey || "";
+      
+      // O NOSSO RAIO-X:
+      console.log("CHAVE QUE ESTÁ INDO PARA O GOOGLE: ", currentKey.substring(0, 8) + "...");
+
+      if (!currentKey || currentKey.length < 10 || currentKey === "undefined") {
+        throw new Error(`Chave inválida. Valor recebido: ${currentKey}`);
       }
 
       const safeNum = (val) => {
@@ -1150,12 +1156,12 @@ ${physioData.condutas}`;
       // --- IDENTIFICAÇÃO DE GÊNERO ---
       const isFem = currentPatient.sexo === 'F';
       const sexoPaciente = isFem ? 'A paciente' : 'O paciente';
-      const mantemSe = 'Mantém-se';
+      const mantemSe = 'Mantém-se'; 
 
       // 1. SINAIS VITAIS (Aba Técnico)
       const vitals = currentPatient.bh?.vitals || {};
       let tempMax = 0, spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
-
+      
       Object.values(vitals).forEach((v) => {
         if (!v) return;
         const t = safeNum(v["Temp (ºC)"]); if (t > tempMax) tempMax = t;
@@ -1168,28 +1174,26 @@ ${physioData.condutas}`;
 
       const tempStatus = tempMax >= 37.8 ? "febril" : "afebril";
       const spo2Status = (spo2Min <= 92 && spo2Min > 0) ? "com baixa SpO2" : "mantendo boa SpO2";
-
-      // Ajuste de gênero para FC e PA
+      
       const fcStatus = fcMax > 100 ? (isFem ? "taquicárdica" : "taquicárdico") : (fcMin > 0 && fcMin < 60 ? (isFem ? "bradicárdica" : "bradicárdico") : (isFem ? "eucárdica" : "eucárdico"));
       const paStatus = (pasMin > 0 && pasMin < 90) ? "com hipotensão" : (pasMax > 160 ? (isFem ? "hipertensa" : "hipertenso") : "com bom controle pressórico");
 
-      // 2. ESTADO GERAL E NEURO (Janela Pop-up)
+      // 2. ESTADO GERAL E NEURO
       const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
       const egExtenso = egSalvo === "BEG" ? "BEG" : (egSalvo === "MEG" ? "MEG" : "REG");
-
-      // Ajuste de gênero para sedação
       const sedacaoText = currentPatient.neuro?.sedacao ? (isFem ? "sedada" : "sedado") : "sem sedação";
 
-      // 3. RESPIRATÓRIO (Aba Fisio)
-      const suporte = currentPatient.physio?.suporte || "ar ambiente";
-      const suporteText = suporte === "VM" ? "em VM por TOT" : `em uso de ${suporte}`;
+      // 3. RESPIRATÓRIO -> CORREÇÃO AR AMBIENTE
+      const suporte = currentPatient.physio?.suporte || "Ar ambiente";
+      let suporteText = "";
+      if (suporte === "VM") suporteText = "em VM por TOT";
+      else if (suporte.toLowerCase() === "ar ambiente") suporteText = "em ar ambiente";
+      else suporteText = `em uso de ${suporte}`;
 
-      // 4. HEMODINÂMICO (Calculadora Nora e DVA Pop-up)
-      const usaDVA = currentPatient.cardio?.dva === true;
-
-      // Ajuste de gênero para compensado(a)
+      // 4. HEMODINÂMICO
+      const usaDVA = currentPatient.cardio?.dva === true; 
       let hemodinamicaStatus = usaDVA ? (isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado") : "Hemodinamicamente estável";
-
+      
       if (currentPatient.bh?.gains && typeof BH_HOURS !== 'undefined') {
         let noraVals = [];
         BH_HOURS.forEach(h => {
@@ -1204,23 +1208,56 @@ ${physioData.condutas}`;
       }
       const dvaText = usaDVA ? `em uso de DVA (${currentPatient.cardio.drogasDVA?.join(", ")})` : "sem uso de DVA";
 
-      // 5. RENAL (Aba Visita Multi)
+      // 5. RENAL -> CORREÇÃO CLEARANCE (KDIGO)
       const diureseNum = parseFloat(calculateDiurese12hMlKgH(currentPatient));
       const diureseStatus = (!isNaN(diureseNum) && diureseNum < 0.5) ? "Baixa diurese" : "Boa diurese";
+      
       const crclNum = parseFloat(calculateCreatinineClearance(currentPatient));
-      const renalStatus = (!isNaN(crclNum) && crclNum < 60) ? "função renal alterada" : "função renal normal";
+      let renalStatus = "sem cálculo de função renal";
+      
+      if (!isNaN(crclNum)) {
+        if (crclNum >= 90) renalStatus = "função renal normal";
+        else if (crclNum >= 60) renalStatus = "redução leve da função renal";
+        else if (crclNum >= 30) renalStatus = "falha moderada da função renal";
+        else renalStatus = "falha severa da função renal";
+      }
 
-      // 6. LABORATORIAL E INFECCIOSO (Aba Médico/Exames)
-      const leucoVal = safeNum(currentPatient.labs?.today?.leuco);
-      const leucoStatus = leucoVal > 11000 ? "leucocitose" : (leucoVal > 0 && leucoVal < 4000 ? "leucopenia" : "leucometria normal");
+     // 6. LABORATORIAL -> CORREÇÃO BUSCA RECENTE, FAIXAS E PONTUAÇÃO BRASILEIRA
+      // Tradutor Inteligente de Leucograma (Lida com 6.500, 6,5 ou 6500)
+      const parseLeuco = (val) => {
+        if (!val) return 0;
+        let n = parseFloat(String(val).replace(",", "."));
+        if (isNaN(n)) return 0;
+        
+        // Se o médico digitou algo menor que 200 (ex: 6.5 ou o sistema leu 6.000 como 6), 
+        // nós multiplicamos por 1000 para converter para a escala real.
+        if (n > 0 && n < 200) {
+          n = n * 1000;
+        }
+        return n;
+      };
+
+      let leucoVal = parseLeuco(currentPatient.labs?.today?.leuco);
+      if (!leucoVal) leucoVal = parseLeuco(currentPatient.labs?.yesterday?.leuco);
+      if (!leucoVal) leucoVal = parseLeuco(currentPatient.labs?.dayBefore?.leuco);
+
+      let leucoStatus = "sem dados recentes de leucometria";
+      if (leucoVal > 0) {
+        if (leucoVal < 5000) leucoStatus = "leucopenia";
+        else if (leucoVal <= 10000) leucoStatus = "leucometria normal";
+        else if (leucoVal <= 12000) leucoStatus = "leucocitose discreta";
+        else if (leucoVal <= 20000) leucoStatus = "leucocitose";
+        else leucoStatus = "leucocitose importante";
+      }
+
       const atbValidado = dadosDoTimeout?.atbs || currentPatient.medical?.antibioticosTextoIA || "";
       const atbsFinal = (!atbValidado || atbValidado.toLowerCase() === "nenhum") ? "sem uso de antibióticos ativos" : `em uso de ${atbValidado}`;
 
-      // 7. GASTRO E DIETA (Aba Nutri e SSVV)
+      // 7. GASTRO E DIETA
       const evacDaysStr = typeof calculateEvacDays === 'function' ? calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao) : "-";
       const temVomitoBH = typeof checkLossBH === 'function' ? checkLossBH(currentPatient.bh, "Vômitos") : false;
       const temDiarreiaBH = typeof checkLossBH === 'function' ? checkLossBH(currentPatient.bh, "Diarreia") : false;
-
+      
       let tgiDescricao = "";
       if (temVomitoBH && temDiarreiaBH) tgiDescricao = "com episódios de vômito e diarreia";
       else if (temVomitoBH) tgiDescricao = "com episódio de vômito";
@@ -1228,7 +1265,7 @@ ${physioData.condutas}`;
 
       const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
 
-      // 8. O PROMPT "ENGESSADO"
+      // 8. O PROMPT
       const promptText = `Você é um médico intensivista. Redija a evolução ESTRITAMENTE no formato exato fornecido abaixo, substituindo os colchetes pelos dados clínicos reais fornecidos na lista. 
       NÃO adicione introduções, NÃO crie parágrafos extras, NÃO use tópicos. Siga exatamente a estrutura de 5 parágrafos.
 
@@ -1259,11 +1296,9 @@ ${physioData.condutas}`;
       
       Regra Crítica TGI: Se a tag [TGI] pedir para omitir, escreva apenas "A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO]." Não escreva "ausência de vômitos".`;
 
-      // 9. LOOP DE MODELOS
-      const models = [
-        "gemini-1.5-pro",
-      ];
-
+      // 9. LOOP DE MODELOS (GEMINI)
+      const models = ["gemini-1.5-pro"];
+      
       for (const model of models) {
         try {
           const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`, {
@@ -1280,7 +1315,13 @@ ${physioData.condutas}`;
           }
 
           if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-            setAiEvolution(data.candidates[0].content.parts[0].text);
+            // SUTURA DE SEGURANÇA: O SAPS 3 é injetado diretamente no código, sem depender da IA
+            const baseText = data.candidates[0].content.parts[0].text.trim();
+            const saps3Val = currentPatient.saps3?.lockedScore || currentPatient.saps3?.score || "N/A";
+            
+            // Adiciona o texto base, dá DOIS enters (uma linha vazia de espaço) e carimba o SAPS
+            setAiEvolution(`${baseText}\n\nSAPS 3: ${saps3Val}`);
+            
             success = true;
             break;
           }
