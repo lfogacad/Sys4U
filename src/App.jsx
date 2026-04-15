@@ -3766,10 +3766,24 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         else renalStatus = "falha severa da função renal";
       }
 
-      // 6. LABORATORIAL -> CORREÇÃO BUSCA RECENTE E FAIXAS
-      let leucoVal = safeNum(currentPatient.labs?.today?.leuco);
-      if (!leucoVal) leucoVal = safeNum(currentPatient.labs?.yesterday?.leuco);
-      if (!leucoVal) leucoVal = safeNum(currentPatient.labs?.dayBefore?.leuco);
+     // 6. LABORATORIAL -> CORREÇÃO BUSCA RECENTE, FAIXAS E PONTUAÇÃO BRASILEIRA
+      // Tradutor Inteligente de Leucograma (Lida com 6.500, 6,5 ou 6500)
+      const parseLeuco = (val) => {
+        if (!val) return 0;
+        let n = parseFloat(String(val).replace(",", "."));
+        if (isNaN(n)) return 0;
+        
+        // Se o médico digitou algo menor que 200 (ex: 6.5 ou o sistema leu 6.000 como 6), 
+        // nós multiplicamos por 1000 para converter para a escala real.
+        if (n > 0 && n < 200) {
+          n = n * 1000;
+        }
+        return n;
+      };
+
+      let leucoVal = parseLeuco(currentPatient.labs?.today?.leuco);
+      if (!leucoVal) leucoVal = parseLeuco(currentPatient.labs?.yesterday?.leuco);
+      if (!leucoVal) leucoVal = parseLeuco(currentPatient.labs?.dayBefore?.leuco);
 
       let leucoStatus = "sem dados recentes de leucometria";
       if (leucoVal > 0) {
