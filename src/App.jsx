@@ -3681,9 +3681,15 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
     let lastError = "Iniciando...";
 
     try {
-      const currentKey = apiKeyMed || apiKey || window.apiKey || "";
-      if (!currentKey || currentKey.length < 10) {
-        throw new Error("Chave de API ausente ou inválida.");
+      // AQUI GARANTIMOS QUE ELE PUXE DIRETO DO VITE, ALÉM DAS PROPS
+      const envKey = import.meta.env.VITE_GEMINI_API_KEY_MED; // <- MUDE AQUI PARA O NOME EXATO QUE ESTÁ NA SUA VERCEL
+      const currentKey = envKey || apiKeyMed || apiKey || window.apiKey || "";
+      
+      // O NOSSO RAIO-X:
+      console.log("CHAVE QUE ESTÁ INDO PARA O GOOGLE: ", currentKey.substring(0, 8) + "...");
+
+      if (!currentKey || currentKey.length < 10 || currentKey === "undefined") {
+        throw new Error(`Chave inválida. Valor recebido: ${currentKey}`);
       }
 
       const safeNum = (val) => {
