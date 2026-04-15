@@ -3827,7 +3827,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       Regra Crítica TGI: Se a tag [TGI] pedir para omitir, escreva apenas "A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO]." Não escreva "ausência de vômitos".`;
 
       // 9. LOOP DE MODELOS (GEMINI)
-      const models = ["gemini-1.5-pro"];
+      const models = ["gemini-2.5-flash"];
       
       for (const model of models) {
         try {
