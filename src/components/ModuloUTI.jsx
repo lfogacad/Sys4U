@@ -1226,14 +1226,22 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const sexoPaciente = isFem ? 'A paciente' : 'O paciente';
       const mantemSe = 'Mantém-se'; 
 
-      // 1. SINAIS VITAIS
+      // 1. SINAIS VITAIS (COM A NOVA LÓGICA DE SPO2)
       const vitals = currentPatient.bh?.vitals || {};
       let tempMax = 0, spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
+      let hasSpo2 = false; // Rastreador de segurança
       
       Object.values(vitals).forEach((v) => {
         if (!v) return;
         const t = safeNum(v["Temp (ºC)"]); if (t > tempMax) tempMax = t;
-        const s = safeNum(v["SpO2 (%)"]); if (s > 0 && s < spo2Min) spo2Min = s;
+        
+        // Coleta da SpO2
+        const s = safeNum(v["SpO2 (%)"]); 
+        if (s > 0) {
+          hasSpo2 = true;
+          if (s < spo2Min) spo2Min = s; 
+        }
+
         const fc = safeNum(v["FC (bpm)"]);
         if (fc > 0) { if (fcMax === 0 || fc > fcMax) fcMax = fc; if (fcMin === 0 || fc < fcMin) fcMin = fc; }
         const pas = safeNum(v["PAS"]);
@@ -1241,8 +1249,15 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       });
 
       const tempStatus = tempMax >= 37.8 ? "febril" : "afebril";
-      const spo2Status = (spo2Min <= 92 && spo2Min > 0) ? "com baixa SpO2" : "mantendo boa SpO2";
       
+      // 👇 A MÁGICA DA SPO2 RASA/BOA/BAIXA 👇
+      let spo2Status = "sem registro de SpO2";
+      if (hasSpo2) {
+        if (spo2Min > 92) spo2Status = "mantendo boa SpO2";
+        else if (spo2Min >= 89) spo2Status = "com SpO2 rasa";
+        else spo2Status = "com baixa SpO2";
+      }
+
       const fcStatus = fcMax > 100 ? (isFem ? "taquicárdica" : "taquicárdico") : (fcMin > 0 && fcMin < 60 ? (isFem ? "bradicárdica" : "bradicárdico") : (isFem ? "eucárdica" : "eucárdico"));
       const paStatus = (pasMin > 0 && pasMin < 90) ? "com hipotensão" : (pasMax > 160 ? (isFem ? "hipertensa" : "hipertenso") : "com bom controle pressórico");
 
@@ -1390,7 +1405,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO].`;
 
       // 9. LOOP DE MODELOS (GEMINI)
-      const models = ["gemini-2.5-flash"];
+      const models = ["gemini-2.5-flash", "gemini-1.5-pro"];
       
       for (const model of models) {
         try {
@@ -1414,7 +1429,6 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
             // 🧠 CARIMBADOR AUTOMÁTICO: MONTAGEM DO DOCUMENTO FINAL COM ESTRUTURA FIXA
             // =========================================================================
             
-            // Puxando dados da Admissão (AGORA COM OS NOMES EXATOS DO SEU MODAL)
             const adm = currentPatient.admissionData || currentPatient.admissoes || {};
             const origem = adm.origem || "Não informada";
             const historia = adm.historia || "Sem registro";
@@ -1533,117 +1547,195 @@ CONDUTA:
   // IA DA ENFERMAGEM (PROMPT E API)
   // ==========================================
   const buildNursingAIPrompt = (p) => {
-    const vitals = p.bh?.vitals && Object.values(p.bh.vitals).length > 0
-      ? Object.values(p.bh.vitals).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
-      : { "PAS": "NT", "PAD": "NT", "FC (bpm)": "NT", "FR (irpm)": "NT", "SpO2 (%)": "NT", "Temp (ºC)": "NT" };
+    if (!p) return "";
 
+    const safeNum = (val) => {
+      const n = parseFloat(String(val).replace(",", "."));
+      return isNaN(n) ? 0 : n;
+    };
+    const isFem = p.sexo === 'F';
+
+    // 1. NEUROLÓGICO
+    const sedacaoText = p.neuro?.sedacao ? "em sedação contínua" : "sem sedação contínua";
     const glasgowAO = p.neuro?.glasgowAO ? parseInt(p.neuro.glasgowAO) : 0;
     const glasgowRV = p.neuro?.glasgowRV?.startsWith("T") ? 1 : (parseInt(p.neuro?.glasgowRV) || 0);
     const glasgowRM = p.neuro?.glasgowRM ? parseInt(p.neuro.glasgowRM) : 0;
     const glasgowTotal = (glasgowAO + glasgowRV + glasgowRM) || "NT";
     const rass = p.neuro?.rass || "NT";
-    const sedacao = p.neuro?.sedacao ? `SIM (${p.neuro?.drogasSedacao?.join(", ") || "N/A"})` : "NÃO";
 
-    // REGRA DO NEURO: Define se vai mandar RASS ou Glasgow
-    const neuroInfo = p.neuro?.sedacao
-      ? `Sedação: ${sedacao}. RASS: ${rass}`
-      : `Sem sedação contínua. Glasgow Total: ${glasgowTotal}`;
+    const neuroFrase = p.neuro?.sedacao
+      ? `${sedacaoText}, com RASS ${rass}`
+      : `${sedacaoText}, com Glasgow ${glasgowTotal}`;
 
-    // REGRA RESPIRATÓRIA: Foram removidos a FiO2 e PEEP da visualização da IA para evitar que ela descreva parâmetros
-    const suporteVM = p.physio?.suporte || "Ar Ambiente";
-    const secrecao = p.physio?.secrecao ? `SIM (${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"})` : "NÃO";
+    // 2. SINAIS VITAIS (SpO2, FC, PA)
+    const vitals = p.bh?.vitals || {};
+    let spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
+    let hasSpo2 = false;
 
-    const dva = p.cardio?.dva ? `SIM (${p.cardio?.drogasDVA?.join(", ") || "N/A"})` : "NÃO";
-    const nutriVia = p.nutri?.via || "NT";
-    const nutriDieta = p.nutri?.tipoDieta || "NT";
-    const vomito = p.nutri?.vomito ? "SIM" : "NÃO";
-    const diarreia = p.nutri?.diarreia ? "SIM" : "NÃO";
-    const diureseTotal = p.bh?.bh?.losses?.["Diurese (Total Coletado)"] || "NT";
-    const diureseAspecto = p.enfermagem?.diureseCaracteristica || "NT";
+    Object.values(vitals).forEach((v) => {
+      if (!v) return;
+      const s = safeNum(v["SpO2 (%)"]);
+      if (s > 0) { hasSpo2 = true; if (s < spo2Min) spo2Min = s; }
+      
+      const fc = safeNum(v["FC (bpm)"]);
+      if (fc > 0) { if (fcMax === 0 || fc > fcMax) fcMax = fc; if (fcMin === 0 || fc < fcMin) fcMin = fc; }
+      
+      const pas = safeNum(v["PAS"]);
+      if (pas > 0) { if (pasMax === 0 || pas > pasMax) pasMax = pas; if (pasMin === 0 || pas < pasMin) pasMin = pas; }
+    });
 
-    const lesoes = p.enfermagem?.lesaoLocal || "Pele íntegra / Sem lesões relatadas";
-    const curativos = p.enfermagem?.curativoTipo ? `${p.enfermagem.curativoTipo} (Data: ${p.enfermagem.curativoData || "NT"})` : "Nenhum curativo registrado";
+    // 3. RESPIRATÓRIO
+    let suporteVM = p.physio?.suporte || "Ar Ambiente";
+    if (suporteVM.toLowerCase() === "ar ambiente") suporteVM = "em ar ambiente";
+    else if (suporteVM === "VM") suporteVM = "em VM por TOT";
+    else suporteVM = `em uso de ${suporteVM}`;
+
+    let spo2Status = "sem registro de SpO2";
+    if (hasSpo2) {
+      if (spo2Min > 92) spo2Status = "mantendo boa SpO2";
+      else if (spo2Min >= 89) spo2Status = "com SpO2 rasa";
+      else spo2Status = "com baixa SpO2";
+    }
+
+    const secrecao = p.physio?.secrecao 
+      ? `presença de secreção (${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"})` 
+      : "sem evidência de secreções em via aérea";
+
+    const respFrase = `${suporteVM}, ${spo2Status}, ${secrecao}`;
+
+    // 4. CARDIOVASCULAR
+    const usaDVA = p.cardio?.dva === true;
+    let hemodinamicaStatus = "Compensado hemodinamicamente";
+
+    if (usaDVA && p.bh?.gains && typeof BH_HOURS !== 'undefined') {
+      let noraVals = [];
+      BH_HOURS.forEach((h) => {
+        const v = p.bh.gains[h]?.["Noradrenalina"];
+        if (v !== undefined && v !== "") {
+          const num = parseFloat(String(v).replace(",", "."));
+          if (!isNaN(num)) noraVals.push(num);
+        }
+      });
+      if (noraVals.length > 0) {
+        const last3 = noraVals.slice(-3);
+        let instavel = false;
+        if (last3.length === 2) instavel = last3[1] > last3[0];
+        else if (last3.length >= 3) instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
+        hemodinamicaStatus = instavel ? "Hemodinamicamente instável" : "Compensado hemodinamicamente";
+      }
+    } else if (!usaDVA) {
+       hemodinamicaStatus = "Estável hemodinamicamente";
+    }
+
+    const fcStatus = fcMax > 100 ? (isFem ? "taquicárdica" : "taquicárdico") : (fcMin > 0 && fcMin < 60 ? (isFem ? "bradicárdica" : "bradicárdico") : (isFem ? "normocárdica" : "normocárdico"));
+    const paStatus = (pasMin > 0 && pasMin < 90) ? (isFem ? "hipotensa" : "hipotenso") : (pasMax > 160 ? (isFem ? "hipertensa" : "hipertenso") : (isFem ? "normotensa" : "normotenso"));
+
+    const dvaFrase = usaDVA ? `(em uso de DVA: ${p.cardio?.drogasDVA?.join(", ") || "N/A"})` : "(sem uso de DVA)";
+    
+    const cardioFrase = `${hemodinamicaStatus} ${dvaFrase}, apresentando-se ${fcStatus} e ${paStatus}`;
+
+    // 5. DIGESTÓRIO
+    const temRegistroPositivo = (valor) => {
+      if (!valor) return false;
+      const texto = String(valor).trim().toLowerCase();
+      if (texto === "" || texto === "0" || texto === "n" || texto === "nao" || texto === "não" || texto === "-") return false;
+      return true; 
+    };
+
+    let temVomitoNoBH = false, temDiarreiaNoBH = false, temEvacuacaoNoBH = false; 
+    if (p.bh?.losses) {
+      Object.values(p.bh.losses).forEach(hora => {
+        if (!hora) return;
+        if (temRegistroPositivo(hora["Vômitos"]) || temRegistroPositivo(hora["Vomitos"])) temVomitoNoBH = true;
+        if (temRegistroPositivo(hora["Diarreia"]) || temRegistroPositivo(hora["Diarréia"])) temDiarreiaNoBH = true;
+        if (temRegistroPositivo(hora["Evacuação"]) || temRegistroPositivo(hora["Evacuacao"]) || temRegistroPositivo(hora["Fezes"])) temEvacuacaoNoBH = true;
+      });
+    }
+
+    const viaDieta = p.nutri?.via ? p.nutri.via : "via não especificada";
+    const sneTexto = p.enfermagem?.sneData ? `Sonda Nasoenteral (SNE) a ${p.enfermagem.sneCm || "NT"}cm em uso. ` : "";
+    
+    const dataEvac = p.gastro?.dataUltimaEvacuacao;
+    let evacDaysStr = dataEvac 
+      ? (typeof calculateEvacDays === 'function' ? calculateEvacDays(dataEvac) : dataEvac)
+      : "sem registro de evacuações durante essa internação";
+    if (temEvacuacaoNoBH) evacDaysStr = "hoje";
+
+    let tgiIntercorrencias = "";
+    if (temVomitoNoBH && temDiarreiaNoBH) tgiIntercorrencias = " Houve registro de vômitos e diarreia.";
+    else if (temVomitoNoBH) tgiIntercorrencias = " Houve registro de vômito.";
+    else if (temDiarreiaNoBH) tgiIntercorrencias = " Houve registro de diarreia.";
+
+    const digestorioFrase = `Dieta via ${viaDieta}. ${sneTexto}Última evacuação: ${evacDaysStr}.${tgiIntercorrencias}`;
+
+    // 6. GENITURINÁRIO
+    let diureseStatus = "boa diurese";
+    if (typeof calculateDiurese12hMlKgH === "function") {
+      const diureseNum = parseFloat(calculateDiurese12hMlKgH(p));
+      if (!isNaN(diureseNum) && diureseNum < 0.5) diureseStatus = "baixa diurese";
+    }
+    const svdTexto = p.enfermagem?.svd ? "Sonda Vesical de Demora (SVD) em uso" : "Sem SVD em uso";
+    const diureseAspecto = p.enfermagem?.diureseCaracteristica || "não especificado";
+    
+    const geniFrase = `${svdTexto}, com ${diureseStatus} de aspecto ${diureseAspecto.toLowerCase()}`;
+
+    // 7. TEGUMENTAR
+    const lesoes = p.enfermagem?.lesaoLocal ? `Apresenta lesão: ${p.enfermagem.lesaoLocal}` : "Pele íntegra";
+    const curativos = p.enfermagem?.curativoTipo ? `com curativo: ${p.enfermagem.curativoTipo} (Data: ${p.enfermagem.curativoData || "NT"})` : "";
+    const tegumentarFrase = curativos ? `${lesoes}, ${curativos}` : lesoes;
+
+    // 8. DISPOSITIVOS E INTERCORRÊNCIAS
+    const dispositivos = [
+      ...(p.enfermagem?.cvcLocal ? [`- Cateter Venoso Central (CVC) em ${p.enfermagem.cvcLocal}`] : []),
+      ...(p.enfermagem?.avpLocal ? [`- Acesso Venoso Periférico (AVP) em ${p.enfermagem.avpLocal}`] : []),
+      ...(p.enfermagem?.drenoTipo ? [`- Dreno ${p.enfermagem.drenoTipo}`] : []),
+    ].filter(Boolean);
 
     const intercorrencias = p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.";
     const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
 
-    let hemodinamicaStatus = "Estável hemodinamicamente (sem uso de DVA)";
-    if (p.bh?.gains) {
-      let noraVals = [];
-      if (typeof BH_HOURS !== 'undefined') {
-        BH_HOURS.forEach((h) => {
-          const v = p.bh.gains[h]?.["Noradrenalina"];
-          if (v !== undefined && v !== "") {
-            const num = parseFloat(String(v).replace(",", "."));
-            if (!isNaN(num)) noraVals.push(num);
-          }
-        });
-      }
-      if (noraVals.length > 0) {
-        const last3 = noraVals.slice(-3);
-        let instavel = false;
-        if (last3.length === 1) {
-          instavel = false;
-        } else if (last3.length === 2) {
-          instavel = last3[1] > last3[0];
-        } else if (last3.length >= 3) {
-          instavel = last3[2] > last3[1] || (last3[2] === last3[1] && last3[1] > last3[0]);
-        }
-        hemodinamicaStatus = instavel
-          ? "com Instabilidade Hemodinâmica"
-          : "Compensado hemodinamicamente";
-      }
-    }
-
-    const dispositivos = [
-      ...(p.physio?.suporte === "VM" && p.physio?.totNumero ? [`- Tubo Orotraqueal (TOT) #${p.physio.totNumero} (Fixação: ${p.physio.totRima}cm)`] : []),
-      ...(p.enfermagem?.cvcLocal ? [`- Cateter Venoso Central (CVC) em ${p.enfermagem.cvcLocal}`] : []),
-      ...(p.enfermagem?.avpLocal ? [`- Acesso Venoso Periférico (AVP) em ${p.enfermagem.avpLocal}`] : []),
-      ...(p.enfermagem?.svd ? [`- Sonda Vesical de Demora (SVD)`] : []),
-      ...(p.enfermagem?.sneData ? [`- Sonda Nasoenteral (SNE) ${p.enfermagem.sneCm ? `a ${p.enfermagem.sneCm}cm` : ""}`] : []),
-      ...(p.enfermagem?.drenoTipo ? [`- Dreno ${p.enfermagem.drenoTipo}`] : []),
-    ].filter(Boolean);
-
+    // 9. O PROMPT BLINDADO
     return `
-DADOS DO PACIENTE:
-- Nome: ${p.nome}
-- SINAIS VITAIS: PA: ${vitals["PAS"]}/${vitals["PAD"]}, FC: ${vitals["FC (bpm)"]} bpm, FR: ${vitals["FR (irpm)"]} irpm, SpO2: ${vitals["SpO2 (%)"]}%, Temp: ${vitals["Temp (ºC)"]}°C.
-- NEURO: ${neuroInfo}.
-- RESPIRATÓRIO: Suporte: ${suporteVM}. Secreção: ${secrecao}.
-- CARDIO: DVA: ${dva}. STATUS HEMODINÂMICO: ${hemodinamicaStatus}
-- GASTRO/NUTRI: Via: ${nutriVia}, Dieta: ${nutriDieta}, Vômito: ${vomito}, Diarréia: ${diarreia}.
-- GENI: SVD: ${p.enfermagem?.svd ? "SIM" : "NÃO"}, Diurese Total: ${diureseTotal}, Aspecto da Diurese: ${diureseAspecto}.
-- PELE: Lesões: ${lesoes}. Curativos: ${curativos}.
-DISPOSITIVOS EM USO:
+DADOS ESTRUTURADOS:
+- NEURO: ${neuroFrase}.
+- RESPIRATÓRIO: ${respFrase}.
+- CARDIO: ${cardioFrase}.
+- GASTRO: ${digestorioFrase}.
+- GENI: ${geniFrase}.
+- PELE: ${tegumentarFrase}.
+DISPOSITIVOS ADICIONAIS:
 ${dispositivos.length > 0 ? dispositivos.join("\n") : "- Nenhum."}
 
 INSTRUÇÕES PARA A IA (Enfermeiro da UTI):
-Escreva a AVALIAÇÃO DE ENFERMAGEM para evolução do plantão baseada nos dados acima. Use linguagem técnica e formal. 
+Escreva a EVOLUÇÃO DE ENFERMAGEM baseada EXATAMENTE nos dados acima.
 
 REGRAS CRÍTICAS ESTRITAS:
-1. NÃO MENCIONE valores exatos numéricos de PA, FC, FR ou SpO2. Mencione apenas o padrão clínico (ex: normocárdico, taquicárdico, normotenso, eupneico) ou se houve alterações críticas no plantão.
-2. No Sistema Respiratório: NÃO MENCIONE o número do TOT, fixação ou parâmetros do ventilador (isso ficará na aba de dispositivos).
-3. No Sistema Cardiovascular: NÃO MENCIONE os locais de acesso venoso periférico ou central (AVP/CVC). É OBRIGATÓRIO descrever o paciente exatamente como "${hemodinamicaStatus}".
-4. No Sistema Neurológico: Mencione APENAS a escala fornecida no bloco de dados (RASS ou Glasgow), nunca as duas.
-5. Não cite doses ou volumes da Noradrenalina.
+1. NUNCA mencione o nome do paciente. NUNCA use "Paciente encontra-se" ou "O paciente apresenta" no início das frases.
+2. Inicie a frase de cada sistema DIRETAMENTE com o conteúdo fornecido (ex: "sem sedação contínua, com Glasgow 15" ou "em ar ambiente, com SpO2 rasa...").
+3. É OBRIGATÓRIO copiar o texto de cada sistema EXATAMENTE como foi formatado e montado nos "DADOS ESTRUTURADOS". Não adicione verbos auxiliares e não mude a ordem das palavras.
+4. Mantenha os títulos dos sistemas em maiúsculo, exatamente como no formato abaixo.
 
 FORMATO OBRIGATÓRIO:
-AVALIAÇÃO ENFERMAGEM:
-SISTEMA NEUROLÓGICO : [Texto]
-SISTEMA RESPIRATÓRIO: [Texto]
-SISTEMA CARDIOVASCULAR: [Texto]
-SISTEMA DIGESTÓRIO: [Texto]
-SISTEMA GENITURINÁRIO : [Texto]
-SISTEMA TEGUMENTAR: [Texto]
-DISPOSITIVOS EM USO:
-[Exatamente a lista fornecida no bloco de dados, sem alterações]
+EVOLUÇÃO DE ENFERMAGEM:
+
+SISTEMA NEUROLÓGICO: [Copia o texto do NEURO]
+SISTEMA RESPIRATÓRIO: [Copia o texto do RESPIRATÓRIO]
+SISTEMA CARDIOVASCULAR: [Copia o texto do CARDIO]
+SISTEMA DIGESTÓRIO: [Copia o texto do GASTRO]
+SISTEMA GENITURINÁRIO: [Copia o texto do GENI]
+SISTEMA TEGUMENTAR: [Copia o texto do PELE]
+
+DISPOSITIVOS ADICIONAIS:
+[A lista fornecida no bloco de dados]
+
 INTERCORRÊNCIAS:
 ${intercorrencias}
+
 CONDUTAS:
 ${condutas}`;
   };
 
-  const generateNursingAI_Evolution = async () => {
+const generateNursingAI_Evolution = async () => {
     if (!currentPatient) return;
     if (isGeneratingNursingAI) return;
     if (!window.confirm("A Inteligência Artificial irá escrever a evolução baseada nos dados clínicos. Isso apagará o texto existente. Continuar?")) return;
@@ -1653,12 +1745,22 @@ ${condutas}`;
     let lastError = "";
 
     try {
+      const envKey = import.meta.env.VITE_GEMINI_API_KEY_ENF;
+      const currentKey = envKey || window.apiKey || "";
+      
+      console.log("CHAVE IA ENFERMAGEM (GOOGLE): ", currentKey.substring(0, 8) + "...");
+
+      if (!currentKey || currentKey.length < 10 || currentKey === "undefined") {
+        throw new Error(`Chave da Enfermagem ausente ou inválida.`);
+      }
+      // 👆 ======================== 👆
+
       const promptText = buildNursingAIPrompt(currentPatient);
-      const modelsToTry = ["gemini-1.5-pro"];
+      
+      const modelsToTry = ["gemini-2.5-flash"];
 
       for (const model of modelsToTry) {
         try {
-          const currentKey = apiKeyEnf || apiKey || window.apiKey || "";
           const r = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
             {
@@ -1668,8 +1770,10 @@ ${condutas}`;
             }
           );
           const d = await r.json();
+          
           if (d.error) {
             lastError = d.error.message;
+            // Se for erro de chave (400) ou permissão (403), ele para. Se for modelo não encontrado, tenta o próximo.
             if (d.error.code === 400 || d.error.code === 403) break;
             if (lastError.includes("not found") || d.error.code === 404) continue;
             break;
@@ -1677,8 +1781,10 @@ ${condutas}`;
 
           const aiResponse = d.candidates?.[0]?.content?.parts?.[0]?.text;
           if (aiResponse) {
-            updateNested("enfermagem", "anotacoes", aiResponse);
-            save(currentPatient);
+            // Escreve a evolução na tela da enfermagem
+            updateNested("enfermagem", "anotacoes", aiResponse.trim());
+            // Salva no banco de dados automaticamente com o carimbo do usuário
+            save(currentPatient, "Enfermagem: Gerou evolução utilizando Inteligência Artificial");
           }
           success = true;
           break;
@@ -1688,7 +1794,7 @@ ${condutas}`;
       }
       if (!success) alert(`Erro IA: ${lastError}`);
     } catch (e) {
-      alert("Não foi possível gerar a evolução por IA no momento.");
+      alert(`Não foi possível gerar a evolução por IA: ${e.message}`);
     } finally {
       setIsGeneratingNursingAI(false);
     }
@@ -1785,7 +1891,7 @@ ${condutas}`;
     }
   };
 
-  const handleFinalizeNursingAdmission = () => {
+const handleFinalizeNursingAdmission = () => {
     const reqBraden = [
       "braden_percepcao", "braden_umidade", "braden_atividade",
       "braden_mobilidade", "braden_nutricao", "braden_friccao",
@@ -1809,26 +1915,81 @@ ${condutas}`;
       }
     }
 
-    // 2. A SUTURA FINAL (Atualiza, Salva e Fecha)
-    const up = [...patients];
-    const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda segura
+    // 2. A MATEMÁTICA: Somando as Escalas Automaticamente
+    const bradenTotal = reqBraden.reduce((acc, curr) => acc + (parseInt(nursingData[curr]) || 0), 0);
+    let bradenRisco = bradenTotal <= 9 ? "Altíssimo" : bradenTotal <= 12 ? "Alto" : bradenTotal <= 14 ? "Moderado" : bradenTotal <= 18 ? "Leve" : "Sem Risco";
 
+    const morseTotal = reqMorse.reduce((acc, curr) => acc + (parseInt(nursingData[curr]) || 0), 0);
+    let morseRisco = morseTotal >= 45 ? "Alto" : morseTotal >= 25 ? "Baixo" : "Sem Risco";
+
+    // 3. RECUPERANDO DADOS MÉDICOS
+    const p = JSON.parse(JSON.stringify(patients[activeTab])); // Cópia segura do paciente atual
+    const adm = p.admissionData || p.admissoes || {};
+    const nomePaciente = p.nome || "Não informado";
+    const historia = adm.historia || "Sem registro prévio na Admissão Médica";
+    const medicamentos = adm.medicamentos || "Sem registro";
+    const conscienciaBasal = adm.conscienciaBasal || "Sem registro";
+    const mobilidadeBasal = adm.mobilidadeBasal || "Sem registro";
+
+    // 4. O CARIMBADOR: Montando o Texto Final Integrado
+    const text = `ADMISSÃO DE ENFERMAGEM
+NOME: ${nomePaciente}
+
+--- HISTÓRIA CLÍNICA ---
+${historia}
+
+MEDICAMENTOS DE USO HABITUAL:
+${medicamentos}
+
+NÍVEL DE CONSCIÊNCIA BASAL: ${conscienciaBasal}
+MOBILIDADE BASAL: ${mobilidadeBasal}
+
+--- DADOS DE ENFERMAGEM ---
+
+CUIDADOS GERAIS:
+Escala de Dor: ${nursingData.dor || "Sem registro"}
+Hemodiálise: ${nursingData.hemodialise ? "Sim" : "Não"}
+Precauções: ${nursingData.precaucao || "Padrão"}
+
+DISPOSITIVOS INVASIVOS:
+AVP: ${nursingData.avpLocal ? `${nursingData.avpLocal} (Data: ${nursingData.avpData || "-"})` : "Não possui"}
+CVC/PICC: ${nursingData.cvcLocal ? `${nursingData.cvcLocal} (Data: ${nursingData.cvcData || "-"})` : "Não possui"}
+SVD: ${nursingData.svd ? `Sim (Data: ${nursingData.svdData || "-"})` : "Não possui"}
+SNE: ${nursingData.sneCm ? `Fixação em ${nursingData.sneCm} cm (Data: ${nursingData.sneData || "-"})` : "Não possui"}
+Drenos: ${nursingData.drenoTipo || "Nenhum"}
+
+PELE E CURATIVOS:
+Lesões: ${nursingData.lesaoLocal || "Pele íntegra / Sem lesões por pressão"}
+Curativos: ${nursingData.curativoTipo ? `${nursingData.curativoTipo} (Data: ${nursingData.curativoData || "-"})` : "Nenhum"}
+
+ESCALAS DE RISCO:
+- BRADEN: ${bradenTotal} pontos (Risco ${bradenRisco})
+- MORSE: ${morseTotal} pontos (Risco de Queda ${morseRisco})
+`;
+
+    // 5. A SUTURA FINAL (Atualiza, Salva e Fecha)
     if (!p.enfermagem) p.enfermagem = {};
 
     // Injeta os dados do formulário no corpo do paciente
     Object.keys(nursingData).forEach((k) => {
       p.enfermagem[k] = nursingData[k];
     });
+    p.nursingData = nursingData;
 
     // Atualiza a tela
+    const up = [...patients];
     up[activeTab] = p;
     setPatients(up);
 
     // Salva no banco de dados com carimbo de auditoria
-    save(p, "Enfermagem: Admissão Concluída (Escalas Braden e Morse validadas)");
+    save(p, "Enfermagem: Admissão Concluída e Integrada à Admissão Médica");
 
     // Fecha o modal de admissão
     setShowNursingModal(false);
+    
+    // Mostra o texto gerado na tela
+    setGeneratedAdmissionText(text);
+    setViewMode("nursing"); 
   };
 
   // ========================================================================
