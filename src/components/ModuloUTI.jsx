@@ -57,6 +57,7 @@ import PhysioEvoModal from './modals/PhysioEvoModal';
 import ChecklistEvoModal from './modals/ChecklistEvoModal';
 import NoraModal from './modals/NoraModal';
 import SepsisModal from './modals/SepsisModal';
+import NutriAdmissionModal from './modals/NutriAdmissionModal';
 
 // ÍCONE PERSONALIZADO DE ENFERMAGEM
 function NurseCap(props) {
@@ -137,6 +138,9 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [nursingData, setNursingData] = useState({});
   const [physioData, setPhysioData] = useState({});
   const [generatedPhysioText, setGeneratedPhysioText] = useState("");
+
+  const [showNutriAdmissionModal, setShowNutriAdmissionModal] = useState(false);
+  const [nutriAdmissionData, setNutriAdmissionData] = useState({});
 
   // Para o Modal de Noradrenalina
   const [showNoraModal, setShowNoraModal] = useState(false);
@@ -1543,6 +1547,45 @@ CONDUTA:
     }
   };
 
+  // --- ABRIR ADMISSÃO NUTRICIONAL ---
+  const handleOpenNutriAdmission = () => {
+    const dadosAtuais = currentPatient?.nutri || {};
+    setNutriAdmissionData({
+      peso: dadosAtuais.peso || "",
+      tipoMedicaoPeso: dadosAtuais.tipoMedicaoPeso || "",
+      metaCal: dadosAtuais.metaCal || "",
+      metaProt: dadosAtuais.metaProt || "",
+      risco_nutricional: dadosAtuais.risco_nutricional || "",
+      via: dadosAtuais.via || "",
+      caracteristicasDieta: dadosAtuais.caracteristicasDieta || []
+    });
+    setShowNutriAdmissionModal(true);
+  };
+
+  // --- FINALIZAR ADMISSÃO NUTRICIONAL ---
+  const handleFinalizeNutriAdmission = () => {
+    if (!nutriAdmissionData.peso) {
+      return alert("O Peso Atual é obrigatório para realizar a admissão nutricional.");
+    }
+
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.nutri) p.nutri = {};
+
+    // Injeta os dados no paciente e ativa a flag "admitido"
+    Object.keys(nutriAdmissionData).forEach(k => {
+      p.nutri[k] = nutriAdmissionData[k];
+    });
+    p.nutri.admitido = true; // 🔑 Libera o painel
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(p, "Nutrição: Realizou a Admissão Nutricional (Peso, Metas e Via)");
+
+    setShowNutriAdmissionModal(false);
+  };
+
   // ==========================================
   // IA DA ENFERMAGEM (PROMPT E API)
   // ==========================================
@@ -2186,10 +2229,13 @@ ESCALAS DE RISCO:
 
   const isNursingRole = isDev || userRole === "Enfermeiro" || userRole === "Técnico em Enfermagem" || userRole === "Gestor" || userRole === "Administrador";
 
+  // 👇 NOVA SUTURA: Controle de Acesso da Nutrição 👇
+  const isNutriRole = isDev || userRole === "Nutricionista" || userRole === "Médico" || userRole === "Gestor" || userRole === "Administrador";
+
   const isAdmin = isDev || userRole === "Administrador";
 
-  // Regras de Edição: Adicionamos a Enfermagem aqui para ela poder editar as próprias abas!
-  const isEditable = isDev || isDocRole || isNursingRole;
+  // Regras de Edição: Adicionamos a Enfermagem e Nutrição aqui para poderem editar as próprias abas!
+  const isEditable = isDev || isDocRole || isNursingRole || isNutriRole;
 
   const isOverviewEditable = isDev || isDocRole || isNursingRole;
 
@@ -2608,7 +2654,16 @@ ESCALAS DE RISCO:
                       isOverviewEditable={isOverviewEditable}
                     />
                   )}
-                  {viewMode === "nutri" && <NutriDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
+                  {viewMode === "nutri" && (
+                    <NutriDashboard
+                      currentPatient={currentPatient}
+                      isEditable={isNutriRole}
+                      updateNested={updateNested}
+                      toggleArrayItem={toggleArrayItem}
+                      handleBlurSave={handleBlurSave}
+                      abrirAdmissaoNutri={handleOpenNutriAdmission}
+                    />
+                  )}
                   {viewMode === "speech" && <SpeechDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
                   {viewMode === "tech" && (
                     <TechDashboard 
@@ -2720,6 +2775,16 @@ ESCALAS DE RISCO:
         generatedAdmissionText={generatedAdmissionText}
         setGeneratedAdmissionText={setGeneratedAdmissionText}
         copyToClipboardFallback={copyToClipboardFallback}
+      />
+
+      {/* MODAL: ADMISSÃO NUTRICIONAL */}
+      <NutriAdmissionModal
+        showNutriModal={showNutriAdmissionModal}
+        setShowNutriModal={setShowNutriAdmissionModal}
+        activeTab={activeTab}
+        nutriData={nutriAdmissionData}
+        setNutriData={setNutriAdmissionData}
+        handleFinalizeNutriAdmission={handleFinalizeNutriAdmission}
       />
 
       {/* MODAL: FILA DE ESPERA DA UTI */}
