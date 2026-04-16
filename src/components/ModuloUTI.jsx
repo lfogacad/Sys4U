@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { doc, setDoc, deleteDoc, collection, onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
@@ -98,6 +98,7 @@ const mergePatientData = (base, incoming) => {
 
 const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [pdfReady, setPdfReady] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -482,7 +483,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     };
   };
 
-  const clearAntibiotic = (i) => {
+const clearAntibiotic = (i) => {
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
     const atb = p.antibiotics[i];
@@ -490,8 +491,17 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     // Arquivar no histórico antes de limpar
     if (atb && atb.name) {
       if (!p.antibioticsHistory) p.antibioticsHistory = [];
-      const dDiff = calculateDaysDiff(atb.date, true);
-      const daysUsed = dDiff === "Err" ? "?" : dDiff.replace("D", "");
+      
+      // 🧠 MÁGICA NATIVA: Calcula os dias de uso sem depender da ferramenta ausente
+      let daysUsed = "?";
+      if (atb.date) {
+        const start = new Date(atb.date + 'T12:00:00'); // T12:00:00 evita bugs de fuso horário
+        const today = new Date();
+        const diffTime = today - start;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 porque o dia de início já é D1
+        daysUsed = diffDays > 0 ? diffDays : 1;
+      }
+
       p.antibioticsHistory.push({
         id: Date.now() + "_" + Math.random().toString(36).substr(2, 9),
         name: atb.name,
@@ -501,7 +511,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       });
     }
 
-    p.antibiotics[i] = { name: "", date: "" };
+    // Limpa a prancheta e destranca o campo para o próximo uso
+    p.antibiotics[i] = { name: "", date: "", locked: false }; 
     up[activeTab] = p;
     setPatients(up);
 
@@ -596,6 +607,27 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
     // Salva e carimba na auditoria instantaneamente
     save(p, "Sistema: Limpou Campo de Data");
+  };
+
+  const abrirEvolucaoInteligente = () => {
+    // 1. Filtra os ATBs preenchidos
+    const atbsAtivos = currentPatient.antibiotics?.filter(atb => atb.name && atb.date) || [];
+
+    // 2. Monta o texto calculando os dias (D1, D2) nativamente para evitar erros
+    const textoAtbs = atbsAtivos.map(atb => {
+      const start = new Date(atb.date + 'T12:00:00');
+      const today = new Date();
+      const diffDays = Math.floor((today - start) / (1000 * 60 * 60 * 24)) + 1;
+      const diaFormatado = `D${diffDays > 0 ? diffDays : 1}`;
+      
+      return `${atb.name.toUpperCase()} (${diaFormatado})`;
+    }).join(", ");
+
+    // 3. Salva esse texto no campo que a IA vai ler
+    updateNested("medical", "antibioticosTextoIA", textoAtbs || "Nenhum");
+
+    // 4. Abre a tela do Checklist
+    setShowChecklistEvo(true);
   };
 
   const confirmIndividualUpload = async (processedData) => {
@@ -1147,7 +1179,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
     try {
       // AQUI GARANTIMOS QUE ELE PUXE DIRETO DO VITE, ALÉM DAS PROPS
       const envKey = import.meta.env.VITE_GEMINI_API_KEY_MED; // <- MUDE AQUI PARA O NOME EXATO QUE ESTÁ NA SUA VERCEL
-      const currentKey = envKey || apiKeyMed || apiKey || window.apiKey || "";
+      const currentKey = envKey || window.apiKey || "";
       
       // O NOSSO RAIO-X:
       console.log("CHAVE QUE ESTÁ INDO PARA O GOOGLE: ", currentKey.substring(0, 8) + "...");
@@ -1198,7 +1230,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       else if (suporte.toLowerCase() === "ar ambiente") suporteText = "em ar ambiente";
       else suporteText = `em uso de ${suporte}`;
 
-      // 4. HEMODINÂMICO
+      // 4. HEMODINÂMICO (Cirurgia: Removido o texto "DVA em ascensão")
       const usaDVA = currentPatient.cardio?.dva === true; 
       let hemodinamicaStatus = usaDVA ? (isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado") : "Hemodinamicamente estável";
       
@@ -1211,7 +1243,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         if (noraVals.length >= 2) {
           const last = noraVals[noraVals.length - 1];
           const prev = noraVals[noraVals.length - 2];
-          if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável (DVA em ascensão)";
+          if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável"; // <-- Alterado aqui
         }
       }
       const dvaText = usaDVA ? `em uso de DVA (${currentPatient.cardio.drogasDVA?.join(", ")})` : "sem uso de DVA";
@@ -1231,17 +1263,11 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       }
 
      // 6. LABORATORIAL -> CORREÇÃO BUSCA RECENTE, FAIXAS E PONTUAÇÃO BRASILEIRA
-      // Tradutor Inteligente de Leucograma (Lida com 6.500, 6,5 ou 6500)
       const parseLeuco = (val) => {
         if (!val) return 0;
         let n = parseFloat(String(val).replace(",", "."));
         if (isNaN(n)) return 0;
-        
-        // Se o médico digitou algo menor que 200 (ex: 6.5 ou o sistema leu 6.000 como 6), 
-        // nós multiplicamos por 1000 para converter para a escala real.
-        if (n > 0 && n < 200) {
-          n = n * 1000;
-        }
+        if (n > 0 && n < 200) n = n * 1000;
         return n;
       };
 
@@ -1261,30 +1287,68 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const atbValidado = dadosDoTimeout?.atbs || currentPatient.medical?.antibioticosTextoIA || "";
       const atbsFinal = (!atbValidado || atbValidado.toLowerCase() === "nenhum") ? "sem uso de antibióticos ativos" : `em uso de ${atbValidado}`;
 
-      // 7. GASTRO E DIETA
-      const evacDaysStr = typeof calculateEvacDays === 'function' ? calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao) : "-";
-      const temVomitoBH = typeof checkLossBH === 'function' ? checkLossBH(currentPatient.bh, "Vômitos") : false;
-      const temDiarreiaBH = typeof checkLossBH === 'function' ? checkLossBH(currentPatient.bh, "Diarreia") : false;
+      // 7. GASTRO E DIETA (Leitura Qualitativa no BH para Vômitos, Diarreia e Evacuação)
       
-      let tgiDescricao = "";
-      if (temVomitoBH && temDiarreiaBH) tgiDescricao = "com episódios de vômito e diarreia";
-      else if (temVomitoBH) tgiDescricao = "com episódio de vômito";
-      else if (temDiarreiaBH) tgiDescricao = "com episódio de diarreia";
+      // 🧠 TRADUTOR CLINICO: Aceita cruzes, "sim", "s" e volumes, mas ignora "0", "n", "nao" e hífens.
+      const temRegistroPositivo = (valor) => {
+        if (!valor) return false;
+        const texto = String(valor).trim().toLowerCase();
+        if (texto === "" || texto === "0" || texto === "n" || texto === "nao" || texto === "não" || texto === "-") return false;
+        return true; 
+      };
+
+      let temVomitoNoBH = false;
+      let temDiarreiaNoBH = false;
+      let temEvacuacaoNoBH = false; // <-- Nova variável para rastrear evacuação no plantão
+
+      if (currentPatient.bh?.losses) {
+        Object.values(currentPatient.bh.losses).forEach(hora => {
+          if (!hora) return;
+          // Verifica Vômitos
+          if (temRegistroPositivo(hora["Vômitos"]) || temRegistroPositivo(hora["Vomitos"])) {
+            temVomitoNoBH = true;
+          }
+          // Verifica Diarreia
+          if (temRegistroPositivo(hora["Diarreia"]) || temRegistroPositivo(hora["Diarréia"])) {
+            temDiarreiaNoBH = true;
+          }
+          // Verifica Evacuação (procurando por várias nomenclaturas comuns)
+          if (temRegistroPositivo(hora["Evacuação"]) || temRegistroPositivo(hora["Evacuacao"]) || temRegistroPositivo(hora["Fezes"])) {
+            temEvacuacaoNoBH = true;
+          }
+        });
+      }
+
+      // Calcula os dias baseado na data cadastrada
+      const dataEvac = currentPatient.gastro?.dataUltimaEvacuacao;
+      let evacDaysStr = dataEvac 
+        ? (typeof calculateEvacDays === 'function' ? calculateEvacDays(dataEvac) : "-")
+        : "sem registro de evacuações durante essa internação";
+
+      // 🌟 SE A ENFERMAGEM LANÇOU NO BH HOJE, SOBRESCREVE A DATA E AVISA QUE FOI HOJE!
+      if (temEvacuacaoNoBH) {
+        evacDaysStr = "hoje";
+      }
+      
+      let tgiIntercorrencias = "";
+      if (temVomitoNoBH && temDiarreiaNoBH) tgiIntercorrencias = " Houve registro de vômitos e diarreia no dia de hoje.";
+      else if (temVomitoNoBH) tgiIntercorrencias = " Houve registro de vômito no dia de hoje.";
+      else if (temDiarreiaNoBH) tgiIntercorrencias = " Houve registro de diarreia no dia de hoje.";
 
       const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
 
-      // 8. O PROMPT
-      const promptText = `Você é um médico intensivista. Redija a evolução ESTRITAMENTE no formato exato fornecido abaixo, substituindo os colchetes pelos dados clínicos reais fornecidos na lista. 
-      NÃO adicione introduções, NÃO crie parágrafos extras, NÃO use tópicos. Siga exatamente a estrutura de 5 parágrafos.
+      // 8. O PROMPT (Ajustado para clareza máxima na anexação do TGI)
+      const promptText = `Você é um médico intensivista. Redija a evolução ESTRITAMENTE no formato exato fornecido abaixo.
+      NÃO adicione introduções, NÃO use tópicos. Siga exatamente a estrutura de 5 parágrafos.
 
       FORMATO OBRIGATÓRIO:
       ${sexoPaciente} encontra-se em [ESTADO GERAL], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].
       [HEMODINÂMICA], [DVA], apresenta-se [FC], [PA].
       [DIURESE], com [FUNÇÃO RENAL].
       ${mantemSe} [TEMPERATURA], com [LEUCOMETRIA] e [ATB].
-      A dieta é [VIA DIETA], [TGI]. Última evacuação: [EVACUAÇÃO].
+      A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO].[TGI]
 
-      DADOS CLÍNICOS REAIS PARA PREENCHER:
+      DADOS CLÍNICOS REAIS:
       - [ESTADO GERAL]: ${egExtenso}
       - [SEDAÇÃO]: ${sedacaoText}
       - [SUPORTE RESPIRATÓRIO]: ${suporteText}
@@ -1299,13 +1363,13 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       - [LEUCOMETRIA]: ${leucoStatus}
       - [ATB]: ${atbsFinal}
       - [VIA DIETA]: ${viaDieta}
-      - [TGI]: ${tgiDescricao ? tgiDescricao : "[OMITIR ESTA PARTE DO TGI]"}
       - [EVACUAÇÃO]: ${evacDaysStr}
+      - [TGI]: ${tgiIntercorrencias}
       
-      Regra Crítica TGI: Se a tag [TGI] pedir para omitir, escreva apenas "A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO]." Não escreva "ausência de vômitos".`;
+      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a evolução em [EVACUAÇÃO].`;
 
       // 9. LOOP DE MODELOS (GEMINI)
-      const models = ["gemini-1.5-pro"];
+      const models = ["gemini-2.5-flash"];
       
       for (const model of models) {
         try {
@@ -1508,7 +1572,7 @@ ${condutas}`;
 
     try {
       const promptText = buildNursingAIPrompt(currentPatient);
-      const modelsToTry = ["gemini-2.5-flash"];
+      const modelsToTry = ["gemini-1.5-pro"];
 
       for (const model of modelsToTry) {
         try {
@@ -1912,8 +1976,21 @@ ${condutas}`;
       >
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
           
-          {/* LADO ESQUERDO DO CABEÇALHO: Logo e Títulos RESTAURADOS */}
-          <div className="flex items-center gap-4">
+{/* LADO ESQUERDO DO CABEÇALHO: Logo e Títulos RESTAURADOS */}
+          <div className="flex items-center gap-2 md:gap-4">
+            
+            {/* --- NOVO BOTÃO DE VOLTAR (Apenas para perfis Master) --- */}
+            {(userProfile?.perfil === "Administrador" || userProfile?.perfil === "Desenvolvedor" || userProfile?.role === "Administrador" || userProfile?.role === "Desenvolvedor") && (
+              <button
+                onClick={() => navigate('/hub')}
+                className="bg-white/10 hover:bg-white/20 p-2.5 md:pr-4 md:pl-3 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm flex items-center gap-2 mr-1 md:mr-2"
+                title="Voltar ao Mapa de Setores"
+              >
+                <ArrowLeft size={20} />
+                <span className="hidden md:inline font-bold text-sm">Painel</span>
+              </button>
+            )}
+
             <img 
               src="/logobranca.png" 
               alt="Sys4U Logo" 
@@ -2233,6 +2310,14 @@ ${condutas}`;
                         updateP={updateP}
                         handleBlurSave={handleBlurSave}
                         handleEditAdmission={handleEditAdmission}
+                        setShowATBHistoryModal={setShowATBHistoryModal}
+                        updateAntibiotic={updateAntibiotic}
+                        clearAntibiotic={clearAntibiotic}
+                        abrirChecklistEvolucao={abrirEvolucaoInteligente}
+                        isGeneratingAI={isGeneratingAI}
+                        aiEvolution={aiEvolution}
+                        setAiEvolution={setAiEvolution}
+                        copyToClipboardFallback={copyToClipboardFallback}
                       />
                     )
                   )}
