@@ -609,24 +609,47 @@ const clearAntibiotic = (i) => {
     save(p, "Sistema: Limpou Campo de Data");
   };
 
-  const abrirEvolucaoInteligente = () => {
-    // 1. Filtra os ATBs preenchidos
+const abrirEvolucaoInteligente = () => {
+    // 1. ATBs (Mantém a lógica intacta)
     const atbsAtivos = currentPatient.antibiotics?.filter(atb => atb.name && atb.date) || [];
-
-    // 2. Monta o texto calculando os dias (D1, D2) nativamente para evitar erros
     const textoAtbs = atbsAtivos.map(atb => {
       const start = new Date(atb.date + 'T12:00:00');
       const today = new Date();
       const diffDays = Math.floor((today - start) / (1000 * 60 * 60 * 24)) + 1;
-      const diaFormatado = `D${diffDays > 0 ? diffDays : 1}`;
-      
-      return `${atb.name.toUpperCase()} (${diaFormatado})`;
+      return `${atb.name.toUpperCase()} (D${diffDays > 0 ? diffDays : 1})`;
     }).join(", ");
 
-    // 3. Salva esse texto no campo que a IA vai ler
     updateNested("medical", "antibioticosTextoIA", textoAtbs || "Nenhum");
 
-    // 4. Abre a tela do Checklist
+    // =====================================================================
+    // 🧠 O NOVO DETETIVE DE EXAME FÍSICO (CASCATA DE MEMÓRIA)
+    // =====================================================================
+    
+    // PLANO A: Procurar na Evolução de Ontem (Último item salvo no histórico)
+    let exOntem = {};
+    if (currentPatient.history && currentPatient.history.length > 0) {
+      // Pega o último plantão salvo
+      const ultimaEvo = currentPatient.history[currentPatient.history.length - 1];
+      exOntem = ultimaEvo.medical || {}; // Puxa os dados médicos de ontem
+    }
+
+    // PLANO B: Procurar na Admissão (Caso não tenha histórico ainda)
+    const adm = currentPatient.admissionData || currentPatient.admissoes || {};
+
+    // PLANO C: Injetar no Modal apenas se a aba de hoje ainda estiver vazia
+    if (!currentPatient.medical?.exameGeral) {
+      updateNested("medical", "exameGeral", exOntem.exameGeral || adm.exameGeral || "Bom estado geral.");
+    }
+    if (!currentPatient.medical?.exameAR) {
+      updateNested("medical", "exameAR", exOntem.exameAR || adm.exameAR || "Murmúrio vesicular presente bilateralmente.");
+    }
+    if (!currentPatient.medical?.exameABD) {
+      updateNested("medical", "exameABD", exOntem.exameABD || adm.exameABD || "Globoso, flácido, indolor.");
+    }
+    if (!currentPatient.medical?.exameExtremidades) {
+      updateNested("medical", "exameExtremidades", exOntem.exameExtremidades || adm.exameExtremidades || "Aquecidas, sem edemas.");
+    }
+
     setShowChecklistEvo(true);
   };
 
@@ -693,8 +716,14 @@ const clearAntibiotic = (i) => {
 
   // --- REABRIR ADMISSÃO MÉDICA ---
   const handleEditAdmission = () => {
-    // Apenas levanta o modal novamente. Não zeramos a prancheta para não apagar
-    // o que o médico já tinha digitado caso ele só queira corrigir uma palavra.
+    // Procura na gaveta correta (admissionData)
+    const dadosSalvos = currentPatient.admissionData || currentPatient.admissoes || {};
+
+    // Injeta os dados salvos de volta no modal
+    setAdmissionData({
+      ...dadosSalvos
+    });
+
     setShowAdmissionModal(true);
   };
 
@@ -814,6 +843,7 @@ ${admissionData.conduta || "-"}`;
 
     // Agora a Aba Médica recebe apenas o resumo
     r.historiaClinica = historiaAbaMedica;
+    r.admissionData = admissionData;
     // --- A CHAVE MESTRA: SALVANDO NA NUVEM ---
     try {
       await setDoc(doc(db, "leitos_uti", `bed_${activeTab}`), r);
@@ -1177,11 +1207,9 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
     let lastError = "Iniciando...";
 
     try {
-      // AQUI GARANTIMOS QUE ELE PUXE DIRETO DO VITE, ALÉM DAS PROPS
-      const envKey = import.meta.env.VITE_GEMINI_API_KEY_MED; // <- MUDE AQUI PARA O NOME EXATO QUE ESTÁ NA SUA VERCEL
+      const envKey = import.meta.env.VITE_GEMINI_API_KEY_MED;
       const currentKey = envKey || window.apiKey || "";
       
-      // O NOSSO RAIO-X:
       console.log("CHAVE QUE ESTÁ INDO PARA O GOOGLE: ", currentKey.substring(0, 8) + "...");
 
       if (!currentKey || currentKey.length < 10 || currentKey === "undefined") {
@@ -1198,7 +1226,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const sexoPaciente = isFem ? 'A paciente' : 'O paciente';
       const mantemSe = 'Mantém-se'; 
 
-      // 1. SINAIS VITAIS (Aba Técnico)
+      // 1. SINAIS VITAIS
       const vitals = currentPatient.bh?.vitals || {};
       let tempMax = 0, spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
       
@@ -1223,14 +1251,14 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const egExtenso = egSalvo === "BEG" ? "BEG" : (egSalvo === "MEG" ? "MEG" : "REG");
       const sedacaoText = currentPatient.neuro?.sedacao ? (isFem ? "sedada" : "sedado") : "sem sedação";
 
-      // 3. RESPIRATÓRIO -> CORREÇÃO AR AMBIENTE
+      // 3. RESPIRATÓRIO
       const suporte = currentPatient.physio?.suporte || "Ar ambiente";
       let suporteText = "";
       if (suporte === "VM") suporteText = "em VM por TOT";
       else if (suporte.toLowerCase() === "ar ambiente") suporteText = "em ar ambiente";
       else suporteText = `em uso de ${suporte}`;
 
-      // 4. HEMODINÂMICO (Cirurgia: Removido o texto "DVA em ascensão")
+      // 4. HEMODINÂMICO 
       const usaDVA = currentPatient.cardio?.dva === true; 
       let hemodinamicaStatus = usaDVA ? (isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado") : "Hemodinamicamente estável";
       
@@ -1243,12 +1271,12 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         if (noraVals.length >= 2) {
           const last = noraVals[noraVals.length - 1];
           const prev = noraVals[noraVals.length - 2];
-          if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável"; // <-- Alterado aqui
+          if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável"; 
         }
       }
       const dvaText = usaDVA ? `em uso de DVA (${currentPatient.cardio.drogasDVA?.join(", ")})` : "sem uso de DVA";
 
-      // 5. RENAL -> CORREÇÃO CLEARANCE (KDIGO)
+      // 5. RENAL 
       const diureseNum = parseFloat(calculateDiurese12hMlKgH(currentPatient));
       const diureseStatus = (!isNaN(diureseNum) && diureseNum < 0.5) ? "Baixa diurese" : "Boa diurese";
       
@@ -1262,7 +1290,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         else renalStatus = "falha severa da função renal";
       }
 
-     // 6. LABORATORIAL -> CORREÇÃO BUSCA RECENTE, FAIXAS E PONTUAÇÃO BRASILEIRA
+     // 6. LABORATORIAL
       const parseLeuco = (val) => {
         if (!val) return 0;
         let n = parseFloat(String(val).replace(",", "."));
@@ -1287,9 +1315,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const atbValidado = dadosDoTimeout?.atbs || currentPatient.medical?.antibioticosTextoIA || "";
       const atbsFinal = (!atbValidado || atbValidado.toLowerCase() === "nenhum") ? "sem uso de antibióticos ativos" : `em uso de ${atbValidado}`;
 
-      // 7. GASTRO E DIETA (Leitura Qualitativa no BH para Vômitos, Diarreia e Evacuação)
-      
-      // 🧠 TRADUTOR CLINICO: Aceita cruzes, "sim", "s" e volumes, mas ignora "0", "n", "nao" e hífens.
+      // 7. GASTRO E DIETA
       const temRegistroPositivo = (valor) => {
         if (!valor) return false;
         const texto = String(valor).trim().toLowerCase();
@@ -1299,33 +1325,28 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
 
       let temVomitoNoBH = false;
       let temDiarreiaNoBH = false;
-      let temEvacuacaoNoBH = false; // <-- Nova variável para rastrear evacuação no plantão
+      let temEvacuacaoNoBH = false; 
 
       if (currentPatient.bh?.losses) {
         Object.values(currentPatient.bh.losses).forEach(hora => {
           if (!hora) return;
-          // Verifica Vômitos
           if (temRegistroPositivo(hora["Vômitos"]) || temRegistroPositivo(hora["Vomitos"])) {
             temVomitoNoBH = true;
           }
-          // Verifica Diarreia
           if (temRegistroPositivo(hora["Diarreia"]) || temRegistroPositivo(hora["Diarréia"])) {
             temDiarreiaNoBH = true;
           }
-          // Verifica Evacuação (procurando por várias nomenclaturas comuns)
           if (temRegistroPositivo(hora["Evacuação"]) || temRegistroPositivo(hora["Evacuacao"]) || temRegistroPositivo(hora["Fezes"])) {
             temEvacuacaoNoBH = true;
           }
         });
       }
 
-      // Calcula os dias baseado na data cadastrada
       const dataEvac = currentPatient.gastro?.dataUltimaEvacuacao;
       let evacDaysStr = dataEvac 
         ? (typeof calculateEvacDays === 'function' ? calculateEvacDays(dataEvac) : "-")
         : "sem registro de evacuações durante essa internação";
 
-      // 🌟 SE A ENFERMAGEM LANÇOU NO BH HOJE, SOBRESCREVE A DATA E AVISA QUE FOI HOJE!
       if (temEvacuacaoNoBH) {
         evacDaysStr = "hoje";
       }
@@ -1337,9 +1358,9 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
 
       const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
 
-      // 8. O PROMPT (Ajustado para clareza máxima na anexação do TGI)
+      // 8. O PROMPT PARA A IA (APENAS O BLOCO DE EVOLUÇÃO)
       const promptText = `Você é um médico intensivista. Redija a evolução ESTRITAMENTE no formato exato fornecido abaixo.
-      NÃO adicione introduções, NÃO use tópicos. Siga exatamente a estrutura de 5 parágrafos.
+      NÃO adicione introduções e não invente dados. Siga exatamente a estrutura fornecida.
 
       FORMATO OBRIGATÓRIO:
       ${sexoPaciente} encontra-se em [ESTADO GERAL], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].
@@ -1366,7 +1387,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       - [EVACUAÇÃO]: ${evacDaysStr}
       - [TGI]: ${tgiIntercorrencias}
       
-      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a evolução em [EVACUAÇÃO].`;
+      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO].`;
 
       // 9. LOOP DE MODELOS (GEMINI)
       const models = ["gemini-2.5-flash"];
@@ -1387,13 +1408,74 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
           }
 
           if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-            // SUTURA DE SEGURANÇA: O SAPS 3 é injetado diretamente no código, sem depender da IA
-            const baseText = data.candidates[0].content.parts[0].text.trim();
+            const aiEvolucaoClinica = data.candidates[0].content.parts[0].text.trim();
+            
+            // =========================================================================
+            // 🧠 CARIMBADOR AUTOMÁTICO: MONTAGEM DO DOCUMENTO FINAL COM ESTRUTURA FIXA
+            // =========================================================================
+            
+            // Puxando dados da Admissão (AGORA COM OS NOMES EXATOS DO SEU MODAL)
+            const adm = currentPatient.admissionData || currentPatient.admissoes || {};
+            const origem = adm.origem || "Não informada";
+            const historia = adm.historia || "Sem registro";
+            const diagAgudos = adm.diagAgudos || "Sem registro";
+            const hpp = adm.diagCronicos || "Sem registro";
+            const medsHabituais = adm.medicamentos || "Sem registro";
+            
             const saps3Val = currentPatient.saps3?.lockedScore || currentPatient.saps3?.score || "N/A";
             
-            // Adiciona o texto base, dá DOIS enters (uma linha vazia de espaço) e carimba o SAPS
-            setAiEvolution(`${baseText}\n\nSAPS 3: ${saps3Val}`);
+            // Puxando Exame Físico (do Modal/Aba Médica)
+            const exGeral = currentPatient.medical?.exameGeral || "Bom estado geral.";
+            const exResp = currentPatient.medical?.exameAR || "Sem alterações relevantes.";
+            const exAbd = currentPatient.medical?.exameABD || "Sem alterações relevantes.";
+            const exExt = currentPatient.medical?.exameExtremidades || "Sem alterações relevantes.";
+
+            // Formatando listas de Sedação e DVA
+            const sedacaoList = currentPatient.neuro?.sedacao && currentPatient.neuro?.drogasSedacao?.length > 0 
+              ? currentPatient.neuro.drogasSedacao.join(", ") 
+              : "Sem uso de sedativos em bomba";
+              
+            const dvaList = currentPatient.cardio?.dva && currentPatient.cardio?.drogasDVA?.length > 0 
+              ? currentPatient.cardio.drogasDVA.join(", ") 
+              : "Sem uso de drogas vasoativas";
+
+            // Montando o Template Final
+            const evolutionCompleta = `EVOLUÇÃO DIÁRIA
+ORIGEM: ${origem}
+SAPS3: ${saps3Val}
+
+HISTÓRIA CLÍNICA:
+${historia}
+
+DIAGNÓSTICOS AGUDOS:
+${diagAgudos}
+
+HPP:
+${hpp}
+
+MEDICAMENTOS DE USO HABITUAL:
+${medsHabituais}
+
+EXAME FÍSICO:
+GERAL: ${exGeral}
+AR: ${exResp}
+ABD.: ${exAbd}
+EXTREMIDADES: ${exExt}
+
+SEDAÇÃO: ${sedacaoList}
+
+DVA: ${dvaList}
+
+EVOLUÇÃO E INTERCORRÊNCIAS:
+${aiEvolucaoClinica}
+
+EXAMES COMPLEMENTARES:
+
+
+CONDUTA:
+`;
             
+            setAiEvolution(evolutionCompleta);
             success = true;
             break;
           }

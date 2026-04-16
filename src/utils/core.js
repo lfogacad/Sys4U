@@ -74,20 +74,42 @@ export const getDaysD0 = (d) => calculateDaysDiff(d, false);
 export const getDaysD1 = (d) => calculateDaysDiff(d, true);
 
 export const calculateNoraDose = (patient, mlHour) => {
-    if (!patient) return null;
-    
-    // Pega o Peso Predito (Aba nutrição/calculado) ou o peso de admissão.
-    const peso = safeNumber(patient.nutri?.pesoRealAdmissao || patient.nutri?.pesoPredito);
-    const doubleDose = patient.sofa_data_technical?.noraDoubleDoseToday || false;
-    const rate = safeNumber(mlHour);
-    const concentration = doubleDose ? 128 : 64; // µg/mL
-  
-    if (rate > 0 && peso > 0) {
-      const doseMcgKgMin = ((rate * concentration) / 60) / peso;
-      return doseMcgKgMin.toFixed(3);
+  if (!patient) return null;
+
+  // 1. FUNÇÃO CAÇADORA DE PESO (Com as gavetas corretas)
+  const buscarPesoValido = () => {
+    const tentativas = [
+      patient.nutri?.peso,              // 1º Peso Atual (Balança)
+      patient.nutri?.pesoRealAdmissao,  // 2º Peso Admissão Nutri
+      patient.nutri?.pesoPredito,       // 3º Peso Predito (Aba Fisio, mas salva na Nutri)
+      patient.physio?.peso,             // 4º Plano B Fisio
+      patient.admissoes?.peso,          // 5º Plano B Admissão
+      patient.medical?.peso             // 6º Plano B Médico
+    ];
+
+    for (let p of tentativas) {
+      if (p) {
+        // Limpa a vírgula do texto e transforma em matemática pura
+        const n = parseFloat(String(p).replace(',', '.'));
+        if (!isNaN(n) && n > 0) return n;
+      }
     }
-    return null;
+    return 0; // Não achou nenhum peso válido
   };
+
+  const peso = buscarPesoValido();
+  const rate = parseFloat(String(mlHour || 0).replace(',', '.'));
+  const doubleDose = patient.sofa_data_technical?.noraDoubleDoseToday || false;
+  const concentration = doubleDose ? 128 : 64; // µg/mL
+
+  // Só calcula se tiver infusão (>0) e se tiver peso (>0)
+  if (rate > 0 && peso > 0) {
+    const doseMcgKgMin = ((rate * concentration) / 60) / peso;
+    return doseMcgKgMin.toFixed(3);
+  }
+  
+  return null;
+};
 
 export const normalizeName = (n) =>
   n ? n.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim() : "";
@@ -712,116 +734,177 @@ export const getSOFAMortality = (score) => {
     return "N/A";
   };
   
-  // --- DETETIVE DO GLASGOW ---
-  export const getBestGlasgowForSOFA = (p) => {
-    if (!p.neuro?.sedacao) return { valor: safeNumber(p.neuro?.glasgow || 15), origem: "Atual" };
-    if (p.neuro?.glasgowPreSedacao) return { valor: safeNumber(p.neuro?.glasgowPreSedacao), origem: "Pré-Sedação" };
-    if (p.saps3?.glasgow || p.admissionData?.glasgow) {
-      const gcsSaps = safeNumber(p.saps3?.glasgow || p.admissionData?.glasgow);
-      return { valor: gcsSaps, origem: "Admissão (SAPS3)" };
+// --- DETETIVE DO GLASGOW (AGORA SOMA AS FRAÇÕES) ---
+export const getBestGlasgowForSOFA = (p) => {
+  // 1. Tenta montar o Glasgow atual a partir das frações (AO + RM + RV)
+  if (!p.neuro?.sedacao) {
+    const ao = parseInt(p.neuro?.glasgowAO) || 0;
+    const rm = parseInt(p.neuro?.glasgowRM) || 0;
+    const rvStr = p.neuro?.glasgowRV || "";
+    let rv = parseInt(rvStr) || 0;
+    
+    // Se a resposta verbal for tubo ou traqueo, conta como 1 para o escore numérico
+    if (rvStr.startsWith("T") || rvStr.startsWith("1 - T")) rv = 1;
+    
+    const somaGCS = ao + rm + rv;
+    
+    // Se conseguiu somar as frações, usa elas! Se não, procura a variável antiga (glasgow)
+    if (somaGCS > 0) {
+      return { valor: somaGCS, origem: "Atual (Aba Médica)" };
     }
-    if (p.history && Array.isArray(p.history)) {
-      const lastAwake = p.history.slice().reverse().find(evo => !evo.neuro?.sedacao && evo.neuro?.glasgow);
-      if (lastAwake) return { valor: safeNumber(lastAwake.neuro.glasgow), origem: "Histórico UTI" };
+    if (p.neuro?.glasgow) {
+      return { valor: safeNumber(p.neuro.glasgow), origem: "Atual" };
     }
-    return { valor: 15, origem: "Presumido" };
-  };
-  
-  // --- MOTOR PRINCIPAL SOFA-2 (CORRIGIDO E OTIMIZADO) ---
-  export const getAutoSOFA2 = (p) => {
-    let score = 0;
-    if (!p.sofa_data_technical) p.sofa_data_technical = {};
-  
-    // SUTURA 1: Função robusta que aceita variações de nome e corrige a VÍRGULA brasileira
-    const buscarUltimoLab = (nomesPossiveis) => {
-      const parseBr = (val) => {
-        if (!val) return null;
-        const clean = val.toString().trim().replace(',', '.'); // Converte 1,5 para 1.5
-        return clean === "" ? null : parseFloat(clean);
-      };
+  }
 
-      const nomes = Array.isArray(nomesPossiveis) ? nomesPossiveis : [nomesPossiveis];
-      
-      // Procura primeiro nos exames de hoje
+  // 2. Se está sedado, procura o valor de pré-sedação
+  if (p.neuro?.glasgowPreSedacao) return { valor: safeNumber(p.neuro?.glasgowPreSedacao), origem: "Pré-Sedação" };
+  
+  // 3. SAPS 3 ou Admissão
+  if (p.saps3?.glasgow || p.admissionData?.glasgow) {
+    const gcsSaps = safeNumber(p.saps3?.glasgow || p.admissionData?.glasgow);
+    return { valor: gcsSaps, origem: "Admissão (SAPS3)" };
+  }
+  
+  // 4. Histórico
+  if (p.history && Array.isArray(p.history)) {
+    const lastAwake = p.history.slice().reverse().find(evo => !evo.neuro?.sedacao && (evo.neuro?.glasgow || evo.neuro?.glasgowAO));
+    if (lastAwake) {
+      const somaAntiga = (parseInt(lastAwake.neuro?.glasgowAO)||0) + (parseInt(lastAwake.neuro?.glasgowRM)||0) + (parseInt(lastAwake.neuro?.glasgowRV)||0);
+      const valorHistorico = somaAntiga > 0 ? somaAntiga : safeNumber(lastAwake.neuro?.glasgow);
+      if (valorHistorico > 0) return { valor: valorHistorico, origem: "Histórico UTI" };
+    }
+  }
+  
+  return { valor: 15, origem: "Presumido" };
+};
+
+// --- MOTOR PRINCIPAL SOFA-2 (CORRIGIDO E OTIMIZADO) ---
+export const getAutoSOFA2 = (p) => {
+  let score = 0;
+  if (!p.sofa_data_technical) p.sofa_data_technical = {};
+
+  // SUTURA 1: Função robusta que aceita variações de nome e corrige a VÍRGULA brasileira
+  const buscarUltimoLab = (nomesPossiveis) => {
+    const parseBr = (val) => {
+      if (!val) return null;
+      const clean = val.toString().trim().replace(',', '.'); // Converte 1,5 para 1.5
+      return clean === "" ? null : parseFloat(clean);
+    };
+
+    const nomes = Array.isArray(nomesPossiveis) ? nomesPossiveis : [nomesPossiveis];
+    
+    // Procura primeiro nos exames de hoje
+    for (let nome of nomes) {
+      const val = parseBr(p.labs?.today?.[nome]);
+      if (val !== null && !isNaN(val)) return val;
+    }
+    
+    // Se não achar hoje, varre o histórico do mais recente pro mais antigo
+    const datas = Object.keys(p.examHistory || {}).sort().reverse();
+    for (let d of datas) {
       for (let nome of nomes) {
-        const val = parseBr(p.labs?.today?.[nome]);
+        const val = parseBr(p.examHistory[d]?.[nome]);
         if (val !== null && !isNaN(val)) return val;
       }
-      
-      // Se não achar hoje, varre o histórico do mais recente pro mais antigo
-      const datas = Object.keys(p.examHistory || {}).sort().reverse();
-      for (let d of datas) {
-        for (let nome of nomes) {
-          const val = parseBr(p.examHistory[d]?.[nome]);
-          if (val !== null && !isNaN(val)) return val;
-        }
-      }
-      return null;
-    };
-  
-    const buscarUltimaPAM = () => {
-      for (let h of BH_HOURS.slice().reverse()) {
-        const pam = p.bh?.vitals?.[h]?.["PAM"];
-        // Correção de vírgula aqui também por segurança
-        if (pam) return parseFloat(pam.toString().replace(',', '.')); 
-      }
-      return null;
-    };
-  
-    const buscarUltimoPF = () => {
-      const colunas = Object.keys(p.gasometriaHistory || {}).reverse();
-      for (let col of colunas) {
-        const gaso = p.gasometriaHistory[col];
-        if (!gaso) continue;
-        const pfDireto = gaso["P/F"] || gaso["PF"] || gaso["Relação P/F"] || gaso["Relacao P/F"] || gaso["PaO2/FiO2"];
-        if (pfDireto) return parseFloat(pfDireto.toString().replace(',', '.'));
-        
-        const pao2 = gaso["PaO2"] || gaso["pO2"];
-        let fio2Gaso = gaso["FiO2"];
-        if (pao2 && fio2Gaso) {
-          fio2Gaso = parseFloat(fio2Gaso.toString().replace(',', '.'));
-          const pao2Float = parseFloat(pao2.toString().replace(',', '.'));
-          const fio2Decimal = fio2Gaso > 1 ? fio2Gaso / 100 : fio2Gaso;
-          return pao2Float / fio2Decimal;
-        }
-      }
-      return null;
-    };
-  
-    const neuroData = getBestGlasgowForSOFA(p);
-    const gcs = neuroData.valor;
-    p.sofa_data_technical.glasgowOrigem = neuroData.origem;
-  
-    if (gcs <= 5) score += 4;
-    else if (gcs <= 8) score += 3;
-    else if (gcs <= 12) score += 2;
-    else if (gcs <= 14) score += 1;
-  
-    const pfRatio = buscarUltimoPF();
-    const isVM = p.physio?.suporte === "VM" || p.physio?.suporte === "VNI";
-    
-    if (pfRatio && pfRatio > 0) {
-      p.sofa_data_technical.lastPF = Math.round(pfRatio); 
-      if (pfRatio <= 75 && isVM) score += 4;
-      else if (pfRatio <= 150 && isVM) score += 3;
-      else if (pfRatio <= 225) score += 2;
-      else if (pfRatio <= 300) score += 1;
-    } else {
-      p.sofa_data_technical.lastPF = null;
     }
+    return null;
+  };
+
+  const buscarUltimaPAM = () => {
+    // Tratamos BH_HOURS como uma variável global ou importada
+    const horas = typeof BH_HOURS !== "undefined" ? BH_HOURS : ["07h","08h","09h","10h","11h","12h","13h","14h","15h","16h","17h","18h","19h","20h","21h","22h","23h","00h","01h","02h","03h","04h","05h","06h"];
+    for (let h of horas.slice().reverse()) {
+      const pam = p.bh?.vitals?.[h]?.["PAM"];
+      if (pam) return parseFloat(pam.toString().replace(',', '.')); 
+    }
+    return null;
+  };
+
+  const buscarUltimoPF = () => {
+    const colunas = Object.keys(p.gasometriaHistory || {}).reverse();
+    for (let col of colunas) {
+      const gaso = p.gasometriaHistory[col];
+      if (!gaso) continue;
+      const pfDireto = gaso["P/F"] || gaso["PF"] || gaso["Relação P/F"] || gaso["Relacao P/F"] || gaso["PaO2/FiO2"];
+      if (pfDireto) return parseFloat(pfDireto.toString().replace(',', '.'));
+      
+      const pao2 = gaso["PaO2"] || gaso["pO2"];
+      let fio2Gaso = gaso["FiO2"];
+      if (pao2 && fio2Gaso) {
+        fio2Gaso = parseFloat(fio2Gaso.toString().replace(',', '.'));
+        const pao2Float = parseFloat(pao2.toString().replace(',', '.'));
+        const fio2Decimal = fio2Gaso > 1 ? fio2Gaso / 100 : fio2Gaso;
+        return pao2Float / fio2Decimal;
+      }
+    }
+    return null;
+  };
+
+  // SNC
+  const neuroData = getBestGlasgowForSOFA(p);
+  const gcs = neuroData.valor;
+  p.sofa_data_technical.glasgowOrigem = neuroData.origem;
+
+  if (gcs <= 5) score += 4;
+  else if (gcs <= 8) score += 3;
+  else if (gcs <= 12) score += 2;
+  else if (gcs <= 14) score += 1;
+
+  // RESPIRATÓRIO
+  const pfRatio = buscarUltimoPF();
+  const isVM = p.physio?.suporte === "VM" || p.physio?.suporte === "VNI";
   
-    const bhGains = p.bh?.gains || {};
-    const lastHour = BH_HOURS.slice().reverse().find(h => bhGains[h]?.["Noradrenalina"]);
-    const lastNoraML = lastHour ? bhGains[lastHour]["Noradrenalina"] : null;
-    const noraDose = parseFloat(calculateNoraDose(p, lastNoraML) || 0);
+  if (pfRatio && pfRatio > 0) {
+    p.sofa_data_technical.lastPF = Math.round(pfRatio); 
+    if (pfRatio <= 75 && isVM) score += 4;
+    else if (pfRatio <= 150 && isVM) score += 3;
+    else if (pfRatio <= 225) score += 2;
+    else if (pfRatio <= 300) score += 1;
+  } else {
+    p.sofa_data_technical.lastPF = null;
+  }
+
+  // CARDIOVASCULAR (Correção da Dose da Nora Direta no core.js)
+  const horas = typeof BH_HOURS !== "undefined" ? BH_HOURS : ["07h","08h","09h","10h","11h","12h","13h","14h","15h","16h","17h","18h","19h","20h","21h","22h","23h","00h","01h","02h","03h","04h","05h","06h"];
+  let noraDose = 0;
+  
+  if (p.bh?.gains) {
+    let lastNoraVal = 0;
+    horas.forEach(h => {
+      const valRaw = p.bh.gains[h]?.["Noradrenalina"];
+      if (valRaw) {
+        const numVal = parseFloat(String(valRaw).replace(',', '.'));
+        if (numVal > 0) lastNoraVal = numVal;
+      }
+    });
+
+    // 🧠 A CORREÇÃO DE HIERARQUIA DO PESO: 1º Nutri, 2º Fisio, 3º Admissão
+    const pesoNutri = p.nutri?.peso;
+    const pesoFisio = p.physio?.pesoPredito || p.physio?.peso;
+    const pesoAdmissao = p.admissoes?.peso || p.medical?.peso || p.peso;
     
-    const ultimaPAM = buscarUltimaPAM();
-    p.sofa_data_technical.lastPAM = ultimaPAM;
-  
-    if (noraDose > 0.4) score += 4;
-    else if (noraDose > 0.2) score += 3;
-    else if (noraDose > 0) score += 2;
-    else if (ultimaPAM !== null && ultimaPAM < 70) score += 1;
+    // Tenta pegar na ordem de prioridade. Se não achar nenhum, assume 0.
+    const pesoRaw = pesoNutri || pesoFisio || pesoAdmissao || 0;
+    const peso = parseFloat(String(pesoRaw).replace(',', '.'));
+
+    if (lastNoraVal > 0 && peso > 0) {
+      const isDouble = p.sofa_data_technical?.noraDoubleDoseToday;
+      const mcgPerMl = isDouble ? 128 : 64; 
+      noraDose = (lastNoraVal * mcgPerMl) / (peso * 60);
+    }
+  }
+
+  // Volta o valor da dose calculada para a tela
+  p.sofa_data_technical.lastNoraDose = noraDose > 0 ? parseFloat(noraDose.toFixed(2)) : null;
+
+  const ultimaPAM = buscarUltimaPAM();
+  p.sofa_data_technical.lastPAM = ultimaPAM;
+
+  if (noraDose > 0.4) score += 4;
+  else if (noraDose > 0.2) score += 3;
+  else if (noraDose > 0) score += 2;
+  else if (ultimaPAM !== null && ultimaPAM < 70) score += 1;
   
     // SUTURA 2: Passando um Array com variações de nomes para garantir que ele ache!
     const bili = buscarUltimoLab(["Bilirrubina Total", "Bilirrubina", "BT", "Bili"]);
