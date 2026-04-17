@@ -182,3 +182,51 @@
     border-right-color: var(--border);
   }
 }
+
+  /* ==========================================
+   REGRAS DEFINITIVAS DE IMPRESSÃO (ANTI-PÁGINA EM BRANCO)
+   ========================================== */
+@media print {
+  /* 1. Transforma o App em um documento contínuo, matando o layout flexível e a altura fixa */
+  html, body, #root, [class*="h-screen"], [class*="min-h-screen"], [class*="flex-1"] {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    display: block !important; /* Essa é a bala de prata */
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: white !important;
+  }
+
+  /* 2. Remove caixas, sombras e bordas do fundo que causam "respiros" invisíveis */
+  * {
+    box-shadow: none !important;
+  }
+
+  /* 3. Previne que a impressora corte uma linha da tabela pela metade */
+  tr, td, th {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* 4. Comprime levemente a tabela para garantir que caiba em 1 folha */
+  table {
+    width: 100% !important;
+    margin-bottom: 0 !important;
+  }
+  
+  table td, table th {
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
+    line-height: 1.1 !important;
+  }
+
+  /* 5. Oculta tudo que não for essencial (como espaços vazios no final) */
+  footer, .pb-20, .mb-10, ::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  @page {
+    margin: 0.5cm; /* Margem pequena para aproveitar a folha toda */
+  }
+}

@@ -158,7 +158,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const rawPatient = patients[activeTab] || defaultPatient(0);
   const currentPatient = ensureBHStructure(rawPatient);
   const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
-  const bhTotals = calculateTotals(displayedBH);
+  const bhTotals = calculateTotals(displayedBH, currentPatient.nutri?.peso);
 
   // --- ESTADOS DA FILA DE ESPERA ---
   const [waitingList, setWaitingList] = useState([]);
@@ -573,7 +573,7 @@ const clearAntibiotic = (i) => {
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
 
-    const { accumulated } = calculateTotals(p.bh || {});
+    const { accumulated } = calculateTotals(p.bh || {}, p.nutri?.peso);
     p.bh_previous = { ...(p.bh || {}) };
     p.bh = {
       date: getManausDateStr(),
@@ -2249,14 +2249,36 @@ ESCALAS DE RISCO:
     : navButtons;
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans pb-20 relative bg-hexagon-pattern bg-repeat">
+    <div className="min-h-screen bg-gray-100 font-sans pb-20 relative bg-hexagon-pattern bg-repeat print:block print:min-h-0 print:h-auto print:pb-0 print:bg-white print:overflow-visible">
       <style>{`
-                @media print {
-                    @page { size: portrait; margin: 10mm; }
-                    .print\\:hidden { display: none !important; }
-                    body { background: white !important; }
-                }
-            `}</style>
+          @media print {
+              /* 1. Reduzimos a margem da impressora para dar mais espaço (de 10mm para 5mm) */
+              @page { size: portrait; margin: 5mm; }
+              
+              .print\\:hidden { display: none !important; }
+              
+              /* 2. Força o corpo do site a parar exatamente onde o conteúdo termina */
+              html, body, #root { 
+                  height: max-content !important; 
+                  min-height: 0 !important; 
+                  background: white !important; 
+                  margin: 0 !important;
+                  padding: 0 !important;
+              }
+
+              /* 3. A MÁGICA: Remove a sombra e as bordas arredondadas do "Cartão" branco */
+              * {
+                  box-shadow: none !important;
+                  border-radius: 0 !important;
+              }
+
+              /* 4. Mata qualquer preenchimento (padding) do fundo cinza que empurra a página */
+              main, .bg-gray-100 {
+                  padding: 0 !important;
+                  margin: 0 !important;
+              }
+          }
+      `}</style>
 
       {/* CABEÇALHO SUPERIOR - DESIGN DA MAIN COM DADOS DA V2 */}
       <div
@@ -2465,11 +2487,11 @@ ESCALAS DE RISCO:
             </div>
           </div>
 
-{/* ========================================== */}
+          {/* ========================================== */}
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
           {/* ========================================== */}
           <div className="flex-1 w-full min-w-0">
-            <div className="sticky top-0 z-40 bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center">
+            <div className="sticky top-0 z-40 bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center print:hidden">
               
               <div className="flex items-center gap-3 flex-wrap">
                 {/* O NOME AGORA É UM BOTÃO */}

@@ -102,18 +102,21 @@ const SpeechDashboard = ({
               </label>
               <select
                 className="w-full p-2 border border-pink-200 rounded outline-none focus:ring-2 focus:ring-pink-300 text-sm font-bold text-slate-700 mb-3"
+                // Lógica simplificada: Se for true/"Sim" vira "Sim", se for false/"Não" vira "Não", caso contrário fica vazio (Aguardando)
                 value={
-                  currentPatient.fono?.toleraAgua === true || currentPatient.fono?.toleraAgua === "Sim" ? "Sim" :
-                  currentPatient.fono?.toleraAgua === false || currentPatient.fono?.toleraAgua === "Não" ? "Não" : ""
+                  (currentPatient.fono?.toleraAgua === true || currentPatient.fono?.toleraAgua === "Sim") ? "Sim" :
+                  (currentPatient.fono?.toleraAgua === false || currentPatient.fono?.toleraAgua === "Não") ? "Não" : ""
                 }
                 onChange={(e) => updateNested("fono", "toleraAgua", e.target.value)}
                 onBlur={() => handleBlurSave("Fonoaudiologia: Avaliou Liberação de Água Oral")}
               >
+                {/* Esta é a opção padrão para pacientes novos */}
                 <option value="">Aguardando Avaliação...</option>
                 <option value="Sim">Sim (Liberada)</option>
                 <option value="Não">Não (Suspensa)</option>
               </select>
 
+              {/* O campo de Utensílio só aparece se estiver REALMENTE liberado ("Sim") */}
               {(currentPatient.fono?.toleraAgua === "Sim" || currentPatient.fono?.toleraAgua === true) && (
                 <div className="animate-fadeIn pt-2 border-t border-pink-50 mt-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">

@@ -451,10 +451,26 @@ export const defaultPatient = (id) => ({
   cardio: { dva: false, drogasDVA: [] },
   physio: { suporte: "", parametro: "", fiO2: "", peep: "", totNumero: "", totRima: "", cuff: "", secrecao: false, secrecaoAspecto: "", secrecaoColoracao: "", secrecaoQtd: "", mobilizacao: [], mrcScore: "", icuMobilityScale: "", anotacoes: "", diasAcumuladosVM: 0, vmLastStart: "" },
   resp: { suporte: "", parametro: "" },
-  nutri: { peso: "", tipoMedicaoPeso: "", pesoPredito: "", altura: "", via: "", tipoDieta: "", caracteristicasDieta: [], vazao: "", vomito: false, diarreia: false, residuo: "", metaCal: "", metaProt: "", atingido: "", atingidoAnotacoes: "", risco_nutricional: "", dataUltimaEvacuacao: "", anotacoes: "" },
-  fono: { consistencia: "", utensilioAgua: "", toleraAgua: false, nivel_consciencia: "", blue_dye: "", degluticao: "", voz: "", conduta: "", compreensao: "", expressao_oral: "", expressao_oral_detalhe: "", inapto_vo: [] },
+  
+  // 👇 GAVETA DA NUTRIÇÃO TOTALMENTE ATUALIZADA 👇
+  nutri: { 
+    admitido: false, 
+    peso: "", tipoMedicaoPeso: "", pesoPredito: "", altura: "", 
+    via: "", tipoDieta: "", caracteristicasDieta: [], vazao: "", residuo: "", 
+    aceitacao: "", sintomasTGI: [],
+    metaCalTotal: "", metaCalDiaria: "", metaProtTotal: "",
+    metaCalDiariaAtingida: false, metaCalTotalAtingida: false, metaProtAtingida: false, 
+    atingidoAnotacoes: "", risco_nutricional: "", anotacoes: "" 
+  },
+  
+  // 👇 GAVETA DA FONO COM A ÁGUA "AGUARDANDO AVALIAÇÃO" 👇
+  fono: { consistencia: "", utensilioAgua: "", toleraAgua: "", nivel_consciencia: "", blue_dye: "", degluticao: "", voz: "", conduta: "", compreensao: "", expressao_oral: "", expressao_oral_detalhe: "", inapto_vo: [] },
+  
   enfermagem: { dor: "", hemodialise: false, lesaoLocal: "", lesaoEstagio: "", curativoTipo: "", curativoData: "", avpLocal: "", avpData: "", cvcLocal: "", cvcData: "", svd: false, svdData: "", sneCm: "", sneData: "", drenoTipo: "", drenoAspecto: "", drenoDebito: "", precaucao: "", anotacoes: "", braden_percepcao: "", braden_umidade: "", braden_atividade: "", braden_mobilidade: "", braden_nutricao: "", braden_friccao: "", morse_historico: "", morse_diagnostico: "", morse_auxilio: "", morse_terapiaIV: "", morse_marcha: "", morse_estadoMental: "" },
+  
+  // A data de evacuação fica unificada aqui
   gastro: { dataUltimaEvacuacao: "" },
+  
   antibiotics: [{ name: "", date: "" }, { name: "", date: "" }, { name: "", date: "" }],
   antibioticsHistory: [],
   labs: { today: { date: "" }, yesterday: { date: "" }, dayBefore: { date: "" } },
@@ -525,17 +541,43 @@ export const ensureBHStructure = (p) => {
   return safeP;
 };
 
-export const calculateTotals = (bh) => {
-  if (!bh) return { totalGains: 0, totalLosses: 0, totalIrrigation: 0, dailyBalance: 0, accumulated: 0 };
-  let totalGains = 0; let totalLosses = 0; let totalIrrigation = 0;
+export const calculateTotals = (bh, peso = 0) => {
+  if (!bh) return { totalGains: 0, totalLosses: 0, totalIrrigation: 0, dailyBalance: 0, accumulated: 0, insensible: 0 };
+  
+  let totalGains = 0; 
+  let totalLosses = 0; 
+  let totalIrrigation = 0;
+  
   if (bh.irrigation) Object.values(bh.irrigation).forEach((v) => (totalIrrigation += safeNumber(v)));
   if (bh.gains) Object.values(bh.gains).forEach((h) => Object.values(h).forEach((v) => (totalGains += safeNumber(v))));
   if (bh.losses) Object.values(bh.losses).forEach((h) => Object.values(h).forEach((v) => (totalLosses += safeNumber(v))));
+  
   const adjustedTotalLosses = totalLosses - totalIrrigation;
-  const insensible = safeNumber(bh.insensibleLoss);
-  const dailyBalance = totalGains - (adjustedTotalLosses + insensible);
+  
+  // A MÁGICA DA PI
+  let insensible = safeNumber(bh.insensibleLoss);
+  const pesoNum = safeNumber(String(peso).replace(",", "."));
+  
+  if (insensible === 0 && pesoNum > 0) {
+    insensible = Math.round(pesoNum * 12);
+  }
+
+  // 👇 O CONSERTO ESTÁ AQUI 👇
+  // Somamos a Perda Insensível ao Total de Perdas antes de devolver para a tela!
+  const finalTotalLosses = adjustedTotalLosses + insensible;
+  // 👆 ======================= 👆
+
+  const dailyBalance = totalGains - finalTotalLosses;
   const accumulated = safeNumber(bh.accumulated) + dailyBalance;
-  return { totalGains, totalLosses: adjustedTotalLosses, totalIrrigation, dailyBalance, accumulated };
+  
+  return { 
+    totalGains, 
+    totalLosses: finalTotalLosses, // Agora a tela vai receber o valor com a PI somada!
+    totalIrrigation, 
+    dailyBalance, 
+    accumulated,
+    insensible // Devolvendo a PI calculada também, caso precise exibir
+  };
 };
 
 export const calculateDiurese12hMlKgH = (patient) => {

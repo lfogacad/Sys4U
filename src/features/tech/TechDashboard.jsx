@@ -106,7 +106,7 @@ const TechDashboard = ({
   };
 
   return (
-    <div className="space-y-8 animate-fadeIn print:space-y-2 bh-print-container">
+    <div className="space-y-8 animate-fadeIn print:space-y-0 print:m-0 print:p-0 bh-print-container">
       <div id="print-header" className="hidden print:flex w-full justify-between items-center text-xs font-bold border-b-2 border-black pb-2 mb-1 text-black">
         <span className="flex-1">PACIENTE: {currentPatient.nome?.toUpperCase() || "___________"}</span>
         <span className="w-20 text-center">IDADE: {calculateAge(currentPatient.dataNascimento) || "__"}a</span>
@@ -166,20 +166,29 @@ const TechDashboard = ({
             <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase">Peso (kg):</span>
             <input 
               type="text" 
-              value={currentPatient.nutri?.peso} 
+              value={currentPatient.nutri?.peso || ""} 
               disabled 
               className="w-14 md:w-20 p-1 border rounded text-center text-[10px] md:text-sm font-bold bg-gray-100 text-gray-500" 
-              placeholder={currentPatient.nutri?.peso || "---"} 
+              placeholder="---" 
             />
           </div>
           <div className="flex items-center text-[10px] md:text-xs font-bold text-slate-500 whitespace-nowrap flex-shrink-0">
             PI Total: 
             <input 
               type="text" 
-              value={displayedBH.insensibleLoss || ""} 
+              value={
+                // Se alguém digitou um valor de verdade (diferente de 0 e vazio), mostramos ele.
+                (displayedBH?.insensibleLoss && displayedBH.insensibleLoss !== 0 && displayedBH.insensibleLoss !== "0")
+                  ? displayedBH.insensibleLoss
+                  // Se estiver no 0 padrão do sistema, nós fazemos a mágica (Peso x 12)
+                  : (parseFloat(String(currentPatient.nutri?.peso || "0").replace(",", ".")) > 0 
+                      ? Math.round(parseFloat(String(currentPatient.nutri?.peso).replace(",", ".")) * 12) 
+                      : "")
+              }
               onChange={(e) => updateNested("bh", "insensibleLoss", e.target.value)} 
               onBlur={() => handleBlurSave("BH: Alterou manualmente a Perda Insensível (PI)")}
-              className="w-12 md:w-16 p-1 border rounded text-center ml-1 md:ml-2 bg-white text-slate-800" 
+              title="Calculado automaticamente (Peso x 12). Digite para substituir em caso de febre/sudorese."
+              className="w-12 md:w-16 p-1 border rounded text-center ml-1 md:ml-2 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-200" 
             /> ml
           </div>
         </div>
@@ -441,9 +450,14 @@ const TechDashboard = ({
         </div>
       </fieldset>
 
-      <div className="mt-8 print:mt-1">
-        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2 print:hidden"><Activity className="text-red-500" /> Sinais Vitais</h3>
-        <fieldset disabled={isBHReadOnly} className="overflow-x-auto border rounded-xl print:border-none print:overflow-visible min-w-0 border-0 p-0 m-0">
+      {/* 👇 A SUTURA COMEÇA AQUI: Trocando print:mt-1 por print:mt-0 e ajustando o wrapper 👇 */}
+      <div className="mt-8 print:mt-0 print:pt-0">
+        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2 print:hidden">
+          <Activity className="text-red-500" /> Sinais Vitais
+        </h3>
+        
+        {/* Adicionei print:w-full print:block aqui para forçar a tabela a se comportar como papel */}
+        <fieldset disabled={isBHReadOnly} className="overflow-x-auto border rounded-xl print:border-none print:overflow-visible min-w-0 border-0 p-0 m-0 print:w-full print:block">
           <table className="w-full text-xs text-center border-collapse">
             <thead>
               <tr className="bg-slate-200 print:bg-gray-300 print:text-black">
@@ -488,7 +502,10 @@ const TechDashboard = ({
         </fieldset>
       </div>
 
-      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm print:hidden mt-6">
+      {/* ============================================================== */}
+      {/* BLOCO DA FONO - SUTURA NAS MARGENS DE IMPRESSÃO */}
+      {/* ============================================================== */}
+      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm print:hidden print:m-0 print:p-0 mt-6">
         <h4 className="text-sm font-black text-amber-800 flex items-center gap-2 mb-2 uppercase tracking-wide">
           <ShieldAlert size={18} className="text-amber-600" />
           Segurança de Deglutição
@@ -529,7 +546,10 @@ const TechDashboard = ({
         </div>
       </div>
 
-      <fieldset disabled={!isEditable} className="mt-6 print:hidden min-w-0 border-0 p-0 m-0">
+      {/* ============================================================== */}
+      {/* BLOCO DE ANOTAÇÕES - SUTURA NAS MARGENS DE IMPRESSÃO */}
+      {/* ============================================================== */}
+      <fieldset disabled={!isEditable} className="mt-6 print:hidden print:m-0 print:p-0 min-w-0 border-0 p-0 m-0">
         <div className="p-4 bg-white border rounded-xl shadow-sm">
           <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><Edit3 size={16} className="text-slate-400" /> Anotações da Equipe Técnica</h4>
           <textarea 
