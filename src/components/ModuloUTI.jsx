@@ -1095,8 +1095,7 @@ Paciente apresentou boa tolerância às manobras, sem intercorrências hemodinâ
     const diagAgudos = p.diagAgudos || "Não descritos no sistema.";
     const diagCronicos = p.diagCronicos || "Não descritos no sistema.";
 
-    const text = `ADMISSÃO FISIOTERAPÊUTICA NA UTI
-NOME: ${p.nome?.toUpperCase() || "-"}
+    const text = `ADMISSÃO FISIOTERAPÊUTICA
 
 HISTÓRIA CLÍNICA:
 ${historiaMedica}
@@ -1128,6 +1127,7 @@ ${physioData.sistemaMusculoesqueletico}
 FUNCIONALIDADE:
 ${physioData.funcionalidade}${mrcText}${imsText}${suporteText}${airwayText}${gasoText}
 
+CONDUTAS FISIOTERAPÊUTICAS:
 ${physioData.condutas}`;
 
     setShowPhysioModal(false);
