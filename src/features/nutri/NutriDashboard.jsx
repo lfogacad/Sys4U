@@ -76,8 +76,8 @@ const NutriDashboard = ({
             <label className="text-xs font-bold text-gray-500">Altura (Fisio)</label>
             <input
               type="text"
-              className="w-full p-2 border rounded bg-slate-100 cursor-not-allowed font-medium"
-              value={currentPatient.physio?.altura || "-"}
+              className="w-full p-2 border rounded bg-slate-100 cursor-not-allowed font-medium text-slate-600"
+              value={currentPatient.nutri?.altura || "-"} 
               disabled
             />
           </div>
@@ -85,7 +85,7 @@ const NutriDashboard = ({
             <label className="text-xs font-bold text-gray-500">Peso Predito</label>
             <input
               type="text"
-              className="w-full p-2 border rounded bg-slate-100 cursor-not-allowed font-medium"
+              className="w-full p-2 border rounded bg-slate-100 cursor-not-allowed font-medium text-slate-600"
               value={currentPatient.nutri?.pesoPredito || "-"}
               disabled
             />

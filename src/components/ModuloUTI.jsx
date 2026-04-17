@@ -2884,6 +2884,9 @@ ESCALAS DE RISCO:
         handleAddVmEntry={handleAddVmEntry}
         handleBlurSave={handleBlurSave}
         updateVmEntry={updateVmEntry}
+        getDaysD1={getDaysD1}
+        getTempoVMText={getTempoVMText}
+        updateNested={updateNested}
       />
 
       {/* MODAL: GERADOR DE EVOLUÇÃO DA FISIOTERAPIA */}

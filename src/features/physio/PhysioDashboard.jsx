@@ -134,20 +134,51 @@ const PhysioDashboard = ({
             <label className="text-xs font-bold text-lime-700">Altura (m/cm)</label>
             <input 
               type="number" step="0.01" 
-              className="w-full p-2 border rounded bg-white" 
+              className="w-full p-2 border rounded bg-white outline-none focus:ring-2 focus:ring-lime-300" 
               value={currentPatient.nutri?.altura || ""} 
-              onChange={(e) => updateNested("nutri", "altura", e.target.value)} 
-              onBlur={() => handleBlurSave("Fisioterapia: Editou Altura")}
+              onChange={(e) => {
+                const val = e.target.value;
+                updateNested("nutri", "altura", val);
+                
+                // MÁGICA DO CÁLCULO DE PESO PREDITO (ARDSNet)
+                if (val) {
+                  let h = parseFloat(val.replace(',', '.'));
+                  if (h > 0) {
+                    // Se o usuário digitou em metros (ex: 1.75), converte para cm (175)
+                    if (h < 3) h = h * 100; 
+                    
+                    // Identifica o sexo do paciente (M ou F)
+                    const sexo = currentPatient.sexo?.charAt(0).toUpperCase(); 
+                    let predito = 0;
+                    
+                    if (sexo === 'M') {
+                      predito = 50 + 0.91 * (h - 152.4);
+                    } else if (sexo === 'F') {
+                      predito = 45.5 + 0.91 * (h - 152.4);
+                    }
+                    
+                    // Se conseguiu calcular, já atualiza o campo ao lado automaticamente
+                    if (predito > 0) {
+                      updateNested("nutri", "pesoPredito", predito.toFixed(1));
+                    }
+                  }
+                }
+              }} 
+              onBlur={() => handleBlurSave("Fisioterapia: Editou Altura e calculou Peso Predito")}
             />
+            {!currentPatient.sexo && (
+               <p className="text-[9px] text-red-500 mt-1 font-bold">*Preencha o Sexo no cadastro para o cálculo automático.</p>
+            )}
           </div>
           <div>
             <label className="text-xs font-bold text-lime-700">Peso Predito (kg)</label>
             <input 
               type="number" 
-              className="w-full p-2 border rounded bg-white" 
+              className="w-full p-2 border rounded bg-white font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-300" 
               value={currentPatient.nutri?.pesoPredito || ""} 
               onChange={(e) => updateNested("nutri", "pesoPredito", e.target.value)} 
               onBlur={() => handleBlurSave("Fisioterapia: Editou Peso Predito")}
+              title="Calculado automaticamente pela fórmula ARDSNet"
             />
           </div>
         </div>
@@ -429,22 +460,55 @@ const PhysioDashboard = ({
                     type="number" placeholder="M" title="Manhã" 
                     className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" 
                     value={currentPatient.physio?.cuffM || ""} 
-                    onChange={(e) => updateNested("physio", "cuffM", e.target.value)} 
-                    onBlur={() => handleBlurSave("Fisioterapia: Editou Cuff (M)")}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateNested("physio", "cuffM", val); // Atualiza a tela principal
+                      
+                      // Sincroniza com a última coluna do Mapa de VM
+                      const flowsheet = currentPatient.physio?.vmFlowsheet;
+                      if (flowsheet && flowsheet.length > 0) {
+                        const updated = [...flowsheet];
+                        updated[updated.length - 1] = { ...updated[updated.length - 1], cuffM: val };
+                        updateNested("physio", "vmFlowsheet", updated);
+                      }
+                    }} 
+                    onBlur={() => handleBlurSave("Fisioterapia: Editou Cuff (M) e sincronizou com Mapa")}
                   />
                   <input 
                     type="number" placeholder="T" title="Tarde" 
                     className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" 
                     value={currentPatient.physio?.cuffT || ""} 
-                    onChange={(e) => updateNested("physio", "cuffT", e.target.value)} 
-                    onBlur={() => handleBlurSave("Fisioterapia: Editou Cuff (T)")}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateNested("physio", "cuffT", val); // Atualiza a tela principal
+                      
+                      // Sincroniza com a última coluna do Mapa de VM
+                      const flowsheet = currentPatient.physio?.vmFlowsheet;
+                      if (flowsheet && flowsheet.length > 0) {
+                        const updated = [...flowsheet];
+                        updated[updated.length - 1] = { ...updated[updated.length - 1], cuffT: val };
+                        updateNested("physio", "vmFlowsheet", updated);
+                      }
+                    }} 
+                    onBlur={() => handleBlurSave("Fisioterapia: Editou Cuff (T) e sincronizou com Mapa")}
                   />
                   <input 
                     type="number" placeholder="N" title="Noite" 
                     className="flex-1 min-w-0 p-2 border rounded text-[10px] text-center text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200" 
                     value={currentPatient.physio?.cuffN || ""} 
-                    onChange={(e) => updateNested("physio", "cuffN", e.target.value)} 
-                    onBlur={() => handleBlurSave("Fisioterapia: Editou Cuff (N)")}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateNested("physio", "cuffN", val); // Atualiza a tela principal
+                      
+                      // Sincroniza com a última coluna do Mapa de VM
+                      const flowsheet = currentPatient.physio?.vmFlowsheet;
+                      if (flowsheet && flowsheet.length > 0) {
+                        const updated = [...flowsheet];
+                        updated[updated.length - 1] = { ...updated[updated.length - 1], cuffN: val };
+                        updateNested("physio", "vmFlowsheet", updated);
+                      }
+                    }} 
+                    onBlur={() => handleBlurSave("Fisioterapia: Editou Cuff (N) e sincronizou com Mapa")}
                   />
                 </div>
               </div>
