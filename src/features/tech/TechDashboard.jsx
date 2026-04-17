@@ -105,6 +105,134 @@ const TechDashboard = ({
     }
   };
 
+  // ==============================================================
+  // GERADOR DE PDF DO BALANÇO HÍDRICO (SOLUÇÃO DEFINITIVA)
+  // ==============================================================
+  const handleCustomPrintBH = () => {
+    const printWindow = window.open("", "_blank");
+    
+    let html = `<html><head><title>Balanço Hídrico - Leito ${currentPatient.leito}</title>
+    <style>
+      @page { size: A4 portrait; margin: 10mm; }
+      body { font-family: Arial, sans-serif; font-size: 8px; margin: 0; padding: 0; color: #000; }
+      .header { display: flex; justify-content: space-between; border-bottom: 2px solid black; padding-bottom: 4px; margin-bottom: 8px; font-weight: bold; font-size: 11px; text-transform: uppercase; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; }
+      th, td { border: 1px solid #000; padding: 2px 1px; text-align: center; height: 12px; overflow: hidden; white-space: nowrap; font-size: 8px; }
+      th { background-color: #eee; font-weight: bold; }
+      .col-item { width: 15%; text-align: left; padding-left: 3px; font-weight: bold; }
+      .col-hour { width: 3%; }
+      .col-total { width: 4.5%; font-weight: bold; background-color: #eee; }
+      .row-header { background-color: #ddd; font-weight: bold; text-align: left; padding-left: 5px; font-size: 9px; }
+      .summary-container { display: flex; justify-content: space-between; border: 2px solid #000; padding: 6px 15px; font-size: 9px; font-weight: bold; margin-bottom: 12px; background-color: #f9f9f9; border-radius: 4px; }
+      .summary-item { text-align: center; }
+      .summary-val { font-size: 13px; display: block; margin-top: 3px; }
+    </style></head><body>`;
+
+    const age = calculateAge(currentPatient.dataNascimento) || "__";
+    const dateStr = viewingPreviousBH ? displayedBH.date : getManausDateStr();
+    
+    html += `<div class="header">
+      <span>PACIENTE: ${currentPatient.nome?.toUpperCase() || "___________________"}</span>
+      <span>IDADE: ${age}a</span>
+      <span>LEITO: ${currentPatient.leito}</span>
+      <span>DATA: ${formatDateDDMM(dateStr)}</span>
+    </div>`;
+
+    // TABELA 1: BALANÇO HÍDRICO (GANHOS E PERDAS)
+    html += `<table><thead><tr><th class="col-item">ITEM</th>`;
+    BH_HOURS.forEach(h => html += `<th class="col-hour">${h.split(":")[0]}</th>`);
+    html += `<th class="col-total">TOTAL</th></tr></thead><tbody>`;
+
+    // GANHOS
+    html += `<tr><td colspan="26" class="row-header">GANHOS (+)</td></tr>`;
+    [...BH_GAINS, ...(displayedBH.customGains || [])].forEach(item => {
+        let rowTotal = 0;
+        let rowHtml = `<tr><td class="col-item">${item}</td>`;
+        BH_HOURS.forEach(h => {
+            const val = displayedBH.gains[h]?.[item] || "";
+            rowTotal += safeNumber(val);
+            rowHtml += `<td>${val}</td>`;
+        });
+        rowHtml += `<td class="col-total">${rowTotal || ""}</td></tr>`;
+        html += rowHtml;
+    });
+
+    // PERDAS
+    html += `<tr><td colspan="26" class="row-header">PERDAS (-)</td></tr>`;
+    [...BH_LOSSES, ...(displayedBH.customLosses || [])].forEach(item => {
+        let rowTotal = 0;
+        let rowHtml = `<tr><td class="col-item">${item}</td>`;
+        BH_HOURS.forEach(h => {
+            const val = displayedBH.losses[h]?.[item] || "";
+            rowTotal += safeNumber(val);
+            rowHtml += `<td>${val}</td>`;
+        });
+        
+        let displayTotal = rowTotal;
+        if (item === "Diurese (Total Coletado)") {
+            let totalIrrig = 0;
+            if (displayedBH.irrigation) Object.values(displayedBH.irrigation).forEach(v => totalIrrig += safeNumber(v));
+            displayTotal = rowTotal - totalIrrig;
+        }
+        rowHtml += `<td class="col-total">${displayTotal || ""}</td></tr>`;
+        html += rowHtml;
+    });
+
+    // IRRIGAÇÃO VESICAL
+    let irrigTotal = 0;
+    let irrigHtml = `<tr><td class="col-item" style="background-color: #fff9c4;">Irrigação Vesical</td>`;
+    BH_HOURS.forEach(h => {
+        const val = displayedBH.irrigation?.[h] || "";
+        irrigTotal += safeNumber(val);
+        irrigHtml += `<td style="background-color: #fffde7;">${val}</td>`;
+    });
+    irrigHtml += `<td class="col-total">${irrigTotal || ""}</td></tr>`;
+    html += irrigHtml;
+    html += `</tbody></table>`;
+
+    // QUADRO DE RESUMO (TOTAIS)
+    let pi = displayedBH.insensibleLoss !== undefined && displayedBH.insensibleLoss !== "" && displayedBH.insensibleLoss !== 0
+        ? safeNumber(displayedBH.insensibleLoss)
+        : (safeNumber(currentPatient.nutri?.peso) > 0 ? Math.round(safeNumber(currentPatient.nutri?.peso) * 12) : 0);
+
+    const calcTotalPerdas = Math.round((bhTotals.totalLosses || 0) + pi);
+    const calcDaily = Math.round(bhTotals.dailyBalance || 0);
+    const calcAcc = Math.round(bhTotals.accumulated || 0);
+
+    html += `<div class="summary-container">
+        <div class="summary-item">TOTAL GANHOS<br><span class="summary-val" style="color: #008000;">+${Math.round(bhTotals.totalGains || 0)}</span></div>
+        <div class="summary-item">TOTAL PERDAS (+PI ${pi})<br><span class="summary-val" style="color: #d32f2f;">-${calcTotalPerdas}</span></div>
+        <div class="summary-item">BALANÇO 24H<br><span class="summary-val" style="color: ${calcDaily >= 0 ? '#1976d2' : '#f57c00'};">${calcDaily > 0 ? '+' : ''}${calcDaily}</span></div>
+        <div class="summary-item">BH ANT.<br><span class="summary-val">${displayedBH.accumulated || 0}</span></div>
+        <div class="summary-item">TOTAL ATUAL<br><span class="summary-val">${calcAcc > 0 ? '+' : ''}${calcAcc}</span></div>
+    </div>`;
+
+    // TABELA 2: SINAIS VITAIS
+    html += `<table><thead><tr><th class="col-item">SINAIS VITAIS</th>`;
+    BH_HOURS.forEach(h => html += `<th class="col-hour">${h.split(":")[0]}</th>`);
+    html += `</tr></thead><tbody>`;
+    
+    ["Temp (ºC)", "FC (bpm)", "FR (irpm)", "PAS", "PAD", "PAM", "SpO2 (%)", "HGT (mg/dL)", "Insulina"].forEach(param => {
+        html += `<tr><td class="col-item">${param}</td>`;
+        BH_HOURS.forEach(h => {
+            const val = displayedBH.vitals[h]?.[param] || "";
+            html += `<td>${val}</td>`;
+        });
+        html += `</tr>`;
+    });
+    html += `</tbody></table>`;
+
+    html += `</body></html>`;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+    }, 250);
+  };
+
   return (
     <div className="space-y-8 animate-fadeIn print:space-y-0 print:m-0 print:p-0 bh-print-container">
       <div id="print-header" className="hidden print:flex w-full justify-between items-center text-xs font-bold border-b-2 border-black pb-2 mb-1 text-black">
@@ -142,8 +270,8 @@ const TechDashboard = ({
           >
             <Clock size={14} /> {viewingPreviousBH ? "Voltar ao Atual" : "Dia Anterior"}
           </button>
-          <button onClick={handlePrintBH} className="flex-1 md:flex-none bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1">
-            <Printer size={14} /> Imprimir
+          <button onClick={handleCustomPrintBH} className="flex-1 md:flex-none bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1">
+          <Printer size={14} /> Imprimir
           </button>
           {!viewingPreviousBH && canCloseDay && (
             <button
