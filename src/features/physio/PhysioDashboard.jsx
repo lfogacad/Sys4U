@@ -228,6 +228,36 @@ const PhysioDashboard = ({
     }, 250);
   };
 
+  // ==============================================================
+  // NAVEGAÇÃO POR TECLADO (GASOMETRIA)
+  // ==============================================================
+  const handleGasoKeyDown = (e, rowIndex, colIndex) => {
+    // Só intercepta as setas e o Enter
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) return;
+
+    e.preventDefault(); // Evita que o cursor ande dentro do texto da célula atual
+    
+    let nextRow = rowIndex;
+    let nextCol = colIndex;
+    const maxRow = GASOMETRIA_PARAMS.length - 1;
+    const maxCol = sortedGasoCols.length - 1;
+
+    // Calcula a próxima coordenada
+    if (e.key === "ArrowUp") nextRow = Math.max(0, rowIndex - 1);
+    if (e.key === "ArrowDown" || e.key === "Enter") nextRow = Math.min(maxRow, rowIndex + 1);
+    if (e.key === "ArrowLeft") nextCol = Math.max(0, colIndex - 1);
+    if (e.key === "ArrowRight") nextCol = Math.min(maxCol, colIndex + 1);
+
+    // Busca o input vizinho na tela
+    const nextInput = document.querySelector(`input[data-gaso-row="${nextRow}"][data-gaso-col="${nextCol}"]`);
+    
+    if (nextInput) {
+      nextInput.focus();
+      // O setTimeout seleciona o texto. Assim, se já tiver um número, o senhor digita por cima sem precisar apagar!
+      setTimeout(() => nextInput.select(), 10); 
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* === BOTÃO DE ADMISSÃO FISIO === */}
@@ -981,17 +1011,23 @@ const PhysioDashboard = ({
               </tr>
             </thead>
             <tbody>
-              {GASOMETRIA_PARAMS.map((param) => (
+              {GASOMETRIA_PARAMS.map((param, rowIndex) => (
                 <tr key={param} className="border-b last:border-0 hover:bg-slate-100 bg-white transition-colors">
                   <td className="p-2 text-left font-bold text-slate-600 sticky left-0 bg-white border-r border-slate-200 z-10 shadow-[1px_0_0_0_#e2e8f0]">{param}</td>
                   {isEditable && <td className="bg-slate-50 border-r border-slate-200"></td>}
-                  {/* 👇 AQUI TAMBÉM USAMOS O sortedGasoCols */}
-                  {sortedGasoCols.map((col) => (
+                  {/* 👇 AQUI USAMOS O colIndex */}
+                  {sortedGasoCols.map((col, colIndex) => (
                     <td key={col} className="p-0 border-l border-slate-200">
                       <input
                         type="text"
+                        // AS COORDENADAS INVISÍVEIS PARA O TECLADO
+                        data-gaso-row={rowIndex}
+                        data-gaso-col={colIndex}
                         className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5 transition-colors"
                         value={currentPatient.gasometriaHistory?.[col]?.[param] || ""}
+                        
+                        // 👇 ACIONA O MOTOR DO TECLADO AQUI
+                        onKeyDown={(e) => handleGasoKeyDown(e, rowIndex, colIndex)}
                         
                         onChange={(e) => {
                           const val = e.target.value;

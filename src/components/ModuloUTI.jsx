@@ -1843,8 +1843,121 @@ const generateNursingAI_Evolution = async () => {
     }
   };
 
+  // ==============================================================
+  // GERADOR AUTOMÁTICO DE EVOLUÇÃO (FISIOTERAPIA - MODELO OFICIAL)
+  // ==============================================================
   const handleGeneratePhysioEvo = () => {
-    alert("O Médico Especialista (IA) da Fisioterapia está sendo preparado e chegará em breve!");
+    const p = patients[activeTab];
+    if (!p) return;
+
+    const phy = p.physio || {};
+
+    // 👇 SUPER REDE DE CAPTURA ATUALIZADA COM AS CHAVES EXATAS DO MEDICAL ADMISSION
+    const getField = (key) => {
+      // Ele procura o dado na raiz (p), dentro de medical (p.medical), ou outras variações.
+      const val = p[key] || p.medical?.[key] || p.admissionData?.[key] || p.admissao?.[key];
+      // Se existir e não for vazio, retorna o valor. Senão, retorna aviso padrão.
+      return (val && val.trim() !== "") ? val : "Não registrado na aba médica.";
+    };
+
+    // --- FUNÇÕES AUXILIARES DE DATA PARA O TEXTO ---
+    const formatDt = (iso) => {
+      if (!iso) return "___/___/___";
+      const [y, m, d] = iso.split('-');
+      return `${d}/${m}/${y.slice(-2)}`;
+    };
+
+    const getTroca7d = (iso) => {
+      if (!iso) return "___/___/___";
+      const d = new Date(iso + 'T12:00:00');
+      d.setDate(d.getDate() + 7);
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yy = String(d.getFullYear()).slice(-2);
+      return `${dd}/${mm}/${yy}`;
+    };
+
+    // Ordenador interno de gasometria (para pegar a mais recente)
+    const parseDateForSort = (str) => {
+      if (!str) return 0;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [y, m, d] = str.split('-');
+        return new Date(y, m - 1, d, 0, 0).getTime();
+      }
+      const dMatch = str.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+      if (dMatch) {
+        const day = parseInt(dMatch[1], 10);
+        const month = parseInt(dMatch[2], 10) - 1;
+        let year = dMatch[3] ? (dMatch[3].length === 2 ? 2000 + parseInt(dMatch[3], 10) : parseInt(dMatch[3], 10)) : new Date().getFullYear();
+        let hour = 0, min = 0;
+        const tMatch = str.match(/(?:-|\s|às)\s*(\d{1,2})(?:[hH:](\d{2})?)?/i);
+        if (tMatch) { hour = parseInt(tMatch[1], 10); min = tMatch[2] ? parseInt(tMatch[2], 10) : 0; }
+        return new Date(year, month, day, hour, min).getTime();
+      }
+      return 0;
+    };
+
+    let gasoTxt = "Nenhuma gasometria registrada.";
+    if (p.gasometriaHistory) {
+      const keys = Object.keys(p.gasometriaHistory).sort((a, b) => parseDateForSort(b) - parseDateForSort(a));
+      if (keys.length > 0) {
+        const lastG = p.gasometriaHistory[keys[0]];
+        gasoTxt = `Data/Hora: ${keys[0]}\npH: ${lastG['pH']||'-'} | pCO2: ${lastG['pCO2']||'-'} | PaO2: ${lastG['PaO2']||'-'} | HCO3: ${lastG['HCO3']||'-'} | BE: ${lastG['BE']||'-'} | SatO2: ${lastG['SatO2']||'-'} | FiO2: ${lastG['FiO2']||'-'} | P/F: ${lastG['P/F']||'-'}`;
+      }
+    }
+
+    // --- CONSTRUÇÃO DO TEXTO ---
+    let evo = `EVOLUÇÃO FISIOTERAPÊUTICA\n\n`;
+
+    evo += `--- HISTÓRIA E DIAGNÓSTICOS ---\n`;
+    evo += `História Clínica:\n${getField('historia')}\n\n`;
+    evo += `Diagnósticos Agudos:\n${getField('diagAgudos')}\n\n`;
+    evo += `HPP:\n${getField('diagCronicos')}\n\n`;
+    evo += `MEDICAMENTOS DE USO HABITUAL:\n${getField('medicamentos')}\n\n`;
+    
+    // Consciência e mobilidade não precisam de quebra de linha longa
+    const consc = getField('conscienciaBasal');
+    evo += `NÍVEL DE CONSCIÊNCIA BASAL: ${consc === "Não registrado na aba médica." ? "Não registrado." : consc}\n`;
+    const mob = getField('mobilidadeBasal');
+    evo += `MOBILIDADE BASAL: ${mob === "Não registrado na aba médica." ? "Não registrado." : mob}\n\n`;
+
+    evo += `--- AVALIAÇÃO POR SISTEMAS ---\n`;
+    evo += `ESTADO GERAL: ${phy.estadoGeral || "Não registrado."}\n\n`;
+    evo += `NEUROLÓGICO: ${phy.sistemaNervoso || "Não registrado."}\n\n`;
+    evo += `RESPIRATÓRIO: ${phy.sistemaRespiratorio || "Não registrado."}\n\n`;
+    evo += `CARDIOVASCULAR: ${phy.sistemaCardiovascular || "Não registrado."}\n\n`;
+    evo += `GASTROINTESTINAL/ABDOME: ${phy.sistemaDigestivo || "Não registrado."}\n\n`;
+    evo += `MUSCULOESQUELÉTICO: ${phy.sistemaMusculoesqueletico || "Não registrado."}\n\n`;
+
+    evo += `--- GASOMETRIA ---\n`;
+    evo += `${gasoTxt}\n\n`;
+
+    evo += `--- SUPORTE VENTILATÓRIO ---\n`;
+    evo += `Suporte Atual: ${phy.suporte || "Ar Ambiente"}\n`;
+    evo += `Tempo de VM: ${getTempoVMText(p) || "-"}\n`;
+    evo += `Parâmetros: Modo: ${phy.parametro || "-"} | PEEP: ${phy.peep || "-"} | FiO2: ${phy.fiO2 || "-"}%\n`;
+    evo += `Ajustes realizados: [ DIGITE AQUI OS AJUSTES REALIZADOS NO PLANTÃO ]\n\n`;
+
+    // 👇 AJUSTADO COM AS VARIÁVEIS dataHMEF e dataSFA
+    evo += `Filtro HMEF:\n`;
+    evo += `- Instalação: ${formatDt(phy.dataHMEF)}\n`;
+    evo += `- Troca Prevista (7 dias): ${getTroca7d(phy.dataHMEF)}\n\n`;
+
+    evo += `Sistema Fechado de Aspiração (Trach Care):\n`;
+    evo += `- Instalação: ${formatDt(phy.dataSFA)}\n`;
+    evo += `- Troca Prevista (7 dias): ${getTroca7d(phy.dataSFA)}\n\n`;
+
+    evo += `Pressão do Cuff (cmH2O):\n`;
+    evo += `Manhã: ${phy.cuffM || "-"} | Tarde: ${phy.cuffT || "-"} | Noite: ${phy.cuffN || "-"}\n\n`;
+
+    evo += `--- CONDUTAS E PLANOS ---\n`;
+    evo += `INTERCORRÊNCIAS DO PLANTÃO:\n${phy.intercorrencias || "Sem intercorrências no plantão."}\n\n`;
+    evo += `CONDUTAS FISIOTERAPÊUTICAS REALIZADAS:\n${phy.condutas || phy.admissao_condutas || "Não registrado."}\n\n`;
+    evo += `PLANO / METAS PARA O PRÓXIMO PLANTÃO:\n${phy.planoMetas || "Manter condutas atuais."}`;
+
+    // Atualiza o estado e abre o modal
+    setPhysioEvoText(evo);
+    setShowPhysioEvoModal(true);
   };
 
   // --- FUNÇÃO: TROCA DE SUPORTE VENTILATÓRIO ---
