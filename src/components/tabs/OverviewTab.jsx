@@ -273,7 +273,12 @@ const OverviewTab = ({
             <TableIcon size={14} /> Visualizar Histórico
           </button>
         </div>
-        <fieldset disabled={!isOverviewEditable} className="min-w-0 border-0 p-0 m-0">
+        
+        {/* Usando a variável PERFIL do seu banco de dados */}
+        <fieldset 
+          disabled={!isOverviewEditable && !String(userProfile?.perfil || "").toLowerCase().match(/médic|medic|admin|desenvolv/)} 
+          className="min-w-0 border-0 p-0 m-0"
+        >
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
             <div className="font-bold text-left pt-6">EXAME</div>
             <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.dayBefore?.date) : "-"}</div>
@@ -289,7 +294,7 @@ const OverviewTab = ({
                   <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.yesterday?.[key] || "-"}</div>
                   
                   <input 
-                    className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none" 
+                    className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none w-full" 
                     value={currentPatient.labs?.today?.[key] || ""} 
                     onChange={(e) => updateLab("today", key, e.target.value)} 
                     onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave(`Laboratório: Editou ${ex}`) : null} 
@@ -303,15 +308,16 @@ const OverviewTab = ({
         <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
           <div className="flex justify-between mb-2">
             <h4 className="text-xs font-bold text-yellow-600 uppercase">Anotações / Pendências</h4>
-            {userProfile?.role === "Médico" && <Edit3 size={12} className="text-yellow-600" />}
+            {String(userProfile?.perfil || "").toLowerCase().match(/médic|medic|admin|desenvolv/) && <Edit3 size={12} className="text-yellow-600" />}
           </div>
-          {userProfile?.role === "Médico" ? (
+          
+          {String(userProfile?.perfil || "").toLowerCase().match(/médic|medic|admin|desenvolv/) ? (
             <textarea 
               value={currentPatient.anotacoes || ""} 
               onChange={(e) => updateP("anotacoes", e.target.value)} 
               onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave("Visita Multi: Editou Anotações / Pendências") : null} 
               className="w-full bg-transparent border-0 outline-none text-sm text-slate-700 resize-y min-h-[100px] focus:ring-0" 
-              placeholder="Digite aqui..." 
+              placeholder="Evolução, condutas, pendências..." 
             />
           ) : (
             <p className="text-sm whitespace-pre-wrap min-h-[50px] text-left">{currentPatient.anotacoes || "Sem pendências."}</p>

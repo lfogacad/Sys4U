@@ -554,7 +554,7 @@ const clearAntibiotic = (i) => {
     p.examHistory[date][exam] = value;
     up[activeTab] = syncLabsFromHistory(p);
     setPatients(up);
-  };
+};
 
   const updateAntibiotic = (i, f, v) => {
     setPatients(prev => {
