@@ -2089,7 +2089,6 @@ const handleFinalizeNursingAdmission = () => {
 
     // 4. O CARIMBADOR: Montando o Texto Final Integrado
     const text = `ADMISSÃO DE ENFERMAGEM
-NOME: ${nomePaciente}
 
 --- HISTÓRIA CLÍNICA ---
 ${historia}
