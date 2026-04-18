@@ -167,7 +167,7 @@ const TechDashboard = ({
         });
         
         let displayTotal = rowTotal;
-        if (item === "Diurese (Total Coletado)") {
+        if (item === "Diurese") {
             let totalIrrig = 0;
             if (displayedBH.irrigation) Object.values(displayedBH.irrigation).forEach(v => totalIrrig += safeNumber(v));
             displayTotal = rowTotal - totalIrrig;
@@ -498,7 +498,7 @@ const TechDashboard = ({
                   let rowTotal = 0;
                   BH_HOURS.forEach((h) => (rowTotal += safeNumber(displayedBH.losses[h]?.[item])));
                   let displayTotal = rowTotal;
-                  if (item === "Diurese (Total Coletado)") {
+                  if (item === "Diurese") {
                     let totalIrrigation = 0;
                     if (displayedBH.irrigation) Object.values(displayedBH.irrigation).forEach((val) => (totalIrrigation += safeNumber(val)));
                     displayTotal = rowTotal - totalIrrigation;

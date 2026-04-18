@@ -163,6 +163,7 @@ const OverviewTab = ({
             return false;
           };
 
+          // 1. Checa Diarreia e Vômitos
           const diarreiaHoje = checkLossBH(currentPatient.bh, "Diarreia");
           const diarreiaOntem = checkLossBH(currentPatient.bh_previous, "Diarreia");
           let diarreiaText = "";
@@ -170,23 +171,55 @@ const OverviewTab = ({
           else if (diarreiaHoje) diarreiaText = "Hoje";
           else if (diarreiaOntem) diarreiaText = "Ontem";
 
-          const vomitoHoje = checkLossBH(currentPatient.bh, "Vômitos");
-          const vomitoOntem = checkLossBH(currentPatient.bh_previous, "Vômitos");
+          const vomitoHoje = checkLossBH(currentPatient.bh, "Vômitos") || checkLossBH(currentPatient.bh, "Vômito");
+          const vomitoOntem = checkLossBH(currentPatient.bh_previous, "Vômitos") || checkLossBH(currentPatient.bh_previous, "Vômito");
           let vomitoText = "";
           if (vomitoHoje && vomitoOntem) vomitoText = "Hoje e Ontem";
           else if (vomitoHoje) vomitoText = "Hoje";
           else if (vomitoOntem) vomitoText = "Ontem";
 
-          const evacResult = typeof calculateEvacDays === 'function' ? calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao) : "-";
-          const diasSemEvacuar = parseInt(String(evacResult).replace(/\D/g, ""), 10);
-          const isConstipado = !isNaN(diasSemEvacuar) && diasSemEvacuar > 2 && !String(evacResult).toLowerCase().includes("hoje") && !String(evacResult).toLowerCase().includes("ontem");
+          // 2. Checa Evacuação direto no BH
+          const evacHojeBH = checkLossBH(currentPatient.bh, "Evacuação") || checkLossBH(currentPatient.bh, "Evacuacao") || checkLossBH(currentPatient.bh, "Fezes");
+          const evacOntemBH = checkLossBH(currentPatient.bh_previous, "Evacuação") || checkLossBH(currentPatient.bh_previous, "Evacuacao") || checkLossBH(currentPatient.bh_previous, "Fezes");
+
+          let evacResult = "";
+          let isConstipado = false;
+
+          // 3. Define o texto final e checa se há constipação (> 2 dias)
+          if (evacHojeBH || diarreiaHoje) {
+            evacResult = "Hoje";
+          } else if (evacOntemBH || diarreiaOntem) {
+            evacResult = "Ontem";
+          } else {
+            // Se não tem no BH, calcula pela data manual
+            evacResult = typeof calculateEvacDays === 'function' ? calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao) : "-";
+            
+            // Extrai apenas os números da string resultante (ex: "Há 3 dias" vira o número 3)
+            const diasSemEvacuar = parseInt(String(evacResult).replace(/\D/g, ""), 10);
+            
+            // Se o número for maior que 2 (e não for um texto que diz "hoje" ou "ontem"), liga o alerta de constipação!
+            if (!isNaN(diasSemEvacuar) && diasSemEvacuar > 2 && !String(evacResult).toLowerCase().includes("hoje") && !String(evacResult).toLowerCase().includes("ontem")) {
+              isConstipado = true;
+            }
+          }
 
           return (
             <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl">
-              <h4 className="font-bold text-orange-800 mb-2 flex items-center gap-2"><Activity size={16} /> Eliminações</h4>
-              <p className="text-sm">Últ. Evacuação: <b className={isConstipado ? "text-red-600 font-black bg-red-100 px-1.5 py-0.5 rounded border border-red-300" : "text-slate-800"}>{evacResult}</b></p>
-              {diarreiaText && <p className="text-sm mt-1">Diarreia: <b className="text-red-600">{diarreiaText}</b></p>}
-              {vomitoText && <p className="text-sm mt-1">Vômitos: <b className="text-red-600">{vomitoText}</b></p>}
+              <h4 className="font-bold text-orange-800 mb-3 flex items-center gap-2"><Activity size={16} /> Eliminações</h4>
+              
+              <div className="space-y-2">
+                <p className="text-sm flex items-center flex-wrap gap-1.5 text-slate-700">
+                  Últ. Evacuação: 
+                  <span className={isConstipado 
+                    ? "text-red-700 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-200 shadow-sm" 
+                    : "text-emerald-700 font-bold"}>
+                    {evacResult}
+                  </span>
+                </p>
+                
+                {diarreiaText && <p className="text-sm text-slate-700">Diarreia: <b className="text-red-600">{diarreiaText}</b></p>}
+                {vomitoText && <p className="text-sm text-slate-700">Vômitos: <b className="text-red-600">{vomitoText}</b></p>}
+              </div>
             </div>
           );
         })()}

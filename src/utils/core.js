@@ -595,7 +595,7 @@ export const calculateDiurese12hMlKgH = (patient) => {
     if (checkIndex < 0) { targetBH = safePatient.bh_previous; checkIndex = BH_HOURS.length + checkIndex; }
     if (targetBH) {
       const hourStr = BH_HOURS[checkIndex];
-      if (targetBH.losses && targetBH.losses[hourStr]) diureseBruta += safeNumber(targetBH.losses[hourStr]["Diurese (Total Coletado)"]);
+      if (targetBH.losses && targetBH.losses[hourStr]) diureseBruta += safeNumber(targetBH.losses[hourStr]["Diurese"]);
       if (targetBH.irrigation && targetBH.irrigation[hourStr]) irrigacao += safeNumber(targetBH.irrigation[hourStr]);
     }
   }

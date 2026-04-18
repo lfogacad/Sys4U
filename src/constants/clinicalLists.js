@@ -72,7 +72,7 @@ export const EXAM_ROWS = [
     "Hemocomponentes",
   ];
   export const BH_LOSSES = [
-    "Diurese (Total Coletado)",
+    "Diurese",
     "Drenos",
     "SNG/SNE",
     "HD (Perda)",

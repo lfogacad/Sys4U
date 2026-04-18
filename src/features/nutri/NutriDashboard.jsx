@@ -172,11 +172,13 @@ const NutriDashboard = ({
       <div className="grid md:grid-cols-2 gap-6">
         <div className="p-4 border rounded-xl bg-white shadow-sm">
           <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Utensils size={16} /> Dieta</h4>
+          
           <label className="block text-xs font-bold text-gray-500 mb-1">Via de Administração</label>
           <select
-            className="w-full p-2 border rounded mb-3 font-bold text-slate-700"
+            className="w-full p-2 border rounded mb-3 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200 transition-colors"
             value={currentPatient.nutri?.via || ""}
             onChange={(e) => updateNested("nutri", "via", e.target.value)}
+            onBlur={() => handleBlurSave("Nutrição: Alterou Via de Administração da Dieta")}
           >
             <option value="">Selecione...</option>
             <option value="Oral">Oral</option>
@@ -190,11 +192,13 @@ const NutriDashboard = ({
             <label className="block text-xs font-bold text-gray-500 mb-1">Características da Dieta</label>
             <div className="flex flex-wrap gap-2">
               {CARACTERISTICAS_DIETA.map((c) => (
-                <label key={c} className="flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer p-1 hover:bg-lime-50 rounded">
+                <label key={c} className="flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer p-1 hover:bg-lime-50 rounded transition-colors">
                   <input
                     type="checkbox"
+                    className="w-3.5 h-3.5 text-lime-600 rounded focus:ring-lime-500"
                     checked={(currentPatient.nutri?.caracteristicasDieta || []).includes(c)}
                     onChange={() => toggleArrayItem("nutri", "caracteristicasDieta", c)}
+                    onBlur={() => handleBlurSave(`Nutrição: Alterou característica da dieta (${c})`)}
                   /> {c}
                 </label>
               ))}
@@ -204,14 +208,50 @@ const NutriDashboard = ({
           <div className="mb-4">
             <label className="block text-xs font-bold text-pink-700 mb-1">Consistência (Fono)</label>
             <select
-              className="w-full p-2 border rounded bg-pink-50/30 text-pink-900 font-bold"
+              className="w-full p-2 border rounded bg-pink-50/30 text-pink-900 font-bold outline-none focus:ring-2 focus:ring-pink-300"
               value={currentPatient.fono?.consistencia || ""}
               onChange={(e) => updateNested("fono", "consistencia", e.target.value)}
+              onBlur={() => handleBlurSave("Nutrição: Alterou Consistência (Fono)")}
             >
               <option value="">Selecione...</option>
               {CONSISTENCIA_ALIMENTAR.map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
+
+          {/* 👇 OS CAMPOS CONDICIONAIS VOLTARAM AQUI 👇 */}
+          {(currentPatient.nutri?.via === "Enteral" || currentPatient.nutri?.via === "Parenteral") && (
+            <div className="grid grid-cols-2 gap-3 mt-2 animate-fadeIn">
+              <input
+                placeholder="Tipo/Fórmula"
+                className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                value={currentPatient.nutri?.tipoDieta || ""}
+                onChange={(e) => updateNested("nutri", "tipoDieta", e.target.value)}
+                onBlur={() => handleBlurSave("Nutrição: Editou Tipo/Fórmula da Dieta")}
+              />
+              <input
+                placeholder="Vazão (ml/h)"
+                className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                value={currentPatient.nutri?.vazao || ""}
+                onChange={(e) => updateNested("nutri", "vazao", e.target.value)}
+                onBlur={() => handleBlurSave("Nutrição: Editou Vazão da Dieta")}
+              />
+            </div>
+          )}
+
+          {currentPatient.nutri?.via === "Mista" && (
+            <div className="grid grid-cols-2 gap-3 mt-2 animate-fadeIn">
+              <input
+                placeholder="Enteral: Vazão (ml/h)"
+                className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                value={currentPatient.nutri?.vazao || ""}
+                onChange={(e) => updateNested("nutri", "vazao", e.target.value)}
+                onBlur={() => handleBlurSave("Nutrição: Editou Vazão da Dieta Mista")}
+              />
+              <div className="text-xs text-slate-500 font-bold p-2 border rounded bg-slate-50 flex items-center justify-center text-center shadow-inner">
+                Oral / Fórmula Mista
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-4 border rounded-xl bg-white shadow-sm flex flex-col h-full">
