@@ -108,6 +108,126 @@ const PhysioDashboard = ({
     updateNested("physio", "pressaoSuporte", "");
   };
 
+  // ==============================================================
+  // MOTOR DE ORDENAÇÃO DE GASOMETRIA (SABE LER DATAS E HORAS)
+  // ==============================================================
+  const parseDateForSort = (str) => {
+    if (!str) return 0;
+    
+    // 1. Padrão de Exames Lab (Ex: "2026-04-17")
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const [y, m, d] = str.split('-');
+      // 👇 A MÁGICA AQUI: Alterado de 23:59 para 00:00
+      // Isso transforma a coluna diária na "referência base" (início do dia).
+      // Qualquer horário extra vai pular para a esquerda dela.
+      return new Date(y, m - 1, d, 0, 0).getTime(); 
+    }
+    
+    // 2. Padrão manual (Ex: "17/04 - 14h" ou "17/04 14:30")
+    const dMatch = str.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (dMatch) {
+      const day = parseInt(dMatch[1], 10);
+      const month = parseInt(dMatch[2], 10) - 1;
+      let year = dMatch[3] ? (dMatch[3].length === 2 ? 2000 + parseInt(dMatch[3], 10) : parseInt(dMatch[3], 10)) : new Date().getFullYear();
+      
+      // 👇 MUDANÇA: Se o senhor digitar apenas "17/04" sem hora, também assume 00:00
+      let hour = 0, min = 0; 
+      const tMatch = str.match(/(?:-|\s|às)\s*(\d{1,2})(?:[hH:](\d{2})?)?/i);
+      if (tMatch) {
+        hour = parseInt(tMatch[1], 10);
+        min = tMatch[2] ? parseInt(tMatch[2], 10) : 0;
+      }
+      return new Date(year, month, day, hour, min).getTime();
+    }
+    return 0; 
+  };
+
+  // Pega a lista do sistema e ajeita da mais nova pra mais velha ANTES de desenhar
+  const sortedGasoCols = [...(uniqueGasoCols || [])].sort((a, b) => parseDateForSort(b) - parseDateForSort(a));
+
+  // ==============================================================
+  // GERADOR DE IMPRESSÃO - GASOMETRIA (18 COLUNAS - A4 PAISAGEM)
+  // ==============================================================
+  const handleCustomPrintGasometria = () => {
+    const printWindow = window.open("", "_blank");
+    
+    let html = `<html><head><title>Gasometria - ${currentPatient.nome || 'Paciente'}</title>
+    <style>
+      @page { size: A4 landscape; margin: 10mm; }
+      body { font-family: Arial, sans-serif; font-size: 9px; margin: 0; padding: 0; color: #000; }
+      .title-center { text-align: center; font-size: 16px; margin-bottom: 5px; font-weight: bold; text-transform: uppercase; }
+      .header { display: flex; justify-content: space-between; border-bottom: 2px solid black; padding-bottom: 4px; margin-bottom: 12px; font-weight: bold; font-size: 11px; text-transform: uppercase; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed; }
+      
+      /* Reduzi a fonte aqui para 8px para garantir que os números caibam nos 5% de largura */
+      th, td { border: 1px solid #000; padding: 4px 1px; text-align: center; overflow: hidden; white-space: nowrap; font-size: 8px; }
+      th { background-color: #334155; color: white; font-weight: bold; }
+      
+      /* 👇 MÁGICA 1: Primeira coluna reduzida em exatos 40% (De 16% para 9.6%) */
+      .col-item { width: 9.6%; text-align: left; padding-left: 2px; font-weight: bold; background-color: #f1f5f9; color: #000; white-space: normal; line-height: 1.1; }
+      
+      /* 👇 MÁGICA 2: As 18 colunas de dados agora dividem os 90% restantes da folha (5% cada) */
+      .col-data { width: 5%; }
+      .page-break { page-break-after: always; }
+    </style></head><body>`;
+
+    // Garante que o fatiador está configurado para 18
+    const chunkSize = 18;
+    const totalChunks = Math.ceil(sortedGasoCols.length / chunkSize) || 1;
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = sortedGasoCols.slice(i * chunkSize, (i + 1) * chunkSize);
+
+      if (i > 0) html += `<div class="page-break"></div>`;
+
+      html += `<div class="title-center">Histórico de Gasometria Arterial</div>`;
+      html += `<div class="header">
+        <span>PACIENTE: ${currentPatient.nome || "___________________"}</span>
+        <span>LEITO: ${currentPatient.leito || "___"}</span>
+        <span>PÁGINA ${i + 1} DE ${totalChunks}</span>
+      </div>`;
+
+      html += `<table><thead><tr><th class="col-item" style="color: white; background-color: #334155;">PARÂMETRO</th>`;
+      
+      // Datas da Gasometria
+      chunk.forEach(col => {
+        const displayName = col.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(col) : col;
+        html += `<th class="col-data">${displayName}</th>`;
+      });
+      
+      // Espaços vazios para fechar a grade de 18
+      for (let j = chunk.length; j < chunkSize; j++) html += `<th class="col-data">-</th>`;
+      html += `</tr></thead><tbody>`;
+
+      // Linhas com os dados dos exames
+      GASOMETRIA_PARAMS.forEach(param => {
+        html += `<tr><td class="col-item">${param}</td>`;
+        
+        chunk.forEach(col => {
+          const val = currentPatient.gasometriaHistory?.[col]?.[param] || "-";
+          html += `<td>${val}</td>`;
+        });
+
+        // Espaços vazios
+        for (let j = chunk.length; j < chunkSize; j++) html += `<td></td>`;
+        
+        html += `</tr>`;
+      });
+
+      html += `</tbody></table>`;
+    }
+
+    html += `</body></html>`;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 250);
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* === BOTÃO DE ADMISSÃO FISIO === */}
@@ -801,8 +921,8 @@ const PhysioDashboard = ({
           <h4 className="font-bold text-slate-700 flex items-center gap-2">
             <Activity size={16} /> Gasometria Arterial
           </h4>
-          <button onClick={handlePrintGasometria} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 print:hidden">
-            <Printer size={14} /> Imprimir
+          <button onClick={handleCustomPrintGasometria} className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 print:hidden shadow transition-colors">
+            <Printer size={14} /> Imprimir Relatório
           </button>
         </div>
         <fieldset disabled={!isEditable} className="overflow-x-auto rounded-lg border border-slate-200 min-w-0 border-0 p-0 m-0">
@@ -815,12 +935,12 @@ const PhysioDashboard = ({
                     <button
                       onClick={(e) => {
                         e.preventDefault();
-                        const n = prompt("Identificação da nova gasometria (ex: 23/02 - 14h):");
+                        const n = prompt("Identificação da nova gasometria (ex: 17/04 - 14h):");
                         if (n && n.trim()) {
                           const up = [...patients];
                           if (!up[activeTab].customGasometriaCols) up[activeTab].customGasometriaCols = [];
                           if (!up[activeTab].customGasometriaCols.includes(n.trim())) {
-                            up[activeTab].customGasometriaCols.unshift(n.trim());
+                            up[activeTab].customGasometriaCols.push(n.trim()); // Apenas adiciona, o Renderizador faz o resto
                             setPatients(up);
                             save(up[activeTab], "Fisioterapia: Adicionou nova coluna de Gasometria");
                           }
@@ -833,7 +953,8 @@ const PhysioDashboard = ({
                     </button>
                   </th>
                 )}
-                {uniqueGasoCols.map((col) => (
+                {/* 👇 AQUI USAMOS O sortedGasoCols */}
+                {sortedGasoCols.map((col) => (
                   <th key={col} className="p-2 border-l border-slate-300 min-w-[80px]">
                     <div className="flex items-center justify-between gap-1">
                       <span>{col.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(col) : col}</span>
@@ -864,14 +985,14 @@ const PhysioDashboard = ({
                 <tr key={param} className="border-b last:border-0 hover:bg-slate-100 bg-white transition-colors">
                   <td className="p-2 text-left font-bold text-slate-600 sticky left-0 bg-white border-r border-slate-200 z-10 shadow-[1px_0_0_0_#e2e8f0]">{param}</td>
                   {isEditable && <td className="bg-slate-50 border-r border-slate-200"></td>}
-                  {uniqueGasoCols.map((col) => (
+                  {/* 👇 AQUI TAMBÉM USAMOS O sortedGasoCols */}
+                  {sortedGasoCols.map((col) => (
                     <td key={col} className="p-0 border-l border-slate-200">
                       <input
                         type="text"
                         className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5 transition-colors"
                         value={currentPatient.gasometriaHistory?.[col]?.[param] || ""}
                         
-                        // Atualiza na memória usando cópia profunda (previne engasgos)
                         onChange={(e) => {
                           const val = e.target.value;
                           setPatients(prev => {
@@ -885,7 +1006,6 @@ const PhysioDashboard = ({
                           });
                         }}
                         
-                        // Audita exatamente qual célula foi alterada
                         onBlur={() => handleBlurSave(`Gasometria: Editou ${param} (Ref: ${col})`)}
                       />
                     </td>
