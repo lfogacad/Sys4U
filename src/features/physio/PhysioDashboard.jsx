@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, Target, Printer, PlusCircle } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
 import { formatDateDDMM } from '../../utils/core';
@@ -17,7 +17,7 @@ const PhysioDashboard = ({
   updateNested,
   handleBlurSave,
   setShowVmFlowsheet,
-  handleSuporteChange,
+  handleSuporteChange, // Função original que vem do Pai
   toggleArrayItem,
   calculateExchangeDate,
   isDeviceExpired,
@@ -43,6 +43,69 @@ const PhysioDashboard = ({
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yy = String(d.getFullYear()).slice(-2);
     return `${dd}/${mm}/${yy}`;
+  };
+
+  // ==============================================================
+  // EXORCISMO DE DADOS ANTIGOS: ZERA O CUFF AO VIRAR O DIA
+  // ==============================================================
+  useEffect(() => {
+    const checkAndResetCuff = () => {
+      if (!currentPatient) return;
+
+      const now = new Date();
+      const today = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+      const lastReset = currentPatient.physio?.lastCuffResetDate;
+
+      if (lastReset !== today) {
+        if (now.getHours() === 0 && now.getMinutes() === 0) {
+          console.log("Sistema: Meia-noite cravada. Aguardando até 00:01 para evitar conflito com o Mapa de VM...");
+          return; 
+        }
+
+        updateNested("physio", "cuffM", "");
+        updateNested("physio", "cuffT", "");
+        updateNested("physio", "cuffN", "");
+        updateNested("physio", "lastCuffResetDate", today);
+        
+        console.log("Sistema: Virada de dia confirmada. Campos de Cuff zerados para o novo plantão.");
+      }
+    };
+
+    checkAndResetCuff();
+    const interval = setInterval(checkAndResetCuff, 60000);
+    return () => clearInterval(interval);
+
+  }, [currentPatient?.id]);
+
+  // ==============================================================
+  // 👇 NOVA FUNÇÃO RENOMEADA PARA EVITAR CONFLITO
+  // ==============================================================
+  const onSuporteChange = (novoSuporte) => {
+    // 1. Atualiza o banco de dados via updateNested
+    updateNested("physio", "suporte", novoSuporte);
+    
+    // 2. Varre e limpa todos os parâmetros condicionais antigos
+    updateNested("physio", "parametro", ""); 
+    updateNested("physio", "fiO2", "");
+    updateNested("physio", "peep", "");
+    updateNested("physio", "volCorrente", "");
+    updateNested("physio", "pressaoControlada", "");
+    updateNested("physio", "pressaoSuporte", "");
+
+    // 3. Se o componente Pai também precisar agir, chama a prop original:
+    if (typeof handleSuporteChange === 'function') {
+      handleSuporteChange(novoSuporte);
+    }
+  };
+
+  // Disparado ao trocar o Modo dentro da VM (Ex: VCV para PSV)
+  const handleModoVMChange = (novoModo) => {
+    updateNested("physio", "parametro", novoModo); 
+    
+    // Zera os valores específicos dos modos anteriores para não misturar
+    updateNested("physio", "volCorrente", "");
+    updateNested("physio", "pressaoControlada", "");
+    updateNested("physio", "pressaoSuporte", "");
   };
 
   return (
@@ -249,7 +312,7 @@ const PhysioDashboard = ({
           <select 
             className="w-full p-2 border rounded mb-4 font-bold" 
             value={currentPatient.physio?.suporte || ""} 
-            onChange={(e) => handleSuporteChange(e.target.value)}
+            onChange={(e) => onSuporteChange(e.target.value)} // 👈 MUDE AQUI PARA onSuporteChange
             onBlur={() => handleBlurSave("Fisioterapia: Alterou Suporte Ventilatório")}
           >
             <option value="">Selecione o suporte...</option>
@@ -330,7 +393,8 @@ const PhysioDashboard = ({
                   <select 
                     className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" 
                     value={currentPatient.physio?.parametro || ""} 
-                    onChange={(e) => updateNested("physio", "parametro", e.target.value)}
+                    // 👇 AQUI: Trocamos o updateNested direto pela nossa função de limpeza
+                    onChange={(e) => handleModoVMChange(e.target.value)}
                     onBlur={() => handleBlurSave("Fisioterapia: Alterou Modo VM")}
                   >
                     <option value="">...</option>
@@ -417,7 +481,7 @@ const PhysioDashboard = ({
                   </div>
                 </div>
               ) : (
-                <p className="text-[9px] text-orange-500 font-bold italic mb-4">* Defina Sexo/Altura na Nutrição para ver metas de Vt.</p>
+                <p className="text-[9px] text-orange-500 font-bold italic mb-4">* Defina Altura para ver metas de Vt.</p>
               )}
             </div>
           )}
