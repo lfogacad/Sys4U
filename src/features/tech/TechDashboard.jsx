@@ -24,7 +24,7 @@ const TechDashboard = ({
   setCurrentNoraHour,
   setCurrentNoraRate,
   setShowNoraModal,
-  handleBlurSave // <-- Adicionado para a Caixa Preta
+  handleBlurSave
 }) => {
 
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
@@ -88,7 +88,6 @@ const TechDashboard = ({
   const checkMinLimitOnBlur = (hour, category, item, e) => {
     let val = e.target.value;
     
-    // 1. CARIMBO DA AUDITORIA (Sempre roda quando sai da célula)
     handleBlurSave(`BH: Editou ${item} às ${hour}h (${category === 'gains' ? 'Ganho' : category === 'losses' ? 'Perda' : 'Sinal Vital'})`);
 
     if (val === "") return;
@@ -99,14 +98,13 @@ const TechDashboard = ({
         alert(`ATENÇÃO de SEGURANÇA:\n\nO valor inserido em ${item} é inferior ao mínimo permitido (${limits.min}).\nO dado foi removido para evitar erros no Prontuário.`);
         updateBH(hour, category, item, ""); 
         
-        // Se extirpou o valor por segurança, audita essa ação também!
         handleBlurSave(`Segurança BH: O sistema bloqueou um valor irreal (${val}) no campo ${item} às ${hour}h`);
       }
     }
   };
 
   // ==============================================================
-  // GERADOR DE PDF DO BALANÇO HÍDRICO (SOLUÇÃO DEFINITIVA)
+  // GERADOR DE PDF DO BALANÇO HÍDRICO
   // ==============================================================
   const handleCustomPrintBH = () => {
     const printWindow = window.open("", "_blank");
@@ -138,7 +136,7 @@ const TechDashboard = ({
       <span>DATA: ${formatDateDDMM(dateStr)}</span>
     </div>`;
 
-    // TABELA 1: BALANÇO HÍDRICO (GANHOS E PERDAS)
+    // TABELA 1: BALANÇO HÍDRICO
     html += `<table><thead><tr><th class="col-item">ITEM</th>`;
     BH_HOURS.forEach(h => html += `<th class="col-hour">${h.split(":")[0]}</th>`);
     html += `<th class="col-total">TOTAL</th></tr></thead><tbody>`;
@@ -233,6 +231,65 @@ const TechDashboard = ({
     }, 250);
   };
 
+  // ==============================================================
+  // VARIÁVEIS DE MAPEAMENTO DO TECLADO
+  // ==============================================================
+  const currentGains = [...BH_GAINS, ...(displayedBH.customGains || [])];
+  const currentLosses = [...BH_LOSSES, ...(displayedBH.customLosses || [])];
+  const currentVitals = ["Temp (ºC)", "FC (bpm)", "FR (irpm)", "PAS", "PAD", "PAM", "SpO2 (%)", "HGT (mg/dL)", "Insulina"];
+  const numCols = BH_HOURS.length - 1;
+
+  // ==============================================================
+  // NAVEGAÇÃO POR TECLADO (COM PULO ENTRE AS SEÇÕES DO BH)
+  // ==============================================================
+  const handleGridKeyDown = (e, gridId, rowIndex, colIndex, maxRow, maxCol) => {
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) return;
+    e.preventDefault();
+
+    let nextRow = rowIndex;
+    let nextCol = colIndex;
+    let targetGrid = gridId;
+
+    if (e.key === "ArrowUp") {
+      if (rowIndex > 0) {
+        nextRow = rowIndex - 1;
+      } else {
+        // Pulando para cima no "abismo" entre as seções
+        if (gridId === "losses") {
+          targetGrid = "gains";
+          nextRow = currentGains.length - 1;
+        } else if (gridId === "irrig") {
+          targetGrid = "losses";
+          nextRow = currentLosses.length - 1;
+        }
+      }
+    }
+
+    if (e.key === "ArrowDown" || e.key === "Enter") {
+      if (rowIndex < maxRow) {
+        nextRow = rowIndex + 1;
+      } else {
+        // Pulando para baixo no "abismo" entre as seções
+        if (gridId === "gains") {
+          targetGrid = "losses";
+          nextRow = 0;
+        } else if (gridId === "losses") {
+          targetGrid = "irrig";
+          nextRow = 0;
+        }
+      }
+    }
+
+    if (e.key === "ArrowLeft") nextCol = Math.max(0, colIndex - 1);
+    if (e.key === "ArrowRight") nextCol = Math.min(maxCol, colIndex + 1);
+
+    const nextInput = document.querySelector(`input[data-grid="${targetGrid}"][data-row="${nextRow}"][data-col="${nextCol}"]`);
+    if (nextInput) {
+      nextInput.focus();
+      setTimeout(() => nextInput.select(), 10);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fadeIn print:space-y-0 print:m-0 print:p-0 bh-print-container">
       <div id="print-header" className="hidden print:flex w-full justify-between items-center text-xs font-bold border-b-2 border-black pb-2 mb-1 text-black">
@@ -275,7 +332,7 @@ const TechDashboard = ({
           </button>
           {!viewingPreviousBH && canCloseDay && (
             <button
-              onClick={handleNextDayBH} // Essa função tem o 'save()' na origem, não se preocupe
+              onClick={handleNextDayBH} 
               disabled={!isEditable}
               className={`w-full md:w-auto bg-blue-600 text-white px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 mt-1 md:mt-0 ${
                 !isEditable ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"
@@ -305,10 +362,8 @@ const TechDashboard = ({
             <input 
               type="text" 
               value={
-                // Se alguém digitou um valor de verdade (diferente de 0 e vazio), mostramos ele.
                 (displayedBH?.insensibleLoss && displayedBH.insensibleLoss !== 0 && displayedBH.insensibleLoss !== "0")
                   ? displayedBH.insensibleLoss
-                  // Se estiver no 0 padrão do sistema, nós fazemos a mágica (Peso x 12)
                   : (parseFloat(String(currentPatient.nutri?.peso || "0").replace(",", ".")) > 0 
                       ? Math.round(parseFloat(String(currentPatient.nutri?.peso).replace(",", ".")) * 12) 
                       : "")
@@ -337,7 +392,7 @@ const TechDashboard = ({
                     GANHOS (+)
                   </td>
                 </tr>
-                {[...BH_GAINS, ...(displayedBH.customGains || [])].map((item) => {
+                {currentGains.map((item, rowIndex) => {
                   let rowTotal = 0;
                   BH_HOURS.forEach((h) => (rowTotal += safeNumber(displayedBH.gains[h]?.[item])));
                   return (
@@ -368,12 +423,14 @@ const TechDashboard = ({
                           )}
                         </div>
                       </td>
-                      {BH_HOURS.map((h) => (
+                      {BH_HOURS.map((h, colIndex) => (
                         <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
                           <input
                             type="text"
+                            data-grid="gains" data-row={rowIndex} data-col={colIndex}
                             className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden"
                             value={displayedBH.gains[h]?.[item] || ""}
+                            onKeyDown={(e) => handleGridKeyDown(e, "gains", rowIndex, colIndex, currentGains.length - 1, numCols)}
                             onChange={(e) => handleValidatedChange(h, "gains", item, e)}
                             onBlur={(e) => {
                               checkMinLimitOnBlur(h, "gains", item, e);
@@ -437,7 +494,7 @@ const TechDashboard = ({
                     PERDAS (-)
                   </td>
                 </tr>
-                {[...BH_LOSSES, ...(displayedBH.customLosses || [])].map((item) => {
+                {currentLosses.map((item, rowIndex) => {
                   let rowTotal = 0;
                   BH_HOURS.forEach((h) => (rowTotal += safeNumber(displayedBH.losses[h]?.[item])));
                   let displayTotal = rowTotal;
@@ -474,12 +531,14 @@ const TechDashboard = ({
                           )}
                         </div>
                       </td>
-                      {BH_HOURS.map((h) => (
+                      {BH_HOURS.map((h, colIndex) => (
                         <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
                           <input 
                             type="text" 
+                            data-grid="losses" data-row={rowIndex} data-col={colIndex}
                             className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden" 
                             value={displayedBH.losses[h]?.[item] || ""} 
+                            onKeyDown={(e) => handleGridKeyDown(e, "losses", rowIndex, colIndex, currentLosses.length - 1, numCols)}
                             onChange={(e) => handleValidatedChange(h, "losses", item, e)} 
                             onBlur={(e) => checkMinLimitOnBlur(h, "losses", item, e)} 
                           />
@@ -518,13 +577,15 @@ const TechDashboard = ({
                   <td className="p-1 text-left font-bold text-slate-500 sticky left-0 bg-white group-hover:bg-slate-200 transition-colors border-r print:border-black print:text-black">
                     Irrigação Vesical
                   </td>
-                  {BH_HOURS.map((h) => (
+                  {BH_HOURS.map((h, colIndex) => (
                     <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
                       <input 
                         type="text" 
+                        data-grid="irrig" data-row={0} data-col={colIndex}
                         className="w-full h-full text-center outline-none bg-transparent focus:bg-yellow-50 p-0.5 text-slate-400 print:hidden" 
                         placeholder="Vol" 
                         value={displayedBH.irrigation?.[h] || ""} 
+                        onKeyDown={(e) => handleGridKeyDown(e, "irrig", 0, colIndex, 0, numCols)}
                         onChange={(e) => updateBH(h, "irrigation", null, e.target.value)} 
                         onBlur={() => handleBlurSave(`BH: Editou Irrigação Vesical às ${h}h`)}
                       />
@@ -578,13 +639,11 @@ const TechDashboard = ({
         </div>
       </fieldset>
 
-      {/* 👇 A SUTURA COMEÇA AQUI: Trocando print:mt-1 por print:mt-0 e ajustando o wrapper 👇 */}
       <div className="mt-8 print:mt-0 print:pt-0">
         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2 print:hidden">
           <Activity className="text-red-500" /> Sinais Vitais
         </h3>
         
-        {/* Adicionei print:w-full print:block aqui para forçar a tabela a se comportar como papel */}
         <fieldset disabled={isBHReadOnly} className="overflow-x-auto border rounded-xl print:border-none print:overflow-visible min-w-0 border-0 p-0 m-0 print:w-full print:block">
           <table className="w-full text-xs text-center border-collapse">
             <thead>
@@ -594,10 +653,10 @@ const TechDashboard = ({
               </tr>
             </thead>
             <tbody>
-              {["Temp (ºC)", "FC (bpm)", "FR (irpm)", "PAS", "PAD", "PAM", "SpO2 (%)", "HGT (mg/dL)", "Insulina"].map((param) => (
+              {currentVitals.map((param, rowIndex) => (
                 <tr key={param} className="border-b last:border-0 hover:bg-slate-200 transition-colors group print:border-black">
                   <td className="p-2 text-left font-medium sticky left-0 bg-white group-hover:bg-slate-200 transition-colors border-r print:border-black print:text-black">{param}</td>
-                  {BH_HOURS.map((h) => {
+                  {BH_HOURS.map((h, colIndex) => {
                     const val = displayedBH.vitals[h]?.[param] || "";
                     const numVal = safeNumber(val);
                     let isRed = false;
@@ -612,8 +671,10 @@ const TechDashboard = ({
                       <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
                         <input 
                           type="text" 
+                          data-grid="vitals" data-row={rowIndex} data-col={colIndex}
                           className={`w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden ${isRed ? "text-red-600 font-bold" : ""}`} 
                           value={val} 
+                          onKeyDown={(e) => handleGridKeyDown(e, "vitals", rowIndex, colIndex, currentVitals.length - 1, numCols)}
                           onChange={(e) => handleValidatedChange(h, "vitals", param, e)} 
                           onBlur={(e) => checkMinLimitOnBlur(h, "vitals", param, e)} 
                         />
@@ -630,9 +691,6 @@ const TechDashboard = ({
         </fieldset>
       </div>
 
-      {/* ============================================================== */}
-      {/* BLOCO DA FONO - SUTURA NAS MARGENS DE IMPRESSÃO */}
-      {/* ============================================================== */}
       <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm print:hidden print:m-0 print:p-0 mt-6">
         <h4 className="text-sm font-black text-amber-800 flex items-center gap-2 mb-2 uppercase tracking-wide">
           <ShieldAlert size={18} className="text-amber-600" />
@@ -674,9 +732,6 @@ const TechDashboard = ({
         </div>
       </div>
 
-      {/* ============================================================== */}
-      {/* BLOCO DE ANOTAÇÕES - SUTURA NAS MARGENS DE IMPRESSÃO */}
-      {/* ============================================================== */}
       <fieldset disabled={!isEditable} className="mt-6 print:hidden print:m-0 print:p-0 min-w-0 border-0 p-0 m-0">
         <div className="p-4 bg-white border rounded-xl shadow-sm">
           <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><Edit3 size={16} className="text-slate-400" /> Anotações da Equipe Técnica</h4>

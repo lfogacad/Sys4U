@@ -12,11 +12,30 @@ const HemoDashboard = ({
   setPatients,
   save,
   userProfile,
-  handleBlurSave // <-- Adicionado para a Caixa Preta
+  handleBlurSave
 }) => {
-  // --- SEGURANÇA DE ACESSO ---
-  const isDocRole = userProfile?.role === "Médico" || userProfile?.role === "Admin";
-  const isNursingRole = userProfile?.role === "Técnico" || userProfile?.role === "Enfermeiro" || userProfile?.role === "Admin";
+  // ==============================================================
+  // --- SEGURANÇA DE ACESSO (PERMISSIVA E BLINDADA) ---
+  // ==============================================================
+  
+  // 1. Por padrão, as travas obedecem o estado da tela (isEditable)
+  let lockDoctor = !isEditable;
+  let lockNursing = !isEditable;
+
+  // 2. Se a tela estiver liberada para edição (paciente internado no leito)
+  if (isEditable) {
+    // Começa com tudo destrancado!
+    lockDoctor = false;
+    lockNursing = false;
+
+    // Só tranca a prescrição médica SE tivermos a certeza absoluta de que é enfermagem
+    if (userProfile && userProfile.role) {
+      const role = String(userProfile.role).toLowerCase();
+      if (role.includes("enferm") || role.includes("téc") || role.includes("tec")) {
+        lockDoctor = true;
+      }
+    }
+  }
 
   // --- FUNÇÕES INTERNAS DA HEMODIÁLISE ---
   const resetHDMedica = () => {
@@ -26,26 +45,35 @@ const HemoDashboard = ({
       p.hd_prescricao = {};
       up[activeTab] = p;
       setPatients(up);
-      save(p, "Nefrologia: Limpou a Prescrição Médica de HD"); // <-- Auditado!
+      save(p, "Nefrologia: Limpou a Prescrição Médica de HD");
     }
   };
 
   const resetHDTecnico = () => {
-    if (window.confirm("Deseja apagar os controles horários, acessos e insumos da HD atual?")) {
+    if (window.confirm("Deseja apagar os controles horários, acessos, insumos e anotações da HD atual?")) {
       const up = [...patients];
       const p = JSON.parse(JSON.stringify(up[activeTab]));
+      
       p.hd_monitoramento = {};
       p.hd_acesso = {};
       p.hd_insumos = {};
       p.hd_balanco = {};
-      p.hd_anotacoes = { nefro_texto: p.hd_anotacoes?.nefro_texto };
+      
+      // 👇 MÁGICA AQUI: Forçamos o banco de dados a receber os campos vazios para apagar de verdade
+      p.hd_anotacoes = { 
+        ...p.hd_anotacoes, // Mantém o texto do médico intacto
+        inicio: "",
+        termino: "",
+        texto: "",
+        tecnico: ""
+      };
+      
       up[activeTab] = p;
       setPatients(up);
-      save(p, "Equipe HD: Limpou Monitoramento, Acessos e Insumos da HD"); // <-- Auditado!
+      save(p, "Equipe HD: Limpou Monitoramento, Acessos, Insumos e Anotações da HD");
     }
   };
 
-  // Funções de digitação cegas (Apenas atualizam a memória)
   const updateHDMonitoramento = (time, campo, valor) => {
     setPatients(prev => {
       const up = [...prev];
@@ -103,6 +131,176 @@ const HemoDashboard = ({
     return saldo > 0 ? `+${saldo}` : saldo;
   };
 
+  // ==============================================================
+  // NAVEGAÇÃO POR TECLADO (MONITORAMENTO HD)
+  // ==============================================================
+  const handleHDKeyDown = (e, rowIndex, colIndex) => {
+    // Só intercepta as setas e o Enter
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) return;
+
+    e.preventDefault(); // Evita que o cursor ande dentro do texto da célula
+    
+    let nextRow = rowIndex;
+    let nextCol = colIndex;
+    
+    const maxRow = HD_TIMES.length - 1;
+    const maxCol = 7; // Temos 8 campos: pa, pam, fc, glic, ins, nora, sf, gh (índice 0 a 7)
+
+    // Calcula a próxima coordenada
+    if (e.key === "ArrowUp") nextRow = Math.max(0, rowIndex - 1);
+    if (e.key === "ArrowDown" || e.key === "Enter") nextRow = Math.min(maxRow, rowIndex + 1);
+    if (e.key === "ArrowLeft") nextCol = Math.max(0, colIndex - 1);
+    if (e.key === "ArrowRight") nextCol = Math.min(maxCol, colIndex + 1);
+
+    // Busca o input vizinho na tela
+    const nextInput = document.querySelector(`input[data-hd-row="${nextRow}"][data-hd-col="${nextCol}"]`);
+    
+    if (nextInput) {
+      nextInput.focus();
+      // O setTimeout seleciona o texto para digitar por cima facilmente
+      setTimeout(() => nextInput.select(), 10); 
+    }
+  };
+
+  // ==============================================================
+  // GERADOR DE PDF - FICHA DE HEMODIÁLISE (ESTILO PROFISSIONAL)
+  // ==============================================================
+  const handleCustomPrintHD = () => {
+    const printWindow = window.open("", "_blank");
+    
+    // Cálculos para o balanço na impressão
+    const entradas = calcularHDEntradas(currentPatient);
+    const ufRealizada = safeNumber(currentPatient.hd_balanco?.uf_realizada);
+    const bhFinal = calcularHDBalancoFinal(currentPatient);
+    const age = calculateAge(currentPatient.dataNascimento) || "__";
+
+    let html = `<html><head><title>Ficha HD - ${currentPatient.nome || 'Paciente'}</title>
+    <style>
+      @page { size: A4 portrait; margin: 10mm; }
+      body { font-family: Arial, sans-serif; font-size: 9px; margin: 0; padding: 0; color: #000; line-height: 1.2; }
+      .header-hosp { text-align: center; font-weight: bold; font-size: 11px; margin-bottom: 10px; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 5px; }
+      .patient-info { display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+      
+      .section-title { background-color: #f1f5f9; font-weight: bold; padding: 4px; border: 1px solid #000; margin-top: 10px; text-transform: uppercase; font-size: 9px; }
+      
+      table { width: 100%; border-collapse: collapse; margin-bottom: 5px; table-layout: fixed; }
+      th, td { border: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 8px; overflow: hidden; }
+      th { background-color: #f8fafc; font-weight: bold; }
+      
+      .label { font-weight: bold; color: #444; margin-right: 3px; }
+      .box-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; border: 1px solid #000; padding: 5px; border-top: none; }
+      .box-item { font-size: 8px; border-bottom: 1px solid #eee; padding: 2px 0; }
+      
+      .notes-area { border: 1px solid #000; padding: 8px; min-height: 80px; font-size: 9px; white-space: pre-wrap; margin-top: 5px; }
+      .signature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; text-align: center; font-size: 7px; }
+      .sig-line { border-top: 1px solid #000; margin-top: 25px; padding-top: 2px; }
+    </style></head><body>`;
+
+    // Cabeçalho Hospitalar
+    html += `<div class="header-hosp">
+      UNIDADE DE TERAPIA INTENSIVA - HOSPITAL MUNICIPAL DE ARIQUEMES<br>
+      PRESCRIÇÃO E MONITORAMENTO DO TRATAMENTO DIALÍTICO
+    </div>`;
+
+    // Identificação do Paciente
+    html += `<div class="patient-info">
+      <span>PACIENTE: ${currentPatient.nome?.toUpperCase() || "_______________________"}</span>
+      <span>IDADE: ${age}a</span>
+      <span>LEITO: ${currentPatient.leito}</span>
+      <span>DATA: ${formatDateDDMM(getManausDateStr())}</span>
+    </div>`;
+
+    // 1. PRESCRIÇÃO MÉDICA
+    const pr = currentPatient.hd_prescricao || {};
+    html += `<div class="section-title">Prescrição Médica</div>`;
+    html += `<div class="box-grid" style="grid-template-columns: repeat(5, 1fr);">
+      <div class="box-item"><span class="label">Duração:</span> ${pr.duracao || "-"}</div>
+      <div class="box-item"><span class="label">Temp:</span> ${pr.temperatura || "-"}</div>
+      <div class="box-item"><span class="label">UF:</span> ${pr.uf || "-"}</div>
+      <div class="box-item"><span class="label">Anticoag:</span> ${pr.anticoagulacao || "-"}</div>
+      <div class="box-item"><span class="label">Priming:</span> ${pr.priming || "-"}</div>
+      <div class="box-item"><span class="label">Sódio:</span> ${pr.sodio || "-"}</div>
+      <div class="box-item"><span class="label">Fluxo Sangue:</span> ${pr.fluxo_sangue || "-"}</div>
+      <div class="box-item"><span class="label">Fluxo Dialis:</span> ${pr.fluxo_dialisato || "-"}</div>
+      <div class="box-item" style="grid-column: span 2;"><span class="label">Dialisador:</span> ${pr.dialisador || "-"}</div>
+      <div class="box-item" style="grid-column: span 5;"><span class="label">Obs:</span> ${pr.obs || "-"}</div>
+    </div>`;
+
+    // 2. MONITORAMENTO HORÁRIO
+    html += `<div class="section-title">Controles de Enfermagem</div>`;
+    html += `<table><thead><tr>
+      <th style="width: 10%">HORA</th><th>PA</th><th>PAM</th><th>FC</th><th>GLIC</th><th>INS</th><th>NORA</th><th>SF 0,9%</th><th>GH 50%</th>
+    </tr></thead><tbody>`;
+    HD_TIMES.forEach(time => {
+      const m = currentPatient.hd_monitoramento?.[time] || {};
+      html += `<tr>
+        <td style="font-weight:bold">${time}</td>
+        <td>${m.pa || ""}</td><td>${m.pam || ""}</td><td>${m.fc || ""}</td>
+        <td>${m.glic || ""}</td><td>${m.ins || ""}</td><td>${m.nora || ""}</td>
+        <td>${m.sf || ""}</td><td>${m.gh || ""}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+
+    // 3. BALANÇO E ACESSO
+    html += `<div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px;">
+      <div>
+        <div class="section-title">Balanço Hídrico HD</div>
+        <div style="border: 1px solid #000; border-top:none; padding: 5px; font-size: 9px;">
+          <div style="display:flex; justify-content: space-between; margin-bottom: 4px;"><span class="label">Entradas:</span> <span>${entradas} ml</span></div>
+          <div style="display:flex; justify-content: space-between; margin-bottom: 4px;"><span class="label">UF Realizada:</span> <span>${ufRealizada} ml</span></div>
+          <div style="display:flex; justify-content: space-between; font-weight:bold; border-top: 1px solid #000; padding-top:4px;">
+            <span class="label">BALANÇO FINAL:</span> <span>${bhFinal} ml</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="section-title">Acesso Vascular</div>
+        <div class="box-grid" style="grid-template-columns: repeat(2, 1fr);">
+          <div class="box-item"><span class="label">FAV Local:</span> ${currentPatient.hd_acesso?.fav_local || "-"}</div>
+          <div class="box-item"><span class="label">Frêmito:</span> ${currentPatient.hd_acesso?.fremito || "-"}</div>
+          <div class="box-item"><span class="label">Catéter:</span> ${currentPatient.hd_acesso?.cateter_tipo || "-"}</div>
+          <div class="box-item"><span class="label">Local:</span> ${currentPatient.hd_acesso?.cateter_local || "-"}</div>
+          <div class="box-item"><span class="label">Inserção:</span> ${formatDateDDMM(currentPatient.hd_acesso?.insercao) || "-"}</div>
+          <div class="box-item"><span class="label">Fluxo:</span> ${currentPatient.hd_acesso?.fluxo || "-"}</div>
+          <div class="box-item" style="grid-column: span 2;"><span class="label">Curativo:</span> ${currentPatient.hd_acesso?.curativo?.join(", ") || "-"}</div>
+        </div>
+      </div>
+    </div>`;
+
+    // 4. INSUMOS
+    html += `<div class="section-title">Insumos Utilizados</div>`;
+    html += `<div class="box-grid" style="grid-template-columns: repeat(4, 1fr);">`;
+    HD_SUPPLIES.forEach(item => {
+      if (item.id !== "vazio") {
+        const qtd = currentPatient.hd_insumos?.[item.id] || "0";
+        html += `<div class="box-item"><span class="label">${item.label}:</span> ${qtd}</div>`;
+      }
+    });
+    html += `</div>`;
+
+    // 5. ANOTAÇÕES / EVOLUÇÃO
+    html += `<div class="section-title">Evolução de Enfermagem (${currentPatient.hd_anotacoes?.inicio || "--:--"} às ${currentPatient.hd_anotacoes?.termino || "--:--"})</div>`;
+    html += `<div class="notes-area">${currentPatient.hd_anotacoes?.texto || "Sem anotações registradas."}</div>`;
+
+    // Rodapé de Assinaturas
+    html += `<div class="signature-grid">
+      <div class="sig-item"><div class="sig-line"></div>NEFROLOGISTA<br>${pr.nefro || ""}</div>
+      <div class="sig-item"><div class="sig-line"></div>TÉC. NEFROLOGIA<br>${pr.tec_nefro || ""}</div>
+      <div class="sig-item"><div class="sig-line"></div>ENFERMAGEM RESP.<br>${currentPatient.hd_anotacoes?.tecnico || ""}</div>
+    </div>`;
+
+    html += `</body></html>`;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 250);
+  };
+
   return (
     <div className="space-y-4 animate-fadeIn hd-print-container">
       <div className="hidden print:block hd-print-header text-center font-bold mb-4">
@@ -123,21 +321,15 @@ const HemoDashboard = ({
           <Filter size={20} /> Terapia Renal Substitutiva
         </h3>
         <button
-          onClick={() => {
-            document.body.classList.add("printing-hd");
-            setTimeout(() => {
-              window.print();
-              setTimeout(() => document.body.classList.remove("printing-hd"), 500);
-            }, 100);
-          }}
-          className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"
+          onClick={handleCustomPrintHD}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg transition-all active:scale-95"
         >
-          <Printer size={16} /> Imprimir Ficha
+          <Printer size={18} /> Imprimir
         </button>
       </div>
 
       {/* SECÇÃO 1: PRESCRIÇÃO MÉDICA */}
-      <fieldset disabled={!isDocRole && currentPatient?.leito !== 11} className="p-4 border rounded-xl bg-blue-50/30 print:border print:p-1 min-w-0 m-0 print:mb-1">
+      <fieldset disabled={lockDoctor} className="p-4 border rounded-xl bg-blue-50/30 print:border print:p-1 min-w-0 m-0 print:mb-1">
         <div className="flex justify-between items-center mb-3 print:mb-1">
           <h4 className="font-bold text-blue-800 text-sm section-title m-0">PRESCRIÇÃO MÉDICA DE HEMODIÁLISE</h4>
           <button type="button" onClick={resetHDMedica} className="print:hidden text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm" title="Apagar todos os campos médicos">Limpar Prescrição</button>
@@ -164,7 +356,7 @@ const HemoDashboard = ({
       </fieldset>
 
       {/* SECÇÃO 2: MONITORAMENTO HORÁRIO */}
-      <fieldset disabled={!isEditable && currentPatient?.leito !== 11} className="min-w-0 border-0 p-0 m-0 mt-4">
+      <fieldset disabled={lockNursing} className="min-w-0 border-0 p-0 m-0 mt-4">
         <div className="flex justify-between items-center mb-2 print:hidden">
           <h4 className="font-bold text-slate-700 text-sm flex items-center gap-2">CONTROLES E ANOTAÇÕES DA ENFERMAGEM</h4>
           <button type="button" onClick={resetHDTecnico} className="print:hidden text-[10px] bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold transition-colors shadow-sm" title="Apagar monitoramento, balanço, acessos e insumos">Limpar Tudo (Técnico)</button>
@@ -185,15 +377,22 @@ const HemoDashboard = ({
               </tr>
             </thead>
             <tbody>
-              {HD_TIMES.map((time) => (
+              {HD_TIMES.map((time, rowIndex) => (
                 <tr key={time} className="hover:bg-slate-50">
                   <td className="p-1 print:p-0 border font-bold text-slate-600 bg-slate-50">{time}</td>
-                  {["pa", "pam", "fc", "glic", "ins", "nora", "sf", "gh"].map((campo) => (
+                  {["pa", "pam", "fc", "glic", "ins", "nora", "sf", "gh"].map((campo, colIndex) => (
                     <td key={campo} className="p-0 border print:overflow-visible">
                       <input 
                         type="text" 
+                        // 👇 AS COORDENADAS INVISÍVEIS PARA O TECLADO
+                        data-hd-row={rowIndex}
+                        data-hd-col={colIndex}
                         className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1 print:hidden" 
                         value={currentPatient.hd_monitoramento?.[time]?.[campo] || ""} 
+                        
+                        // 👇 ACIONA O MOTOR DO TECLADO AQUI
+                        onKeyDown={(e) => handleHDKeyDown(e, rowIndex, colIndex)}
+                        
                         onChange={(e) => updateHDMonitoramento(time, campo, e.target.value)} 
                         onBlur={() => handleBlurSave(`HD Controle: Editou ${campo.toUpperCase()} às ${time}`)} 
                       />
@@ -208,7 +407,7 @@ const HemoDashboard = ({
       </fieldset>
 
       {/* LINHA DE ENTRADAS, UF REALIZADA E BH FINAL */}
-      <fieldset disabled={!isEditable && currentPatient?.leito !== 11} className="grid grid-cols-3 gap-4 print:gap-2 print:my-1 mt-4">
+      <fieldset disabled={lockNursing} className="grid grid-cols-3 gap-4 print:gap-2 print:my-1 mt-4">
         <div className="flex flex-col items-center justify-center bg-green-50 print:bg-white p-2 print:p-0.5 rounded border border-green-200 print:border-black">
           <span className="font-bold text-green-800 print:text-black text-xs print:text-[10px]">ENTRADAS</span>
           <input type="text" readOnly className="w-full bg-transparent border-none print:hidden outline-none text-base text-center font-bold text-green-700 cursor-not-allowed" value={calcularHDEntradas(currentPatient)} title="Soma automática das colunas S.F. 0,9% e GH 50%" />
@@ -237,7 +436,7 @@ const HemoDashboard = ({
       <div className="hidden print:block force-print-break"></div>
 
       {/* SECÇÃO 3 E 4: ACESSO VASCULAR E INSUMOS */}
-      <fieldset disabled={!isEditable && currentPatient?.leito !== 11} className="flex flex-col md:grid md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-2 w-full overflow-hidden">
+      <fieldset disabled={lockNursing} className="flex flex-col md:grid md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-2 w-full overflow-hidden">
         
         {/* BLOCO 1: ACESSO VASCULAR */}
         <div className="border rounded-xl p-4 print:p-2 bg-white w-full">
@@ -355,8 +554,8 @@ const HemoDashboard = ({
         </div>
       </fieldset>
 
-      {/* SECÇÃO 5: ANOTAÇÕES DA NEFROLOGIA (NÃO IMPRIME) */}
-      <fieldset disabled={!isDocRole && currentPatient?.leito !== 11} className="mt-4 p-4 border rounded-xl bg-white shadow-sm print:hidden">
+      {/* SECÇÃO 5: ANOTAÇÕES DA NEFROLOGIA */}
+      <fieldset disabled={lockDoctor} className="mt-4 p-4 border rounded-xl bg-white shadow-sm print:hidden">
         <h4 className="font-bold text-blue-800 mb-2 text-sm flex items-center gap-2"><Edit3 size={16} /> Anotações da Nefrologia</h4>
         <textarea className="w-full h-24 p-3 border rounded-lg outline-none text-sm bg-slate-50 focus:bg-white transition-colors focus:ring-2 focus:ring-blue-100" placeholder="Evolução diária da nefrologia, intercorrências, ajustes de prescrição..." value={currentPatient.hd_anotacoes?.nefro_texto || ""} onChange={(e) => updateNested("hd_anotacoes", "nefro_texto", e.target.value)} onBlur={() => handleBlurSave("Nefrologia: Editou Anotações Gerais")}></textarea>
       </fieldset>

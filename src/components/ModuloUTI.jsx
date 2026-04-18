@@ -839,11 +839,11 @@ ${admissionData.conduta || "-"}`;
     // Criando o bloco filtrado apenas com o que importa para o dia a dia
     const historiaAbaMedica = `${admissionData.historia || "-"}
   
-  MEDICAMENTOS DE USO HABITUAL:
-  ${admissionData.medicamentos || "-"}
+MEDICAMENTOS DE USO HABITUAL:
+${admissionData.medicamentos || "-"}
   
-  NÍVEL DE CONSCIÊNCIA BASAL: ${admissionData.conscienciaBasal || "-"}
-  MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
+NÍVEL DE CONSCIÊNCIA BASAL: ${admissionData.conscienciaBasal || "-"}
+MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
     // Agora a Aba Médica recebe apenas o resumo
     r.historiaClinica = historiaAbaMedica;
@@ -2825,7 +2825,19 @@ ESCALAS DE RISCO:
                       handleBlurSave={handleBlurSave}
                     />
                   )}
-                  {viewMode === "hemodialysis" && <HemoDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} />}
+                  {viewMode === "hemodialysis" && (
+                    <HemoDashboard 
+                      currentPatient={currentPatient} 
+                      isEditable={isEditable} 
+                      updateNested={updateNested} 
+                      handleBlurSave={handleBlurSave}
+                      patients={patients}
+                      activeTab={activeTab}
+                      setPatients={setPatients}
+                      save={save}
+                      userProfile={userProfile}
+                    />
+                  )}
                 </>
               )}
             </div>

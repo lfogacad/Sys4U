@@ -169,25 +169,40 @@ const HistoryModal = ({
     }, 250);
   };
 
-  return (
+ return (
     <div className="fixed inset-0 bg-white z-[60] flex flex-col p-4 animate-fadeIn history-print-mode">
-      <div className="flex justify-between items-center mb-4 pb-2 border-b">
-        <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800">
-          <Table className="text-blue-600" /> Histórico Completo de Exames
-        </h2>
-        <div className="flex gap-2">
+      <div className="flex justify-between items-start mb-4 pb-3 border-b border-slate-200">
+        
+        {/* LADO ESQUERDO: TÍTULO E IDENTIFICAÇÃO DO PACIENTE */}
+        <div className="flex flex-col gap-1.5">
+          <h2 className="text-xl font-black flex items-center gap-2 text-slate-800 uppercase tracking-tight">
+            <Table className="text-blue-600" size={24} /> Histórico de Exames
+          </h2>
+          
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
+            <span className="bg-slate-800 text-white px-2.5 py-0.5 rounded shadow-sm text-xs uppercase tracking-wider">
+              Leito {currentPatient?.leito || (activeTab + 1)}
+            </span>
+            <span className="truncate max-w-[400px]" title={currentPatient?.nome}>
+              {currentPatient?.nome || "Paciente não identificado"}
+            </span>
+          </div>
+        </div>
+
+        {/* LADO DIREITO: BOTÕES DE AÇÃO */}
+        <div className="flex gap-3 items-center">
           <button 
-           onClick={handleCustomPrintHistory} 
-           className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shadow-sm"
+            onClick={handleCustomPrintHistory} 
+            className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors shadow-sm uppercase tracking-wide"
           >
-           <Printer size={14} /> Imprimir Histórico
+            <Printer size={16} /> Imprimir Histórico
           </button>
           <button 
             onClick={() => setShowHistoryModal(false)}
-            className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+            className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all shadow-sm border border-red-100"
             title="Fechar Histórico"
           >
-            <X size={20} strokeWidth={3} />
+            <X size={20} strokeWidth={2.5} />
           </button>
         </div>
       </div>
