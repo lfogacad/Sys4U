@@ -281,18 +281,19 @@ const OverviewTab = ({
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
             <div className="font-bold text-left pt-6">EXAME</div>
             
-            {/* CABEÇALHOS INVERTIDOS: Hoje -> Ontem -> Anteontem */}
             <div className="bg-blue-100 p-1 rounded font-bold text-blue-600">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.today?.date) : "-"}</div>
             <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.yesterday?.date) : "-"}</div>
             <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.dayBefore?.date) : "-"}</div>
             
-            {["Leucócitos", "Ureia", "Creatinina", "Na (Sódio)", "K (Potássio)"].map((ex) => {
-              const key = ex === "Leucócitos" ? "leuco" : ex === "Ureia" ? "ureia" : ex === "Creatinina" ? "creat" : ex.includes("Na") ? "na" : "k";
+            {/* 👇 Adicionamos "Hemoglobina" na lista abaixo */}
+            {["Hemoglobina", "Leucócitos", "Ureia", "Creatinina", "Na (Sódio)", "K (Potássio)"].map((ex) => {
+              // 👇 Definimos que Hemoglobina usa a key "hb"
+              const key = ex === "Hemoglobina" ? "hb" : ex === "Leucócitos" ? "leuco" : ex === "Ureia" ? "ureia" : ex === "Creatinina" ? "creat" : ex.includes("Na") ? "na" : "k";
+              
               return (
                 <React.Fragment key={ex}>
                   <div className="text-left py-2 font-medium">{ex}</div>
                   
-                  {/* 1ª COLUNA DE DADOS (ESQUERDA): HOJE (Editável) */}
                   <input 
                     className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none w-full" 
                     value={currentPatient.labs?.today?.[key] || ""} 
@@ -310,12 +311,8 @@ const OverviewTab = ({
                     onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave(`Laboratório: Editou ${ex}`) : null}
                   />
                   
-                  {/* 2ª COLUNA (MEIO): ONTEM */}
                   <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.yesterday?.[key] || ""}</div>
-                  
-                  {/* 3ª COLUNA (DIREITA): ANTEONTEM */}
                   <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.dayBefore?.[key] || ""}</div>
-                  
                 </React.Fragment>
               );
             })}

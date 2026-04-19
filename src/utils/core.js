@@ -508,12 +508,22 @@ export const mergePatientData = (def, db) => {
 
 export const syncLabsFromHistory = (patient) => {
   const p = JSON.parse(JSON.stringify(patient));
-  const mapFullToShort = { Leucócitos: "leuco", Ureia: "ureia", Creatinina: "creat", "Na (Sódio)": "na", "K (Potássio)": "k" };
+  // 👇 Adicionamos "Hemoglobina": "hb" no mapeamento
+  const mapFullToShort = { 
+    "Hemoglobina": "hb", 
+    "Leucócitos": "leuco", 
+    "Ureia": "ureia", 
+    "Creatinina": "creat", 
+    "Na (Sódio)": "na", 
+    "K (Potássio)": "k" 
+  };
+  
   const today = getManausDateStr();
   const yest = subtractDays(today, 1);
   const dbef = subtractDays(today, 2);
 
   p.labs = { today: { date: today }, yesterday: { date: yest }, dayBefore: { date: dbef } };
+  
   ["today", "yesterday", "dayBefore"].forEach((per) => {
     Object.keys(mapFullToShort).forEach((k) => p.labs[per][mapFullToShort[k]] = "");
   });
