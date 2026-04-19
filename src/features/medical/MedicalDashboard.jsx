@@ -30,7 +30,8 @@ const MedicalDashboard = ({
   setShowATBHistoryModal,
   clearAntibiotic,
   updateAntibiotic,
-  handleEditAdmission
+  handleEditAdmission,
+  handleNeuroSwitch
 }) => {
   
   // 👇 INJETAMOS O "CÉREBRO" DO BOTÃO AQUI DENTRO:
@@ -283,11 +284,42 @@ const MedicalDashboard = ({
 
         <div className="p-4 border rounded-xl bg-indigo-50/20">
           <h4 className="font-bold text-indigo-800 mb-4 flex items-center gap-2"><Brain size={16} /> Neurológico</h4>
+          
           <div className="grid md:grid-cols-3 gap-2 mb-2">
-            <select className="p-2 border rounded text-xs" value={currentPatient.neuro?.glasgowAO || ""} onChange={(e) => updateNested("neuro", "glasgowAO", e.target.value)} onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (AO)")}><option value="">AO</option>{GLASGOW_AO.map((o) => <option key={o}>{o}</option>)}</select>
-            <select className="p-2 border rounded text-xs" value={currentPatient.neuro?.glasgowRV || ""} onChange={(e) => updateNested("neuro", "glasgowRV", e.target.value)} onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RV)")}><option value="">RV</option>{GLASGOW_RV.map((o) => <option key={o}>{o}</option>)}</select>
-            <select className="p-2 border rounded text-xs" value={currentPatient.neuro?.glasgowRM || ""} onChange={(e) => updateNested("neuro", "glasgowRM", e.target.value)} onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RM)")}><option value="">RM</option>{GLASGOW_RM.map((o) => <option key={o}>{o}</option>)}</select>
+            <select 
+              className="p-2 border rounded text-xs" 
+              value={currentPatient.neuro?.glasgowAO || ""} 
+              // 👇 Usando a gangorra para Abertura Ocular
+              onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowAO", e.target.value)} 
+              onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (AO)")}
+            >
+              <option value="">AO</option>
+              {GLASGOW_AO.map((o) => <option key={o}>{o}</option>)}
+            </select>
+            
+            <select 
+              className="p-2 border rounded text-xs" 
+              value={currentPatient.neuro?.glasgowRV || ""} 
+              // 👇 Usando a gangorra para Resposta Verbal
+              onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowRV", e.target.value)} 
+              onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RV)")}
+            >
+              <option value="">RV</option>
+              {GLASGOW_RV.map((o) => <option key={o}>{o}</option>)}
+            </select>
+            
+            <select 
+              className="p-2 border rounded text-xs" 
+              value={currentPatient.neuro?.glasgowRM || ""} 
+              // 👇 Usando a gangorra para Resposta Motora
+              onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowRM", e.target.value)} 
+              onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RM)")}
+            >
+              <option value="">RM</option>
+              {GLASGOW_RM.map((o) => <option key={o}>{o}</option>)}
+            </select>
           </div>
+          
           <p className="text-sm font-bold text-blue-600 mb-3 text-right">
             Total Glasgow: {(() => {
               const ao = parseInt(currentPatient.neuro?.glasgowAO) || 0;
@@ -304,7 +336,16 @@ const MedicalDashboard = ({
           </p>
 
           <label className="block text-xs font-bold text-gray-500 mb-1">RASS</label>
-          <select className="w-full p-2 border rounded mb-3" value={currentPatient.neuro?.rass || ""} onChange={(e) => updateNested("neuro", "rass", e.target.value)} onBlur={() => handleBlurSave("Médico: Avaliou RASS")}><option value="">Se Sedado...</option>{RASS_OPTS.map((r) => <option key={r}>{r}</option>)}</select>
+          <select 
+            className="w-full p-2 border rounded mb-3" 
+            value={currentPatient.neuro?.rass || ""} 
+            // 👇 Usando a gangorra para o RASS
+            onChange={(e) => handleNeuroSwitch("RASS", null, e.target.value)} 
+            onBlur={() => handleBlurSave("Médico: Avaliou RASS")}
+          >
+            <option value="">Se Sedado...</option>
+            {RASS_OPTS.map((r) => <option key={r}>{r}</option>)}
+          </select>
 
           <label className="flex items-center gap-2 mb-2 font-bold">
             <input 
@@ -315,6 +356,7 @@ const MedicalDashboard = ({
             /> 
             Sedação Contínua
           </label>
+          
           {currentPatient.neuro?.sedacao && (
             <div className="grid grid-cols-2 gap-2 pl-4">
               {OPCOES_SEDATIVOS.map((d) => (

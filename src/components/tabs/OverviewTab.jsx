@@ -228,9 +228,20 @@ const OverviewTab = ({
       {/* LINHA 2: NEUROLÓGICO, CARDIO E RENAL */}
       <div className="grid md:grid-cols-3 gap-4">
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-          <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2"><Brain size={14} /> Neurológico</h4>
+          <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2">
+            <Brain size={14} /> Neurológico
+          </h4>
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <p>Glasgow: <b>{currentPatient.neuro?.glasgowAO && typeof calculateGlasgowTotal === 'function' ? calculateGlasgowTotal(currentPatient) : "-"}</b></p>
+            <div>
+              <p>Glasgow: <b>{currentPatient.neuro?.glasgowAO && typeof calculateGlasgowTotal === 'function' ? calculateGlasgowTotal(currentPatient) : "-"}</b></p>
+              
+              {/* 👇 A etiqueta que guarda o valor antigo e mostra se o RASS estiver ativado */}
+              {currentPatient.neuro?.rass && currentPatient.neuro?.glasgowPreSedacao && (
+                <span className="inline-block mt-1 text-[10px] font-bold text-orange-700 bg-orange-100 border border-orange-200 px-1.5 py-0.5 rounded shadow-sm">
+                  PRÉ-SEDAÇÃO: {currentPatient.neuro.glasgowPreSedacao}
+                </span>
+              )}
+            </div>
             <p>RASS: <b>{currentPatient.neuro?.rass || "-"}</b></p>
           </div>
         </div>

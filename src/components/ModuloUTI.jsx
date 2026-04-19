@@ -2288,6 +2288,38 @@ ESCALAS DE RISCO:
     setCurrentNoraRate("");
   };
 
+  // --- TROCA DE GLASGOW POR RASS ---
+  const handleNeuroSwitch = (type, field, value) => {
+    const up = [...patients];
+    const p = up[activeTab];
+    if (!p.neuro) p.neuro = {};
+
+    if (type === "RASS") {
+      // Se selecionou um RASS válido
+      if (value && value !== "Se sedado..." && value !== "") {
+        // Calcula o Glasgow atual. Se existir, guarda na gaveta "glasgowPreSedacao"
+        const currentGCS = calculateGlasgowTotal(p);
+        if (currentGCS !== "-" && !isNaN(currentGCS)) {
+          p.neuro.glasgowPreSedacao = currentGCS;
+        }
+        // Zera os campos do Glasgow para eles voltarem ao padrão (AO, RV, RM)
+        p.neuro.glasgowAO = "";
+        p.neuro.glasgowRV = "";
+        p.neuro.glasgowRM = "";
+      }
+      p.neuro.rass = value;
+    } 
+    else if (type === "GLASGOW") {
+      p.neuro[field] = value;
+      // Se digitou algum valor de Glasgow, apaga o RASS automaticamente
+      if (value && value !== "") {
+        p.neuro.rass = ""; // Isso fará o RASS voltar pro "Se sedado..."
+      }
+    }
+    
+    setPatients(up);
+  };
+
   // --- LÓGICA DE INTERFACE (RBAC - Filtro de Abas) ---
   const allNavButtons = [
     { id: "overview", label: "Visita Multi", icon: <Activity size={20} /> },
@@ -2741,6 +2773,7 @@ ESCALAS DE RISCO:
                         aiEvolution={aiEvolution}
                         setAiEvolution={setAiEvolution}
                         copyToClipboardFallback={copyToClipboardFallback}
+                        handleNeuroSwitch={handleNeuroSwitch}
                       />
                     )
                   )}
