@@ -274,31 +274,48 @@ const OverviewTab = ({
           </button>
         </div>
         
-        {/* Usando a variável PERFIL do seu banco de dados */}
         <fieldset 
-          disabled={!isOverviewEditable && !String(userProfile?.perfil || "").toLowerCase().match(/médic|medic|admin|desenvolv/)} 
+          disabled={!isOverviewEditable && !["Médico", "Desenvolvedor", "Admin"].includes(userProfile?.perfil)} 
           className="min-w-0 border-0 p-0 m-0"
         >
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
             <div className="font-bold text-left pt-6">EXAME</div>
-            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.dayBefore?.date) : "-"}</div>
-            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.yesterday?.date) : "-"}</div>
+            
+            {/* CABEÇALHOS INVERTIDOS: Hoje -> Ontem -> Anteontem */}
             <div className="bg-blue-100 p-1 rounded font-bold text-blue-600">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.today?.date) : "-"}</div>
+            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.yesterday?.date) : "-"}</div>
+            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.dayBefore?.date) : "-"}</div>
             
             {["Leucócitos", "Ureia", "Creatinina", "Na (Sódio)", "K (Potássio)"].map((ex) => {
               const key = ex === "Leucócitos" ? "leuco" : ex === "Ureia" ? "ureia" : ex === "Creatinina" ? "creat" : ex.includes("Na") ? "na" : "k";
               return (
                 <React.Fragment key={ex}>
                   <div className="text-left py-2 font-medium">{ex}</div>
-                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.dayBefore?.[key] || "-"}</div>
-                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.yesterday?.[key] || "-"}</div>
                   
+                  {/* 1ª COLUNA DE DADOS (ESQUERDA): HOJE (Editável) */}
                   <input 
                     className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none w-full" 
                     value={currentPatient.labs?.today?.[key] || ""} 
-                    onChange={(e) => updateLab("today", key, e.target.value)} 
-                    onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave(`Laboratório: Editou ${ex}`) : null} 
+                    onChange={(e) => {
+                      let dataReal = currentPatient.labs?.today?.date;
+                      if (!dataReal) {
+                        const hoje = new Date();
+                        const ano = hoje.getFullYear();
+                        const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+                        const dia = String(hoje.getDate()).padStart(2, '0');
+                        dataReal = `${ano}-${mes}-${dia}`;
+                      }
+                      updateLab(dataReal, ex, e.target.value);
+                    }} 
+                    onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave(`Laboratório: Editou ${ex}`) : null}
                   />
+                  
+                  {/* 2ª COLUNA (MEIO): ONTEM */}
+                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.yesterday?.[key] || ""}</div>
+                  
+                  {/* 3ª COLUNA (DIREITA): ANTEONTEM */}
+                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.dayBefore?.[key] || ""}</div>
+                  
                 </React.Fragment>
               );
             })}
@@ -308,14 +325,14 @@ const OverviewTab = ({
         <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
           <div className="flex justify-between mb-2">
             <h4 className="text-xs font-bold text-yellow-600 uppercase">Anotações / Pendências</h4>
-            {String(userProfile?.perfil || "").toLowerCase().match(/médic|medic|admin|desenvolv/) && <Edit3 size={12} className="text-yellow-600" />}
+            {["Médico", "Desenvolvedor", "Admin"].includes(userProfile?.perfil) && <Edit3 size={12} className="text-yellow-600" />}
           </div>
           
-          {String(userProfile?.perfil || "").toLowerCase().match(/médic|medic|admin|desenvolv/) ? (
+          {["Médico", "Desenvolvedor", "Admin"].includes(userProfile?.perfil) ? (
             <textarea 
               value={currentPatient.anotacoes || ""} 
               onChange={(e) => updateP("anotacoes", e.target.value)} 
-              onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave("Visita Multi: Editou Anotações / Pendências") : null} 
+              onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave("Visita Multi: Editou Anotações / Pendências") : null}
               className="w-full bg-transparent border-0 outline-none text-sm text-slate-700 resize-y min-h-[100px] focus:ring-0" 
               placeholder="Evolução, condutas, pendências..." 
             />
