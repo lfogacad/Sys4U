@@ -165,6 +165,49 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [selectedBedForAdmission, setSelectedBedForAdmission] = useState(null);
 
+  const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
+    if (!dadosAtualizados.gasoHora) return; 
+
+    const nomeColuna = `Admissão ${dadosAtualizados.gasoHora}`;
+    
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); 
+      
+      if (!p.gasometriaHistory) p.gasometriaHistory = {};
+      if (!p.customGasometriaCols) p.customGasometriaCols = [];
+
+      const colunasAntigas = p.customGasometriaCols.filter(c => c.startsWith("Admissão"));
+      colunasAntigas.forEach(antiga => {
+        if (antiga !== nomeColuna) {
+          delete p.gasometriaHistory[antiga];
+        }
+      });
+      p.customGasometriaCols = p.customGasometriaCols.filter(c => !c.startsWith("Admissão"));
+      
+      p.customGasometriaCols.push(nomeColuna);
+      if (!p.gasometriaHistory[nomeColuna]) p.gasometriaHistory[nomeColuna] = {};
+
+      const mapaParametros = [
+        {id: "gaso_pH", label: "pH"}, {id: "gaso_pCO2", label: "pCO2"}, 
+        {id: "gaso_PaO2", label: "PaO2"}, {id: "gaso_BE", label: "BE"}, 
+        {id: "gaso_HCO3", label: "HCO3"}, {id: "gaso_SatO2", label: "SatO2"}, 
+        {id: "gaso_FiO2", label: "FiO2"}, {id: "gaso_PF", label: "P/F"}
+      ];
+
+      mapaParametros.forEach(param => {
+        p.gasometriaHistory[nomeColuna][param.label] = dadosAtualizados[param.id] || "";
+      });
+
+      up[activeTab] = p;
+      return up;
+    });
+
+    if (typeof handleBlurSave === 'function') {
+      handleBlurSave(`Fisioterapia: Sincronizou Gasometria de Admissão`);
+    }
+  };
+
   const handleBulkUpload = async (e) => {
     const files = Array.from(e.target.files);
     e.target.value = null;

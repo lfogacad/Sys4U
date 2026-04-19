@@ -503,6 +503,8 @@ const PhysioAdmissionModal = ({
                     className="p-1 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-red-200 text-red-700 font-bold"
                     value={physioData.gasoHora || ""}
                     onChange={(e) => setPhysioData({ ...physioData, gasoHora: e.target.value })}
+                    // 👇 GATILHO DA HORA: Sincroniza ao terminar de digitar a hora
+                    onBlur={(e) => handleSyncGasometriaAdmissao({ ...physioData, gasoHora: e.target.value })}
                     title="Se preenchido, os dados irão automaticamente para a tabela principal"
                   />
                 </div>
@@ -518,6 +520,8 @@ const PhysioAdmissionModal = ({
                       className="w-full p-1.5 border rounded bg-slate-50 text-xs text-center outline-none focus:ring-2 focus:ring-cyan-200"
                       value={physioData[param.id] || ""}
                       onChange={(e) => setPhysioData({ ...physioData, [param.id]: e.target.value })}
+                      // 👇 GATILHO DOS EXAMES: Sincroniza ao sair de cada caixinha de número
+                      onBlur={(e) => handleSyncGasometriaAdmissao({ ...physioData, [param.id]: e.target.value })}
                     />
                   </div>
                 ))}

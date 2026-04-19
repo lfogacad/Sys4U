@@ -788,46 +788,66 @@ export const getSOFAMortality = (score) => {
   
 // --- DETETIVE DO GLASGOW (AGORA SOMA AS FRAÇÕES) ---
 export const getBestGlasgowForSOFA = (p) => {
-  // 1. Tenta montar o Glasgow atual a partir das frações (AO + RM + RV)
-  if (!p.neuro?.sedacao) {
-    const ao = parseInt(p.neuro?.glasgowAO) || 0;
-    const rm = parseInt(p.neuro?.glasgowRM) || 0;
-    const rvStr = p.neuro?.glasgowRV || "";
-    let rv = parseInt(rvStr) || 0;
+  // Mini-motor para somar o Glasgow corretamente (inclusive reconhecendo o Tubo "T")
+  const somarFraçoes = (ao, rvStr, rm) => {
+    const valAO = parseInt(ao) || 0;
+    const valRM = parseInt(rm) || 0;
+    let valRV = parseInt(rvStr) || 0;
     
-    // Se a resposta verbal for tubo ou traqueo, conta como 1 para o escore numérico
-    if (rvStr.startsWith("T") || rvStr.startsWith("1 - T")) rv = 1;
-    
-    const somaGCS = ao + rm + rv;
-    
-    // Se conseguiu somar as frações, usa elas! Se não, procura a variável antiga (glasgow)
-    if (somaGCS > 0) {
-      return { valor: somaGCS, origem: "Atual (Aba Médica)" };
+    // Se tiver 'T' ou '1 - T', a resposta verbal vale 1
+    if (typeof rvStr === "string" && (rvStr.startsWith("T") || rvStr.startsWith("1 - T"))) {
+      valRV = 1;
     }
-    if (p.neuro?.glasgow) {
-      return { valor: safeNumber(p.neuro.glasgow), origem: "Atual" };
-    }
+    
+    const total = valAO + valRM + valRV;
+    return total > 0 ? total : null;
+  };
+
+  // 0. Verifica se está sedado (Checkbox do round ou RASS ativado)
+  const isSedated = p.neuro?.sedacao || (p.neuro?.rass && !String(p.neuro?.rass).toLowerCase().includes("sedado"));
+
+  // 1. Tenta montar o Glasgow atual do Round (Se NÃO estiver sedado)
+  if (!isSedated) {
+    const somaAtual = somarFraçoes(p.neuro?.glasgowAO, p.neuro?.glasgowRV, p.neuro?.glasgowRM);
+    if (somaAtual) return { valor: somaAtual, origem: "Atual (Round)" };
+    
+    if (p.neuro?.glasgow) return { valor: safeNumber(p.neuro.glasgow), origem: "Atual" };
   }
 
-  // 2. Se está sedado, procura o valor de pré-sedação
-  if (p.neuro?.glasgowPreSedacao) return { valor: safeNumber(p.neuro?.glasgowPreSedacao), origem: "Pré-Sedação" };
-  
-  // 3. SAPS 3 ou Admissão
-  if (p.saps3?.glasgow || p.admissionData?.glasgow) {
-    const gcsSaps = safeNumber(p.saps3?.glasgow || p.admissionData?.glasgow);
-    return { valor: gcsSaps, origem: "Admissão (SAPS3)" };
+  // 2. Se está sedado (ou não achou o atual), procura o Pré-Sedação do Round (A nossa gangorra)
+  if (p.neuro?.glasgowPreSedacao) {
+    return { valor: safeNumber(p.neuro?.glasgowPreSedacao), origem: "Pré-Sedação (Round)" };
   }
   
-  // 4. Histórico
+  // 3. Busca o Pré-Sedação da ADMISSÃO MÉDICA (Agora somando as frações basais!)
+  const somaBasalAdmissao = somarFraçoes(p.admissionData?.ecg_basal_ao, p.admissionData?.ecg_basal_rv, p.admissionData?.ecg_basal_rm);
+  if (somaBasalAdmissao) {
+    return { valor: somaBasalAdmissao, origem: "Pré-Sedação (Admissão)" };
+  }
+
+  // 4. Busca o Glasgow normal da Admissão Médica (Somando as frações normais ecg_ao, rv, rm)
+  const somaAdmissaoNormal = somarFraçoes(p.admissionData?.ecg_ao, p.admissionData?.ecg_rv, p.admissionData?.ecg_rm);
+  if (somaAdmissaoNormal) {
+    return { valor: somaAdmissaoNormal, origem: "Admissão" };
+  }
+
+  // Fallback de segurança para dados antigos (SAPS3 ou total antigo)
+  const gcsAdmissaoAntigo = p.saps3?.glasgow || p.admissionData?.glasgow;
+  if (gcsAdmissaoAntigo) {
+    return { valor: safeNumber(gcsAdmissaoAntigo), origem: "Admissão (Antigo)" };
+  }
+  
+  // 5. Histórico: Procura a última evolução em que não estava sedado
   if (p.history && Array.isArray(p.history)) {
     const lastAwake = p.history.slice().reverse().find(evo => !evo.neuro?.sedacao && (evo.neuro?.glasgow || evo.neuro?.glasgowAO));
     if (lastAwake) {
-      const somaAntiga = (parseInt(lastAwake.neuro?.glasgowAO)||0) + (parseInt(lastAwake.neuro?.glasgowRM)||0) + (parseInt(lastAwake.neuro?.glasgowRV)||0);
-      const valorHistorico = somaAntiga > 0 ? somaAntiga : safeNumber(lastAwake.neuro?.glasgow);
+      const somaHistorico = somarFraçoes(lastAwake.neuro?.glasgowAO, lastAwake.neuro?.glasgowRV, lastAwake.neuro?.glasgowRM);
+      const valorHistorico = somaHistorico || safeNumber(lastAwake.neuro?.glasgow);
       if (valorHistorico > 0) return { valor: valorHistorico, origem: "Histórico UTI" };
     }
   }
   
+  // Se absolutamente nada for encontrado, assume 15 para não quebrar a calculadora
   return { valor: 15, origem: "Presumido" };
 };
 
