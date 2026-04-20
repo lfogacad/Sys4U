@@ -248,8 +248,16 @@ const OverviewTab = ({
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
           <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2"><HeartPulse size={14} /> Cardiovascular</h4>
           <div className="text-sm">
-            <p>DVA: {currentPatient.cardio?.dva ? "Sim" : "Não"}</p>
-            <p>Drogas: <span className={currentPatient.cardio?.dva && currentPatient.cardio?.drogasDVA?.length > 0 ? "text-red-600 font-bold" : ""}>{typeof renderValue === 'function' ? renderValue(currentPatient.cardio?.drogasDVA) : "-"}</span></p>
+            <p>DVA: {currentPatient.cardio?.dva === true ? "Sim" : "Não"}</p>
+            
+            <p>Drogas: <span className={currentPatient.cardio?.dva === true && currentPatient.cardio?.drogasDVA?.length > 0 ? "text-red-600 font-bold" : ""}>
+              
+              {/* 👇 TRAVA TRIPLA: Ignora o renderValue, exige que dva seja literalmente "true" e formata sozinho */}
+              {currentPatient.cardio?.dva === true && currentPatient.cardio?.drogasDVA?.length > 0 
+                ? (Array.isArray(currentPatient.cardio.drogasDVA) ? currentPatient.cardio.drogasDVA.join(", ") : currentPatient.cardio.drogasDVA) 
+                : "-"}
+                
+            </span></p>
           </div>
         </div>
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">

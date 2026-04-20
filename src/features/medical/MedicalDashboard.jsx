@@ -263,7 +263,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         {/* COLUNA ESQUERDA: Empilha Cardio e Renal para aproveitar o espaço */}
         <div className="flex flex-col gap-6">
           
-          {/* --- CARDIOVASCULAR --- */}
+         {/* --- CARDIOVASCULAR --- */}
           <div className="p-4 border rounded-xl bg-red-50/20">
             <h4 className="font-bold text-red-800 mb-4 flex items-center gap-2"><HeartPulse size={16} /> Cardiovascular</h4>
             <label className="flex items-center gap-2 mb-2 font-bold">
@@ -275,6 +275,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               /> 
               DVA (Drogas Vasoativas)
             </label>
+            
             {currentPatient.cardio?.dva && (
               <div className="grid grid-cols-2 gap-2 pl-4">
                 {OPCOES_DVA.map((d) => (

@@ -440,14 +440,20 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     } catch (err) { console.error("Erro ao salvar:", err); }
   };
 
-  const updateNested = (category, subfield, value) => {
-    const up = [...patients];
-    const p = { ...up[activeTab] };
-    if (!p[category]) p[category] = {};
-    if (subfield) p[category][subfield] = value;
-    else p[category] = value;
-    up[activeTab] = p;
-    setPatients(up);
+  const updateNested = (categoria, campo, valor) => {
+    // Usar "prev" garante que o React sempre pegue a versão MAIS RECENTE do paciente,
+    // mesmo se dispararmos 10 atualizações no mesmo milissegundo!
+    setPatients(prev => {
+      const novosPacientes = [...prev];
+      // Fazemos uma cópia profunda e segura do paciente atual
+      const pacienteAlvo = JSON.parse(JSON.stringify(novosPacientes[activeTab])); 
+      
+      if (!pacienteAlvo[categoria]) pacienteAlvo[categoria] = {};
+      pacienteAlvo[categoria][campo] = valor;
+      
+      novosPacientes[activeTab] = pacienteAlvo;
+      return novosPacientes;
+    });
   };
 
   const updateP = (field, value) => {
