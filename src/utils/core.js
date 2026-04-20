@@ -613,6 +613,68 @@ export const calculateDiurese12hMlKgH = (patient) => {
   return result.toFixed(1);
 };
 
+export const analyzeOliguriaForSOFA = (patient) => {
+  // 1. Busca o peso com a mesma prioridade do SOFA
+  const pesoNutri = patient.nutri?.peso;
+  const pesoFisio = patient.physio?.pesoPredito || patient.physio?.peso;
+  const pesoAdmissao = patient.admissoes?.peso || patient.medical?.peso || patient.peso;
+  const weight = safeNumber(pesoNutri || pesoFisio || pesoAdmissao);
+
+  // Se não tiver peso, devolve um aviso visual
+  if (!weight || weight <= 0) {
+    return { oliguria6h: false, oliguria12h: false, oliguria24h: false, ml6: 0, ml12: 0, ml24: 0, hasWeight: false };
+  }
+
+  const safePatient = ensureBHStructure(patient);
+  
+  // 2. Acha a hora atual 
+  const currentHourNum = new Date().getHours();
+  let currentIndex = BH_HOURS.findIndex(h => h.startsWith(String(currentHourNum).padStart(2, '0')));
+  if (currentIndex === -1) currentIndex = BH_HOURS.length - 1;
+
+  let net6 = 0, net12 = 0, net24 = 0;
+  
+  // 3. Varre as últimas 24 horas do Balanço
+  for (let i = 0; i < 24; i++) {
+    let checkIndex = currentIndex - i;
+    let targetBH = safePatient.bh;
+    
+    if (checkIndex < 0) { 
+      targetBH = safePatient.bh_previous; 
+      checkIndex = BH_HOURS.length + checkIndex; 
+    }
+    
+    if (targetBH) {
+      const hourStr = BH_HOURS[checkIndex];
+      const loss = targetBH.losses?.[hourStr] ? safeNumber(targetBH.losses[hourStr]["Diurese"]) : 0;
+      const irr = targetBH.irrigation?.[hourStr] ? safeNumber(targetBH.irrigation[hourStr]) : 0;
+      
+      const saldoHora = loss - irr; 
+      
+      net24 += saldoHora;
+      if (i < 12) net12 += saldoHora;
+      if (i < 6) net6 += saldoHora;
+    }
+  }
+
+  // 4. Calcula o ml/kg/h
+  const mlKgH_6 = net6 / weight / 6;
+  const mlKgH_12 = net12 / weight / 12;
+  const mlKgH_24 = net24 / weight / 24;
+
+  // 5. Devolve as bandeiras para o SOFA e os valores reais para a tela
+  return {
+    oliguria6h: mlKgH_6 < 0.5,
+    oliguria12h: mlKgH_12 < 0.5,
+    oliguria24h: mlKgH_24 < 0.3,
+    anuria12h: net12 <= 0, // 👈 NOVA BANDEIRA: Volume zero em 12h
+    ml6: mlKgH_6.toFixed(2),
+    ml12: mlKgH_12.toFixed(2),
+    ml24: mlKgH_24.toFixed(2),
+    hasWeight: true
+  };
+};
+
 export const calculateCreatinineClearance = (p) => {
   const age = calculateAge(p.dataNascimento);
   const weight = safeNumber(p.nutri?.peso);
@@ -851,28 +913,22 @@ export const getBestGlasgowForSOFA = (p) => {
   return { valor: 15, origem: "Presumido" };
 };
 
-// --- MOTOR PRINCIPAL SOFA-2 (CORRIGIDO E OTIMIZADO) ---
+// --- MOTOR PRINCIPAL SOFA-2 (REVISADO E INTEGRADO) ---
 export const getAutoSOFA2 = (p) => {
   let score = 0;
   if (!p.sofa_data_technical) p.sofa_data_technical = {};
 
-  // SUTURA 1: Função robusta que aceita variações de nome e corrige a VÍRGULA brasileira
   const buscarUltimoLab = (nomesPossiveis) => {
     const parseBr = (val) => {
       if (!val) return null;
-      const clean = val.toString().trim().replace(',', '.'); // Converte 1,5 para 1.5
+      const clean = val.toString().trim().replace(',', '.');
       return clean === "" ? null : parseFloat(clean);
     };
-
     const nomes = Array.isArray(nomesPossiveis) ? nomesPossiveis : [nomesPossiveis];
-    
-    // Procura primeiro nos exames de hoje
     for (let nome of nomes) {
       const val = parseBr(p.labs?.today?.[nome]);
       if (val !== null && !isNaN(val)) return val;
     }
-    
-    // Se não achar hoje, varre o histórico do mais recente pro mais antigo
     const datas = Object.keys(p.examHistory || {}).sort().reverse();
     for (let d of datas) {
       for (let nome of nomes) {
@@ -884,7 +940,6 @@ export const getAutoSOFA2 = (p) => {
   };
 
   const buscarUltimaPAM = () => {
-    // Tratamos BH_HOURS como uma variável global ou importada
     const horas = typeof BH_HOURS !== "undefined" ? BH_HOURS : ["07h","08h","09h","10h","11h","12h","13h","14h","15h","16h","17h","18h","19h","20h","21h","22h","23h","00h","01h","02h","03h","04h","05h","06h"];
     for (let h of horas.slice().reverse()) {
       const pam = p.bh?.vitals?.[h]?.["PAM"];
@@ -900,7 +955,6 @@ export const getAutoSOFA2 = (p) => {
       if (!gaso) continue;
       const pfDireto = gaso["P/F"] || gaso["PF"] || gaso["Relação P/F"] || gaso["Relacao P/F"] || gaso["PaO2/FiO2"];
       if (pfDireto) return parseFloat(pfDireto.toString().replace(',', '.'));
-      
       const pao2 = gaso["PaO2"] || gaso["pO2"];
       let fio2Gaso = gaso["FiO2"];
       if (pao2 && fio2Gaso) {
@@ -913,98 +967,101 @@ export const getAutoSOFA2 = (p) => {
     return null;
   };
 
-  // SNC
+  // 1. SNC
   const neuroData = getBestGlasgowForSOFA(p);
   const gcs = neuroData.valor;
   p.sofa_data_technical.glasgowOrigem = neuroData.origem;
-
   if (gcs <= 5) score += 4;
   else if (gcs <= 8) score += 3;
   else if (gcs <= 12) score += 2;
   else if (gcs <= 14) score += 1;
 
-  // RESPIRATÓRIO
+  // 2. RESPIRATÓRIO (Ajustado conforme pedido)
   const pfRatio = buscarUltimoPF();
   const isVM = p.physio?.suporte === "VM" || p.physio?.suporte === "VNI";
-  
   if (pfRatio && pfRatio > 0) {
     p.sofa_data_technical.lastPF = Math.round(pfRatio); 
     if (pfRatio <= 75 && isVM) score += 4;
-    else if (pfRatio <= 150 && isVM) score += 3;
+    else if (pfRatio > 75 && pfRatio <= 150 && isVM) score += 3;
     else if (pfRatio <= 225) score += 2;
-    else if (pfRatio <= 300) score += 1;
-  } else {
-    p.sofa_data_technical.lastPF = null;
+    else if (pfRatio > 225 && pfRatio <= 300) score += 1;
   }
 
-  // CARDIOVASCULAR (Correção da Dose da Nora Direta no core.js)
-  const horas = typeof BH_HOURS !== "undefined" ? BH_HOURS : ["07h","08h","09h","10h","11h","12h","13h","14h","15h","16h","17h","18h","19h","20h","21h","22h","23h","00h","01h","02h","03h","04h","05h","06h"];
+  // 3. CARDIOVASCULAR (Ajustado com Vaso/Dobuta)
   let noraDose = 0;
-  
+  let hasVasoOrDobuta = false;
   if (p.bh?.gains) {
     let lastNoraVal = 0;
+    const horas = typeof BH_HOURS !== "undefined" ? BH_HOURS : ["07h","08h","09h","10h","11h","12h","13h","14h","15h","16h","17h","18h","19h","20h","21h","22h","23h","00h","01h","02h","03h","04h","05h","06h"];
     horas.forEach(h => {
-      const valRaw = p.bh.gains[h]?.["Noradrenalina"];
-      if (valRaw) {
-        const numVal = parseFloat(String(valRaw).replace(',', '.'));
-        if (numVal > 0) lastNoraVal = numVal;
-      }
+      const valNora = p.bh.gains[h]?.["Noradrenalina"];
+      if (valNora) lastNoraVal = parseFloat(String(valNora).replace(',', '.'));
+      const vaso = parseFloat(String(p.bh.gains[h]?.["Vasopressina"] || 0).replace(',', '.'));
+      const dobuta = parseFloat(String(p.bh.gains[h]?.["Dobutamina"] || 0).replace(',', '.'));
+      if (vaso > 0 || dobuta > 0) hasVasoOrDobuta = true;
     });
-
-    // 🧠 A CORREÇÃO DE HIERARQUIA DO PESO: 1º Nutri, 2º Fisio, 3º Admissão
-    const pesoNutri = p.nutri?.peso;
-    const pesoFisio = p.physio?.pesoPredito || p.physio?.peso;
-    const pesoAdmissao = p.admissoes?.peso || p.medical?.peso || p.peso;
-    
-    // Tenta pegar na ordem de prioridade. Se não achar nenhum, assume 0.
-    const pesoRaw = pesoNutri || pesoFisio || pesoAdmissao || 0;
-    const peso = parseFloat(String(pesoRaw).replace(',', '.'));
-
+    const peso = parseFloat(String(p.nutri?.peso || p.physio?.pesoPredito || p.medical?.peso || 0).replace(',', '.'));
     if (lastNoraVal > 0 && peso > 0) {
-      const isDouble = p.sofa_data_technical?.noraDoubleDoseToday;
-      const mcgPerMl = isDouble ? 128 : 64; 
+      const mcgPerMl = p.sofa_data_technical?.noraDoubleDoseToday ? 128 : 64; 
       noraDose = (lastNoraVal * mcgPerMl) / (peso * 60);
     }
   }
-
-  // Volta o valor da dose calculada para a tela
   p.sofa_data_technical.lastNoraDose = noraDose > 0 ? parseFloat(noraDose.toFixed(2)) : null;
-
   const ultimaPAM = buscarUltimaPAM();
-  p.sofa_data_technical.lastPAM = ultimaPAM;
-
-  if (noraDose > 0.4) score += 4;
-  else if (noraDose > 0.2) score += 3;
+  if (noraDose > 0.4 || (noraDose > 0.2 && hasVasoOrDobuta)) score += 4;
+  else if (noraDose > 0.2 || (noraDose > 0 && hasVasoOrDobuta)) score += 3;
   else if (noraDose > 0) score += 2;
   else if (ultimaPAM !== null && ultimaPAM < 70) score += 1;
+
+  // 4. HEPÁTICO (Ajustado: >1.2 a 3.0 = 1 ponto)
+  const bili = buscarUltimoLab(["Bilirrubina Total", "Bilirrubina", "BT", "Bili"]);
+  if (bili > 12) score += 4;
+  else if (bili > 6) score += 3;
+  else if (bili > 3) score += 2;
+  else if (bili > 1.2) score += 1;
+
+  // 5. RENAL (Ajustado com Critério de Anúria e Identificador de Motivo)
+  const creat = buscarUltimoLab(["Creatinina", "Creat", "Cr", "Cr."]);
+  p.sofa_data_technical.lastCreat = creat; 
   
-    // SUTURA 2: Passando um Array com variações de nomes para garantir que ele ache!
-    const bili = buscarUltimoLab(["Bilirrubina Total", "Bilirrubina", "BT", "Bili"]);
-    if (bili > 12) score += 4;
-    else if (bili > 6) score += 3;
-    else if (bili > 3) score += 2;
-    else if (bili >= 1.2) score += 1;
-  
-    // Buscando a Creatinina de forma blindada
-    const creat = buscarUltimoLab(["Creatinina", "Creat", "Cr", "Cr."]);
-    p.sofa_data_technical.lastCreat = creat; 
-    const isDialysis = p.medical?.dialise || false;
-    
-    if (isDialysis) score += 4;
-    else if (creat > 3.5) score += 3;
-    else if (creat >= 2.0) score += 2;
-    else if (creat >= 1.2) score += 1;
-  
-    // Buscando as Plaquetas
-    const plat = buscarUltimoLab(["Plaquetas", "Plat", "PLT", "Plaq"]);
-    p.sofa_data_technical.lastPlat = plat; 
-    if (plat && plat <= 50) score += 4;
-    else if (plat && plat <= 80) score += 3;
-    else if (plat && plat <= 100) score += 2;
-    else if (plat && plat <= 150) score += 1;
-  
-    return score;
-  };
+  const isHD = p.medical?.hemodialise || false;
+  const statusDiurese = analyzeOliguriaForSOFA(p);
+
+  if (isHD) {
+    score += 4;
+    p.sofa_data_technical.renalReason = "Hemodiálise";
+  } 
+  else if (creat > 3.5 || statusDiurese.oliguria24h || statusDiurese.anuria12h) {
+    score += 3;
+    if (statusDiurese.anuria12h) p.sofa_data_technical.renalReason = "Anúria (>12h)";
+    else if (statusDiurese.oliguria24h) p.sofa_data_technical.renalReason = "Oligúria (>24h)";
+    else p.sofa_data_technical.renalReason = `Creatinina ${creat}`;
+  } 
+  else if (creat > 2.0 || statusDiurese.oliguria12h) {
+    score += 2;
+    if (statusDiurese.oliguria12h) p.sofa_data_technical.renalReason = "Oligúria (>12h)";
+    else p.sofa_data_technical.renalReason = `Creatinina ${creat}`;
+  } 
+  else if (creat > 1.2 || statusDiurese.oliguria6h) {
+    score += 1;
+    if (statusDiurese.oliguria6h) p.sofa_data_technical.renalReason = "Oligúria (>6h)";
+    else p.sofa_data_technical.renalReason = `Creatinina ${creat}`;
+  } else {
+    p.sofa_data_technical.renalReason = creat ? `Creatinina ${creat}` : "S/ Disfunção";
+  }
+
+  // 6. HEMATOLÓGICO (Ajustado e corrigido para valores altos)
+  let plat = buscarUltimoLab(["Plaquetas", "Plat", "PLT", "Plaq"]);
+  if (plat !== null) {
+    if (plat > 1000) plat = plat / 1000; // Converte 150000 para 150
+    if (plat <= 50) score += 4;
+    else if (plat > 50 && plat <= 80) score += 3;
+    else if (plat > 80 && plat <= 100) score += 2;
+    else if (plat > 100 && plat <= 150) score += 1;
+  }
+
+  return score;
+};
 
   // Função para formatar datas na Recepção (YYYY-MM-DD para DD/MM/YYYY)
 export const formatarDataBR = (data) => {

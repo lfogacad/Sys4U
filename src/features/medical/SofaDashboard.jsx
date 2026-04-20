@@ -59,24 +59,32 @@ export default function SofaDashboard({ patient, updateNested }) {
         </div>
         
         <div className="mt-6 pt-4 border-t border-white/5 flex flex-wrap gap-4 text-[9px] font-bold text-white/40 uppercase">
+          
+          {/* 👇 SNC AJUSTADO PARA PEGAR EM TEMPO REAL */}
           <span className="text-indigo-400">
             ● SNC: {getBestGlasgowForSOFA(patient)?.valor || 'S/ DADO'} 
             <span className="text-[7px] ml-1 opacity-70">
-              ({patient.sofa_data_technical?.glasgowOrigem || 'N/A'})
+              ({getBestGlasgowForSOFA(patient)?.origem})
             </span>
           </span>
+          
           <span className={patient.sofa_data_technical?.lastPF ? "text-indigo-400" : "text-amber-500/60"}>
             ● P/F: {patient.sofa_data_technical?.lastPF || 'S/ GASO'}
           </span>
+          
           <span className={patient.sofa_data_technical?.lastPAM ? (patient.sofa_data_technical?.lastPAM < 70 ? "text-red-400 animate-pulse" : "text-indigo-400") : "text-amber-500/60"}>
             ● PAM: {patient.sofa_data_technical?.lastPAM || 'S/ DADO'}
           </span>
-          <span className={patient.sofa_data_technical?.lastCreat ? "text-indigo-400" : "text-amber-500/60"}>
-            ● CREAT: {patient.sofa_data_technical?.lastCreat || 'S/ EXAME'}
+          
+          {/* 👇 RENAL AJUSTADO PARA MOSTRAR O MOTIVO (HD, ANÚRIA OU CREAT) */}
+          <span className="text-amber-400">
+            ● RENAL: {patient.sofa_data_technical?.renalReason || 'S/ DADO'}
           </span>
+          
           <span className={patient.sofa_data_technical?.lastPlat ? "text-indigo-400" : "text-amber-500/60"}>
             ● PLT: {patient.sofa_data_technical?.lastPlat || 'S/ EXAME'}
           </span>
+          
         </div>
       </div>
     </>

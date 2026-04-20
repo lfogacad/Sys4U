@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AlertCircle, Edit3, X, Sparkles, ClipboardCheck, Loader2, FileText, Activity, ChevronDown, ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle } from 'lucide-react';
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
-import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
+import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, analyzeOliguriaForSOFA, calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
 
 const formatarDataBR = (dataISO) => {
   if (!dataISO) return "";
@@ -34,8 +34,11 @@ const MedicalDashboard = ({
   handleNeuroSwitch
 }) => {
   
-  // 👇 INJETAMOS O "CÉREBRO" DO BOTÃO AQUI DENTRO:
-  const [historyOpen, setHistoryOpen] = useState(false);
+// 👇 INJETAMOS O "CÉREBRO" DO BOTÃO AQUI DENTRO:
+const [historyOpen, setHistoryOpen] = useState(false);
+
+const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOliguriaForSOFA(currentPatient) : null;
+
   return (
     <fieldset disabled={!isEditable} className="space-y-6 animate-fadeIn min-w-0 border-0 p-0 m-0">
       {/* === DASHBOARD DE GRAVIDADE SOFA-2 (AUTOMATIZADO) === */}
@@ -116,24 +119,31 @@ const MedicalDashboard = ({
         
         {/* Rodapé: Auditoria de Dados */}
         <div className="mt-6 pt-4 border-t border-white/5 flex flex-wrap gap-4 text-[9px] font-bold text-white/40 uppercase">
+          
           <span className={currentPatient.neuro?.glasgow || currentPatient.neuro?.sedacao ? "text-indigo-400" : ""}>
             ● SNC: {getBestGlasgowForSOFA(currentPatient)?.valor || 'N/A'} 
             <span className="text-[7px] ml-1 opacity-70">
-              ({currentPatient.sofa_data_technical?.glasgowOrigem || 'N/A'})
+              ({getBestGlasgowForSOFA(currentPatient)?.origem || 'N/A'})
             </span>
           </span>
+          
           <span className={currentPatient.sofa_data_technical?.lastPF ? "text-indigo-400" : "text-amber-500/60"}>
             ● P/F: {currentPatient.sofa_data_technical?.lastPF || 'S/ GASO'}
           </span>
+          
           <span className={currentPatient.sofa_data_technical?.lastPAM ? (currentPatient.sofa_data_technical?.lastPAM < 70 ? "text-red-400 animate-pulse" : "text-indigo-400") : "text-amber-500/60"}>
             ● PAM: {currentPatient.sofa_data_technical?.lastPAM || 'S/ DADO'}
           </span>
-          <span className={currentPatient.sofa_data_technical?.lastCreat ? "text-indigo-400" : "text-amber-500/60"}>
-            ● CREAT: {currentPatient.sofa_data_technical?.lastCreat || 'S/ EXAME'}
+          
+          {/* 👇 A GRANDE CORREÇÃO: Agora chama-se RENAL e puxa o motivo exato (HD, Anúria, etc) */}
+          <span className={currentPatient.sofa_data_technical?.renalReason ? "text-indigo-400" : "text-amber-500/60"}>
+            ● RENAL: {currentPatient.sofa_data_technical?.renalReason || 'S/ DADO'}
           </span>
+          
           <span className={currentPatient.sofa_data_technical?.lastPlat ? "text-indigo-400" : "text-amber-500/60"}>
             ● PLT: {currentPatient.sofa_data_technical?.lastPlat || 'S/ EXAME'}
           </span>
+          
         </div>
       </div>
 
@@ -247,41 +257,105 @@ const MedicalDashboard = ({
         )}
       </div>
 
-{/* CARDIO & NEURO */}
+      {/* CARDIO, RENAL & NEURO */}
       <div className="grid md:grid-cols-2 gap-6">
-        <div className="p-4 border rounded-xl bg-red-50/20">
-          <h4 className="font-bold text-red-800 mb-4 flex items-center gap-2"><HeartPulse size={16} /> Cardiovascular</h4>
-          <label className="flex items-center gap-2 mb-2 font-bold">
-            <input 
-              type="checkbox" 
-              checked={currentPatient.cardio?.dva || false} 
-              onChange={(e) => updateNested("cardio", "dva", e.target.checked)} 
-              onBlur={() => handleBlurSave("Médico: Alterou Uso de DVA")}
-            /> 
-            DVA (Drogas Vasoativas)
-          </label>
-          {currentPatient.cardio?.dva && (
-            <div className="grid grid-cols-2 gap-2 pl-4">
-              {OPCOES_DVA.map((d) => (
-                <label key={d} className="flex items-center gap-1 text-sm cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={currentPatient.cardio?.drogasDVA?.includes(d) || false} 
-                    onChange={(e) => {
-                      let arr = currentPatient.cardio?.drogasDVA || [];
-                      if (e.target.checked) arr = [...arr, d];
-                      else arr = arr.filter(i => i !== d);
-                      updateNested("cardio", "drogasDVA", arr);
-                    }} 
-                    onBlur={() => handleBlurSave(`Médico: Alterou DVA Específica (${d})`)}
-                  /> 
-                  {d}
-                </label>
-              ))}
+        
+        {/* COLUNA ESQUERDA: Empilha Cardio e Renal para aproveitar o espaço */}
+        <div className="flex flex-col gap-6">
+          
+          {/* --- CARDIOVASCULAR --- */}
+          <div className="p-4 border rounded-xl bg-red-50/20">
+            <h4 className="font-bold text-red-800 mb-4 flex items-center gap-2"><HeartPulse size={16} /> Cardiovascular</h4>
+            <label className="flex items-center gap-2 mb-2 font-bold">
+              <input 
+                type="checkbox" 
+                checked={currentPatient.cardio?.dva || false} 
+                onChange={(e) => updateNested("cardio", "dva", e.target.checked)} 
+                onBlur={() => handleBlurSave("Médico: Alterou Uso de DVA")}
+              /> 
+              DVA (Drogas Vasoativas)
+            </label>
+            {currentPatient.cardio?.dva && (
+              <div className="grid grid-cols-2 gap-2 pl-4">
+                {OPCOES_DVA.map((d) => (
+                  <label key={d} className="flex items-center gap-1 text-sm cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={currentPatient.cardio?.drogasDVA?.includes(d) || false} 
+                      onChange={(e) => {
+                        let arr = currentPatient.cardio?.drogasDVA || [];
+                        if (e.target.checked) arr = [...arr, d];
+                        else arr = arr.filter(i => i !== d);
+                        updateNested("cardio", "drogasDVA", arr);
+                      }} 
+                      onBlur={() => handleBlurSave(`Médico: Alterou DVA Específica (${d})`)}
+                    /> 
+                    {d}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* --- RENAL / FLUIDOS (NOVO - Ocupando o espaço vazio) --- */}
+          <div className="p-4 border rounded-xl bg-amber-50/20">
+            <h4 className="font-bold text-amber-800 mb-4 flex items-center gap-2">Renal / Fluidos</h4>
+            
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
+                checked={currentPatient.medical?.hemodialise || false} 
+                onChange={(e) => updateNested("medical", "hemodialise", e.target.checked)} 
+                onBlur={() => handleBlurSave("Médico: Alterou status de Hemodiálise")}
+              />
+              <span className="text-sm font-bold text-slate-700 group-hover:text-amber-700 transition-colors">
+                Paciente em Hemodiálise (TRS)
+              </span>
+            </label>
+
+            {/* O PAINEL DE DIURESE AUTOMÁTICO */}
+            <div className="mt-4 pt-3 border-t border-amber-200">
+              <p className="text-[10px] font-bold text-amber-800 mb-2 uppercase flex items-center gap-1">
+                Monitoramento de Diurese
+              </p>
+              
+              {!diureseStats?.hasWeight ? (
+                <p className="text-xs text-red-500 font-bold bg-red-50 p-2 rounded border border-red-200">
+                  ⚠️ Peso ausente. Insira o peso para calcular o débito urinário.
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  
+                  {/* Caixa 6 Horas */}
+                  <div className={`p-1.5 rounded-lg border shadow-sm ${diureseStats.oliguria6h ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white border-amber-200 text-amber-700'}`}>
+                    <div className="text-[9px] uppercase font-bold opacity-70 mb-0.5">Últimas 6h</div>
+                    <div className="text-sm font-black">{diureseStats.ml6}</div>
+                    <div className="text-[8px] font-bold uppercase mt-0.5">ml/kg/h</div>
+                  </div>
+                  
+                  {/* Caixa 12 Horas */}
+                  <div className={`p-1.5 rounded-lg border shadow-sm ${diureseStats.oliguria12h ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white border-amber-200 text-amber-700'}`}>
+                    <div className="text-[9px] uppercase font-bold opacity-70 mb-0.5">Últimas 12h</div>
+                    <div className="text-sm font-black">{diureseStats.ml12}</div>
+                    <div className="text-[8px] font-bold uppercase mt-0.5">ml/kg/h</div>
+                  </div>
+                  
+                  {/* Caixa 24 Horas */}
+                  <div className={`p-1.5 rounded-lg border shadow-sm ${diureseStats.oliguria24h ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white border-amber-200 text-amber-700'}`}>
+                    <div className="text-[9px] uppercase font-bold opacity-70 mb-0.5">Últimas 24h</div>
+                    <div className="text-sm font-black">{diureseStats.ml24}</div>
+                    <div className="text-[8px] font-bold uppercase mt-0.5">ml/kg/h</div>
+                  </div>
+                  
+                </div>
+              )}
             </div>
-          )}
+          </div>
+          
         </div>
 
+        {/* COLUNA DIREITA: Neurológico ocupa a altura inteira livremente */}
         <div className="p-4 border rounded-xl bg-indigo-50/20">
           <h4 className="font-bold text-indigo-800 mb-4 flex items-center gap-2"><Brain size={16} /> Neurológico</h4>
           
@@ -289,7 +363,6 @@ const MedicalDashboard = ({
             <select 
               className="p-2 border rounded text-xs" 
               value={currentPatient.neuro?.glasgowAO || ""} 
-              // 👇 Usando a gangorra para Abertura Ocular
               onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowAO", e.target.value)} 
               onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (AO)")}
             >
@@ -300,7 +373,6 @@ const MedicalDashboard = ({
             <select 
               className="p-2 border rounded text-xs" 
               value={currentPatient.neuro?.glasgowRV || ""} 
-              // 👇 Usando a gangorra para Resposta Verbal
               onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowRV", e.target.value)} 
               onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RV)")}
             >
@@ -311,7 +383,6 @@ const MedicalDashboard = ({
             <select 
               className="p-2 border rounded text-xs" 
               value={currentPatient.neuro?.glasgowRM || ""} 
-              // 👇 Usando a gangorra para Resposta Motora
               onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowRM", e.target.value)} 
               onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RM)")}
             >
@@ -339,7 +410,6 @@ const MedicalDashboard = ({
           <select 
             className="w-full p-2 border rounded mb-3" 
             value={currentPatient.neuro?.rass || ""} 
-            // 👇 Usando a gangorra para o RASS
             onChange={(e) => handleNeuroSwitch("RASS", null, e.target.value)} 
             onBlur={() => handleBlurSave("Médico: Avaliou RASS")}
           >
@@ -380,7 +450,7 @@ const MedicalDashboard = ({
         </div>
       </div>
 
-{/* ATB */}
+      {/* ATB */}
       <div className="p-4 border border-orange-200 bg-orange-50 rounded-xl">
         <div className="flex justify-between items-center mb-3">
           <h4 className="text-sm font-bold text-orange-700">Prescrição de Antimicrobianos</h4>
