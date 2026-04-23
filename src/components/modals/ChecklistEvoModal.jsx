@@ -194,6 +194,17 @@ const ChecklistEvoModal = ({
                 />
               </div>
 
+              {/* ACV (Adicionado) */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">ACV</label>
+                <textarea 
+                  className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200"
+                  value={med.exameACV || ""}
+                  onChange={(e) => updateNested("medical", "exameACV", e.target.value)}
+                  rows={2}
+                />
+              </div>
+
               {/* ABD */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase">ABD.</label>
@@ -206,7 +217,7 @@ const ChecklistEvoModal = ({
               </div>
 
               {/* Extremidades */}
-              <div>
+              <div className="md:col-span-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase">EXTREMIDADES</label>
                 <textarea 
                   className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200"
@@ -215,9 +226,31 @@ const ChecklistEvoModal = ({
                   rows={2}
                 />
               </div>
+
+              {/* NOVOS CAMPOS: EXAMES E CONDUTA */}
+              <div className="md:col-span-2 border-t pt-4 mt-2">
+                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Exames Complementares (Laboratório e Imagem)</label>
+                <textarea 
+                  className="w-full p-2 mt-1 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200"
+                  placeholder="Descreva os achados relevantes dos exames..."
+                  value={med.examesComplementares || ""}
+                  onChange={(e) => updateNested("medical", "examesComplementares", e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Conduta / Plano Terapêutico</label>
+                <textarea 
+                  className="w-full p-2 mt-1 border rounded text-xs bg-indigo-50/30 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200 font-medium"
+                  placeholder="Planejamento para as próximas 24h..."
+                  value={med.condutaPlano || ""}
+                  onChange={(e) => updateNested("medical", "condutaPlano", e.target.value)}
+                  rows={4}
+                />
+              </div>
             </div>
           </div>
-
         </div>
         
         {/* RODAPÉ */}

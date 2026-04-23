@@ -1494,8 +1494,13 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
             // Puxando Exame Físico (do Modal/Aba Médica)
             const exGeral = currentPatient.medical?.exameGeral || "Bom estado geral.";
             const exResp = currentPatient.medical?.exameAR || "Sem alterações relevantes.";
+            const exAcv = currentPatient.medical?.exameACV || "RCR em 2T, bulhas normofonéticas, sem sopros.";
             const exAbd = currentPatient.medical?.exameABD || "Sem alterações relevantes.";
             const exExt = currentPatient.medical?.exameExtremidades || "Sem alterações relevantes.";
+
+            // Puxando Exames e Conduta (Novos Campos)
+            const examesComp = currentPatient.medical?.examesComplementares || "Aguardando resultados / Sem exames descritos.";
+            const conduta = currentPatient.medical?.condutaPlano || "Mantidas condutas prévias. Monitoramento contínuo.";
 
             // Formatando listas de Sedação e DVA
             const sedacaoList = currentPatient.neuro?.sedacao && currentPatient.neuro?.drogasSedacao?.length > 0 
@@ -1526,6 +1531,7 @@ ${medsHabituais}
 EXAME FÍSICO:
 GERAL: ${exGeral}
 AR: ${exResp}
+ACV: ${exAcv}
 ABD.: ${exAbd}
 EXTREMIDADES: ${exExt}
 
@@ -1537,9 +1543,10 @@ EVOLUÇÃO E INTERCORRÊNCIAS:
 ${aiEvolucaoClinica}
 
 EXAMES COMPLEMENTARES:
-
+${examesComp}
 
 CONDUTA:
+${conduta}
 `;
             
             setAiEvolution(evolutionCompleta);
