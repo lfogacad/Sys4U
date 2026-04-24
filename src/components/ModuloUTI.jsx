@@ -2180,12 +2180,17 @@ ESCALAS DE RISCO:
 
     // 5. A SUTURA FINAL (Atualiza, Salva e Fecha)
     if (!p.enfermagem) p.enfermagem = {};
+    if (!p.medical) p.medical = {}; // Garante que o diretório médico exista
 
-    // Injeta os dados do formulário no corpo do paciente
+    // Injeta os dados do formulário no corpo da enfermagem (A HD da enfermagem já é salva aqui!)
     Object.keys(nursingData).forEach((k) => {
       p.enfermagem[k] = nursingData[k];
     });
     p.nursingData = nursingData;
+
+    // 👇 A MÁGICA DA SINCRONIZAÇÃO AQUI
+    // Clona a informação da hemodiálise direto para a aba do Médico
+    p.medical.hemodialise = nursingData.hemodialise || false;
 
     // Atualiza a tela
     const up = [...patients];

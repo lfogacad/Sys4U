@@ -124,8 +124,14 @@ return (
             <label className="flex items-center gap-2 mb-4 font-bold">
               <input 
                 type="checkbox" 
-                checked={currentPatient.enfermagem?.hemodialise || false} 
-                onChange={(e) => updateNested("enfermagem", "hemodialise", e.target.checked)} 
+                // Para a visualização, checamos se ALGUM dos dois marcou:
+                checked={currentPatient.enfermagem?.hemodialise || currentPatient.medical?.hemodialise || false} 
+                onChange={(e) => {
+                  const isChecked = e.target.checked;
+                  // Atualiza as duas abas simultaneamente!
+                  updateNested("enfermagem", "hemodialise", isChecked);
+                  updateNested("medical", "hemodialise", isChecked);
+                }} 
                 onBlur={() => handleBlurSave("Enfermagem: Alterou status de Hemodiálise")}
               /> 
               Hemodiálise

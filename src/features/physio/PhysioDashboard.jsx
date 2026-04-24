@@ -433,7 +433,58 @@ const PhysioDashboard = ({
                   <td className="p-2 text-left font-bold text-slate-600 sticky left-0 bg-white border-r border-slate-200 z-10 shadow-[1px_0_0_0_#e2e8f0]">{param}</td>
                   {isEditable && <td className="bg-slate-50 border-r border-slate-200"></td>}
                   {sortedGasoCols.map((col, colIndex) => (
-                    <td key={col} className="p-0 border-l border-slate-200"><input type="text" data-gaso-row={rowIndex} data-gaso-col={colIndex} className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5 transition-colors" value={currentPatient.gasometriaHistory?.[col]?.[param] || ""} onKeyDown={(e) => handleGasoKeyDown(e, rowIndex, colIndex)} onChange={(e) => { const val = e.target.value; setPatients(prev => { const up = [...prev]; const p = JSON.parse(JSON.stringify(up[activeTab])); if (!p.gasometriaHistory) p.gasometriaHistory = {}; if (!p.gasometriaHistory[col]) p.gasometriaHistory[col] = {}; p.gasometriaHistory[col][param] = val; up[activeTab] = p; return up; }); }} onBlur={() => handleBlurSave(`Gasometria: Editou ${param} (Ref: ${col})`)} /></td>
+                    <td key={col} className="p-0 border-l border-slate-200">
+                      <input 
+                        type="text" 
+                        data-gaso-row={rowIndex} 
+                        data-gaso-col={colIndex} 
+                        className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5 transition-colors" 
+                        value={currentPatient.gasometriaHistory?.[col]?.[param] || ""} 
+                        onKeyDown={(e) => handleGasoKeyDown(e, rowIndex, colIndex)} 
+                        onChange={(e) => { 
+                          const val = e.target.value; 
+                          
+                          setPatients(prev => { 
+                            const up = [...prev]; 
+                            const p = JSON.parse(JSON.stringify(up[activeTab])); 
+                            
+                            if (!p.gasometriaHistory) p.gasometriaHistory = {}; 
+                            if (!p.gasometriaHistory[col]) p.gasometriaHistory[col] = {}; 
+                            
+                            // Salva o valor que acabou de ser digitado
+                            p.gasometriaHistory[col][param] = val; 
+
+                            // 👇 A MÁGICA: CÁLCULO AUTOMÁTICO DA P/F
+                            const pao2Str = p.gasometriaHistory[col]["PaO2"];
+                            const fio2Str = p.gasometriaHistory[col]["FiO2"];
+                            
+                            if (pao2Str && fio2Str) {
+                              // Troca vírgula por ponto para não quebrar a matemática
+                              const pao2 = parseFloat(pao2Str.toString().replace(',', '.'));
+                              let fio2 = parseFloat(fio2Str.toString().replace(',', '.'));
+                              
+                              if (!isNaN(pao2) && !isNaN(fio2) && fio2 > 0) {
+                                // Se digitaram "21" em vez de "0.21", o sistema converte para porcentagem sozinho
+                                const decimalFio2 = fio2 >= 1 ? fio2 / 100 : fio2; 
+                                
+                                // Calcula e arredonda sem casas decimais
+                                const pf = (pao2 / decimalFio2).toFixed(0); 
+                                
+                                // Salva no campo correto (Certifique-se que no seu array o nome é "Relação P/F")
+                                p.gasometriaHistory[col]["P/F"] = pf; 
+                              }
+                            } else if (p.gasometriaHistory[col]["Relação P/F"]) {
+                              // Se apagarem a PaO2 ou a FiO2, limpa a P/F
+                              p.gasometriaHistory[col]["P/F"] = "";
+                            }
+
+                            up[activeTab] = p; 
+                            return up; 
+                          }); 
+                        }} 
+                        onBlur={() => handleBlurSave(`Gasometria: Editou ${param} (Ref: ${col})`)} 
+                      />
+                    </td>
                   ))}
                 </tr>
               ))}

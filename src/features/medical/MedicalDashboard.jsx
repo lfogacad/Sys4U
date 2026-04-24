@@ -306,8 +306,13 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               <input 
                 type="checkbox" 
                 className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
-                checked={currentPatient.medical?.hemodialise || false} 
-                onChange={(e) => updateNested("medical", "hemodialise", e.target.checked)} 
+                checked={currentPatient.medical?.hemodialise || currentPatient.enfermagem?.hemodialise || false} 
+                onChange={(e) => {
+                  const isChecked = e.target.checked;
+                  // Atualiza as duas abas simultaneamente!
+                  updateNested("medical", "hemodialise", isChecked);
+                  updateNested("enfermagem", "hemodialise", isChecked);
+                }} 
                 onBlur={() => handleBlurSave("Médico: Alterou status de Hemodiálise")}
               />
               <span className="text-sm font-bold text-slate-700 group-hover:text-amber-700 transition-colors">

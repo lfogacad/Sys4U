@@ -261,8 +261,22 @@ const OverviewTab = ({
           </div>
         </div>
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-          <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2"><Droplets size={14} /> Renal / BH</h4>
-          <div className="flex flex-col gap-2 text-sm">
+          
+          {/* Cabeçalho do Card com Flexbox para o Aviso de HD */}
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
+              <Droplets size={14} /> Renal / BH
+            </h4>
+            
+            {/* 👇 A MÁGICA VISUAL DA HEMODIÁLISE */}
+            {currentPatient.medical?.hemodialise === true && (
+              <span className="bg-red-100 text-red-600 border border-red-200 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider shadow-sm animate-pulse">
+                HD
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2 text-sm mt-2">
             <p>Diurese (Últ. 12h): <b>{typeof calculateDiurese12hMlKgH === 'function' ? calculateDiurese12hMlKgH(currentPatient) : "-"}</b> ml/kg/h</p>
             <p>Clearance Cr: <b>{typeof calculateCreatinineClearance === 'function' ? calculateCreatinineClearance(currentPatient) : "-"}</b> {typeof calculateCreatinineClearance === 'function' && calculateCreatinineClearance(currentPatient) !== "Falta Sexo" && calculateCreatinineClearance(currentPatient) !== "---" ? "ml/min" : ""}</p>
           </div>
