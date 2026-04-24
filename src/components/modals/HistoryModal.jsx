@@ -11,7 +11,7 @@ const HistoryModal = ({
   getLast10Days,
   EXAM_ROWS,
   formatExamName,
-  isOverviewEditable,
+  isDocRole,
   patients,
   activeTab,
   setPatients,
@@ -236,7 +236,7 @@ const HistoryModal = ({
                       <input
                         id={`exam-input-${rowIndex}-${colIndex}`}
                         className="w-full h-full text-center p-2 outline-none focus:bg-blue-100 focus:font-bold transition-colors bg-transparent"
-                        disabled={!isOverviewEditable}
+                        disabled={!isDocRole}
                         value={currentPatient.examHistory[d]?.[ex] || ""}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
                         onChange={(e) => {
@@ -266,7 +266,7 @@ const HistoryModal = ({
               );
             })}
             
-            {isOverviewEditable && (
+            {isDocRole && (
               <tr>
                 <td
                   colSpan={50} 

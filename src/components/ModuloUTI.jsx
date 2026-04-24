@@ -433,10 +433,23 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   // --- FUNÇÕES DE PERSISTÊNCIA ---
   const save = async (updatedPatient, logMsg = "Alteração no Prontuário") => {
     if (!db || !updatedPatient) return;
+
+    // 👇 SUTURA DE SEGURANÇA: Esterilizando o payload
+    // O comando JSON.parse(JSON.stringify()) age como um filtro que "derrete" 
+    // qualquer valor 'undefined' do objeto, tornando-o 100% aceitável pelo Firebase.
+    const pacienteSeguro = JSON.parse(JSON.stringify(updatedPatient));
+
     try {
-      await setDoc(doc(db, "leitos_uti", `bed_${updatedPatient.id}`), updatedPatient, { merge: true });
+      // Garantia extra: Se o ID sumir por algum motivo, tentamos usar o número do leito
+      const docId = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
+      
+      await setDoc(doc(db, "leitos_uti", `bed_${docId}`), pacienteSeguro, { merge: true });
       console.log(`[AUDITORIA]: ${logMsg}`);
-    } catch (err) { console.error("Erro ao salvar:", err); }
+    } catch (err) { 
+      // Se der erro agora, o senhor vai ver um alerta vermelho no navegador, não ficará cego!
+      console.error("Erro fatal ao salvar no Firebase:", err);
+      alert("Aviso: Ocorreu um erro ao gravar na nuvem. Verifique o console.");
+    }
   };
 
   const updateNested = (categoria, campo, valor) => {
@@ -2192,30 +2205,27 @@ ESCALAS DE RISCO:
 
     // 5. A SUTURA FINAL (Atualiza, Salva e Fecha)
     if (!p.enfermagem) p.enfermagem = {};
-    if (!p.medical) p.medical = {}; // Garante que o diretório médico exista
+    if (!p.medical) p.medical = {}; 
 
-    // Injeta os dados do formulário no corpo da enfermagem (A HD da enfermagem já é salva aqui!)
-    Object.keys(nursingData).forEach((k) => {
-      p.enfermagem[k] = nursingData[k];
-    });
-    p.nursingData = nursingData;
+    // 👇 Jeito React mais moderno e à prova de falhas para fundir os dados
+    p.enfermagem = { ...p.enfermagem, ...nursingData };
+    p.nursingData = nursingData; // (Mantido se o senhor usar isso em outro lugar)
 
-    // 👇 A MÁGICA DA SINCRONIZAÇÃO AQUI
     // Clona a informação da hemodiálise direto para a aba do Médico
     p.medical.hemodialise = nursingData.hemodialise || false;
 
-    // Atualiza a tela
+    // Atualiza a tela localmente na mesma hora
     const up = [...patients];
     up[activeTab] = p;
     setPatients(up);
 
-    // Salva no banco de dados com carimbo de auditoria
-    save(p, "Enfermagem: Admissão Concluída e Integrada à Admissão Médica");
+    // Salva no banco de dados
+    if (typeof save === "function") {
+      save(p, "Enfermagem: Admissão Concluída e Integrada à Admissão Médica");
+    }
 
-    // Fecha o modal de admissão
+    // Fecha o modal e mostra o texto
     setShowNursingModal(false);
-    
-    // Mostra o texto gerado na tela
     setGeneratedAdmissionText(text);
     setViewMode("nursing"); 
   };
@@ -2320,7 +2330,14 @@ ESCALAS DE RISCO:
   const handleBlurSave = () => save(patients[activeTab], "Auto-save on blur");
 
   const handleClearData = async () => {
+    // 1. Trava Lógica de Segurança (Dupla checagem)
+    if (!canClearBed) {
+      alert("Acesso Negado: Apenas médicos podem liberar ou limpar um leito.");
+      return;
+    }
+
     if (!window.confirm("Deseja realmente LIMPAR todos os dados deste leito?")) return;
+    
     const empty = defaultPatient(activeTab);
     const up = [...patients];
     up[activeTab] = empty;
@@ -2519,6 +2536,9 @@ const userRole = userProfile?.role || userProfile?.perfil;
 
   // Trava de segurança extra para o Balanço Hídrico
   const isBHReadOnly = viewingPreviousBH || !isEditable;
+
+  // Permissão exclusiva para limpar o leito (Apenas Médico e Dev)
+  const canClearBed = isDev || userRole === "Médico";
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans pb-20 relative bg-hexagon-pattern bg-repeat print:block print:min-h-0 print:h-auto print:pb-0 print:bg-white print:overflow-visible">
@@ -2786,7 +2806,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 </button>
                 
                 {/* BOTÃO DA LIXEIRA */}
-                {currentPatient.nome && (
+                {currentPatient.nome && canClearBed && (
                   <button onClick={handleClearData} className="text-slate-300 hover:text-red-500 transition-colors" title="Liberar Leito">
                     <Trash2 size={18} />
                   </button>
@@ -3015,7 +3035,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
         getLast10Days={getLast10Days}
         EXAM_ROWS={EXAM_ROWS}
         formatExamName={formatExamName}
-        isOverviewEditable={isOverviewEditable}
+        isDocRole={isDocRole}
         patients={patients}
         activeTab={activeTab}
         setPatients={setPatients}

@@ -18,24 +18,19 @@ const HemoDashboard = ({
   // --- SEGURANÇA DE ACESSO (PERMISSIVA E BLINDADA) ---
   // ==============================================================
   
-  // 1. Por padrão, as travas obedecem o estado da tela (isEditable)
-  let lockDoctor = !isEditable;
-  let lockNursing = !isEditable;
+  // 1. Puxa o crachá real do usuário com a nossa blindagem dupla
+  const userRole = userProfile?.role || userProfile?.perfil;
+  const isDev = userRole === "Desenvolvedor";
 
-  // 2. Se a tela estiver liberada para edição (paciente internado no leito)
-  if (isEditable) {
-    // Começa com tudo destrancado!
-    lockDoctor = false;
-    lockNursing = false;
+  // 2. Define quem tem a "chave" de cada metade da aba
+  // O Médico diarista/plantonista também costuma poder ajustar prescrições de urgência, mas se o senhor quiser travar SÓ para Nefrologista, basta apagar o '|| userRole === "Médico"'
+  const canEditMedical = userRole === "Nefrologista" || userRole === "Médico" || isDev;
+  const canEditNursing = userRole === "Téc. em Enf." || userRole === "Enfermeiro" || isDev;
 
-    // Só tranca a prescrição médica SE tivermos a certeza absoluta de que é enfermagem
-    if (userProfile && userProfile.role) {
-      const role = String(userProfile.role).toLowerCase();
-      if (role.includes("enferm") || role.includes("téc") || role.includes("tec")) {
-        lockDoctor = true;
-      }
-    }
-  }
+  // 3. Aplica as travas finais: 
+  // Só destranca se a tela estiver liberada (isEditable) E o usuário tiver a chave certa
+  const lockDoctor = !isEditable || !canEditMedical;
+  const lockNursing = !isEditable || !canEditNursing;
 
   // --- FUNÇÕES INTERNAS DA HEMODIÁLISE ---
   const resetHDMedica = () => {
