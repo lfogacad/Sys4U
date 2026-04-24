@@ -119,7 +119,9 @@ const VmFlowsheetModal = ({
       { key: 'cst', label: 'Cst' },
       { key: 'cdin', label: 'Cdin' },
       { key: 'rva', label: 'Rva' },
-      { key: 'autoPeep', label: 'Auto PEEP' }
+      { key: 'autoPeep', label: 'Auto PEEP' },
+      { key: 'p01', label: 'P 0.1' },
+      { key: 'irrs', label: 'IRRS (Tobin)' }
     ];
 
     // 👇 CHUNK CRAVADO EM 10 COLUNAS
@@ -257,6 +259,8 @@ const VmFlowsheetModal = ({
                   { key: 'cdin', label: 'Cdin' },
                   { key: 'rva', label: 'Rva' },
                   { key: 'autoPeep', label: 'Auto PEEP' },
+                  { key: 'p01', label: 'P 0.1' },
+                  { key: 'irrs', label: 'IRRS (Tobin)' }
                 ].map((rowDef) => (
                   <tr key={rowDef.key} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
                     <td className="sticky left-0 bg-slate-200 p-2 font-bold text-slate-800 border-r border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 w-40 text-left">

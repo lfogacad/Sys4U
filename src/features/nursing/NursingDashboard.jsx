@@ -52,7 +52,7 @@ return (
               onClick={(e) => { e.preventDefault(); handleNursingAdmission(); }}
               className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-300 flex items-center gap-2 transition-colors border border-slate-300"
             >
-              <Edit3 size={16} /> Ver/Editar Escalas de Admissão
+              <Edit3 size={16} /> Reabrir Admissão de Enfermagem
             </button>
           </div>
 
