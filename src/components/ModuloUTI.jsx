@@ -573,6 +573,19 @@ const clearAntibiotic = (i) => {
     save(p, "Farmácia: Arquivou/Limpou Antibiótico");
   };
 
+  const addAntibiotic = () => {
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab]));
+      
+      if (!p.antibiotics) p.antibiotics = [];
+      p.antibiotics.push({ name: "", date: "", locked: false });
+      
+      up[activeTab] = p;
+      return up;
+    });
+  };
+
   const handleSepsisResponse = (hasInfection) => {
     const p = { ...currentPatient };
     if (!p.sofa_data_technical) p.sofa_data_technical = {};
@@ -2828,6 +2841,7 @@ ESCALAS DE RISCO:
                         handleEditAdmission={handleEditAdmission}
                         setShowATBHistoryModal={setShowATBHistoryModal}
                         updateAntibiotic={updateAntibiotic}
+                        addAntibiotic={addAntibiotic}
                         clearAntibiotic={clearAntibiotic}
                         abrirChecklistEvolucao={abrirEvolucaoInteligente}
                         isGeneratingAI={isGeneratingAI}

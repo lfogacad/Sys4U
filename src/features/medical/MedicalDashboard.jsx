@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertCircle, Edit3, X, Sparkles, ClipboardCheck, Loader2, FileText, Activity, ChevronDown, ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle } from 'lucide-react';
+import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, FileText, Activity, ChevronDown, ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle } from 'lucide-react';
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
 import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, analyzeOliguriaForSOFA, calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
 
@@ -30,6 +30,7 @@ const MedicalDashboard = ({
   setShowATBHistoryModal,
   clearAntibiotic,
   updateAntibiotic,
+  addAntibiotic,
   handleEditAdmission,
   handleNeuroSwitch
 }) => {
@@ -563,6 +564,28 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
             </div>
           );
         })}
+
+        {/* 👇 NOVO BOTÃO: Adicionar ATB Extra */}
+        {isEditable && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              
+              if (typeof addAntibiotic === 'function') {
+                addAntibiotic();
+                if (typeof handleBlurSave === 'function') {
+                  setTimeout(() => handleBlurSave("Médico: Adicionou nova linha de ATB"), 200);
+                }
+              } else {
+                alert("O botão foi clicado, mas a função 'addAntibiotic' não chegou até aqui. Verifique o Passo 2!");
+              }
+            }}
+            className="w-full mt-1 py-2 border-2 border-dashed border-orange-300 text-orange-600 rounded-lg text-sm font-bold hover:bg-orange-100 hover:border-orange-500 hover:text-orange-700 transition-colors flex items-center justify-center gap-2"
+          >
+            <PlusCircle size={16} /> Adicionar ATB Extra
+          </button>
+        )}
+
       </div>
 
       {/* EVOLUÇÃO IA */}
