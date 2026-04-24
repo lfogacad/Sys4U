@@ -205,12 +205,34 @@ const ModuloAdmin = ({ userProfile }) => {
 
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">Cargo de Atuação nesta Unidade</label>
-                <select name="cargoLocal" required className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none">
-                  <option value="Médico Plantonista">Médico Plantonista</option>
-                  <option value="Médico Diarista">Médico Diarista</option>
-                  <option value="Enfermeiro Chefe">Enfermeiro Chefe</option>
-                  <option value="Recepcionista">Recepcionista</option>
+                <select name="cargoLocal" required defaultValue="" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none">
+                  <option value="" disabled>Selecione o cargo do profissional...</option>
+                  
+                  {/* Equipe Médica */}
+                  <option value="Médico">Médico (Plantonista/Diarista)</option>
+                  <option value="Nefrologista">Nefrologista</option>
+                  
+                  {/* Equipe Assistencial Multi */}
+                  <option value="Enfermeiro">Enfermeiro</option>
+                  <option value="Téc. em Enf.">Téc. em Enf.</option>
+                  <option value="Fisioterapeuta">Fisioterapeuta</option>
+                  <option value="Nutricionista">Nutricionista</option>
+                  <option value="Fonoaudiólogo">Fonoaudiólogo</option>
+                  
+                  {/* Chefias e Coordenações */}
+                  <option value="Gerente de Enfermagem">Gerente de Enfermagem</option>
+                  <option value="RT da Fisioterapia">RT da Fisioterapia</option>
+                  <option value="CCIH UTI">CCIH UTI</option>
+                  <option value="CCIH Geral">CCIH Geral</option>
+                  
+                  {/* Gestão e Administrativo */}
+                  <option value="Diretor Administrativo">Diretor Administrativo</option>
+                  <option value="Recepção">Recepção / Faturamento</option>
+                  
+                  {/* TI / Suporte */}
+                  <option value="Desenvolvedor">Desenvolvedor do Sistema</option>
                 </select>
+                <p className="text-[10px] text-slate-500 mt-1">Este cargo define as abas e permissões de edição que o usuário terá ao acessar a unidade.</p>
               </div>
 
               <div className="pt-4 border-t border-slate-100">

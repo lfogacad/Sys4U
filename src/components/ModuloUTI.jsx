@@ -35,7 +35,6 @@ import PhysioDashboard from '../features/physio/PhysioDashboard';
 import NutriDashboard from '../features/nutri/NutriDashboard';
 import SpeechDashboard from '../features/speech/SpeechDashboard';
 import HemoDashboard from '../features/hemo/HemoDashboard';
-import ManagementTab from './tabs/ManagementTab';
 import TechDashboard from '../features/tech/TechDashboard';
 import OverviewTab from './tabs/OverviewTab';
 
@@ -2394,8 +2393,84 @@ ESCALAS DE RISCO:
     setPatients(up);
   };
 
-  // --- LÓGICA DE INTERFACE (RBAC - Filtro de Abas) ---
-  const allNavButtons = [
+// --- MATRIZ DE PERMISSÕES (RBAC) ---
+// Define o que cada perfil pode VER (views) e o que pode EDITAR (edits)
+const ROLE_PERMISSIONS = {
+  "Desenvolvedor": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    edits: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    canSeeLeito11: true
+  },
+  "Diretor Administrativo": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    edits: ["management", "reception"],
+    canSeeLeito11: false
+  },
+  "Gerente de Enfermagem": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    edits: ["management", "nursing", "tech", "hemodialysis", "reception"],
+    canSeeLeito11: false
+  },
+  "RT da Fisioterapia": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    edits: ["management", "physio"],
+    canSeeLeito11: false
+  },
+  "CCIH UTI": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management"],
+    edits: ["management"],
+    canSeeLeito11: false
+  },
+  "CCIH Geral": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management"],
+    edits: [], // Somente visualiza
+    canSeeLeito11: false
+  },
+  "Médico": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "reception"],
+    edits: ["medical", "nutri", "speech", "reception"],
+    canSeeLeito11: false
+  },
+  "Enfermeiro": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "reception"],
+    edits: ["nursing", "tech", "hemodialysis", "reception"],
+    canSeeLeito11: false
+  },
+  "Fisioterapeuta": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis"],
+    edits: ["physio"],
+    canSeeLeito11: false
+  },
+  "Nutricionista": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis"],
+    edits: ["nutri"],
+    canSeeLeito11: false
+  },
+  "Fonoaudiólogo": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis"],
+    edits: ["speech"],
+    canSeeLeito11: false
+  },
+  "Téc. em Enf.": {
+    views: ["overview", "tech", "hemodialysis"],
+    edits: ["tech", "hemodialysis"],
+    canSeeLeito11: false
+  },
+  "Nefrologista": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis"],
+    edits: ["hemodialysis"],
+    canSeeLeito11: false
+  }
+};
+
+// 1. LÊ O CRACHÁ: Aceita tanto 'role' quanto 'perfil' vindo do Firebase
+const userRole = userProfile?.role || userProfile?.perfil;
+
+// 2. ABRE A PORTA: Agora busca na matriz usando a variável correta que lê os dois
+  const currentRolePerms = ROLE_PERMISSIONS[userRole] || { views: ["overview"], edits: [], canSeeLeito11: false };
+
+  // --- LÓGICA DE INTERFACE (Botões Base) ---
+  const baseNavButtons = [
     { id: "overview", label: "Visita Multi", icon: <Activity size={20} /> },
     { id: "medical", label: "Médico", icon: <Stethoscope size={20} /> },
     { id: "nursing", label: "Enfermeiro", icon: <NurseCap size={20} /> },
@@ -2403,23 +2478,15 @@ ESCALAS DE RISCO:
     { id: "nutri", label: "Nutrição", icon: <Apple size={20} /> },
     { id: "speech", label: "Fonoaudiologia", icon: <Mic size={20} /> },
     { id: "tech", label: "Téc. em Enf.", icon: <Thermometer size={20} /> },
-    { id: "hemodialysis", label: "Hemodiálise", icon: <Filter size={20} /> },
-    // Aba de Gestão: Só aparece para chefias
-    ...(userProfile?.role === "Gestor" || userProfile?.role === "Administrador"
-      ? [{ id: "management", label: "Gestão da UTI", icon: <Gauge size={20} /> }]
-      : []),
+    { id: "hemodialysis", label: "Hemodiálise", icon: <Filter size={20} /> }
   ];
 
-  const navButtons = allNavButtons.filter((btn) => {
-    // Se o userProfile ainda não carregou (está nulo), mostramos tudo por segurança 
-    // ou nada até carregar. Aqui vamos deixar passar se for nulo para não quebrar a tela.
-    if (!userProfile) return true;
+  // Filtra as abas: O botão só aparece na tela se o ID dele estiver na lista "views" do perfil do usuário
+  const allNavButtons = baseNavButtons.filter(btn => currentRolePerms.views.includes(btn.id));
 
-    if (userProfile.perfil === "Técnico em Enfermagem") {
-      return btn.id === "tech" || btn.id === "hemodialysis";
-    }
-    return true;
-  });
+  // Define dinamicamente se o usuário logado tem permissão para EDITAR a aba que ele está clicando agora
+  const isEditable = currentRolePerms.edits.includes(viewMode); 
+  // (Certifique-se de usar essa variável isEditable nos seus inputs/botões de salvar em todas as abas!)
 
   const handleNavScroll = () => {
     if (!navScrollRef.current || window.innerWidth >= 768) return;
@@ -2436,35 +2503,22 @@ ESCALAS DE RISCO:
     if (closest && closest !== centerTab) setCenterTab(closest);
   };
 
-  // --- RBAC (Controle de Acessos com Chave Mestra) ---
-  // Blindagem: Aceita tanto 'role' quanto 'perfil' vindo do Firebase
-  const userRole = userProfile?.role || userProfile?.perfil;
-
+  // --- VARIÁVEIS DE ESTADO E PERMISSÕES DE AÇÕES ---
+  
+  // Superusuário 
   const isDev = userRole === "Desenvolvedor";
 
-  // O Desenvolvedor herda automaticamente os poderes de todos os perfis
-  const isDocRole = isDev || userRole === "Médico" || userRole === "Gestor" || userRole === "Administrador";
+  // Traduzindo a Matriz nova para as variáveis antigas
+  const isDocRole = currentRolePerms.edits.includes("medical") || userRole === "Nefrologista" || isDev;
+  const isNursingRole = currentRolePerms.edits.includes("nursing") || isDev;
+  const isNutriRole = currentRolePerms.edits.includes("nutri") || isDev;
 
-  const isNursingRole = isDev || userRole === "Enfermeiro" || userRole === "Técnico em Enfermagem" || userRole === "Gestor" || userRole === "Administrador";
-
-  // 👇 NOVA SUTURA: Controle de Acesso da Nutrição 👇
-  const isNutriRole = isDev || userRole === "Nutricionista" || userRole === "Médico" || userRole === "Gestor" || userRole === "Administrador";
-
-  const isAdmin = isDev || userRole === "Administrador";
-
-  // Regras de Edição: Adicionamos a Enfermagem e Nutrição aqui para poderem editar as próprias abas!
-  const isEditable = isDev || isDocRole || isNursingRole || isNutriRole;
-
-  const isOverviewEditable = isDev || isDocRole || isNursingRole;
-
+  // Permissões de Abas e Ações
+  const isOverviewEditable = currentRolePerms.edits.includes("overview");
   const canCloseDay = isDev || userRole === "Enfermeiro" || isOverviewEditable;
 
+  // Trava de segurança extra para o Balanço Hídrico
   const isBHReadOnly = viewingPreviousBH || !isEditable;
-
-  // Menus Visíveis
-  const visibleNavButtons = userRole === "Técnico em Enfermagem"
-    ? navButtons.filter(btn => btn.id === "tech" || btn.id === "hemodialysis")
-    : navButtons;
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans pb-20 relative bg-hexagon-pattern bg-repeat print:block print:min-h-0 print:h-auto print:pb-0 print:bg-white print:overflow-visible">
@@ -2597,8 +2651,15 @@ ESCALAS DE RISCO:
         {/* BARRA DE LEITOS (Design Main) */}
         <div className="relative z-40 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 scrollbar-hide print:hidden border border-white">
           {patients.map((p, idx) => {
-            // Se o senhor tiver regra de esconder o leito 11, coloque aqui (Ex: if (p.leito === 11 && !isAdmin) return null;)
+            
+            // 👇 A MÁGICA DO LEITO FANTASMA: 
+            // Se for o leito 11 e o perfil NÃO tiver permissão na matriz, o botão não é desenhado.
+            if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
+              return null; 
+            }
+
             const isActive = activeTab === idx;
+            
             return (
               <button
                 key={p.id || idx}
@@ -2636,12 +2697,12 @@ ESCALAS DE RISCO:
                 // SUTURA: px-[40vw] garante que mesmo com 1 ou 2 abas, você consiga "deslizar" ela para fora do centro
                 className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center px-[40vw] md:px-0`}
               >
-                {visibleNavButtons.map((btn, index) => {
+                {allNavButtons.map((btn, index) => {
                   const isActive = viewMode === btn.id;
                   
                   // Lógica 3D do Mobile
                   const isExpandedMobile = window.innerWidth < 768 && centerTab === btn.id;
-                  const centerIndex = visibleNavButtons.findIndex(b => b.id === (centerTab || visibleNavButtons[0]?.id));
+                  const centerIndex = allNavButtons.findIndex(b => b.id === (centerTab || allNavButtons[0]?.id));
                   const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
                   const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
 
@@ -2804,15 +2865,6 @@ ESCALAS DE RISCO:
                     )
                   )}
 
-                  {/* ABA: GESTÃO / MANAGEMENT */}
-                  {viewMode === "management" && (
-                    <ManagementTab
-                      patients={patients}
-                      calculateSAPS3Score={calculateSAPS3Score}
-                      getDaysD1={getDaysD1}
-                      handleBlurSave={handleBlurSave}
-                    />
-                  )}
                   {viewMode === "medical" && (
                     currentPatient.statusInternacao === "Aguardando Admissão Médica" ? (
                       <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 mt-4">

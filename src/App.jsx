@@ -50,7 +50,7 @@ const AppRouter = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState("Médico");
+  const [newRole, setNewRole] = useState("");
   const [newConselho, setNewConselho] = useState("");
   const [masterCodeInput, setMasterCodeInput] = useState("");
   const [authError, setAuthError] = useState(null);

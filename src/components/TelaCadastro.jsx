@@ -43,10 +43,31 @@ const TelaCadastro = ({
                 value={newRole} onChange={(e) => setNewRole(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-medium text-slate-700"
               >
+                <option value="" disabled>Selecione o cargo...</option>
+                
+                {/* Equipe Médica */}
                 <option value="Médico">Médico</option>
+                <option value="Nefrologista">Nefrologista</option>
+                
+                {/* Equipe Assistencial Multi */}
                 <option value="Enfermeiro">Enfermeiro</option>
-                <option value="Administrador">Administrador</option>
+                <option value="Téc. em Enf.">Téc. em Enf.</option>
+                <option value="Fisioterapeuta">Fisioterapeuta</option>
+                <option value="Nutricionista">Nutricionista</option>
+                <option value="Fonoaudiólogo">Fonoaudiólogo</option>
+                
+                {/* Chefias e Coordenações */}
+                <option value="Gerente de Enfermagem">Gerente de Enfermagem</option>
+                <option value="RT da Fisioterapia">RT da Fisioterapia</option>
+                <option value="CCIH UTI">CCIH UTI</option>
+                <option value="CCIH Geral">CCIH Geral</option>
+                
+                {/* Gestão e Administrativo */}
+                <option value="Diretor Administrativo">Diretor Administrativo</option>
                 <option value="Recepção">Recepção</option>
+                
+                {/* TI / Suporte */}
+                <option value="Desenvolvedor">Desenvolvedor</option>
               </select>
             </div>
             <div>
