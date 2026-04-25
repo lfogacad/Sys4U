@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { doc, setDoc, deleteDoc, collection, onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, collection, addDoc, onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
   Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
@@ -16,7 +16,7 @@ import {
 import {
   getManausDateStr, formatDateDDMM, getLast10Days, calculateTotals,
   safeNumber, defaultPatient, ensureBHStructure, calculateAge,
-  getDaysD0, getDaysD1, getTempoVMText, calculateEvacDays,
+  getDaysD0, getDaysD1, getTempoVMText, getTempoVMNumber,calculateEvacDays,
   calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH,
   calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf,
   analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, formatExamName
@@ -163,6 +163,11 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [waitingList, setWaitingList] = useState([]);
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [selectedBedForAdmission, setSelectedBedForAdmission] = useState(null);
+
+  // --- ESTADOS DO MODAL DE DESFECHO (ALTA/ÓBITO) ---
+  const [showDischargeModal, setShowDischargeModal] = useState(false);
+  const [dischargeDestination, setDischargeDestination] = useState("");
+  const [isDischarging, setIsDischarging] = useState(false);
 
   const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
     if (!dadosAtualizados.gasoHora) return; 
@@ -687,7 +692,28 @@ const clearAntibiotic = (i) => {
     save(p, "Sistema: Limpou Campo de Data");
   };
 
-const abrirEvolucaoInteligente = () => {
+  const registrarEventoAdverso = async (tipo, detalhes = "") => {
+    const pacienteAtual = patients[activeTab];
+    if (!pacienteAtual?.idInternacao) return;
+
+    try {
+      await addDoc(collection(db, "eventos_adversos"), {
+        idInternacao: pacienteAtual.idInternacao,
+        pacienteNome: pacienteAtual.nome,
+        leito: activeTab,
+        tipo: tipo, // Ex: "Extubação Acidental", "Queda", "Saída de Cateter"
+        detalhes: detalhes,
+        dataEvento: serverTimestamp(),
+        registradoPor: userProfile.nome || "Não identificado",
+        perfil: userProfile.perfil || "N/A"
+      });
+      console.log(`[SEGURANÇA]: Evento ${tipo} registrado com sucesso.`);
+    } catch (error) {
+      console.error("Erro ao registrar evento adverso:", error);
+    }
+  };
+
+  const abrirEvolucaoInteligente = () => {
     // 1. ATBs (Mantém a lógica intacta)
     const atbsAtivos = currentPatient.antibiotics?.filter(atb => atb.name && atb.date) || [];
     const textoAtbs = atbsAtivos.map(atb => {
@@ -813,6 +839,11 @@ const abrirEvolucaoInteligente = () => {
     }
 
     const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
+    
+    // --- NOVO: GERADOR DE IDENTIDADE DE INTERNAÇÃO ---
+    // Criamos um ID único combinando CPF e a data/hora atual
+    const idInternacao = `${admissionData.cpf || 'SEM_CPF'}_${Date.now()}`;
+    r.idInternacao = idInternacao; 
     r.statusInternacao = "Ativo"; // Libera o cadeado da Aba Médica
     r.nome = admissionData.nome.trim().toUpperCase();
     r.sexo = admissionData.sexo || "";
@@ -922,12 +953,22 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     // Agora a Aba Médica recebe apenas o resumo
     r.historiaClinica = historiaAbaMedica;
     r.admissionData = admissionData;
-    // --- A CHAVE MESTRA: SALVANDO NA NUVEM ---
+
+    // --- NOVO: ENVIANDO PARA O PAINEL GESTOR ---
     try {
-      await setDoc(doc(db, "leitos_uti", `bed_${activeTab}`), r);
-    } catch (error) {
-      console.error("Erro ao salvar admissão na nuvem:", error);
-    }
+      await addDoc(collection(db, "indicadores_performance"), {
+        cpf: r.cpf || admissionData.cpf,
+        idInternacao: r.idInternacao,
+        tipo: "SAPS 3",
+        dataRegistro: serverTimestamp(),
+        valor: r.saps3, // Salvamos o objeto completo para o Gestor calcular ou auditar
+        nomePaciente: r.nome,
+        periodo: {
+            mes: new Date().getMonth() + 1,
+            ano: new Date().getFullYear()
+        }
+      });
+    } catch (e) { console.error("Erro indicador SAPS3:", e); }
     // -----------------------------------------
     const up = [...patients];
     up[activeTab] = r;
@@ -2128,7 +2169,7 @@ const generateNursingAI_Evolution = async () => {
     }
   };
 
-const handleFinalizeNursingAdmission = () => {
+const handleFinalizeNursingAdmission = async () => {
     const reqBraden = [
       "braden_percepcao", "braden_umidade", "braden_atividade",
       "braden_mobilidade", "braden_nutricao", "braden_friccao",
@@ -2222,6 +2263,35 @@ ESCALAS DE RISCO:
     // Salva no banco de dados
     if (typeof save === "function") {
       save(p, "Enfermagem: Admissão Concluída e Integrada à Admissão Médica");
+    }
+
+    // --- NOVO: REGISTRO DE INDICADORES DE ENFERMAGEM E DISPOSITIVOS ---
+    try {
+      const historicoRef = collection(db, "indicadores_performance");
+      const baseData = {
+        cpf: p.cpf,
+        idInternacao: p.idInternacao,
+        dataRegistro: serverTimestamp(),
+        nomePaciente: p.nome
+      };
+
+      // 1. Carimba o Braden
+      await addDoc(historicoRef, { ...baseData, tipo: "BRADEN", valor: bradenTotal, risco: bradenRisco });
+
+      // 2. Carimba o Morse
+      await addDoc(historicoRef, { ...baseData, tipo: "MORSE", valor: morseTotal, risco: morseRisco });
+
+      // 3. Carimba Início de Dispositivos (Para cálculo de densidade de infecção futuro)
+      if (nursingData.svd) {
+        await addDoc(historicoRef, { ...baseData, tipo: "DISPOSITIVO_INICIO", nome: "SVD", dataInicio: nursingData.svdData });
+      }
+      if (nursingData.cvcLocal) {
+        await addDoc(historicoRef, { ...baseData, tipo: "DISPOSITIVO_INICIO", nome: "CVC", dataInicio: nursingData.cvcData });
+      }
+      // Adicione aqui outros como VMI, Drenos, etc.
+
+    } catch (e) {
+      console.error("Erro ao carimbar indicadores de enfermagem:", e);
     }
 
     // Fecha o modal e mostra o texto
@@ -2329,20 +2399,157 @@ ESCALAS DE RISCO:
 
   const handleBlurSave = () => save(patients[activeTab], "Auto-save on blur");
 
-  const handleClearData = async () => {
-    // 1. Trava Lógica de Segurança (Dupla checagem)
-    if (!canClearBed) {
-      alert("Acesso Negado: Apenas médicos podem liberar ou limpar um leito.");
+  // Adiciona uma nova lesão à lista
+  const addLesao = () => {
+    const lesoesAtuais = currentPatient.enfermagem?.lesoes || [];
+    const novaLesao = {
+      id: Date.now(), // ID único para controle
+      origem: "prevalencia",
+      localizacao: "",
+      estagio: "",
+      curativo: "",
+      dataRegistro: new Date().toISOString().split('T')[0]
+    };
+    updateNested("enfermagem", "lesoes", [...lesoesAtuais, novaLesao]);
+  };
+
+  // Remove uma lesão específica
+  const removeLesao = (id) => {
+    const lesoesAtuais = currentPatient.enfermagem?.lesoes || [];
+    const novasLesoes = lesoesAtuais.filter(l => l.id !== id);
+    updateNested("enfermagem", "lesoes", novasLesoes);
+    handleBlurSave("Enfermagem: Removeu registro de lesão");
+  };
+
+  // Atualiza um campo de uma lesão específica
+  const updateLesaoData = (id, campo, valor) => {
+    const lesoesAtuais = currentPatient.enfermagem?.lesoes || [];
+    const novasLesoes = lesoesAtuais.map(l => {
+      if (l.id === id) {
+        // Se mudar para 'incidencia', dispara o evento adverso (apenas uma vez)
+        if (campo === "origem" && valor === "incidencia" && l.origem !== "incidencia") {
+          registrarEventoAdverso("LPP Adquirida na UTI", `Nova lesão detectada em: ${l.localizacao || 'Local não informado'}`);
+        }
+        return { ...l, [campo]: valor };
+      }
+      return l;
+    });
+    updateNested("enfermagem", "lesoes", novasLesoes);
+  };
+
+  // 1. Apenas abre a janela (Trava de segurança ATUALIZADA para Enfermagem)
+  const handleClearData = () => {
+    // Dupla checagem: Garante que mesmo se o botão for clicado, a função barra perfis não autorizados
+    const role = userProfile?.perfil || userProfile?.role;
+    if (role !== "Enfermeiro" && role !== "Desenvolvedor") {
+      alert("Acesso Negado: A liberação de leito e registro de desfecho é uma atribuição exclusiva da Enfermagem.");
       return;
     }
 
-    if (!window.confirm("Deseja realmente LIMPAR todos os dados deste leito?")) return;
+    const pacienteAtual = patients[activeTab];
+    if (!pacienteAtual || !pacienteAtual.nome) {
+      alert("Este leito já está vazio.");
+      return;
+    }
     
-    const empty = defaultPatient(activeTab);
-    const up = [...patients];
-    up[activeTab] = empty;
-    setPatients(up);
-    await deleteDoc(doc(db, "leitos_uti", `bed_${empty.id}`));
+    setShowDischargeModal(true); // Abre o modal de desfecho
+  };
+
+  // Função para calcular diferença em dias entre duas datas (formato ISO ou string YYYY-MM-DD)
+  const calcularDiferencaDias = (dataInicio, dataFim) => {
+    if (!dataInicio || !dataFim) return 0;
+    const start = new Date(dataInicio);
+    const end = new Date(dataFim);
+    const diffTime = Math.abs(end - start);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays || 1; // Retorna no mínimo 1 dia se o paciente entrou e saiu no mesmo dia
+  };
+
+  // 2. O motor que salva o desfecho, verifica dispositivos e limpa o leito
+  const confirmDischarge = async () => {
+    if (!dischargeDestination) return alert("Selecione o destino do paciente.");
+
+    const pacienteAtual = patients[activeTab];
+    const enf = pacienteAtual.enfermagem || {};
+
+    // 1. Função Auxiliar de Cálculo (Local)
+    const calcularDias = (ini, fim) => {
+      if (!ini) return 0;
+      const dataFim = fim ? new Date(fim) : new Date(); // Se não tem retirada, usa hoje
+      const dataIni = new Date(ini);
+      const diffTime = dataFim - dataIni;
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays < 0 ? 0 : diffDays + 1; // Mínimo de 1 dia (D1)
+    };
+
+    // 2. Auditoria de Dispositivos (Prevenção de erro)
+    let dispositivosAtivos = [];
+    if (enf.svd && !enf.svdRetiradaData) dispositivosAtivos.push("Sonda Vesical (SVD)");
+    if (enf.cvcLocal && !enf.cvcRetiradaData) dispositivosAtivos.push("Acesso Central (CVC)");
+    if (enf.shileyLocal && !enf.shileyRetiradaData) dispositivosAtivos.push("Cateter de Shiley");
+
+    if (dispositivosAtivos.length > 0) {
+      const confirmar = window.confirm(
+        `⚠️ DISPOSITIVOS SEM DATA DE RETIRADA:\n- ${dispositivosAtivos.join('\n- ')}\n\nDeseja registrar a retirada como HOJE para fechar os indicadores?`
+      );
+      if (!confirmar) return;
+      
+      const hojeStr = new Date().toISOString().split('T')[0];
+      if (enf.svd && !enf.svdRetiradaData) enf.svdRetiradaData = hojeStr;
+      if (enf.cvcLocal && !enf.cvcRetiradaData) enf.cvcRetiradaData = hojeStr;
+      if (enf.shileyLocal && !enf.shileyRetiradaData) enf.shileyRetiradaData = hojeStr;
+    }
+
+    setIsDischarging(true);
+
+    try {
+      const historicoRef = collection(db, "internacoes_historico");
+      const hojeISO = new Date().toISOString();
+
+      // --- 🧠 O MOTOR DE INDICADORES ---
+      const indicadores_finais = {
+        // Eficiência: Tempo de Internação (LOS)
+        permanenciaTotal: calcularDias(pacienteAtual.dataInternacao, hojeISO),
+        
+        // Ventilação Mecânica: (Sua função complexa do core.js)
+        totalDiasVM: getTempoVMNumber(pacienteAtual),
+        
+        // Dispositivos Invasivos: (Densidade de Uso)
+        totalDiasSVD: enf.svd ? calcularDias(enf.svdData, enf.svdRetiradaData) : 0,
+        totalDiasCVC: enf.cvcLocal ? calcularDias(enf.cvcData, enf.cvcRetiradaData) : 0,
+        totalDiasShiley: enf.shileyLocal ? calcularDias(enf.shileyData, enf.shileyRetiradaData) : 0,
+        
+        // Gravidade e Desfecho:
+        saps3Score: pacienteAtual.saps3?.score || 0,
+        mortalidadePrevista: pacienteAtual.saps3?.probabilidade || 0,
+        resultado: dischargeDestination === 'Óbito' ? 'Óbito' : 'Vivo'
+      };
+
+      // 3. Salvamento Eterno no Firebase
+      await addDoc(historicoRef, {
+        ...JSON.parse(JSON.stringify(pacienteAtual)),
+        dataSaidaUTI: hojeISO,
+        desfecho: dischargeDestination,
+        leitoOrigem: pacienteAtual.id,
+        indicadores: indicadores_finais // 👈 Aqui nasce o seu Painel Gestor
+      });
+
+      // 4. Limpeza do Leito Ativo
+      const empty = defaultPatient(activeTab);
+      const up = [...patients];
+      up[activeTab] = empty;
+      setPatients(up);
+      await deleteDoc(doc(db, "leitos_uti", `bed_${empty.id}`));
+
+      setShowDischargeModal(false);
+      setDischargeDestination("");
+
+    } catch (error) {
+      console.error("Erro ao processar alta:", error);
+      alert("Erro ao salvar indicadores. Tente novamente.");
+    } finally {
+      setIsDischarging(false);
+    }
   };
 
   const handlePrintHistory = () => {
@@ -2804,11 +3011,11 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 </button>
                 
                 {/* BOTÃO DA LIXEIRA */}
-                {currentPatient.nome && canClearBed && (
-                  <button onClick={handleClearData} className="text-slate-300 hover:text-red-500 transition-colors" title="Liberar Leito">
-                    <Trash2 size={18} />
-                  </button>
-                )}
+                  {currentPatient.nome && (userProfile?.perfil === "Enfermeiro" || userProfile?.role === "Enfermeiro" || userProfile?.perfil === "Desenvolvedor" || userProfile?.role === "Desenvolvedor") && (
+                    <button onClick={handleClearData} className="text-slate-300 hover:text-red-500 transition-colors" title="Liberar Leito">
+                      <Trash2 size={18} />
+                    </button>
+                  )}
 
                 {/* --- NOVA CÁPSULA DE IDADE --- */}
                 {currentPatient.dataNascimento && (
@@ -2960,10 +3167,10 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       isEditable={isEditable}
                       updateNested={updateNested}
                       handleBlurSave={handleBlurSave}
-
-                      // 👇 A MÁGICA MUDA AQUI: Em vez de setViewMode, usamos setShowNursingModal 👇
+                      addLesao={addLesao}
+                      removeLesao={removeLesao}
+                      updateLesaoData={updateLesaoData}
                       handleNursingAdmission={() => setShowNursingModal(true)}
-
                       generateNursingAI_Evolution={generateNursingAI_Evolution}
                       isNursingRole={isNursingRole}
                       isGeneratingNursingAI={isGeneratingNursingAI}
@@ -3231,6 +3438,63 @@ const userRole = userProfile?.role || userProfile?.perfil;
         physioEvoText={physioEvoText}
         setPhysioEvoText={setPhysioEvoText}
       />
+
+      {/* MODAL DE DESFECHO / SAÍDA DA UTI */}
+      {showDischargeModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Desfecho da Internação</h3>
+            <p className="text-slate-500 text-sm mb-6">
+              Selecione o destino do paciente <b className="text-slate-700">{patients[activeTab]?.nome}</b>:
+            </p>
+
+            <div className="space-y-3 mb-6">
+              {['Alta Hospitalar', 'Transferência para Enfermaria', 'Transferência Externa (Outro Hospital)', 'Óbito'].map(destino => {
+                // Lógica de cores simplificada para não engasgar o compilador do Vite
+                const isSelected = dischargeDestination === destino;
+                const isObito = destino === 'Óbito';
+                
+                let btnClass = 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'; // Cor padrão
+                if (isSelected && isObito) btnClass = 'border-red-500 bg-red-50 text-red-700'; // Cor se for óbito
+                if (isSelected && !isObito) btnClass = 'border-emerald-500 bg-emerald-50 text-emerald-700'; // Cor se for alta/transferência
+
+                return (
+                  <button
+                    key={destino}
+                    onClick={() => setDischargeDestination(destino)}
+                    className={`w-full p-4 rounded-xl font-bold border-2 transition-all text-left flex justify-between items-center ${btnClass}`}
+                  >
+                    {destino} 
+                    {isSelected && (
+                      <span className={isObito ? 'text-red-500' : 'text-emerald-500'}>✓</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setShowDischargeModal(false); setDischargeDestination(""); }} 
+                className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDischarge}
+                disabled={!dischargeDestination || isDischarging}
+                className={`flex-1 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 ${
+                  dischargeDestination === 'Óbito' 
+                    ? 'bg-red-600 hover:bg-red-700' 
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+              >
+                {isDischarging ? "Processando..." : "Confirmar Saída"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: CHECKLIST PRÉ-EVOLUÇÃO (TIMEOUT CLÍNICO) */}
       <ChecklistEvoModal

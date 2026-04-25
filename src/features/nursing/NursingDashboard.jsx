@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, UserPlus, Edit3, AlertTriangle, Syringe, Activity, AlertCircle, CheckCircle, Loader2, BrainCircuit } from 'lucide-react';
+import { Shield, UserPlus, Plus, X, Edit3, AlertTriangle, ShieldAlert, Syringe, Activity, AlertCircle, CheckCircle, Loader2, BrainCircuit } from 'lucide-react';
 import { ESCALA_DOR, PRECAUCOES, CARACTERISTICAS_DIURESE } from '../../constants/clinicalLists';
 
 const NursingDashboard = ({
@@ -8,6 +8,9 @@ const NursingDashboard = ({
   handleNursingAdmission,
   updateNested,
   handleBlurSave,
+  addLesao,
+  removeLesao,
+  updateLesaoData,
   generateNursingAI_Evolution,
   isNursingRole,
   isGeneratingNursingAI
@@ -152,7 +155,11 @@ return (
           {/* INVASIVOS E DISPOSITIVOS */}
           <div className="p-4 border rounded-xl bg-orange-50/20">
             <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2"><Syringe size={16} /> Invasivos e Dispositivos</h4>
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
+            
+            {/* GRADE 1: ACESSOS VENOSOS (AVP, CVC, SHILEY) */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 items-start">
+              
+              {/* 1. AVP */}
               <div>
                 <label className="text-xs font-bold text-gray-500">AVP (Local/Data)</label>
                 <div className="flex gap-2">
@@ -165,15 +172,17 @@ return (
                   />
                   <input 
                     type="date" 
-                    className="w-32 p-2 border rounded" 
+                    className="w-32 p-2 border rounded shrink-0" 
                     value={currentPatient.enfermagem?.avpData || ""} 
                     onChange={(e) => updateNested("enfermagem", "avpData", e.target.value)} 
                     onBlur={() => handleBlurSave("Enfermagem: Editou AVP (Data)")}
                   />
                 </div>
               </div>
+
+              {/* 2. CVC/PICC */}
               <div>
-                <label className="text-xs font-bold text-gray-500">CVC/PICC (Local/Data)</label>
+                <label className="text-xs font-bold text-gray-500">CVC/PICC (Inserção)</label>
                 <div className="flex gap-2">
                   <input 
                     className="w-full p-2 border rounded" 
@@ -184,16 +193,68 @@ return (
                   />
                   <input 
                     type="date" 
-                    className="w-32 p-2 border rounded" 
+                    className="w-32 p-2 border rounded shrink-0" 
                     value={currentPatient.enfermagem?.cvcData || ""} 
                     onChange={(e) => updateNested("enfermagem", "cvcData", e.target.value)} 
-                    onBlur={() => handleBlurSave("Enfermagem: Editou CVC/PICC (Data)")}
+                    onBlur={() => handleBlurSave("Enfermagem: Editou CVC/PICC (Data Inserção)")}
                   />
                 </div>
+                
+                {currentPatient.enfermagem?.cvcLocal && (
+                  <div className="mt-2">
+                    <label className="block text-[10px] font-bold text-red-500 uppercase">Data de Retirada (CVC/PICC)</label>
+                    <input 
+                      type="date" 
+                      className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
+                      value={currentPatient.enfermagem?.cvcRetiradaData || ""} 
+                      onChange={(e) => updateNested("enfermagem", "cvcRetiradaData", e.target.value)} 
+                      onBlur={() => handleBlurSave("Enfermagem: Registrou retirada do CVC/PICC")}
+                      disabled={!isEditable} 
+                    />
+                  </div>
+                )}
               </div>
+
+              {/* 3. SHILEY (HEMODIÁLISE) */}
+              <div>
+                <label className="text-xs font-bold text-gray-500">Cateter de Shiley (Inserção)</label>
+                <div className="flex gap-2">
+                  <input 
+                    className="w-full p-2 border rounded" 
+                    placeholder="Local" 
+                    value={currentPatient.enfermagem?.shileyLocal || ""} 
+                    onChange={(e) => updateNested("enfermagem", "shileyLocal", e.target.value)} 
+                    onBlur={() => handleBlurSave("Enfermagem: Editou Shiley (Local)")}
+                  />
+                  <input 
+                    type="date" 
+                    className="w-32 p-2 border rounded shrink-0" 
+                    value={currentPatient.enfermagem?.shileyData || ""} 
+                    onChange={(e) => updateNested("enfermagem", "shileyData", e.target.value)} 
+                    onBlur={() => handleBlurSave("Enfermagem: Editou Shiley (Data Inserção)")}
+                  />
+                </div>
+                
+                {currentPatient.enfermagem?.shileyLocal && (
+                  <div className="mt-2">
+                    <label className="block text-[10px] font-bold text-red-500 uppercase">Data de Retirada (Shiley)</label>
+                    <input 
+                      type="date" 
+                      className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
+                      value={currentPatient.enfermagem?.shileyRetiradaData || ""} 
+                      onChange={(e) => updateNested("enfermagem", "shileyRetiradaData", e.target.value)} 
+                      onBlur={() => handleBlurSave("Enfermagem: Registrou retirada do Shiley")}
+                      disabled={!isEditable} 
+                    />
+                  </div>
+                )}
+              </div>
+
             </div>
             
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* GRADE 2: OUTROS DISPOSITIVOS (SVD, DIURESE, SNE, DRENOS) */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+              
               <div>
                 <label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-1">
                   <input 
@@ -202,16 +263,32 @@ return (
                     onChange={(e) => updateNested("enfermagem", "svd", e.target.checked)} 
                     onBlur={() => handleBlurSave("Enfermagem: Alterou status de SVD")}
                   /> 
-                  SVD (Sonda Vesical / Data)
+                  SVD (Sonda Vesical / Inserção)
                 </label>
-                <input 
-                  type="date" 
-                  className={`w-full p-2 border rounded ${!currentPatient.enfermagem?.svd ? "bg-gray-100 opacity-50" : ""}`} 
-                  value={currentPatient.enfermagem?.svdData || ""} 
-                  onChange={(e) => updateNested("enfermagem", "svdData", e.target.value)} 
-                  onBlur={() => handleBlurSave("Enfermagem: Editou SVD (Data)")}
-                  disabled={!currentPatient.enfermagem?.svd || !isEditable} 
-                />
+                <div className="space-y-2">
+                  <input 
+                    type="date" 
+                    className={`w-full p-2 border rounded ${!currentPatient.enfermagem?.svd ? "bg-gray-100 opacity-50" : ""}`} 
+                    value={currentPatient.enfermagem?.svdData || ""} 
+                    onChange={(e) => updateNested("enfermagem", "svdData", e.target.value)} 
+                    onBlur={() => handleBlurSave("Enfermagem: Editou SVD (Data Inserção)")}
+                    disabled={!currentPatient.enfermagem?.svd || !isEditable} 
+                  />
+                  
+                  {currentPatient.enfermagem?.svd && (
+                    <div className="mt-2">
+                      <label className="block text-[10px] font-bold text-red-500 uppercase">Data de Retirada (SVD)</label>
+                      <input 
+                        type="date" 
+                        className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
+                        value={currentPatient.enfermagem?.svdRetiradaData || ""} 
+                        onChange={(e) => updateNested("enfermagem", "svdRetiradaData", e.target.value)} 
+                        onBlur={() => handleBlurSave("Enfermagem: Registrou retirada da SVD")}
+                        disabled={!isEditable} 
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
               
               <div>
@@ -248,7 +325,7 @@ return (
               </div>
 
               <div>
-                <label className="text-xs font-bold text-gray-500 mb-1 block">Drenos (Tipo/Característica)</label>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Drenos (Tipo/Características)</label>
                 <input 
                   className="w-full p-2 border rounded" 
                   value={currentPatient.enfermagem?.drenoTipo || ""} 
@@ -260,33 +337,75 @@ return (
           </div>
 
           {/* PELE E CURATIVOS */}
-          <div className="p-4 border rounded-xl bg-orange-50/20">
-            <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2">
-              <Activity size={16} /> Pele e Curativos
-            </h4>
-            <textarea 
-              placeholder="Lesões por pressão (Local / Estágio)..." 
-              className="w-full p-2 border rounded mb-2 h-16" 
-              value={currentPatient.enfermagem?.lesaoLocal || ""} 
-              onChange={(e) => updateNested("enfermagem", "lesaoLocal", e.target.value)} 
-              onBlur={() => handleBlurSave("Enfermagem: Editou Lesões por pressão")}
-            />
-            
-            <div className="flex flex-col md:flex-row gap-2">
-              <input 
-                className="w-full md:flex-1 p-2 border rounded outline-none focus:ring-2 focus:ring-orange-300" 
-                placeholder="Tipo de Curativo" 
-                value={currentPatient.enfermagem?.curativoTipo || ""} 
-                onChange={(e) => updateNested("enfermagem", "curativoTipo", e.target.value)} 
-                onBlur={() => handleBlurSave("Enfermagem: Editou Tipo de Curativo")}
-              />
-              <input 
-                type="date" 
-                className="w-full md:w-32 p-2 border rounded outline-none focus:ring-2 focus:ring-orange-300" 
-                value={currentPatient.enfermagem?.curativoData || ""} 
-                onChange={(e) => updateNested("enfermagem", "curativoData", e.target.value)} 
-                onBlur={() => handleBlurSave("Enfermagem: Editou Data do Curativo")}
-              />
+          <div className="p-4 border rounded-xl bg-blue-50/30 mt-4">
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="font-bold text-blue-800 flex items-center gap-2">
+                <ShieldAlert size={16} /> Integridade Cutânea e Curativos
+              </h4>
+              <button 
+                onClick={addLesao}
+                className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors"
+              >
+                <Plus size={14} /> Adicionar Lesão
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {(!currentPatient.enfermagem?.lesoes || currentPatient.enfermagem?.lesoes.length === 0) && (
+                <p className="text-sm text-slate-400 italic text-center py-2">Nenhuma lesão registrada. Pele íntegra.</p>
+              )}
+
+              {currentPatient.enfermagem?.lesoes?.map((lesao) => (
+                <div key={lesao.id} className="bg-white border border-blue-100 p-4 rounded-xl shadow-sm relative">
+                  <button 
+                    onClick={() => removeLesao(lesao.id)}
+                    className="absolute top-2 right-2 text-slate-300 hover:text-red-500"
+                  >
+                    <X size={16} />
+                  </button>
+
+                  <div className="grid md:grid-cols-4 gap-4">
+                    {/* Origem da Lesão */}
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Origem</label>
+                      <select 
+                        className={`w-full p-2 border rounded text-sm font-bold ${lesao.origem === 'incidencia' ? 'text-red-600 bg-red-50' : 'text-slate-600'}`}
+                        value={lesao.origem}
+                        onChange={(e) => updateLesaoData(lesao.id, "origem", e.target.value)}
+                      >
+                        <option value="prevalencia">Prévia (Prevalência)</option>
+                        <option value="incidencia">Adquirida na UTI (Incidência)</option>
+                      </select>
+                    </div>
+
+                    {/* Localização e Estágio */}
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Localização / Estágio</label>
+                      <input 
+                        type="text"
+                        placeholder="Ex: Sacra - Estágio II"
+                        className="w-full p-2 border rounded text-sm"
+                        value={lesao.localizacao}
+                        onChange={(e) => updateLesaoData(lesao.id, "localizacao", e.target.value)}
+                        onBlur={() => handleBlurSave("Enfermagem: Atualizou local da lesão")}
+                      />
+                    </div>
+
+                    {/* Tipo de Curativo */}
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Curativo / Conduta</label>
+                      <input 
+                        type="text"
+                        placeholder="Ex: Placa de Hidrocoloide / AGE"
+                        className="w-full p-2 border border-emerald-200 bg-emerald-50/30 rounded text-sm"
+                        value={lesao.curativo}
+                        onChange={(e) => updateLesaoData(lesao.id, "curativo", e.target.value)}
+                        onBlur={() => handleBlurSave("Enfermagem: Atualizou curativo")}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

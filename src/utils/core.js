@@ -425,6 +425,25 @@ export const getTempoVMText = (p) => {
   return `D${tempoTotal}`;
 };
 
+// Função exclusiva para o Painel Gestor: Devolve APENAS O NÚMERO de dias de VM
+export const getTempoVMNumber = (p) => {
+  if (!p.physio) return 0;
+  const diasPrevios = p.physio.diasAcumuladosVM ? parseInt(p.physio.diasAcumuladosVM) : 0;
+  if (!p.dataIntubacao) return diasPrevios; // Se não tem intubação atual, retorna os prévios
+
+  const start = parseLocalDate(p.dataIntubacao);
+  // Usa o dia de hoje, a menos que ele já tenha sido extubado/decanulado antes da alta
+  let endStr = getManausDateStr(); 
+  if (p.dataDecanulacao) endStr = p.dataDecanulacao;
+  else if (p.dataExtubacao && !p.dataTQT) endStr = p.dataExtubacao;
+
+  const end = parseLocalDate(endStr);
+  const diff = Math.max(0, Math.floor((end - start) / 86400000));
+  const tempoAtual = diff + 1;
+  
+  return diasPrevios + tempoAtual; // Retorna matemática pura! Ex: 10
+};
+
 export const calcularHDEntradas = (p) => {
   if (!p || !p.hd_monitoramento) return 0;
   let total = 0;
