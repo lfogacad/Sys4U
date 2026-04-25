@@ -2887,21 +2887,42 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     currentPatient.statusInternacao === "Aguardando Admissão Médica" ? (
                       <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 mt-4">
                         <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
-                          {/* Usando um ícone ou um emoji de estetoscópio caso não tenha o Lucide importado aí */}
                           <span className="text-4xl">🩺</span>
                         </div>
                         <h3 className="text-xl font-bold text-slate-800">Paciente Aguardando Admissão</h3>
                         <p className="text-slate-500 mb-6 text-center max-w-sm">
                           O paciente foi vinculado a este leito. É obrigatório realizar a admissão formal antes de acessar a tela de evolução diária.
                         </p>
-                        <button
-                          onClick={handleAdmitPatient}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition-transform active:scale-95"
-                        >
-                          Iniciar Admissão Médica
-                        </button>
+                        
+                        {(() => {
+                          const role = userProfile?.perfil || userProfile?.role;
+                          const canStartAdmission = role === "Médico" || role === "Desenvolvedor";
+
+                          return (
+                            <>
+                              <button
+                                onClick={handleAdmitPatient}
+                                disabled={!canStartAdmission}
+                                className={`px-8 py-3 rounded-xl font-bold shadow-lg transition-transform ${
+                                  canStartAdmission 
+                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95" 
+                                    : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                                }`}
+                              >
+                                Iniciar Admissão Médica
+                              </button>
+                              
+                              {!canStartAdmission && (
+                                <p className="text-xs text-red-500 mt-3 font-medium">
+                                  🔒 Somente o perfil "Médico" pode iniciar esta admissão.
+                                </p>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     ) : (
+                      
                       <MedicalDashboard
                         currentPatient={currentPatient}
                         isEditable={isEditable}

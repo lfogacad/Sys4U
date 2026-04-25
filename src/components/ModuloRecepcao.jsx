@@ -321,8 +321,12 @@ const ModuloRecepcao = ({ userProfile }) => {
               <p className="text-slate-500 text-sm mb-6">Para qual setor o paciente <b>{formData.nome}</b> será enviado?</p>
               
               <div className="space-y-3 mb-6">
-                {['UTI', 'Pronto Socorro', 'Enfermaria', 'Centro Cirúrgico'].map(setor => (
-                  <button key={setor} onClick={() => setSetorDestino(setor)} className={`w-full p-4 rounded-xl font-bold border-2 transition-all text-left flex justify-between items-center ${setorDestino === setor ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 hover:border-emerald-200 bg-white text-slate-600'}`}>
+                {['UTI'].map(setor => (
+                  <button 
+                    key={setor} 
+                    onClick={() => setSetorDestino(setor)} 
+                    className={`w-full p-4 rounded-xl font-bold border-2 transition-all text-left flex justify-between items-center ${setorDestino === setor ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 hover:border-emerald-200 bg-white text-slate-600'}`}
+                  >
                     {setor} {setorDestino === setor && <CheckCircle size={20} className="text-emerald-500" />}
                   </button>
                 ))}

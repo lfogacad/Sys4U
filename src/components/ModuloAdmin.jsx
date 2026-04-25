@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc, arrayUnion } from 'firebase/firestore';
-import { db } from '../config/firebase'; // Ajuste o caminho se necessário
-import { Users, Search, ShieldCheck, AlertCircle, Loader2, Plus, X } from 'lucide-react';
+import { db } from '../config/firebase';
+import { useNavigate } from 'react-router-dom';
+import { Users, Search, ShieldCheck, AlertCircle, ArrowLeft, Loader2, Plus, X } from 'lucide-react';
 
 const ModuloAdmin = ({ userProfile }) => {
+  const navigate = useNavigate();
   const [usuarios, setUsuarios] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -90,16 +92,31 @@ const ModuloAdmin = ({ userProfile }) => {
   return (
     <div className="max-w-6xl mx-auto">
       {/* Cabeçalho do Módulo */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-slate-800 flex items-center gap-3">
-            <ShieldCheck className="text-emerald-600" size={32} />
-            Gestão de Acessos
-          </h2>
-          <p className="text-slate-500">Credenciamento e alocação de profissionais nas unidades.</p>
+      <div className="flex flex-col md:flex-row md:items-start justify-between mb-8 gap-4">
+        
+        {/* LADO ESQUERDO: Botão Voltar + Título */}
+        <div className="flex items-start gap-3 md:gap-4">
+          
+          {/* --- NOVO BOTÃO DE VOLTAR --- */}
+          <button
+            onClick={() => navigate('/hub')}
+            className="mt-1 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 shadow-sm p-2.5 rounded-full transition-all flex items-center justify-center shrink-0"
+            title="Voltar ao Painel de Módulos"
+          >
+            <ArrowLeft size={22} />
+          </button>
+
+          <div>
+            <h2 className="text-3xl font-black text-slate-800 flex items-center gap-3">
+              <ShieldCheck className="text-emerald-600" size={32} />
+              Gestão de Acessos
+            </h2>
+            <p className="text-slate-500 mt-1">Credenciamento e alocação de profissionais nas unidades.</p>
+          </div>
         </div>
         
-        <div className="relative w-full md:w-72">
+        {/* LADO DIREITO: Barra de Pesquisa */}
+        <div className="relative w-full md:w-72 md:mt-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input 
             type="text" 
