@@ -2446,8 +2446,17 @@ const handleBulkUpload = async (e) => {
       setIsRegistering(false);
       setNewConselho(""); // Limpa o campo após cadastrar
       alert("Cadastrado com sucesso!");
-    } catch {
-      setAuthError("Erro ao registrar.");
+    } catch (error) {
+      console.error("Erro detalhado do Firebase:", error); // Salva no F12 para o desenvolvedor ver
+      
+      // Traduz os erros mais comuns do Firebase para o usuário
+      if (error.code === 'auth/email-already-in-use') {
+        setAuthError("Esse e-mail já tem um login cadastrado no sistema. Peça para redefinir a senha ou delete o login antigo.");
+      } else if (error.code === 'auth/weak-password') {
+        setAuthError("A senha é muito fraca. Digite pelo menos 6 caracteres.");
+      } else {
+        setAuthError(`Erro ao registrar: ${error.message}`);
+      }
     }
   };
   const handleForceChangePassword = async (e) => {
