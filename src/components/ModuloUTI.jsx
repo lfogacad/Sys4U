@@ -2830,13 +2830,24 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   <h3 className="text-xl font-bold text-slate-700">Leito Vazio</h3>
                   <p className="text-slate-400 mb-6 text-sm">Nenhum paciente ocupando este leito no momento.</p>
 
-                  {/* AQUI ESTÁ A MÁGICA: Agora ele chama a Fila de Espera passando o número do leito! */}
-                  <button
-                    onClick={() => handleOpenQueue(activeTab)}
-                    className="mt-4 bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-colors"
-                  >
-                    Puxar Paciente da Fila
-                  </button>
+                  {(() => {
+                    const role = userProfile?.perfil || userProfile?.role;
+                    const canPullPatient = role === "Médico" || role === "Enfermeiro" || role === "Desenvolvedor";
+
+                    return canPullPatient ? (
+                      <button
+                        onClick={() => handleOpenQueue(activeTab)}
+                        className="mt-4 bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-colors"
+                      >
+                        Puxar Paciente da Fila
+                      </button>
+                    ) : (
+                      <p className="mt-4 text-sm text-slate-400 font-medium px-4 py-2 bg-slate-50 rounded-lg border border-slate-100">
+                        🔒 Apenas Médicos e Enfermeiros podem alocar pacientes.
+                      </p>
+                    );
+                  })()}
+                  
                 </div>
               ) : (
                 <>
@@ -2922,7 +2933,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         })()}
                       </div>
                     ) : (
-                      
+
                       <MedicalDashboard
                         currentPatient={currentPatient}
                         isEditable={isEditable}
