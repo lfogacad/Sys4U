@@ -195,14 +195,18 @@ const AppRouter = () => {
       {/* Removemos o p-6 (espaçamento) quando estiver na UTI para ganhar tela cheia */}
       <main className={`${isUTIPage ? 'p-0' : 'p-6'}`}>
         <Routes>
-          {/* O isSuperUser agora libera o ServiceHub e o ModuloAdmin para o Desenvolvedor */}
-          <Route path="/hub" element={isSuperUser ? <ServiceHub userProfile={userProfile} /> : <Navigate to="/" />} />
+          {/* 1. O HUB AGORA É LIVRE: Todo mundo entra aqui, e o próprio Hub filtra os botões */}
+          <Route path="/hub" element={<ServiceHub userProfile={userProfile} />} />
+          
+          {/* 2. Módulos Específicos */}
           <Route path="/uti/*" element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} handleLogout={handleLogout} />} />
-          <Route path="/admin" element={isSuperUser ? <ModuloAdmin userProfile={userProfile} /> : <Navigate to="/" />} />
           <Route path="/recepcao" element={<ModuloRecepcao userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} />
           
-          {/* Se for SuperUser, o destino padrão após o login é o Hub, caso contrário, vai para a UTI */}
-          <Route path="/" element={<Navigate to={isSuperUser ? "/hub" : "/uti"} />} />
+          {/* 3. Painel Admin continua restrito aos gestores/desenvolvedor */}
+          <Route path="/admin" element={isSuperUser ? <ModuloAdmin userProfile={userProfile} /> : <Navigate to="/hub" />} />
+          
+          {/* 4. DESTINO PADRÃO: Bateu na porta do hospital? Vai direto pro Hub! */}
+          <Route path="/" element={<Navigate to="/hub" />} />
         </Routes>
       </main>
     </div>

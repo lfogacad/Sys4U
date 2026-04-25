@@ -2484,7 +2484,7 @@ const ROLE_PERMISSIONS = {
 const userRole = userProfile?.role || userProfile?.perfil;
 
 // 2. ABRE A PORTA: Agora busca na matriz usando a variável correta que lê os dois
-  const currentRolePerms = ROLE_PERMISSIONS[userRole] || { views: ["overview"], edits: [], canSeeLeito11: false };
+  const currentRolePerms = ROLE_PERMISSIONS[userRole] || { views: [], edits: [], canSeeLeito11: false };
 
   // --- LÓGICA DE INTERFACE (Botões Base) ---
   const baseNavButtons = [
@@ -2582,17 +2582,15 @@ const userRole = userProfile?.role || userProfile?.perfil;
 {/* LADO ESQUERDO DO CABEÇALHO: Logo e Títulos RESTAURADOS */}
           <div className="flex items-center gap-2 md:gap-4">
             
-            {/* --- NOVO BOTÃO DE VOLTAR (Apenas para perfis Master) --- */}
-            {(userProfile?.perfil === "Administrador" || userProfile?.perfil === "Desenvolvedor" || userProfile?.role === "Administrador" || userProfile?.role === "Desenvolvedor") && (
-              <button
-                onClick={() => navigate('/hub')}
-                className="bg-white/10 hover:bg-white/20 p-2.5 md:pr-4 md:pl-3 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm flex items-center gap-2 mr-1 md:mr-2"
-                title="Voltar ao Mapa de Setores"
-              >
-                <ArrowLeft size={20} />
-                <span className="hidden md:inline font-bold text-sm">Painel</span>
-              </button>
-            )}
+            {/* --- BOTÃO DE VOLTAR AO HUB (Livre para todos os perfis) --- */}
+            <button
+              onClick={() => navigate('/hub')}
+              className="bg-white/10 hover:bg-white/20 p-2.5 md:pr-4 md:pl-3 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm flex items-center gap-2 mr-1 md:mr-2"
+              title="Voltar ao Painel de Módulos"
+            >
+              <ArrowLeft size={20} />
+              <span className="hidden md:inline font-bold text-sm">Painel</span>
+            </button>
 
             <img 
               src="/logobranca.png" 
