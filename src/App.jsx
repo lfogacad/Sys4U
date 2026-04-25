@@ -113,9 +113,21 @@ const AppRouter = () => {
       setIsRegistering(false);
       alert("Cadastrado com sucesso! Faça login.");
     } catch (err) {
-      setAuthError("Erro ao cadastrar: " + err.message);
-    } finally {
-      setIsLoading(false);
+      console.error("Erro detalhado do Firebase:", err); // Mantém o log oculto para o desenvolvedor (F12)
+      
+      // Traduz os códigos de erro do Firebase para mensagens amigáveis
+      if (err.code === 'auth/email-already-in-use') {
+        setAuthError("Este e-mail já possui cadastro. Peça para redefinir a senha ou use outro e-mail.");
+      } else if (err.code === 'auth/weak-password') {
+        setAuthError("A senha escolhida é muito fraca. Utilize pelo menos 6 caracteres.");
+      } else if (err.code === 'auth/invalid-email') {
+        setAuthError("O formato do e-mail é inválido. Verifique se não há espaços ou erros de digitação.");
+      } else if (err.code === 'auth/network-request-failed') {
+        setAuthError("Sem conexão com a internet. Verifique sua rede e tente novamente.");
+      } else {
+        // Fallback de segurança para qualquer outro erro não mapeado
+        setAuthError(`Falha no cadastro: ${err.message}`);
+      }
     }
   };
 
