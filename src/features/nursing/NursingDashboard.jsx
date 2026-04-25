@@ -155,7 +155,7 @@ return (
 
           {/* INVASIVOS E DISPOSITIVOS */}
           <div className="p-4 border rounded-xl bg-orange-50/20">
-            <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2"><Syringe size={16} /> Invasivos e Dispositivos</h4>
+            <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2"><Syringe size={16} /> Dispositivos Invasivos</h4>
             
             {/* GRADE 1: ACESSOS VENOSOS (AVP, CVC, SHILEY) */}
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 items-start">

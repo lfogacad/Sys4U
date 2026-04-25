@@ -603,29 +603,6 @@ const clearAntibiotic = (i) => {
     });
   };
 
-  const registrarEventoAdverso = async (tipo, detalhes = "") => {
-    const pacienteAtual = patients[activeTab];
-    if (!pacienteAtual?.nome) return;
-
-    try {
-      await addDoc(collection(db, "eventos_adversos"), {
-        idInternacao: pacienteAtual.idInternacao || "N/A",
-        pacienteNome: pacienteAtual.nome,
-        leito: activeTab,
-        tipo: tipo,
-        detalhes: detalhes,
-        dataEvento: new Date().toISOString(), // Usando ISO para facilitar filtros no Gestor
-        registradoPor: userProfile.nome || "Não identificado",
-        perfil: userProfile.perfil || "Enfermeiro"
-      });
-      
-      alert(`✅ Evento registrado: ${tipo}. Isso será contabilizado no relatório mensal de segurança.`);
-    } catch (error) {
-      console.error("Erro ao registrar evento:", error);
-      alert("Falha ao registrar evento no banco de dados.");
-    }
-  };
-
   const handleSepsisResponse = (hasInfection) => {
     const p = { ...currentPatient };
     if (!p.sofa_data_technical) p.sofa_data_technical = {};
@@ -717,22 +694,27 @@ const clearAntibiotic = (i) => {
 
   const registrarEventoAdverso = async (tipo, detalhes = "") => {
     const pacienteAtual = patients[activeTab];
-    if (!pacienteAtual?.idInternacao) return;
+    // Verifica se há um paciente no leito antes de registrar
+    if (!pacienteAtual?.nome) return;
 
     try {
       await addDoc(collection(db, "eventos_adversos"), {
-        idInternacao: pacienteAtual.idInternacao,
+        idInternacao: pacienteAtual.idInternacao || "N/A",
         pacienteNome: pacienteAtual.nome,
         leito: activeTab,
-        tipo: tipo, // Ex: "Extubação Acidental", "Queda", "Saída de Cateter"
+        tipo: tipo,
         detalhes: detalhes,
-        dataEvento: serverTimestamp(),
-        registradoPor: userProfile.nome || "Não identificado",
-        perfil: userProfile.perfil || "N/A"
+        // Usamos ISOString para manter o padrão dos seus outros indicadores
+        dataEvento: new Date().toISOString(), 
+        registradoPor: userProfile?.nome || "Não identificado",
+        perfil: userProfile?.perfil || userProfile?.role || "Enfermeiro"
       });
-      console.log(`[SEGURANÇA]: Evento ${tipo} registrado com sucesso.`);
+      
+      console.log(`[SEGURANÇA]: Evento ${tipo} registrado.`);
+      alert(`✅ Evento registrado: ${tipo}.\nIsso foi enviado para o relatório mensal de segurança.`);
     } catch (error) {
       console.error("Erro ao registrar evento adverso:", error);
+      alert("Erro técnico ao salvar evento. Comunique o suporte.");
     }
   };
 
@@ -2202,93 +2184,75 @@ const handleFinalizeNursingAdmission = async () => {
       "morse_terapiaIV", "morse_marcha", "morse_estadoMental",
     ];
 
-    // 1. VALIDAÇÃO DE SEGURANÇA (Obrigatório preencher tudo)
+    // 1. VALIDAÇÃO DE SEGURANÇA
     for (let k of [...reqBraden, ...reqMorse]) {
-      if (
-        nursingData[k] === "" ||
-        nursingData[k] === null ||
-        nursingData[k] === undefined
-      ) {
-        alert(
-          "O preenchimento de todos os fatores das Escalas de Braden e Morse é obrigatório para concluir a admissão."
-        );
+      if (nursingData[k] === "" || nursingData[k] === null || nursingData[k] === undefined) {
+        alert("O preenchimento de todos os fatores das Escalas de Braden e Morse é obrigatório.");
         return;
       }
     }
 
-    // 2. A MATEMÁTICA: Somando as Escalas Automaticamente
+    // 2. MATEMÁTICA DAS ESCALAS
     const bradenTotal = reqBraden.reduce((acc, curr) => acc + (parseInt(nursingData[curr]) || 0), 0);
     let bradenRisco = bradenTotal <= 9 ? "Altíssimo" : bradenTotal <= 12 ? "Alto" : bradenTotal <= 14 ? "Moderado" : bradenTotal <= 18 ? "Leve" : "Sem Risco";
 
     const morseTotal = reqMorse.reduce((acc, curr) => acc + (parseInt(nursingData[curr]) || 0), 0);
     let morseRisco = morseTotal >= 45 ? "Alto" : morseTotal >= 25 ? "Baixo" : "Sem Risco";
 
-    // 3. RECUPERANDO DADOS MÉDICOS
-    const p = JSON.parse(JSON.stringify(patients[activeTab])); // Cópia segura do paciente atual
+    // 3. PROCESSAMENTO DE LESÕES E CURATIVOS (NOVO)
+    const lesoesLista = nursingData.lesoes || [];
+    const textoLesoes = lesoesLista.length > 0 
+      ? lesoesLista.map(l => `- [${l.origem === 'incidencia' ? 'ADQUIRIDA NA UTI' : 'PRÉVIA'}] ${l.localizacao}. Curativo: ${l.curativo || "Não especificado"}`).join('\n')
+      : "Pele íntegra / Sem lesões por pressão.";
+
+    // 4. RECUPERANDO DADOS MÉDICOS E BÁSICOS
+    const p = JSON.parse(JSON.stringify(patients[activeTab]));
     const adm = p.admissionData || p.admissoes || {};
-    const nomePaciente = p.nome || "Não informado";
-    const historia = adm.historia || "Sem registro prévio na Admissão Médica";
-    const medicamentos = adm.medicamentos || "Sem registro";
-    const conscienciaBasal = adm.conscienciaBasal || "Sem registro";
-    const mobilidadeBasal = adm.mobilidadeBasal || "Sem registro";
+    const historia = adm.historia || "Sem registro prévio";
 
-    // 4. O CARIMBADOR: Montando o Texto Final Integrado
-    const text = `ADMISSÃO DE ENFERMAGEM
+    // 5. O NOVO CARIMBADOR (Texto Integrado com tudo o que incluímos)
+    const text = `ADMISSÃO DE ENFERMAGEM COMPLETA
 
---- HISTÓRIA CLÍNICA ---
+--- HISTÓRIA CLÍNICA (ADMISSÃO MÉDICA) ---
 ${historia}
 
-MEDICAMENTOS DE USO HABITUAL:
-${medicamentos}
-
-NÍVEL DE CONSCIÊNCIA BASAL: ${conscienciaBasal}
-MOBILIDADE BASAL: ${mobilidadeBasal}
-
 --- DADOS DE ENFERMAGEM ---
-
-CUIDADOS GERAIS:
-Escala de Dor: ${nursingData.dor || "Sem registro"}
-Hemodiálise: ${nursingData.hemodialise ? "Sim" : "Não"}
+Escala de Dor: ${nursingData.dor || "0"} | Hemodiálise: ${nursingData.hemodialise ? "Sim" : "Não"}
 Precauções: ${nursingData.precaucao || "Padrão"}
 
-DISPOSITIVOS INVASIVOS:
+DISPOSITIVOS INVASIVOS E DATAS:
 AVP: ${nursingData.avpLocal ? `${nursingData.avpLocal} (Data: ${nursingData.avpData || "-"})` : "Não possui"}
-CVC/PICC: ${nursingData.cvcLocal ? `${nursingData.cvcLocal} (Data: ${nursingData.cvcData || "-"})` : "Não possui"}
-SVD: ${nursingData.svd ? `Sim (Data: ${nursingData.svdData || "-"})` : "Não possui"}
+CVC/PICC: ${nursingData.cvcLocal ? `${nursingData.cvcLocal} (Ins: ${nursingData.cvcData || "-"}) ${nursingData.cvcRetiradaData ? `| RETIRADA: ${nursingData.cvcRetiradaData}` : ""}` : "Não possui"}
+SHILEY: ${nursingData.shileyLocal ? `${nursingData.shileyLocal} (Ins: ${nursingData.shileyData || "-"}) ${nursingData.shileyRetiradaData ? `| RETIRADA: ${nursingData.shileyRetiradaData}` : ""}` : "Não possui"}
+SVD: ${nursingData.svd ? `Sim (Ins: ${nursingData.svdData || "-"}) ${nursingData.svdRetiradaData ? `| RETIRADA: ${nursingData.svdRetiradaData}` : ""}` : "Não possui"}
 SNE: ${nursingData.sneCm ? `Fixação em ${nursingData.sneCm} cm (Data: ${nursingData.sneData || "-"})` : "Não possui"}
 Drenos: ${nursingData.drenoTipo || "Nenhum"}
 
-PELE E CURATIVOS:
-Lesões: ${nursingData.lesaoLocal || "Pele íntegra / Sem lesões por pressão"}
-Curativos: ${nursingData.curativoTipo ? `${nursingData.curativoTipo} (Data: ${nursingData.curativoData || "-"})` : "Nenhum"}
+INTEGRIDADE CUTÂNEA E CURATIVOS:
+${textoLesoes}
 
 ESCALAS DE RISCO:
 - BRADEN: ${bradenTotal} pontos (Risco ${bradenRisco})
 - MORSE: ${morseTotal} pontos (Risco de Queda ${morseRisco})
+
+---
+Documento gerado eletronicamente e registrado nos indicadores de performance da unidade.
 `;
 
-    // 5. A SUTURA FINAL (Atualiza, Salva e Fecha)
+    // 6. ATUALIZAÇÃO DO OBJETO DO PACIENTE
     if (!p.enfermagem) p.enfermagem = {};
-    if (!p.medical) p.medical = {}; 
-
-    // 👇 Jeito React mais moderno e à prova de falhas para fundir os dados
-    p.enfermagem = { ...p.enfermagem, ...nursingData };
-    p.nursingData = nursingData; // (Mantido se o senhor usar isso em outro lugar)
-
-    // Clona a informação da hemodiálise direto para a aba do Médico
-    p.medical.hemodialise = nursingData.hemodialise || false;
-
-    // Atualiza a tela localmente na mesma hora
+    p.enfermagem = { ...p.enfermagem, ...nursingData, lesoes: lesoesLista };
+    
     const up = [...patients];
     up[activeTab] = p;
     setPatients(up);
 
     // Salva no banco de dados
     if (typeof save === "function") {
-      save(p, "Enfermagem: Admissão Concluída e Integrada à Admissão Médica");
+      save(p, "Enfermagem: Admissão e Indicadores Atualizados");
     }
 
-    // --- NOVO: REGISTRO DE INDICADORES DE ENFERMAGEM E DISPOSITIVOS ---
+    // 7. CARIMBADOR DE INDICADORES (Firebase)
     try {
       const historicoRef = collection(db, "indicadores_performance");
       const baseData = {
@@ -2298,30 +2262,41 @@ ESCALAS DE RISCO:
         nomePaciente: p.nome
       };
 
-      // 1. Carimba o Braden
+      // Braden e Morse
       await addDoc(historicoRef, { ...baseData, tipo: "BRADEN", valor: bradenTotal, risco: bradenRisco });
-
-      // 2. Carimba o Morse
       await addDoc(historicoRef, { ...baseData, tipo: "MORSE", valor: morseTotal, risco: morseRisco });
 
-      // 3. Carimba Início de Dispositivos (Para cálculo de densidade de infecção futuro)
-      if (nursingData.svd) {
-        await addDoc(historicoRef, { ...baseData, tipo: "DISPOSITIVO_INICIO", nome: "SVD", dataInicio: nursingData.svdData });
+      // Registro de Dispositivos (Inícios e Retiradas)
+      const dispositivos = [
+        { nome: "SVD", ativo: nursingData.svd, inicio: nursingData.svdData, fim: nursingData.svdRetiradaData },
+        { nome: "CVC", ativo: nursingData.cvcLocal, inicio: nursingData.cvcData, fim: nursingData.cvcRetiradaData },
+        { nome: "SHILEY", ativo: nursingData.shileyLocal, inicio: nursingData.shileyData, fim: nursingData.shileyRetiradaData }
+      ];
+
+      for (let disp of dispositivos) {
+        if (disp.ativo) {
+          await addDoc(historicoRef, { ...baseData, tipo: "DISPOSITIVO_INICIO", nome: disp.nome, data: disp.inicio });
+          if (disp.fim) {
+            await addDoc(historicoRef, { ...baseData, tipo: "DISPOSITIVO_FIM", nome: disp.nome, data: disp.fim });
+          }
+        }
       }
-      if (nursingData.cvcLocal) {
-        await addDoc(historicoRef, { ...baseData, tipo: "DISPOSITIVO_INICIO", nome: "CVC", dataInicio: nursingData.cvcData });
+
+      // Registro de Lesões Adquiridas na UTI (Incidência)
+      const incidencias = lesoesLista.filter(l => l.origem === "incidencia");
+      for (let lpp of incidencias) {
+        await addDoc(historicoRef, { ...baseData, tipo: "LPP_INCIDENCIA", local: lpp.localizacao });
       }
-      // Adicione aqui outros como VMI, Drenos, etc.
 
     } catch (e) {
-      console.error("Erro ao carimbar indicadores de enfermagem:", e);
+      console.error("Erro ao carimbar indicadores:", e);
     }
 
-    // Fecha o modal e mostra o texto
+    // Finalização da Interface
     setShowNursingModal(false);
     setGeneratedAdmissionText(text);
     setViewMode("nursing"); 
-  };
+};
 
   // ========================================================================
   // MAPA DE VENTILAÇÃO MECÂNICA (FISIOTERAPIA)
