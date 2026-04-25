@@ -603,6 +603,29 @@ const clearAntibiotic = (i) => {
     });
   };
 
+  const registrarEventoAdverso = async (tipo, detalhes = "") => {
+    const pacienteAtual = patients[activeTab];
+    if (!pacienteAtual?.nome) return;
+
+    try {
+      await addDoc(collection(db, "eventos_adversos"), {
+        idInternacao: pacienteAtual.idInternacao || "N/A",
+        pacienteNome: pacienteAtual.nome,
+        leito: activeTab,
+        tipo: tipo,
+        detalhes: detalhes,
+        dataEvento: new Date().toISOString(), // Usando ISO para facilitar filtros no Gestor
+        registradoPor: userProfile.nome || "Não identificado",
+        perfil: userProfile.perfil || "Enfermeiro"
+      });
+      
+      alert(`✅ Evento registrado: ${tipo}. Isso será contabilizado no relatório mensal de segurança.`);
+    } catch (error) {
+      console.error("Erro ao registrar evento:", error);
+      alert("Falha ao registrar evento no banco de dados.");
+    }
+  };
+
   const handleSepsisResponse = (hasInfection) => {
     const p = { ...currentPatient };
     if (!p.sofa_data_technical) p.sofa_data_technical = {};

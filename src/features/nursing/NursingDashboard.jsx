@@ -11,6 +11,7 @@ const NursingDashboard = ({
   addLesao,
   removeLesao,
   updateLesaoData,
+  registrarEventoAdverso,
   generateNursingAI_Evolution,
   isNursingRole,
   isGeneratingNursingAI
@@ -405,6 +406,45 @@ return (
                     </div>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
+
+          {/* NOTIFICAÇÃO DE EVENTOS ADVERSOS */}
+          <div className="p-4 border rounded-xl bg-red-50/30 mt-4">
+            <h4 className="font-bold text-red-800 mb-3 flex items-center gap-2">
+              <AlertTriangle size={18} /> Notificação de Eventos Adversos (Gestão de Risco)
+            </h4>
+            
+            <p className="text-[11px] text-red-600 mb-4 italic">
+              * Clique no evento para registrar imediatamente. Estes dados alimentam os indicadores de segurança do paciente.
+            </p>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {[
+                { label: "Queda do Leito", icon: "🛏️" },
+                { label: "Retirada Acidental SNE", icon: "👃" },
+                { label: "Retirada Acidental CVC", icon: "🫀" },
+                { label: "Retirada Acidental SVD", icon: "💧" },
+                { label: "Extubação Acidental", icon: "🗣️" },
+                { label: "Erro de Medicação", icon: "💊" },
+                { label: "Obstrução de SNE", icon: "❌" },
+                { label: "Flebite / Extravasamento", icon: "💉" }
+              ].map((evento) => (
+                <button
+                  key={evento.label}
+                  onClick={() => {
+                    if(window.confirm(`Confirmar registro de "${evento.label}" para este paciente?`)) {
+                      registrarEventoAdverso(evento.label);
+                    }
+                  }}
+                  className="flex flex-col items-center justify-center p-3 bg-white border border-red-100 rounded-xl hover:bg-red-50 hover:border-red-300 transition-all group"
+                >
+                  <span className="text-xl mb-1 group-hover:scale-110 transition-transform">{evento.icon}</span>
+                  <span className="text-[10px] font-bold text-slate-700 text-center leading-tight">
+                    {evento.label}
+                  </span>
+                </button>
               ))}
             </div>
           </div>
