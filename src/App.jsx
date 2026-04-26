@@ -15,6 +15,7 @@ import ModuloUTI from "./components/ModuloUTI";
 import TrocaSenhaObrigatoria from "./components/TrocaSenhaObrigatoria";
 import SeletorUnidade from "./components/SeletorUnidade";
 import ModuloRecepcao from "./components/ModuloRecepcao";
+import GestorDashboard from './components/GestorDashboard';
 
 // Componente de Segurança (Disjuntor)
 class ErrorBoundary extends React.Component {
@@ -214,8 +215,8 @@ const AppRouter = () => {
           <Route path="/uti/*" element={<ModuloUTI user={user} userProfile={userProfile} unidadeAtiva={unidadeAtiva} handleLogout={handleLogout} />} />
           <Route path="/recepcao" element={<ModuloRecepcao userProfile={userProfile} unidadeAtiva={unidadeAtiva} />} />
           
-          {/* 3. Painel Admin continua restrito aos gestores/desenvolvedor */}
-          <Route path="/admin" element={isSuperUser ? <ModuloAdmin userProfile={userProfile} /> : <Navigate to="/hub" />} />
+          {/* 3. Painel Admin restrito aos gestores/desenvolvedor */}
+          <Route path="/admin" element={<GestorDashboard userProfile={userProfile} />} />
           
           {/* 4. DESTINO PADRÃO: Bateu na porta do hospital? Vai direto pro Hub! */}
           <Route path="/" element={<Navigate to="/hub" />} />

@@ -92,28 +92,7 @@ const ModuloAdmin = ({ userProfile }) => {
   return (
     <div className="max-w-6xl mx-auto">
       {/* Cabeçalho do Módulo */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between mb-8 gap-4">
-        
-        {/* LADO ESQUERDO: Botão Voltar + Título */}
-        <div className="flex items-start gap-3 md:gap-4">
-          
-          {/* --- NOVO BOTÃO DE VOLTAR --- */}
-          <button
-            onClick={() => navigate('/hub')}
-            className="mt-1 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 shadow-sm p-2.5 rounded-full transition-all flex items-center justify-center shrink-0"
-            title="Voltar ao Painel de Módulos"
-          >
-            <ArrowLeft size={22} />
-          </button>
-
-          <div>
-            <h2 className="text-3xl font-black text-slate-800 flex items-center gap-3">
-              <ShieldCheck className="text-emerald-600" size={32} />
-              Gestão de Acessos
-            </h2>
-            <p className="text-slate-500 mt-1">Credenciamento e alocação de profissionais nas unidades.</p>
-          </div>
-        </div>
+      <div className="flex flex-col md:flex-row md:items-start justify-end mb-6 gap-4">
         
         {/* LADO DIREITO: Barra de Pesquisa */}
         <div className="relative w-full md:w-72 md:mt-1">
@@ -228,6 +207,7 @@ const ModuloAdmin = ({ userProfile }) => {
                   {/* Equipe Médica */}
                   <option value="Médico">Médico (Plantonista/Diarista)</option>
                   <option value="Nefrologista">Nefrologista</option>
+                  <option value="RT Médico">RT Médico (Coordenador)</option>
                   
                   {/* Equipe Assistencial Multi */}
                   <option value="Enfermeiro">Enfermeiro</option>
