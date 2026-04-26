@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, FileSpreadsheet, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-// import { collection, addDoc, writeBatch, doc } from 'firebase/firestore';
-// import { db } from '../config/firebase';
+import { collection, addDoc, writeBatch, doc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 
 const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
   const [file, setFile] = useState(null);
-  const [mes, setMes] = useState("03"); // Padrão Março para teste
-  const [ano, setAno] = useState("2026");
+  const [mes, setMes] = useState("");
+  const [ano, setAno] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [previewData, setPreviewData] = useState([]);
   const [status, setStatus] = useState("idle"); // idle, processing, success, error
@@ -16,9 +16,9 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
   const dicionarioTurnos = {
     'D': { nome: 'Plantão Dia', inicio: '07:00', fim: '19:00', horas: 12, tipo: 'plantonista' },
     'N': { nome: 'Plantão Noite', inicio: '19:00', fim: '07:00', horas: 12, tipo: 'plantonista' },
-    'DN': { nome: 'Dia e Noite', inicio: '07:00', fim: '07:00', horas: 24, tipo: 'plantonista' },
-    'M': { nome: 'Rotina Manhã', inicio: '07:00', fim: '13:00', horas: 6, tipo: 'rotina' },
-    'T': { nome: 'Rotina Tarde', inicio: '13:00', fim: '19:00', horas: 6, tipo: 'rotina' },
+    'DN': { nome: 'Plantão 24h', inicio: '07:00', fim: '07:00', horas: 24, tipo: 'plantonista' },
+    'M': { nome: 'Plantão Manhã', inicio: '07:00', fim: '13:00', horas: 6, tipo: 'plantonista' },
+    'T': { nome: 'Plantão Tarde', inicio: '13:00', fim: '19:00', horas: 6, tipo: 'plantonista' },
     'V': { nome: 'Visita Médica', inicio: '07:00', fim: '13:00', horas: 6, tipo: 'visita' },
   };
 
@@ -131,45 +131,107 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
   };
 
   const salvarNoFirebase = async () => {
-    // Aqui no futuro o senhor vai ligar o writeBatch do Firebase
-    alert(`Preparando para salvar ${previewData.length} plantões no banco de dados!`);
-    console.log("Amostra do que vai para o banco:", previewData.slice(0, 5));
-    // Exemplo de código futuro:
-    // const batch = writeBatch(db);
-    // previewData.forEach(plantao => {
-    //   const docRef = doc(collection(db, "escalas"));
-    //   batch.set(docRef, plantao);
-    // });
-    // await batch.commit();
+    if (previewData.length === 0) return;
+    setIsProcessing(true); 
+    
+    try {
+      const batch = writeBatch(db);
+      const escalasRef = collection(db, "escalas");
+
+      previewData.forEach(plantao => {
+        // CRIA UM "RG" ÚNICO PARA O PLANTÃO: Ex: 2026-05-08_Médico_Azenair_DN
+        // Se clicar 10 vezes, o RG será o mesmo, logo o Firebase não duplica, apenas sobrepõe.
+        const nomeSemEspaco = plantao.nome.replace(/\s+/g, '');
+        const idUnico = `${plantao.data}_${categoria}_${nomeSemEspaco}_${plantao.sigla}`;
+        
+        const novoDocRef = doc(escalasRef, idUnico); 
+        
+        const dadosCompletos = {
+          ...plantao,
+          cadastradoEm: new Date().toISOString(),
+          status: "Confirmado"
+        };
+        
+        // O merge: true garante que ele atualize os dados em vez de apagar algo que já lá estava
+        batch.set(novoDocRef, dadosCompletos, { merge: true });
+      });
+
+      await batch.commit();
+      
+      alert(`✅ SUCESSO! ${previewData.length} plantões gravados com sucesso sem duplicações.`);
+      setStatus("idle");
+      setPreviewData([]);
+      setFile(null);
+      
+    } catch (error) {
+      console.error("Erro grave ao gravar na base de dados:", error);
+      alert("❌ Ocorreu um erro ao gravar. Verifique a consola.");
+      setStatus("error");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
-    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-      <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
-        <FileSpreadsheet className="text-emerald-500" />
-        Importar Escala Mensal (.xlsx, .csv)
-      </h3>
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
+          <FileSpreadsheet className="text-emerald-500" />
+          Importar Escala Mensal (.xlsx, .csv)
+        </h3>
 
-      <div className="grid md:grid-cols-3 gap-4 mb-6">
-        <div>
-          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Mês Ref.</label>
-          <select value={mes} onChange={(e) => setMes(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-bold text-slate-700">
-            <option value="01">Janeiro</option>
-            <option value="02">Fevereiro</option>
-            <option value="03">Março</option>
-            <option value="04">Abril</option>
-            <option value="05">Maio</option>
-          </select>
+        <div className="grid md:grid-cols-3 gap-4 mb-6">
+          {/* SELETOR DE MÊS */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Mês Ref.</label>
+            <select 
+              value={mes} 
+              onChange={(e) => setMes(e.target.value)} 
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-bold text-slate-700 cursor-pointer"
+            >
+              <option value="">Selecione</option>
+              <option value="01">Janeiro</option>
+              <option value="02">Fevereiro</option>
+              <option value="03">Março</option>
+              <option value="04">Abril</option>
+              <option value="05">Maio</option>
+              <option value="06">Junho</option>
+              <option value="07">Julho</option>
+              <option value="08">Agosto</option>
+              <option value="09">Setembro</option>
+              <option value="10">Outubro</option>
+              <option value="11">Novembro</option>
+              <option value="12">Dezembro</option>
+            </select>
+          </div>
+          
+          {/* SELETOR DE ANO */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ano Ref.</label>
+            <select 
+              value={ano} 
+              onChange={(e) => setAno(e.target.value)} 
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-bold text-slate-700 cursor-pointer"
+            >
+              <option value="">Selecione</option>
+              <option value="2026">2026</option>
+              <option value="2027">2027</option>
+              <option value="2028">2028</option>
+              <option value="2028">2029</option>
+              <option value="2028">2030</option>
+            </select>
+          </div>
+          
+          {/* CAMPO DE ARQUIVO */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Arquivo</label>
+            <input 
+              type="file" 
+              accept=".xlsx, .xls, .csv" 
+              onChange={handleFileUpload} 
+              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-sm file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 cursor-pointer" 
+            />
+          </div>
         </div>
-        <div>
-          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Ano Ref.</label>
-          <input type="number" value={ano} onChange={(e) => setAno(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-bold text-slate-700" />
-        </div>
-        <div>
-          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Arquivo</label>
-          <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-sm file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200" />
-        </div>
-      </div>
 
       {status === "idle" && file && (
         <button onClick={processarPlanilha} disabled={isProcessing} className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 transition-colors">

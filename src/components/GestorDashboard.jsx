@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, UserCheck, UserPlus, Plus, Shield, 
-  Bed, Save, Bell, Calculator 
+  Bed, Save, Bell, Calculator, Loader2 
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -24,6 +24,120 @@ const GestorDashboard = ({ userProfile }) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [plantaoEditado, setPlantaoEditado] = useState(null);
   const [novoPlantonista, setNovoPlantonista] = useState("");
+  // Controles dos dados recebidos da base de dados
+  const [plantoesDoDia, setPlantoesDoDia] = useState([]);
+  const [isLoadingPlantoes, setIsLoadingPlantoes] = useState(false);
+  const [plantoesDoMes, setPlantoesDoMes] = useState({});
+  const [isLoadingMes, setIsLoadingMes] = useState(false);
+  const [consolidadoDia, setConsolidadoDia] = useState({});
+  
+  // Este "useEffect" dispara automaticamente sempre que o senhor muda a data ou a aba
+  useEffect(() => {
+    if (subViewEquipe !== 'escalas' || modoVisao !== 'dia') return;
+
+    const buscarDados = async () => {
+      setIsLoadingPlantoes(true);
+      try {
+        let q;
+        if (categoriaAtiva === 'Visão Geral') {
+          // Busca TUDO do dia para todas as categorias
+          q = query(collection(db, "escalas"), where("data", "==", dataSelecionada));
+        } else {
+          // Busca apenas a categoria selecionada
+          q = query(
+            collection(db, "escalas"),
+            where("data", "==", dataSelecionada),
+            where("categoria", "==", categoriaAtiva)
+          );
+        }
+        
+        const querySnapshot = await getDocs(q);
+        const resultados = [];
+        const agrupadoGeral = {};
+
+        querySnapshot.forEach((doc) => {
+          const dados = { id: doc.id, ...doc.data() };
+          resultados.push(dados);
+          
+          // Organiza para a Visão Geral
+          if (!agrupadoGeral[dados.categoria]) agrupadoGeral[dados.categoria] = [];
+          agrupadoGeral[dados.categoria].push(dados);
+        });
+        
+        setPlantoesDoDia(resultados);
+        setConsolidadoDia(agrupadoGeral);
+      } catch (error) {
+        console.error("Erro ao buscar dados:", error);
+      } finally {
+        setIsLoadingPlantoes(false);
+      }
+    };
+
+    buscarDados();
+  }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
+
+  // useEffect para buscar a GRADE MENSAL INTEIRA (Com Agrupamento de Turnos)
+  useEffect(() => {
+    if (subViewEquipe !== 'escalas' || modoVisao !== 'mes') return;
+
+    const buscarPlantoesMes = async () => {
+      setIsLoadingMes(true);
+      try {
+        const anoMesAlvo = dataSelecionada.substring(0, 7); 
+
+        const q = query(
+          collection(db, "escalas"),
+          where("categoria", "==", categoriaAtiva)
+        );
+
+        const querySnapshot = await getDocs(q);
+        const dadosAgrupados = {};
+
+        // 1. Lê todos os plantões e guarda numa LISTA por dia
+        querySnapshot.forEach((doc) => {
+          const p = doc.data();
+          
+          if (p.data && p.data.startsWith(anoMesAlvo)) {
+            if (!dadosAgrupados[p.nome]) {
+              dadosAgrupados[p.nome] = {};
+            }
+            const dia = p.data.split('-')[2]; 
+            
+            // Se o dia ainda não existe, cria um array vazio
+            if (!dadosAgrupados[p.nome][dia]) {
+              dadosAgrupados[p.nome][dia] = [];
+            }
+            
+            // Só adiciona a sigla se ela não estiver duplicada
+            if (!dadosAgrupados[p.nome][dia].includes(p.sigla)) {
+              dadosAgrupados[p.nome][dia].push(p.sigla);
+            }
+          }
+        });
+
+        // 2. Ordena as siglas para ficar bonito (M, depois T, depois N)
+        const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6 };
+        
+        Object.keys(dadosAgrupados).forEach(nome => {
+          Object.keys(dadosAgrupados[nome]).forEach(dia => {
+             const arrayDeSiglas = dadosAgrupados[nome][dia];
+             // Ordena e junta tudo numa palavra só (Ex: ['N', 'T', 'M'] vira "MTN")
+             dadosAgrupados[nome][dia] = arrayDeSiglas
+               .sort((a, b) => (ordemTurnos[a] || 99) - (ordemTurnos[b] || 99))
+               .join('');
+          });
+        });
+
+        setPlantoesDoMes(dadosAgrupados);
+      } catch (error) {
+        console.error("Erro ao buscar a escala do mês:", error);
+      } finally {
+        setIsLoadingMes(false);
+      }
+    };
+
+    buscarPlantoesMes();
+  }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
 
   const abrirModalTroca = (turno, nomeAtual) => {
     setPlantaoEditado({ turno, nomeAtual });
@@ -36,6 +150,13 @@ const GestorDashboard = ({ userProfile }) => {
     // No futuro, aqui vai a linha que avisa o Firebase da mudança
     alert(`Escala atualizada! O turno ${plantaoEditado.turno} foi assumido por: ${novoPlantonista}`);
     setIsEditModalOpen(false);
+  };
+
+  // Função para formatar data sem erro de fuso horário
+  const formatarDataBR = (strData) => {
+    if (!strData) return "";
+    const [ano, mes, dia] = strData.split('-');
+    return `${dia}/${mes}/${ano}`;
   };
 
   // === VISÃO 1: HUB PRINCIPAL ===
@@ -681,30 +802,48 @@ const GestorDashboard = ({ userProfile }) => {
             {/* ÁREA DE CONTEÚDO DINÂMICO */}
             {categoriaAtiva === 'Visão Geral' ? (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                 <div className="bg-slate-800 p-4 text-white font-bold text-sm uppercase tracking-wider">
-                   Plantão Consolidado: {new Date(dataSelecionada).toLocaleDateString('pt-BR')}
+                 <div className="bg-slate-800 p-4 text-white font-bold text-sm uppercase tracking-wider flex justify-between">
+                   <span>Plantão Consolidado</span>
+                   <span className="text-blue-400">{formatarDataBR(dataSelecionada)}</span>
                  </div>
+                 
                  <div className="p-6 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {categorias.filter(c => c.id !== 'Visão Geral').map(c => (
-                      <div key={c.id} className="p-4 border border-slate-100 rounded-xl bg-slate-50">
-                        <h4 className="text-xs font-black text-slate-400 uppercase mb-3 flex justify-between">
-                          {c.id} <span className="text-blue-600">Plantão Atual</span>
-                        </h4>
-                        <div className="space-y-2">
-                          <div className="bg-white p-2 rounded shadow-sm border-l-4 border-emerald-500 text-sm font-bold text-slate-700">
-                             D: Dr. Plantonista Exemplo
-                          </div>
-                          <div className="bg-white p-2 rounded shadow-sm border-l-4 border-indigo-500 text-sm font-bold text-slate-700">
-                             N: Dra. Noturno Exemplo
+                    {categorias.filter(c => c.id !== 'Visão Geral').map(cat => {
+                      const profissionais = consolidadoDia[cat.id] || [];
+                      
+                      return (
+                        <div key={cat.id} className="p-4 border border-slate-100 rounded-xl bg-slate-50 flex flex-col">
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase mb-3 flex justify-between items-center">
+                            {cat.id} 
+                            {profissionais.length > 0 && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{profissionais.length}</span>}
+                          </h4>
+                          
+                          <div className="space-y-2 flex-grow">
+                            {profissionais.length === 0 ? (
+                              <div className="text-[10px] text-slate-400 italic py-2">Sem escala para hoje</div>
+                            ) : (
+                              profissionais.sort((a,b) => (a.sigla === 'V' ? -1 : 1)).map(p => {
+                                let corBarra = "border-blue-500";
+                                if (p.sigla === 'V') corBarra = "border-emerald-500";
+                                if (p.sigla === 'N') corBarra = "border-indigo-500";
+                                
+                                return (
+                                  <div key={p.id} className={`bg-white p-2 rounded shadow-sm border-l-4 ${corBarra} flex justify-between items-center`}>
+                                    <div className="text-xs font-bold text-slate-700 truncate pr-2">{p.nome}</div>
+                                    <div className="text-[9px] font-black bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{p.sigla}</div>
+                                  </div>
+                                );
+                              })
+                            )}
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                  </div>
               </div>
             ) : modoVisao === 'dia' ? (
               <div className="grid md:grid-cols-2 gap-6">
-                {/* LISTA DE PLANTONISTAS DO DIA */}
+                {/* LISTA DE PLANTONISTAS DO DIA (LIMPA, SEM DUPLICADOS) */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <h3 className="font-bold text-slate-800 mb-4 flex justify-between items-center">
                     Escala de {categoriaAtiva} 
@@ -712,53 +851,76 @@ const GestorDashboard = ({ userProfile }) => {
                   </h3>
                   
                   <div className="space-y-4">
-                    {/* CARTÃO ROTINA */}
-                    {categoriaAtiva === 'Médico' && (
-                      <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl relative group">
-                        <span className="text-[10px] font-bold text-blue-600 uppercase">Médico Rotina (07h - 13h)</span>
-                        <div className="text-lg font-black text-slate-800 mt-1">Dr. Luciano (RT)</div>
-                        <button 
-                          onClick={() => abrirModalTroca('Rotina Manhã (07h - 13h)', 'Dr. Luciano (RT)')}
-                          className="absolute top-4 right-4 z-20 p-2 bg-blue-50 hover:bg-blue-100 rounded-lg shadow-sm text-blue-400 hover:text-blue-700 transition-all cursor-pointer border border-blue-100"
-                        >
-                          <Settings size={16} />
-                        </button>
+                    {isLoadingPlantoes && (
+                      <div className="p-8 text-center text-slate-400 font-bold animate-pulse bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                        <Loader2 className="animate-spin inline mr-2" size={20} />
+                        A carregar a escala da base de dados...
                       </div>
                     )}
 
-                    {/* CARTÃO DIA */}
-                    <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl relative group">
-                      <span className="text-[10px] font-bold text-emerald-600 uppercase">Plantonista Diurno (07h - 19h)</span>
-                      <div className="text-lg font-black text-slate-800 mt-1">Azenair Macário</div>
-                      <button 
-                        onClick={() => abrirModalTroca('Plantão Dia (07h - 19h)', 'Azenair Macário')}
-                        className="absolute top-4 right-4 z-20 p-2 bg-emerald-50 hover:bg-emerald-100 rounded-lg shadow-sm text-emerald-400 hover:text-emerald-700 transition-all cursor-pointer border border-emerald-100"
-                      >
-                        <Settings size={16} />
-                      </button>
-                    </div>
+                    {!isLoadingPlantoes && plantoesDoDia.length === 0 && (
+                      <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                        Nenhum profissional escalado para este dia nesta categoria.
+                      </div>
+                    )}
 
-                    {/* CARTÃO NOITE */}
-                    <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl relative group">
-                      <span className="text-[10px] font-bold text-indigo-600 uppercase">Plantonista Noturno (19h - 07h)</span>
-                      <div className="text-lg font-black text-slate-800 mt-1 text-slate-400 italic font-normal">Pendente / A definir...</div>
-                      <button 
-                        onClick={() => abrirModalTroca('Plantão Noite (19h - 07h)', 'Pendente / A definir...')}
-                        className="absolute top-4 right-4 z-20 p-2 bg-indigo-50 hover:bg-indigo-100 rounded-lg shadow-sm text-indigo-400 hover:text-indigo-700 transition-all cursor-pointer border border-indigo-100"
-                      >
-                        <Plus size={16} />
-                      </button>
-                    </div>
+                    {/* Desenha os cartões reais vindos do Firebase */}
+                    {!isLoadingPlantoes && plantoesDoDia.map((plantao) => {
+                      
+                      // NOVO PADRÃO DE CORES PARA OS CARTÕES
+                      let corBg = 'bg-slate-50';
+                      let corBorder = 'border-slate-100';
+                      let corText = 'text-slate-600';
+
+                      if (plantao.sigla === 'V') {
+                        corBg = 'bg-emerald-50'; corBorder = 'border-emerald-100'; corText = 'text-emerald-600';
+                      } else if (plantao.sigla === 'N') {
+                        corBg = 'bg-indigo-50'; corBorder = 'border-indigo-100'; corText = 'text-indigo-600';
+                      } else if (plantao.sigla.includes('D') || plantao.sigla.includes('M') || plantao.sigla.includes('T')) {
+                        corBg = 'bg-blue-50'; corBorder = 'border-blue-100'; corText = 'text-blue-600';
+                      }
+
+                      return (
+                        <div key={plantao.id} className={`p-4 ${corBg} border ${corBorder} rounded-xl relative group`}>
+                          <span className={`text-[10px] font-bold ${corText} uppercase`}>
+                            {plantao.turno} ({plantao.horario})
+                          </span>
+                          <div className="text-lg font-black text-slate-800 mt-1">{plantao.nome}</div>
+                          
+                          <button 
+                            onClick={() => abrirModalTroca(`${plantao.turno} (${plantao.horario})`, plantao.nome)}
+                            className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`}
+                            title="Substituir Plantonista"
+                          >
+                            <Settings size={16} />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Importador lateral para facilitar o acesso */}
+                {/* Importador lateral */}
                 <ImportadorEscala categoria={categoriaAtiva} />
               </div>
             ) : (
               /* VISÃO MENSAL */
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
-                 <h3 className="font-bold text-slate-800 mb-4">Grade Mensal - {categoriaAtiva}</h3>
+                 <div className="flex justify-between items-center mb-4">
+                   <h3 className="font-bold text-slate-800">Grade Mensal - {categoriaAtiva}</h3>
+                   
+                   {/* NOVO SELETOR DE MÊS AQUI */}
+                   <div className="flex items-center gap-2">
+                     <span className="text-xs font-bold text-slate-500 uppercase">Mês de Referência:</span>
+                     <input 
+                       type="month" 
+                       value={dataSelecionada.substring(0, 7)} // Pega apenas o Ano e o Mês (ex: 2026-05)
+                       onChange={(e) => setDataSelecionada(e.target.value + "-01")} // Atualiza a data global para o dia 1 do mês escolhido
+                       className="p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
+                     />
+                   </div>
+                 </div>
+
                  <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-50">
@@ -771,14 +933,56 @@ const GestorDashboard = ({ userProfile }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="hover:bg-slate-50">
-                        <td className="p-2 border border-slate-200 font-bold text-slate-800 whitespace-nowrap">AZENAIR MACÁRIO</td>
-                        {[...Array(31)].map((_, i) => (
-                          <td key={i} className="p-1 border border-slate-200 text-center font-bold text-emerald-600">D</td>
-                        ))}
-                      </tr>
+                      {isLoadingMes && (
+                        <tr><td colSpan="32" className="p-8 text-center text-slate-400 animate-pulse">A carregar o mês completo...</td></tr>
+                      )}
+                      
+                      {!isLoadingMes && Object.keys(plantoesDoMes).length === 0 && (
+                        <tr><td colSpan="32" className="p-8 text-center text-slate-400">Nenhum plantão encontrado para {dataSelecionada.substring(0,7)}.</td></tr>
+                      )}
+
+                      {!isLoadingMes && Object.entries(plantoesDoMes).map(([nome, dias]) => (
+                        <tr key={nome} className="hover:bg-slate-50 border-b border-slate-100">
+                          <td className="p-2 border-r border-slate-200 font-bold text-slate-700 whitespace-nowrap text-[10px] uppercase">
+                            {nome}
+                          </td>
+                          {[...Array(31)].map((_, i) => {
+                            const diaStr = (i + 1).toString().padStart(2, '0');
+                            const sigla = dias[diaStr]; // Procura se tem plantão neste dia
+                            
+                            // NOVO PADRÃO DE CORES DO DR. LUCIANO
+                            let corLetra = 'text-slate-200';
+                            let corFundo = '';
+                            
+                            if (sigla) {
+                              if (sigla === 'V') { 
+                                // V é Verde
+                                corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; 
+                              } else if (sigla === 'N') { 
+                                // Somente N é Roxo
+                                corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; 
+                              } else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { 
+                                // Se tem D, M ou T (ex: MTN, DN, T), pinta de Azul
+                                corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; 
+                              } else {
+                                // Prevenção para outras siglas
+                                corLetra = 'text-slate-700'; corFundo = 'bg-slate-50';
+                              }
+                            }
+
+                            return (
+                              <td key={i} className={`p-1 border-r border-slate-200 text-center font-black ${corLetra} ${corFundo}`}>
+                                {sigla || '-'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
                     </tbody>
                  </table>
+                 <p className="text-right text-[10px] text-slate-400 mt-4 font-bold uppercase">
+                    Total de {Object.keys(plantoesDoMes).length} profissionais listados em {dataSelecionada.substring(0,7)}
+                 </p>
               </div>
             )}
           </div> {/* <--- Fim da área dinâmica (Dia/Mês) */}
