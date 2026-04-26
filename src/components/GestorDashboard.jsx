@@ -712,31 +712,41 @@ const GestorDashboard = ({ userProfile }) => {
                   </h3>
                   
                   <div className="space-y-4">
-                    {/* Exemplo de entrada de Rotina (Se médico) */}
+                    {/* CARTÃO ROTINA */}
                     {categoriaAtiva === 'Médico' && (
                       <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl relative group">
                         <span className="text-[10px] font-bold text-blue-600 uppercase">Médico Rotina (07h - 13h)</span>
                         <div className="text-lg font-black text-slate-800 mt-1">Dr. Luciano (RT)</div>
-                        {/* Botão de Edição para RT */}
-                        <button className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 p-2 bg-white rounded-lg shadow-sm text-blue-600 transition-all">
-                           <Settings size={14} />
+                        <button 
+                          onClick={() => abrirModalTroca('Rotina Manhã (07h - 13h)', 'Dr. Luciano (RT)')}
+                          className="absolute top-4 right-4 z-20 p-2 bg-blue-50 hover:bg-blue-100 rounded-lg shadow-sm text-blue-400 hover:text-blue-700 transition-all cursor-pointer border border-blue-100"
+                        >
+                          <Settings size={16} />
                         </button>
                       </div>
                     )}
 
+                    {/* CARTÃO DIA */}
                     <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl relative group">
                       <span className="text-[10px] font-bold text-emerald-600 uppercase">Plantonista Diurno (07h - 19h)</span>
                       <div className="text-lg font-black text-slate-800 mt-1">Azenair Macário</div>
-                      <button className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 p-2 bg-white rounded-lg shadow-sm text-emerald-600 transition-all">
-                         <Settings size={14} />
+                      <button 
+                        onClick={() => abrirModalTroca('Plantão Dia (07h - 19h)', 'Azenair Macário')}
+                        className="absolute top-4 right-4 z-20 p-2 bg-emerald-50 hover:bg-emerald-100 rounded-lg shadow-sm text-emerald-400 hover:text-emerald-700 transition-all cursor-pointer border border-emerald-100"
+                      >
+                        <Settings size={16} />
                       </button>
                     </div>
 
+                    {/* CARTÃO NOITE */}
                     <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl relative group">
                       <span className="text-[10px] font-bold text-indigo-600 uppercase">Plantonista Noturno (19h - 07h)</span>
                       <div className="text-lg font-black text-slate-800 mt-1 text-slate-400 italic font-normal">Pendente / A definir...</div>
-                      <button className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 p-2 bg-white rounded-lg shadow-sm text-indigo-600 transition-all">
-                         <Plus size={14} />
+                      <button 
+                        onClick={() => abrirModalTroca('Plantão Noite (19h - 07h)', 'Pendente / A definir...')}
+                        className="absolute top-4 right-4 z-20 p-2 bg-indigo-50 hover:bg-indigo-100 rounded-lg shadow-sm text-indigo-400 hover:text-indigo-700 transition-all cursor-pointer border border-indigo-100"
+                      >
+                        <Plus size={16} />
                       </button>
                     </div>
                   </div>
@@ -771,7 +781,61 @@ const GestorDashboard = ({ userProfile }) => {
                  </table>
               </div>
             )}
-          </div>
+          </div> {/* <--- Fim da área dinâmica (Dia/Mês) */}
+
+          {/* ========================================== */}
+          {/* MODAL DE TROCA DE PLANTÃO (PASSO 3B)       */}
+          {/* ========================================== */}
+          {isEditModalOpen && plantaoEditado && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-fadeIn">
+                <div className="bg-slate-800 p-5 flex justify-between items-center text-white">
+                  <div>
+                    <h3 className="font-black text-lg">Alterar Plantonista</h3>
+                    <p className="text-slate-300 text-xs">Substituição Manual</p>
+                  </div>
+                  <button onClick={() => setIsEditModalOpen(false)} className="hover:bg-white/20 p-2 rounded-full transition-colors text-white font-bold">
+                    FECHAR
+                  </button>
+                </div>
+                
+                <div className="p-6 space-y-4">
+                  <div>
+                    <div className="text-xs font-bold text-slate-400 uppercase">Turno e Horário</div>
+                    <div className="font-bold text-slate-700">{plantaoEditado.turno}</div>
+                  </div>
+                  
+                  <div>
+                    <div className="text-xs font-bold text-slate-400 uppercase">Plantonista Original (Excel)</div>
+                    <div className="text-sm text-slate-500 line-through">{plantaoEditado.nomeAtual}</div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100">
+                    <label className="block text-sm font-bold text-blue-600 mb-2">Novo Plantonista Assumindo:</label>
+                    <input 
+                      type="text" 
+                      value={novoPlantonista}
+                      onChange={(e) => setNovoPlantonista(e.target.value)}
+                      placeholder="Ex: Dr. Carlos Silva"
+                      className="w-full p-3 bg-blue-50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-bold"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-2">
+                      No futuro, este campo será um menu listando todos os {categoriaAtiva}s cadastrados no sistema.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+                  <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">
+                    Cancelar
+                  </button>
+                  <button onClick={salvarTrocaPlantao} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">
+                    Confirmar Troca
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
