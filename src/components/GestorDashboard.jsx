@@ -30,6 +30,17 @@ const GestorDashboard = ({ userProfile }) => {
   const [plantoesDoMes, setPlantoesDoMes] = useState({});
   const [isLoadingMes, setIsLoadingMes] = useState(false);
   const [consolidadoDia, setConsolidadoDia] = useState({});
+  // Controlos do Cadastro de Profissionais
+  const [novoProfissional, setNovoProfissional] = useState({
+    nome: '',
+    categoria: 'Médico',
+    conselho: 'CRM',
+    numeroConselho: '',
+    vinculo: 'PJ', // PJ, CLT, Efetivo
+    telefone: ''
+  });
+  const [erroConselho, setErroConselho] = useState('');
+  const [isSalvandoProfissional, setIsSalvandoProfissional] = useState(false);
   
   // Este "useEffect" dispara automaticamente sempre que o senhor muda a data ou a aba
   useEffect(() => {
@@ -264,6 +275,68 @@ const GestorDashboard = ({ userProfile }) => {
       { name: 'SVD', dias: 380, fill: '#0ea5e9' }, // Sky
       { name: 'Shiley', dias: 90, fill: '#f97316' }, // Orange
     ];
+
+    // 1. Muda o conselho automaticamente de acordo com a categoria
+  const handleCategoriaChange = (e) => {
+    const cat = e.target.value;
+    let conselhoPadrao = 'Outro';
+    if (cat === 'Médico') conselhoPadrao = 'CRM';
+    if (cat === 'Enfermeiro' || cat === 'Téc. Enfermagem') conselhoPadrao = 'COREN';
+    if (cat === 'Fisioterapeuta') conselhoPadrao = 'CREFITO';
+    if (cat === 'Nutricionista') conselhoPadrao = 'CRN';
+    if (cat === 'Fonoaudiólogo') conselhoPadrao = 'CREFONO';
+
+    setNovoProfissional({ ...novoProfissional, categoria: cat, conselho: conselhoPadrao });
+  };
+
+  // 2. O famoso handleBlur: Verifica duplicidade ao sair do campo
+  const handleBlurConselho = async () => {
+    if (!novoProfissional.numeroConselho) {
+      setErroConselho('');
+      return;
+    }
+    
+    try {
+      const q = query(
+        collection(db, "profissionais"), 
+        where("numeroConselho", "==", novoProfissional.numeroConselho)
+      );
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        setErroConselho(`Atenção: Já existe um profissional cadastrado com o ${novoProfissional.conselho} ${novoProfissional.numeroConselho}!`);
+      } else {
+        setErroConselho(''); // Tudo limpo, pode prosseguir
+      }
+    } catch (error) {
+      console.error("Erro ao verificar conselho:", error);
+    }
+  };
+
+  // 3. Salva o Profissional no Firebase
+  const salvarProfissional = async (e) => {
+    e.preventDefault(); // Evita que a página recarregue
+    if (erroConselho) return; // Bloqueia se houver erro de duplicidade
+
+    setIsSalvandoProfissional(true);
+    try {
+      await addDoc(collection(db, "profissionais"), {
+        ...novoProfissional,
+        cadastradoEm: new Date().toISOString(),
+        status: 'Ativo'
+      });
+      
+      alert(`✅ Sucesso! ${novoProfissional.nome} foi cadastrado na equipa de ${novoProfissional.categoria}.`);
+      
+      // Limpa o formulário
+      setNovoProfissional({ nome: '', categoria: 'Médico', conselho: 'CRM', numeroConselho: '', vinculo: 'PJ', telefone: '' });
+    } catch (error) {
+      console.error("Erro ao salvar profissional:", error);
+      alert("❌ Ocorreu um erro ao salvar.");
+    } finally {
+      setIsSalvandoProfissional(false);
+    }
+  };
 
     return (
       <div className="animate-fadeIn">
