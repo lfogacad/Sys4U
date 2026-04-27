@@ -220,6 +220,117 @@ const GestorDashboard = ({ userProfile }) => {
       { name: 'Shiley', dias: 90, fill: '#f97316' }, 
     ];
 
+    // 1. ESTADO PARA GUARDAR OS INDICADORES REAIS
+  const [metricasQualidade, setMetricasQualidade] = useState({
+    mortalidadeBruta: 0,
+    mortalidadeEsperada: 0,
+    smr: 0,
+    taxaReadmissao: 0,
+    taxaIdentificacao: 0,
+    carregando: true
+  });
+
+  // 2. MOTOR DE BUSCA E CÁLCULO
+  useEffect(() => {
+    const carregarIndicadores = async () => {
+      try {
+        // Define o mês atual (Ex: "2026-04")
+        const mesAtual = new Date().toISOString().substring(0, 7);
+        
+        // --- A. BUSCA NO HISTÓRICO (Mortalidade e Readmissão) ---
+        const historicoRef = collection(db, "internacoes_historico");
+        const historicoSnap = await getDocs(historicoRef);
+        
+        let totalAltas = 0;
+        let totalObitos = 0;
+        let somaProbabilidades = 0;
+        let sapsCalculados = 0;
+        
+        // Lógica de Readmissão: Agrupar por CPF para achar datas próximas
+        const historicoPacientes = {}; 
+        let readmissoes = 0;
+
+        historicoSnap.forEach((doc) => {
+          const alta = doc.data();
+          
+          // Filtra pelo mês atual
+          if (alta.dataSaida && alta.dataSaida.startsWith(mesAtual)) {
+            totalAltas++;
+
+            // Mortalidade
+            if (alta.indicadores?.foiObito === 1) totalObitos++;
+
+            // SMR (SAPS 3)
+            const prob = parseFloat(alta.indicadores?.mortalidadePrevista);
+            if (!isNaN(prob) && prob > 0) {
+              somaProbabilidades += prob;
+              sapsCalculados++;
+            }
+          }
+
+          // Agrupa para cálculo de readmissão (independente do mês para pegar transições)
+          if (alta.cpf && alta.cpf !== "000.000.000-00") {
+            if (!historicoPacientes[alta.cpf]) historicoPacientes[alta.cpf] = [];
+            historicoPacientes[alta.cpf].push({
+              entrada: new Date(alta.dataEntrada).getTime(),
+              saida: new Date(alta.dataSaida).getTime()
+            });
+          }
+        });
+
+        // Calcula Readmissões em < 48h
+        Object.values(historicoPacientes).forEach(internacoes => {
+          if (internacoes.length > 1) {
+            // Ordena por data de entrada
+            internacoes.sort((a, b) => a.entrada - b.entrada);
+            for (let i = 1; i < internacoes.length; i++) {
+              const diffHoras = (internacoes[i].entrada - internacoes[i-1].saida) / (1000 * 60 * 60);
+              // Se a entrada atual foi em menos de 48h da saída anterior
+              if (diffHoras > 0 && diffHoras <= 48) readmissoes++;
+            }
+          }
+        });
+
+        // --- B. BUSCA NO CENSO (Identificação) ---
+        const censoRef = collection(db, "censo_diario");
+        const censoSnap = await getDocs(censoRef);
+        
+        let somaLeitosCenso = 0;
+        let somaIdentificadosCenso = 0;
+
+        censoSnap.forEach((doc) => {
+          const censo = doc.data();
+          if (censo.data && censo.data.startsWith(mesAtual)) {
+            somaLeitosCenso += (censo.totalLeitosOcupados || 0);
+            somaIdentificadosCenso += (censo.pacientesIdentificados || 0);
+          }
+        });
+
+        // --- C. MATEMÁTICA FINAL ---
+        const mortBruta = totalAltas > 0 ? (totalObitos / totalAltas) * 100 : 0;
+        const mortEsperada = sapsCalculados > 0 ? (somaProbabilidades / sapsCalculados) : 0;
+        const calcSmr = mortEsperada > 0 ? (mortBruta / mortEsperada) : 0;
+        const taxaReadmissao = totalAltas > 0 ? (readmissoes / totalAltas) * 100 : 0;
+        const taxaId = somaLeitosCenso > 0 ? (somaIdentificadosCenso / somaLeitosCenso) * 100 : 0;
+
+        setMetricasQualidade({
+          mortalidadeBruta: mortBruta.toFixed(1),
+          mortalidadeEsperada: mortEsperada.toFixed(1),
+          smr: calcSmr.toFixed(2),
+          taxaReadmissao: taxaReadmissao.toFixed(1),
+          taxaIdentificacao: taxaId.toFixed(0),
+          carregando: false
+        });
+
+      } catch (error) {
+        console.error("Erro ao processar indicadores:", error);
+        setMetricasQualidade(prev => ({ ...prev, carregando: false }));
+      }
+    };
+
+    carregarIndicadores();
+  }, []);
+
     return (
       <div className="animate-fadeIn">
         
@@ -285,32 +396,67 @@ const GestorDashboard = ({ userProfile }) => {
         <h3 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
           <ShieldAlert size={16} className="text-emerald-500" /> Desfechos Clínicos e Qualidade
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Mortalidade Bruta</span>
-            <div className="text-3xl font-black text-red-600 mt-1">12.3%</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">Esperada (SAPS 3): 14.5%</div>
-          </div>
+        
+        {metricasQualidade.carregando ? (
+           <div className="text-sm text-slate-400 p-4 animate-pulse">Carregando indicadores...</div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            
+            {/* CARD 1: MORTALIDADE BRUTA */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Mortalidade Bruta</span>
+              <div className="text-3xl font-black text-slate-800 mt-1">{metricasQualidade.mortalidadeBruta}%</div>
+              <div className="text-[10px] text-slate-400 font-bold mt-1">Esperada (SAPS 3): {metricasQualidade.mortalidadeEsperada}%</div>
+            </div>
 
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden bg-emerald-50/30">
-            <span className="text-[10px] font-bold text-emerald-600 uppercase">SMR (SAPS 3)</span>
-            <div className="text-3xl font-black text-emerald-700 mt-1">0.85</div>
-            <div className="absolute bottom-2 right-4 text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-1 rounded">Salvando Mais!</div>
-          </div>
+            {/* CARD 2: SMR (COR DINÂMICA) */}
+            {(() => {
+              const smrVal = parseFloat(metricasQualidade.smr);
+              // Lógica de cores baseada em performance
+              const isExcelente = smrVal < 1.0;
+              const isAlerta = smrVal >= 1.0 && smrVal <= 1.2;
+              
+              const bgClass = isExcelente ? "bg-emerald-50/30 border-emerald-200" : isAlerta ? "bg-amber-50/30 border-amber-200" : "bg-red-50/30 border-red-200";
+              const textClass = isExcelente ? "text-emerald-700" : isAlerta ? "text-amber-700" : "text-red-700";
+              const badgeBg = isExcelente ? "bg-emerald-100" : isAlerta ? "bg-amber-100" : "bg-red-100";
+              const label = isExcelente ? "Salvando Mais!" : isAlerta ? "Dentro do Esperado" : "Atenção: Acima da Meta";
 
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Readmissão em 48h</span>
-            <div className="text-3xl font-black text-amber-600 mt-1">3.2%</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">Alerta se &gt; 5%</div>
-          </div>
+              return (
+                <div className={`p-5 rounded-xl shadow-sm border relative overflow-hidden ${bgClass}`}>
+                  <span className={`text-[10px] font-bold uppercase ${textClass}`}>SMR (SAPS 3)</span>
+                  <div className={`text-3xl font-black mt-1 ${textClass}`}>{metricasQualidade.smr}</div>
+                  <div className={`absolute bottom-2 right-4 text-[10px] font-bold px-2 py-1 rounded ${badgeBg} ${textClass}`}>
+                    {smrVal === 0 ? "Sem dados" : label}
+                  </div>
+                </div>
+              );
+            })()}
 
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Identificação Correta</span>
-            <div className="text-3xl font-black text-blue-600 mt-1">94%</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">Meta Interna: 100%</div>
-            <div className="absolute bottom-0 left-0 h-1 bg-amber-400 w-[94%]"></div>
+            {/* CARD 3: READMISSÃO */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Readmissão em 48h</span>
+              <div className={`text-3xl font-black mt-1 ${parseFloat(metricasQualidade.taxaReadmissao) > 5 ? "text-red-600" : "text-amber-600"}`}>
+                {metricasQualidade.taxaReadmissao}%
+              </div>
+              <div className="text-[10px] text-slate-400 font-bold mt-1">Alerta se &gt; 5%</div>
+            </div>
+
+            {/* CARD 4: IDENTIFICAÇÃO CORRETA */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Identificação Correta</span>
+              <div className={`text-3xl font-black mt-1 ${parseFloat(metricasQualidade.taxaIdentificacao) >= 95 ? "text-emerald-600" : "text-blue-600"}`}>
+                {metricasQualidade.taxaIdentificacao}%
+              </div>
+              <div className="text-[10px] text-slate-400 font-bold mt-1">Meta Interna: 100%</div>
+              {/* Barra de progresso preenche com o valor real */}
+              <div 
+                className={`absolute bottom-0 left-0 h-1 ${parseFloat(metricasQualidade.taxaIdentificacao) >= 95 ? "bg-emerald-400" : "bg-amber-400"}`} 
+                style={{ width: `${metricasQualidade.taxaIdentificacao}%` }}
+              ></div>
+            </div>
+
           </div>
-        </div>
+        )}
 
         {/* CHAMADA PARA TENDÊNCIAS TEMPORAIS */}
         <div onClick={() => setActiveView('tendencias')} className="mb-8 bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700 cursor-pointer hover:bg-slate-900 hover:shadow-xl transition-all group flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

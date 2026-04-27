@@ -262,6 +262,7 @@ export const getMissingSAPS3 = (patient) => {
 
 export const calculateSAPS3Score = (patient) => {
   if (!patient.nome) return { score: 0, prob: "---", details: [] };
+  
   if (patient.saps3?.isLocked) {
     return {
       score: patient.saps3.lockedScore,
@@ -274,12 +275,14 @@ export const calculateSAPS3Score = (patient) => {
   let details = [];
   const s3 = patient.saps3 || {};
 
+  // 1. IDADE
   const age = calculateAge(patient.dataNascimento) || 0;
   if (age >= 80) { score += 18; details.push(`Idade ${age} anos: +18`); }
   else if (age >= 70) { score += 13; details.push(`Idade ${age} anos: +13`); }
   else if (age >= 60) { score += 9; details.push(`Idade ${age} anos: +9`); }
   else if (age >= 40) { score += 5; details.push(`Idade ${age} anos: +5`); }
 
+  // 2. COMORBIDADES
   const comorb = s3.comorbidades || [];
   if (comorb.includes("Câncer Sólido")) { score += 10; details.push("Câncer Sólido: +10"); }
   if (comorb.includes("Hemato-onco")) { score += 12; details.push("Hemato-onco: +12"); }
@@ -288,9 +291,11 @@ export const calculateSAPS3Score = (patient) => {
   if (comorb.includes("IC NYHA IV")) { score += 10; details.push("IC NYHA IV: +10"); }
   if (s3.imunossupressao) { score += 3; details.push("Imunossupressão: +3"); }
 
+  // 3. TEMPO DE HOSPITALIZAÇÃO PRÉ-UTI
   if (s3.diasHospital === "≥28 dias") { score += 7; details.push("Internação pré-UTI ≥ 28 dias: +7"); }
   else if (s3.diasHospital === "14 a 27 dias") { score += 6; details.push("Internação pré-UTI 14-27 dias: +6"); }
 
+  // 4. ORIGEM E TIPO DE ADMISSÃO
   if (s3.origemMapped === "Enfermarias") { score += 6; details.push("Origem (Enfermaria): +6"); }
   else if (s3.origemMapped === "Recuperação Pós-Anestésica") { score += 2; details.push("Origem (RPA): +2"); }
 
@@ -304,6 +309,7 @@ export const calculateSAPS3Score = (patient) => {
     else if (s3.sitioInfeccao === "Outros focos") { score += 3; details.push("Sítio Infeccioso (Outro): +3"); }
   }
 
+  // 5. RAZÃO DA ADMISSÃO (SISTEMA)
   const razao = s3.sistemaRazao || "";
   if (razao === "Gastrointestinal / Digestivo") { score += 12; details.push("Razão (Gastro/Digestivo): +12"); }
   else if (razao === "Cardiovascular" || razao === "Respiratório") { score += 10; details.push(`Razão (${razao}): +10`); }
@@ -313,6 +319,7 @@ export const calculateSAPS3Score = (patient) => {
   else if (razao === "Trauma (Não-Neurológico)" || razao === "Outros / Diversos") { score += 5; details.push(`Razão (${razao}): +5`); }
   else if (razao === "Metabólico / Endócrino") { score += 4; details.push("Razão (Metabólico/Endócrino): +4"); }
 
+  // 6. GLASGOW (CONSIDERANDO SEDAÇÃO)
   const isSedated = patient.neuro?.sedacao === true || (patient.neuro?.rass && patient.neuro.rass !== "" && patient.neuro.rass !== "NT");
   let glasgow = 0;
 
@@ -334,6 +341,7 @@ export const calculateSAPS3Score = (patient) => {
     else if (glasgow <= 14) { score += 2; details.push(`Glasgow (${glasgow}): +2`); }
   }
 
+  // 7. EXAMES LABORATORIAIS (PRIMEIRA COLETA)
   const bil = getPrimeiroExameSAPS(patient, "Bilirrubina Total", "");
   if (bil >= 6.0) { score += 5; details.push(`Bilirrubina Total (≥ 6.0): +5`); }
   else if (bil >= 2.0) { score += 4; details.push(`Bilirrubina Total (2.0-5.9): +4`); }
@@ -342,16 +350,6 @@ export const calculateSAPS3Score = (patient) => {
   if (creat >= 3.5) { score += 8; details.push(`Creatinina (≥ 3.5): +8`); }
   else if (creat >= 2.0) { score += 7; details.push(`Creatinina (2.0-3.4): +7`); }
   else if (creat >= 1.2) { score += 2; details.push(`Creatinina (1.2-1.9): +2`); }
-
-  let fcMax = 0;
-  if (patient.bh?.vitals) {
-    Object.values(patient.bh.vitals).forEach((v) => {
-      const fc = safeNumber(v["FC (bpm)"]);
-      if (fc > fcMax) fcMax = fc;
-    });
-  }
-  if (fcMax >= 160) { score += 7; details.push(`Frequência Cardíaca (≥ 160): +7`); }
-  else if (fcMax >= 120) { score += 5; details.push(`Frequência Cardíaca (120-159): +5`); }
 
   const leuco = getPrimeiroExameSAPS(patient, "Leucócitos", "leuco");
   if (leuco > 0) {
@@ -368,34 +366,50 @@ export const calculateSAPS3Score = (patient) => {
     else if (plaq < 100000) { score += 5; details.push(`Plaquetas (50.000-99.999): +5`); }
   }
 
-  let pasMin = 999;
-  if (patient.bh?.vitals) {
-    Object.values(patient.bh.vitals).forEach((v) => {
-      const pas = safeNumber(v["PAS"]);
-      if (pas > 0 && pas < pasMin) pasMin = pas;
-    });
-  }
-  if (pasMin < 999) {
-    if (pasMin < 70) { score += 11; details.push(`PA Sistólica (< 70): +11`); }
-    else if (pasMin < 90) { score += 5; details.push(`PA Sistólica (70-89): +5`); }
-    else if (pasMin < 120) { score += 2; details.push(`PA Sistólica (90-119): +2`); }
-  }
-
   const pf = getPrimeiraGasometriaSAPS(patient, "P/F");
   if (pf !== null && pf > 0) {
     if (pf < 100) { score += 11; details.push(`PaO2/FiO2 (< 100): +11`); }
     else if (pf < 250) { score += 7; details.push(`PaO2/FiO2 (100-249): +7`); }
   }
 
-  let tempMin = 99;
+  // 8. SINAIS VITAIS (PRIMEIRO REGISTRO DA ADMISSÃO)
+  let fcInicial = 0;
+  let pasInicial = 0;
+  let tempMin = 99; // Mantido busca da menor temperatura das 24h
+
   if (patient.bh?.vitals) {
+    const horarios = Object.keys(patient.bh.vitals).sort();
+    
+    // Busca FC e PAS iniciais
+    for (let h of horarios) {
+      const v = patient.bh.vitals[h];
+      const fc = safeNumber(v["FC (bpm)"]);
+      const pas = safeNumber(v["PAS"]);
+      
+      if (fc > 0 && fcInicial === 0) fcInicial = fc;
+      if (pas > 0 && pasInicial === 0) pasInicial = pas;
+      if (fcInicial > 0 && pasInicial > 0) break;
+    }
+
+    // Busca menor temperatura (Critério padrão SAPS 3 permanece o pior valor)
     Object.values(patient.bh.vitals).forEach((v) => {
       const t = safeNumber(v["Temp (ºC)"]);
       if (t > 0 && t < tempMin) tempMin = t;
     });
   }
-  if (tempMin > 0 && tempMin < 35.0) { score += 5; details.push(`Temperatura (< 35.0ºC): +5`); }
 
+  if (fcInicial >= 160) { score += 7; details.push(`FC Inicial (${fcInicial}): +7`); }
+  else if (fcInicial >= 120) { score += 5; details.push(`FC Inicial (${fcInicial}): +5`); }
+
+  if (pasInicial > 0) {
+    if (pasInicial < 70) { score += 11; details.push(`PAS Inicial (${pasInicial}): +11`); }
+    else if (pasInicial < 90) { score += 5; details.push(`PAS Inicial (${pasInicial}): +5`); }
+    else if (pasInicial < 120) { score += 2; details.push(`PAS Inicial (${pasInicial}): +2`); }
+  }
+
+  if (tempMin > 0 && tempMin < 35.0) { score += 5; details.push(`Temperatura Mínima (< 35.0ºC): +5`); }
+
+  // 9. CÁLCULO DA PROBABILIDADE (LOGIT)
   const logit = -32.6659 + 7.3068 * Math.log(Math.max(score, 1) + 20.5958);
   const prob = ((Math.exp(logit) / (1 + Math.exp(logit))) * 100).toFixed(1);
 
