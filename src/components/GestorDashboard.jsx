@@ -35,6 +35,319 @@ const GestorDashboard = ({ userProfile }) => {
   const [isLoadingMes, setIsLoadingMes] = useState(false);
   const [consolidadoDia, setConsolidadoDia] = useState({});
 
+  const [dadosTendencia, setDadosTendencia] = useState([]);
+  const [loadingGraficos, setLoadingGraficos] = useState(true);
+
+  const [dadosDispositivos, setDadosDispositivos] = useState([]);
+  const [dadosDesfechos, setDadosDesfechos] = useState([]);
+
+  const [metricasOperacionais, setMetricasOperacionais] = useState({
+    ocupacao: 0,
+    giro: 0,
+    los: 0,
+    altas: 0
+  });
+
+  // 1. ESTADO PARA GUARDAR OS INDICADORES REAIS
+  const [metricasQualidade, setMetricasQualidade] = useState({
+    mortalidadeBruta: 0,
+    mortalidadeEsperada: 0,
+    smr: 0,
+    taxaReadmissao: 0,
+    taxaIdentificacao: 0,
+    carregando: true
+  });
+
+  // 2. MOTOR DE BUSCA E CÁLCULO (Versão Consolidada com Gráficos)
+  useEffect(() => {
+    const carregarIndicadores = async () => {
+      try {
+        setLoadingGraficos(true);
+        // Define o mês atual (Ex: "2026-04")
+        const mesAtual = new Date().toISOString().substring(0, 7);
+        
+        // --- 1. BUSCA DE LEITOS (Ocupação em Tempo Real) ---
+        const leitosRef = collection(db, "leitos_uti");
+        const leitosSnap = await getDocs(leitosRef);
+        const capacidadeTotal = leitosSnap.size > 0 ? leitosSnap.size : 10;
+        let ocupadosAgora = 0;
+        
+        leitosSnap.forEach(l => {
+          if (l.data().status !== 'Livre') ocupadosAgora++;
+        });
+
+        // --- 2. BUSCA NO HISTÓRICO E CENSO ---
+        const historicoSnap = await getDocs(collection(db, "internacoes_historico"));
+        const censoSnap = await getDocs(collection(db, "censo_diario"));
+
+        const consolidadoMensal = {};
+        
+        // Variáveis do Mês Atual para Cards e Gráficos
+        let altasMes = 0, obitosMes = 0, somaProbMes = 0, sapsCalculadosMes = 0;
+        let somaDiasInternacaoMes = 0; 
+        let somaLeitosCensoMes = 0, somaIdentificadosCensoMes = 0;
+        
+        // Contadores para Gráfico de Dispositivos (Barras)
+        let diasVMMes = 0, diasCVCMes = 0, diasSVDMes = 0, diasShileyMes = 0;
+        
+        // Contadores para Gráfico de Desfechos (Pizza)
+        let countAlta = 0, countObito = 0, countTransf = 0;
+
+        const historicoPacientes = {}; 
+        let readmissoes = 0;
+
+        // A. Processar Histórico (Altas, SMR, LOS, Desfechos)
+        historicoSnap.forEach((doc) => {
+          const h = doc.data();
+          if (h.dataSaida) {
+            const mesAno = h.dataSaida.substring(0, 7);
+            
+            // Inicializa agrupamento mensal para gráficos de tendência
+            if (!consolidadoMensal[mesAno]) {
+              consolidadoMensal[mesAno] = { 
+                mes: mesAno, somaLeitos: 0, somaVM: 0, somaID: 0, 
+                totalAltas: 0, totalObitos: 0, somaSapsProb: 0, sapsCount: 0 
+              };
+            }
+
+            consolidadoMensal[mesAno].totalAltas++;
+            const foiObito = h.indicadores?.foiObito === 1;
+            if (foiObito) consolidadoMensal[mesAno].totalObitos++;
+
+            const prob = parseFloat(h.indicadores?.mortalidadePrevista);
+            if (!isNaN(prob) && prob > 0) {
+              consolidadoMensal[mesAno].somaSapsProb += prob;
+              consolidadoMensal[mesAno].sapsCount++;
+            }
+
+            // Dados específicos do mês selecionado (Cards e Pizza)
+            if (mesAno === mesAtual) {
+              altasMes++;
+              if (foiObito) obitosMes++;
+
+              // Cálculo de LOS (Tempo de permanência)
+              if (h.dataEntrada && h.dataSaida) {
+                const inDate = new Date(h.dataEntrada);
+                const outDate = new Date(h.dataSaida);
+                let dias = Math.ceil(Math.abs(outDate - inDate) / (1000 * 60 * 60 * 24));
+                somaDiasInternacaoMes += (dias === 0 ? 1 : dias);
+              }
+
+              if (!isNaN(prob) && prob > 0) {
+                somaProbMes += prob;
+                sapsCalculadosMes++;
+              }
+
+              // Categorização para o Gráfico de Pizza
+              const desfecho = (h.destino || '').toLowerCase();
+              if (foiObito || desfecho.includes('óbito') || desfecho.includes('obito')) {
+                countObito++;
+              } else if (desfecho.includes('transfer') || desfecho.includes('hosp')) {
+                countTransf++;
+              } else {
+                countAlta++;
+              }
+            }
+          }
+
+          // Lógica de Readmissão
+          if (h.cpf && h.cpf !== "000.000.000-00") {
+            if (!historicoPacientes[h.cpf]) historicoPacientes[h.cpf] = [];
+            historicoPacientes[h.cpf].push({ entrada: new Date(h.dataEntrada).getTime(), saida: new Date(h.dataSaida).getTime() });
+          }
+        });
+
+        // B. Processar Censo (Identificação e Dias-Dispositivo)
+        censoSnap.forEach((doc) => {
+          const c = doc.data();
+          if (c.data) {
+            const mesAno = c.data.substring(0, 7);
+            if (consolidadoMensal[mesAno]) {
+              consolidadoMensal[mesAno].somaLeitos += (c.totalLeitosOcupados || 0);
+              consolidadoMensal[mesAno].somaVM += (c.pacientesEmVM || 0);
+              consolidadoMensal[mesAno].somaID += (c.pacientesIdentificados || 0);
+            }
+
+            if (mesAno === mesAtual) {
+              somaLeitosCensoMes += (c.totalLeitosOcupados || 0);
+              somaIdentificadosCensoMes += (c.pacientesIdentificados || 0);
+              diasVMMes += (c.pacientesEmVM || 0);
+              diasCVCMes += (c.pacientesComCVC || 0);
+              diasSVDMes += (c.pacientesComSVD || 0);
+              diasShileyMes += (c.pacientesComShiley || 0);
+            }
+          }
+        });
+
+        // C. Cálculo de Readmissões
+        Object.values(historicoPacientes).forEach(ints => {
+          if (ints.length > 1) {
+            ints.sort((a, b) => a.entrada - b.entrada);
+            for (let i = 1; i < ints.length; i++) {
+              if ((ints[i].entrada - ints[i-1].saida) / 3600000 <= 48) readmissoes++;
+            }
+          }
+        });
+
+        // --- 3. ATUALIZAÇÃO DOS ESTADOS (OUTPUT FINAL) ---
+
+        // Cards de Qualidade
+        const mReal = altasMes > 0 ? (obitosMes / altasMes) : 0;
+        const mEsp = sapsCalculadosMes > 0 ? (somaProbMes / sapsCalculadosMes) / 100 : 0;
+
+        setMetricasQualidade({
+          mortalidadeBruta: (mReal * 100).toFixed(1),
+          mortalidadeEsperada: (mEsp * 100).toFixed(1),
+          smr: mEsp > 0 ? (mReal / mEsp).toFixed(2) : "0.00",
+          taxaReadmissao: altasMes > 0 ? ((readmissoes / altasMes) * 100).toFixed(1) : 0,
+          taxaIdentificacao: somaLeitosCensoMes > 0 ? ((somaIdentificadosCensoMes / somaLeitosCensoMes) * 100).toFixed(0) : 0,
+          carregando: false
+        });
+
+        // Cards Operacionais
+        setMetricasOperacionais({
+          ocupacao: ((ocupadosAgora / capacidadeTotal) * 100).toFixed(1),
+          giro: (altasMes / capacidadeTotal).toFixed(2),
+          los: altasMes > 0 ? (somaDiasInternacaoMes / altasMes).toFixed(1) : "0.0",
+          altas: altasMes
+        });
+
+        // Gráfico de Barras (Dispositivos)
+        setDadosDispositivos([
+          { name: 'VMI', dias: diasVMMes, fill: '#3b82f6' },
+          { name: 'CVC', dias: diasCVCMes, fill: '#8b5cf6' },
+          { name: 'SVD', dias: diasSVDMes, fill: '#0ea5e9' },
+          { name: 'Shiley', dias: diasShileyMes, fill: '#f97316' }
+        ]);
+
+        // Gráfico de Pizza (Desfechos)
+        setDadosDesfechos([
+          { name: 'Alta Hospitalar', value: countAlta, color: '#10b981' },
+          { name: 'Óbito', value: countObito, color: '#ef4444' },
+          { name: 'Transferência', value: countTransf, color: '#f59e0b' }
+        ].filter(d => d.value > 0));
+
+        // Gráfico de Linhas (Tendências Históricas)
+        const listaTendencia = Object.values(consolidadoMensal).map(m => {
+          const r = m.totalAltas > 0 ? (m.totalObitos / m.totalAltas) : 0;
+          const e = m.sapsCount > 0 ? (m.somaSapsProb / m.sapsCount) / 100 : 0;
+          return {
+            name: new Date(m.mes + "-02").toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }),
+            morte: (r * 100).toFixed(1),
+            smr: e > 0 ? (r / e).toFixed(2) : 0,
+            id: m.somaLeitos > 0 ? ((m.somaID / m.somaLeitos) * 100).toFixed(0) : 0,
+            vm: m.somaLeitos > 0 ? ((m.somaVM / m.somaLeitos) * 1000).toFixed(1) : 0,
+            rawDate: m.mes
+          };
+        }).sort((a,b) => a.rawDate.localeCompare(b.rawDate));
+
+        setDadosTendencia(listaTendencia);
+        setLoadingGraficos(false);
+
+      } catch (error) {
+        console.error("Erro crítico no motor de busca:", error);
+        setMetricasQualidade(prev => ({ ...prev, carregando: false }));
+        setLoadingGraficos(false);
+      }
+    };
+
+    carregarIndicadores();
+  }, []);
+
+  useEffect(() => {
+  const processarDadosParaGraficos = async () => {
+    try {
+      setLoadingGraficos(true);
+
+      // 1. PUXAR DADOS DO CENSO (VM, CVC, SVD, Identificação)
+      const censoRef = collection(db, "censo_diario");
+      const censoSnap = await getDocs(censoRef);
+      
+      // 2. PUXAR DADOS DO HISTÓRICO (Mortalidade, SMR)
+      const historicoRef = collection(db, "internacoes_historico");
+      const historicoSnap = await getDocs(historicoRef);
+
+      const consolidadoMensal = {};
+
+      // --- PROCESSANDO CENSO (Densidades e Identificação) ---
+      censoSnap.forEach((doc) => {
+        const d = doc.data();
+        const mesAno = d.data.substring(0, 7); // Pega "2026-04"
+
+        if (!consolidadoMensal[mesAno]) {
+          consolidadoMensal[mesAno] = { 
+            mes: mesAno, somaLeitos: 0, somaVM: 0, somaID: 0, 
+            totalAltas: 0, totalObitos: 0, somaSapsProb: 0, sapsCount: 0 
+          };
+        }
+
+        consolidadoMensal[mesAno].somaLeitos += (d.totalLeitosOcupados || 0);
+        consolidadoMensal[mesAno].somaVM += (d.pacientesEmVM || 0);
+        consolidadoMensal[mesAno].somaID += (d.pacientesIdentificados || 0);
+      });
+
+      // --- PROCESSANDO HISTÓRICO (Desfechos e SMR) ---
+      historicoSnap.forEach((doc) => {
+        const h = doc.data();
+        if (h.dataSaida) {
+          const mesAno = h.dataSaida.substring(0, 7);
+          
+          if (!consolidadoMensal[mesAno]) {
+            consolidadoMensal[mesAno] = { 
+              mes: mesAno, somaLeitos: 0, somaVM: 0, somaID: 0, 
+              totalAltas: 0, totalObitos: 0, somaSapsProb: 0, sapsCount: 0 
+            };
+          }
+
+          consolidadoMensal[mesAno].totalAltas += 1;
+          if (h.indicadores?.foiObito === 1) {
+            consolidadoMensal[mesAno].totalObitos += 1;
+          }
+
+          const prob = parseFloat(h.indicadores?.mortalidadePrevista);
+          if (!isNaN(prob) && prob > 0) {
+            consolidadoMensal[mesAno].somaSapsProb += prob;
+            consolidadoMensal[mesAno].sapsCount += 1;
+          }
+        }
+      });
+
+      // --- CONVERTENDO EM MÉTRICAS FINAIS PARA O GRÁFICO ---
+      const listaFinal = Object.values(consolidadoMensal).map(m => {
+        const mortalidadeReal = m.totalAltas > 0 ? (m.totalObitos / m.totalAltas) * 100 : 0;
+        const mortalidadeEsperada = m.sapsCount > 0 ? (m.somaSapsProb / m.sapsCount) : 0;
+        
+        return {
+          // Formata "2026-04" para "Abr/26" para o gráfico ficar bonito
+          name: new Date(m.mes + "-02").toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }),
+          // Densidade de Incidência de VM (padrão ANVISA: por 1000 pacientes-dia)
+          vm: m.somaLeitos > 0 ? parseFloat(((m.somaVM / m.somaLeitos) * 1000).toFixed(1)) : 0,
+          // SMR
+          smr: mortalidadeEsperada > 0 ? parseFloat((mortalidadeReal / mortalidadeEsperada).toFixed(2)) : 0,
+          // Taxa de Identificação (%)
+          id: m.somaLeitos > 0 ? parseFloat(((m.somaID / m.somaLeitos) * 100).toFixed(0)) : 0,
+          // Mortalidade Bruta (%)
+          morte: parseFloat(mortalidadeReal.toFixed(1)),
+          // Campo técnico para ordenação
+          rawDate: m.mes
+        };
+      });
+
+      // Ordena por data (mais antigo para o mais recente)
+      listaFinal.sort((a, b) => a.rawDate.localeCompare(b.rawDate));
+
+      setDadosTendencia(listaFinal);
+      setLoadingGraficos(false);
+
+    } catch (error) {
+      console.error("Erro ao processar tendências:", error);
+      setLoadingGraficos(false);
+    }
+  };
+
+  processarDadosParaGraficos();
+}, []);
+
   // Efeito: Buscar Plantões do Dia
   useEffect(() => {
     if (subViewEquipe !== 'escalas' || modoVisao !== 'dia') return;
@@ -207,130 +520,7 @@ const GestorDashboard = ({ userProfile }) => {
   // VISÃO 2: INTELIGÊNCIA CLÍNICA (FOTO)
   // ==========================================
   const renderIndicadores = () => {
-    const dataDesfechos = [
-      { name: 'Alta Hospitalar', value: 45, color: '#10b981' }, 
-      { name: 'Óbito', value: 8, color: '#ef4444' }, 
-      { name: 'Transferência', value: 12, color: '#f59e0b' }, 
-    ];
-
-    const dataDispositivos = [
-      { name: 'VMI', dias: 320, fill: '#3b82f6' }, 
-      { name: 'CVC', dias: 450, fill: '#8b5cf6' }, 
-      { name: 'SVD', dias: 380, fill: '#0ea5e9' }, 
-      { name: 'Shiley', dias: 90, fill: '#f97316' }, 
-    ];
-
-    // 1. ESTADO PARA GUARDAR OS INDICADORES REAIS
-  const [metricasQualidade, setMetricasQualidade] = useState({
-    mortalidadeBruta: 0,
-    mortalidadeEsperada: 0,
-    smr: 0,
-    taxaReadmissao: 0,
-    taxaIdentificacao: 0,
-    carregando: true
-  });
-
-  // 2. MOTOR DE BUSCA E CÁLCULO
-  useEffect(() => {
-    const carregarIndicadores = async () => {
-      try {
-        // Define o mês atual (Ex: "2026-04")
-        const mesAtual = new Date().toISOString().substring(0, 7);
-        
-        // --- A. BUSCA NO HISTÓRICO (Mortalidade e Readmissão) ---
-        const historicoRef = collection(db, "internacoes_historico");
-        const historicoSnap = await getDocs(historicoRef);
-        
-        let totalAltas = 0;
-        let totalObitos = 0;
-        let somaProbabilidades = 0;
-        let sapsCalculados = 0;
-        
-        // Lógica de Readmissão: Agrupar por CPF para achar datas próximas
-        const historicoPacientes = {}; 
-        let readmissoes = 0;
-
-        historicoSnap.forEach((doc) => {
-          const alta = doc.data();
-          
-          // Filtra pelo mês atual
-          if (alta.dataSaida && alta.dataSaida.startsWith(mesAtual)) {
-            totalAltas++;
-
-            // Mortalidade
-            if (alta.indicadores?.foiObito === 1) totalObitos++;
-
-            // SMR (SAPS 3)
-            const prob = parseFloat(alta.indicadores?.mortalidadePrevista);
-            if (!isNaN(prob) && prob > 0) {
-              somaProbabilidades += prob;
-              sapsCalculados++;
-            }
-          }
-
-          // Agrupa para cálculo de readmissão (independente do mês para pegar transições)
-          if (alta.cpf && alta.cpf !== "000.000.000-00") {
-            if (!historicoPacientes[alta.cpf]) historicoPacientes[alta.cpf] = [];
-            historicoPacientes[alta.cpf].push({
-              entrada: new Date(alta.dataEntrada).getTime(),
-              saida: new Date(alta.dataSaida).getTime()
-            });
-          }
-        });
-
-        // Calcula Readmissões em < 48h
-        Object.values(historicoPacientes).forEach(internacoes => {
-          if (internacoes.length > 1) {
-            // Ordena por data de entrada
-            internacoes.sort((a, b) => a.entrada - b.entrada);
-            for (let i = 1; i < internacoes.length; i++) {
-              const diffHoras = (internacoes[i].entrada - internacoes[i-1].saida) / (1000 * 60 * 60);
-              // Se a entrada atual foi em menos de 48h da saída anterior
-              if (diffHoras > 0 && diffHoras <= 48) readmissoes++;
-            }
-          }
-        });
-
-        // --- B. BUSCA NO CENSO (Identificação) ---
-        const censoRef = collection(db, "censo_diario");
-        const censoSnap = await getDocs(censoRef);
-        
-        let somaLeitosCenso = 0;
-        let somaIdentificadosCenso = 0;
-
-        censoSnap.forEach((doc) => {
-          const censo = doc.data();
-          if (censo.data && censo.data.startsWith(mesAtual)) {
-            somaLeitosCenso += (censo.totalLeitosOcupados || 0);
-            somaIdentificadosCenso += (censo.pacientesIdentificados || 0);
-          }
-        });
-
-        // --- C. MATEMÁTICA FINAL ---
-        const mortBruta = totalAltas > 0 ? (totalObitos / totalAltas) * 100 : 0;
-        const mortEsperada = sapsCalculados > 0 ? (somaProbabilidades / sapsCalculados) : 0;
-        const calcSmr = mortEsperada > 0 ? (mortBruta / mortEsperada) : 0;
-        const taxaReadmissao = totalAltas > 0 ? (readmissoes / totalAltas) * 100 : 0;
-        const taxaId = somaLeitosCenso > 0 ? (somaIdentificadosCenso / somaLeitosCenso) * 100 : 0;
-
-        setMetricasQualidade({
-          mortalidadeBruta: mortBruta.toFixed(1),
-          mortalidadeEsperada: mortEsperada.toFixed(1),
-          smr: calcSmr.toFixed(2),
-          taxaReadmissao: taxaReadmissao.toFixed(1),
-          taxaIdentificacao: taxaId.toFixed(0),
-          carregando: false
-        });
-
-      } catch (error) {
-        console.error("Erro ao processar indicadores:", error);
-        setMetricasQualidade(prev => ({ ...prev, carregando: false }));
-      }
-    };
-
-    carregarIndicadores();
-  }, []);
-
+    
     return (
       <div className="animate-fadeIn">
         
@@ -366,26 +556,27 @@ const GestorDashboard = ({ userProfile }) => {
           <Bed size={16} className="text-blue-500" /> Operacional e Fluxo
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+          <div className="bg-white p-5 rounded-xl border border-slate-200 relative overflow-hidden">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Taxa de Ocupação</span>
-            <div className="text-3xl font-black text-slate-800 mt-1">88.5%</div>
-            <div className="absolute bottom-0 left-0 h-1 bg-blue-500 w-[88.5%]"></div>
+            <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.ocupacao}%</div>
+            {/* A barra azul cresce dinamicamente conforme a ocupação */}
+            <div className="absolute bottom-0 left-0 h-1 bg-blue-500 transition-all duration-1000" style={{ width: `${metricasOperacionais.ocupacao}%` }}></div>
           </div>
           
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <div className="bg-white p-5 rounded-xl border border-slate-200">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Giro de Leito</span>
-            <div className="text-3xl font-black text-slate-800 mt-1">5.2</div>
+            <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.giro}</div>
             <div className="text-[10px] text-slate-400 font-bold mt-1">Pacientes / Leito / Mês</div>
           </div>
 
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <div className="bg-white p-5 rounded-xl border border-slate-200">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Tempo Médio (LOS)</span>
-            <div className="text-3xl font-black text-slate-800 mt-1">8.4 <span className="text-sm font-normal text-slate-500">dias</span></div>
+            <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.los} <span className="text-sm font-normal text-slate-500">dias</span></div>
           </div>
 
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <div className="bg-white p-5 rounded-xl border border-slate-200">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Altas</span>
-            <div className="text-3xl font-black text-slate-800 mt-1">65</div>
+            <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.altas}</div>
             <div className="text-[10px] text-slate-400 font-bold mt-1">No período selecionado</div>
           </div>
         </div>
@@ -467,150 +658,193 @@ const GestorDashboard = ({ userProfile }) => {
           <div className="bg-slate-700 p-3 rounded-full group-hover:translate-x-2 transition-transform"><ArrowRight className="text-emerald-400" size={24} /></div>
         </div>
 
-        {/* SEÇÃO DE GRÁFICOS (RECHARTS) */}
-        <div className="grid md:grid-cols-2 gap-6">
+        {/* SEÇÃO DE GRÁFICOS (RECHARTS) - DADOS REAIS */}
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
+          
+          {/* GRÁFICO 1: DIAS-DISPOSITIVO */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2"><Activity size={16} className="text-blue-500" /> Total de Dias-Dispositivo</h3>
+            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+              <Activity size={16} className="text-blue-500" /> Total de Dias-Dispositivo
+            </h3>
             <div className="flex-1 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dataDispositivos} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Bar dataKey="dias" radius={[6, 6, 0, 0]} barSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
+              {dadosDispositivos.length === 0 || dadosDispositivos.every(d => d.dias === 0) ? (
+                <div className="flex items-center justify-center h-full text-slate-400 italic text-xs text-center">
+                  Aguardando encerramento do primeiro <br/> censo diário (23:59) para gerar dados.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dadosDispositivos} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                    <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                    <Bar dataKey="dias" radius={[6, 6, 0, 0]} barSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
+
+          {/* GRÁFICO 2: DESFECHOS */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2"><TrendingUp size={16} className="text-emerald-500" /> Distribuição de Desfechos</h3>
+            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+              <TrendingUp size={16} className="text-emerald-500" /> Distribuição de Desfechos
+            </h3>
             <div className="flex-1 w-full flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={dataDesfechos} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value">
-                    {dataDesfechos.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />)}
-                  </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                </PieChart>
-              </ResponsiveContainer>
+              {dadosDesfechos.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-slate-400 italic text-xs text-center">
+                  Nenhum desfecho (alta/óbito) <br/> registado neste mês.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={dadosDesfechos} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value">
+                      {dadosDesfechos.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />)}
+                    </Pie>
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
+
         </div>
       </div>
     );
   };
 
   // ==========================================
-  // VISÃO 2.1: TENDÊNCIAS (FILME)
+  // VISÃO 2.1: TENDÊNCIAS (FILME) - REAL TIME
   // ==========================================
   const renderTendencias = () => {
     
-    // Dados simulados expandidos com todos os seus novos indicadores da UTI
-    const dataTendencias = [
-      { mes: 'Jan', mortalidade: 14.2, smr: 0.95, diasVM: 120, diasCVC: 180, ocupacao: 85.0, giroLeito: 4.8, altas: 58, los: 8.9, readmissao: 4.1, identificacao: 90 },
-      { mes: 'Fev', mortalidade: 15.0, smr: 0.98, diasVM: 145, diasCVC: 190, ocupacao: 90.2, giroLeito: 5.0, altas: 60, los: 8.7, readmissao: 4.5, identificacao: 91 },
-      { mes: 'Mar', mortalidade: 13.5, smr: 0.90, diasVM: 110, diasCVC: 160, ocupacao: 87.5, giroLeito: 5.1, altas: 62, los: 8.5, readmissao: 3.8, identificacao: 92 },
-      { mes: 'Abr', mortalidade: 12.3, smr: 0.85, diasVM: 95,  diasCVC: 150, ocupacao: 88.5, giroLeito: 5.2, altas: 65, los: 8.4, readmissao: 3.2, identificacao: 94 },
-      { mes: 'Mai', mortalidade: 11.8, smr: 0.82, diasVM: 88,  diasCVC: 140, ocupacao: 86.0, giroLeito: 5.4, altas: 68, los: 8.1, readmissao: 2.9, identificacao: 96 },
-      { mes: 'Jun', mortalidade: 10.5, smr: 0.78, diasVM: 80,  diasCVC: 135, ocupacao: 84.5, giroLeito: 5.6, altas: 72, los: 7.8, readmissao: 2.5, identificacao: 98 },
-    ];
-
-    // Dicionário Inteligente: Define o Título e a Cor dependendo do indicador escolhido
+    // Mapeamento para as chaves reais que criamos no useEffect
     const configIndicadores = {
-      ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6' }, // Azul
-      giroLeito:     { label: 'Giro de Leito (Pacientes/Leito/Mês)', color: '#8b5cf6' }, // Roxo
-      los:           { label: 'Tempo Médio de Permanência - LOS (Dias)', color: '#f59e0b' }, // Âmbar
-      altas:         { label: 'Total de Altas no Mês', color: '#14b8a6' }, // Teal
-      mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444' }, // Vermelho
-      smr:           { label: 'SMR (SAPS 3)', color: '#10b981' }, // Esmeralda
-      readmissao:    { label: 'Taxa de Readmissão em 48h (%)', color: '#f97316' }, // Laranja
-      identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4' }, // Ciano
-      diasVM:        { label: 'Densidade de Ventilação Mecânica (Dias)', color: '#6366f1' }, // Indigo
-      diasCVC:       { label: 'Densidade de CVC (Dias)', color: '#ec4899' }, // Rosa
+      mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444', key: 'morte' }, 
+      smr:           { label: 'SMR (SAPS 3)', color: '#10b981', key: 'smr' }, 
+      identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4', key: 'id' }, 
+      diasVM:        { label: 'Densidade de Ventilação Mecânica (p/ 1000 d-p)', color: '#6366f1', key: 'vm' },
+      ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6', key: 'ocupacao' },
+      giroLeito:     { label: 'Giro de Leito', color: '#8b5cf6', key: 'giroLeito' },
+      los:           { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b', key: 'los' },
+      readmissao:    { label: 'Readmissão em 48h (%)', color: '#f97316', key: 'readmissao' },
     };
 
-    // Pega as configurações do indicador atualmente selecionado
     const configAtual = configIndicadores[indicadorTendencia] || configIndicadores['mortalidade'];
+
+    // Tela de carregamento enquanto o Firebase responde
+    if (loadingGraficos) {
+      return (
+        <div className="flex flex-col items-center justify-center h-96 bg-white rounded-3xl border border-slate-100 shadow-sm">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mb-4"></div>
+          <p className="text-slate-400 font-medium italic">Sincronizando com a Inteligência da Nuvem...</p>
+        </div>
+      );
+    }
 
     return (
       <div className="animate-fadeIn max-w-6xl mx-auto">
+        {/* CABEÇALHO */}
         <div className="flex items-center gap-4 mb-8">
           <button onClick={() => setActiveView('indicadores')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
             <ArrowLeft size={20} className="text-slate-700" />
           </button>
           <div>
-            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="text-emerald-600" /> Gráficos de Tendências</h2>
-            <p className="text-slate-500 text-sm mt-1">Monitore a evolução histórica dos principais indicadores da unidade.</p>
+            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+              <TrendingUp className="text-emerald-600" /> Gráficos de Tendências Reais
+            </h2>
+            <p className="text-slate-500 text-sm mt-1">Dados processados a partir do histórico de altas e censo diário.</p>
           </div>
         </div>
 
+        {/* FILTROS E SELEÇÃO */}
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
           <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
             <div className="flex items-center gap-3">
               <label className="text-sm font-bold text-slate-500 uppercase">Indicador:</label>
-              {/* O select agora muda o estado 'indicadorTendencia' em tempo real */}
               <select 
                 value={indicadorTendencia}
                 onChange={(e) => setIndicadorTendencia(e.target.value)}
-                className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 cursor-pointer min-w-[200px]"
+                className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 cursor-pointer min-w-[240px]"
               >
-                <optgroup label="Operacional e Fluxo">
+                <optgroup label="Desfechos Clínicos e Qualidade">
+                  <option value="mortalidade">Taxa de Mortalidade (%)</option>
+                  <option value="smr">SMR (SAPS 3)</option>
+                  <option value="identificacao">Identificação Correta (%)</option>
+                  <option value="readmissao">Readmissão em 48h (%)</option>
+                </optgroup>
+                <optgroup label="Dispositivos e Operacional">
+                  <option value="diasVM">Densidade de VM</option>
                   <option value="ocupacao">Taxa de Ocupação (%)</option>
                   <option value="giroLeito">Giro de Leito</option>
                   <option value="los">Tempo Médio (LOS)</option>
-                  <option value="altas">Total de Altas</option>
-                </optgroup>
-                <optgroup label="Desfechos Clínicos">
-                  <option value="mortalidade">Taxa de Mortalidade (%)</option>
-                  <option value="smr">SMR (SAPS 3)</option>
-                  <option value="readmissao">Readmissão em 48h (%)</option>
-                  <option value="identificacao">Identificação Correta (%)</option>
-                </optgroup>
-                <optgroup label="Dispositivos Invasivos">
-                  <option value="diasVM">Densidade de VM (Dias)</option>
-                  <option value="diasCVC">Densidade de CVC (Dias)</option>
                 </optgroup>
               </select>
             </div>
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-bold text-slate-500 uppercase">Período:</label>
-              <div className="flex items-center gap-2">
-                <select className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none cursor-pointer"><option>Jan 2026</option></select>
-                <span className="text-slate-400 font-bold">até</span>
-                <select className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none cursor-pointer"><option>Jun 2026</option></select>
-              </div>
-            </div>
           </div>
-          <button className="w-full md:w-auto bg-slate-800 hover:bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-colors">Exportar PDF</button>
+          
+          <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
+             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+             <span className="text-xs font-bold text-emerald-700 uppercase">Live Analytics</span>
+          </div>
         </div>
 
-        {/* O Gráfico muda o Título e a Linha dinamicamente */}
+        {/* ÁREA DO GRÁFICO */}
         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 h-[500px] flex flex-col">
-          <h3 className="font-black text-slate-800 mb-6 text-lg flex items-center gap-2">
-            {configAtual.label} - Evolução
+          <h3 className="font-black text-slate-800 mb-6 text-lg flex items-center gap-2 uppercase tracking-tight">
+            <div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
+            {configAtual.label}
           </h3>
+          
           <div className="flex-1 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dataTendencias} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fontSize: 14, fill: '#64748b', fontWeight: 600 }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 14, fill: '#64748b', fontWeight: 600 }} dx={-10} />
-                <RechartsTooltip cursor={{ stroke: '#cbd5e1', strokeWidth: 2, strokeDasharray: '5 5' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} itemStyle={{ fontWeight: 'bold', color: configAtual.color }} />
-                
-                {/* A linha muda a cor e os dados baseada na escolha do menu */}
-                <Line 
-                  type="monotone" 
-                  dataKey={indicadorTendencia} 
-                  stroke={configAtual.color} 
-                  strokeWidth={4} 
-                  dot={{ r: 6, fill: configAtual.color, stroke: '#ffffff', strokeWidth: 2 }} 
-                  activeDot={{ r: 8, fill: configAtual.color, stroke: '#ffffff', strokeWidth: 3 }} 
-                  animationDuration={800}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {dadosTendencia.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 italic text-center">
+                <Activity size={48} className="mb-4 opacity-20" />
+                Aguardando a primeira alta ou o fechamento <br/> do censo para gerar dados.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dadosTendencia} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="name" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 13, fill: '#94a3b8', fontWeight: 600 }} 
+                    dy={15}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 13, fill: '#94a3b8', fontWeight: 600 }} 
+                    dx={-10}
+                  />
+                  <RechartsTooltip 
+                    cursor={{ stroke: '#cbd5e1', strokeWidth: 2, strokeDasharray: '5 5' }} 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }} 
+                    itemStyle={{ fontWeight: '900', fontSize: '14px' }}
+                  />
+                  
+                  <Line 
+                    type="monotone" 
+                    dataKey={configAtual.key} 
+                    stroke={configAtual.color} 
+                    strokeWidth={5} 
+                    dot={{ r: 7, fill: configAtual.color, stroke: '#ffffff', strokeWidth: 3 }} 
+                    activeDot={{ r: 10, fill: configAtual.color, stroke: '#ffffff', strokeWidth: 4 }} 
+                    animationDuration={1200}
+                    connectNulls
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          
+          <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+              Sys4U Analytics Cloud - Ariquemes/RO
+            </p>
           </div>
         </div>
       </div>
