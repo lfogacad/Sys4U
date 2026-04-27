@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "./config/firebase";
+import { UserPlus, Hash, Mail, Lock, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
 
 // Imports dos Componentes
 import HeaderGlobal from "./components/HeaderGlobal";
@@ -50,10 +51,7 @@ const AppRouter = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState("");
   const [newConselho, setNewConselho] = useState("");
-  const [masterCodeInput, setMasterCodeInput] = useState("");
   const [authError, setAuthError] = useState(null);
 
   useEffect(() => {
@@ -101,22 +99,53 @@ const AppRouter = () => {
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    if (masterCodeInput !== "123456") return setAuthError("Código Mestre Inválido");
-    if (!newConselho) return setAuthError("Número do Conselho obrigatório.");
+    
+    // O Código Mestre já não é necessário, a nossa segurança agora é o Conselho!
+    if (!newConselho) return setAuthError("O número do Conselho é obrigatório.");
+    
     setIsLoading(true);
+    setAuthError(""); // Limpa erros antigos
+
     try {
-      const c = await createUserWithEmailAndPassword(auth, email, password);
-      await setDoc(doc(db, "usuarios", c.user.uid), {
-        nome: newName, perfil: newRole, conselho: "CRM", numeroConselho: newConselho,
-        email: email, dataCriacao: new Date().toISOString(), vinculos: [], isFirstLogin: true,
+      // 1. VERIFICAÇÃO DE SEGURANÇA: O profissional existe na base do Gestor?
+      const q = query(
+        collection(db, "profissionais"), 
+        where("numeroConselho", "==", newConselho)
+      );
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        setIsLoading(false);
+        return setAuthError("Profissional não autorizado. Peça à Coordenação para registar o seu CRM/COREN primeiro.");
+      }
+
+      // Se passou, extraímos os dados oficiais que o Gestor (você) cadastrou!
+      const dadosOficiais = snapshot.docs[0].data();
+
+      // 2. CRIA O ACESSO (E-mail e Senha) no Firebase Auth
+      const credencial = await createUserWithEmailAndPassword(auth, email, password);
+
+      // 3. GRAVA O UTILIZADOR NA COLEÇÃO DE ACESSOS (Usando os dados oficiais!)
+      await setDoc(doc(db, "usuarios", credencial.user.uid), {
+        nome: dadosOficiais.nome, // Usa o nome oficial que o gestor escreveu
+        perfil: dadosOficiais.categoria, // Ex: Médico, Enfermeiro
+        conselho: dadosOficiais.conselho,
+        numeroConselho: dadosOficiais.numeroConselho,
+        vinculo: dadosOficiais.vinculo || "PJ",
+        email: email, 
+        dataCriacao: new Date().toISOString(), 
+        isFirstLogin: true,
+        status: "Ativo"
       });
+
+      // Desloga imediatamente para que ele tenha de entrar com as credenciais novas
       await signOut(auth);
       setIsRegistering(false);
-      alert("Cadastrado com sucesso! Faça login.");
-    } catch (err) {
-      console.error("Erro detalhado do Firebase:", err); // Mantém o log oculto para o desenvolvedor (F12)
+      alert(`✅ Conta ativada com sucesso, ${dadosOficiais.nome}! Faça login para continuar.`);
       
-      // Traduz os códigos de erro do Firebase para mensagens amigáveis
+    } catch (err) {
+      console.error("Erro detalhado do Firebase:", err); 
+      
       if (err.code === 'auth/email-already-in-use') {
         setAuthError("Este e-mail já possui cadastro. Peça para redefinir a senha ou use outro e-mail.");
       } else if (err.code === 'auth/weak-password') {
@@ -124,11 +153,12 @@ const AppRouter = () => {
       } else if (err.code === 'auth/invalid-email') {
         setAuthError("O formato do e-mail é inválido. Verifique se não há espaços ou erros de digitação.");
       } else if (err.code === 'auth/network-request-failed') {
-        setAuthError("Sem conexão com a internet. Verifique sua rede e tente novamente.");
+        setAuthError("Sem conexão com a internet. Verifique a sua rede e tente novamente.");
       } else {
-        // Fallback de segurança para qualquer outro erro não mapeado
         setAuthError(`Falha no cadastro: ${err.message}`);
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -154,12 +184,89 @@ const AppRouter = () => {
 
   if (!user) {
     return isRegistering ? (
-      <TelaCadastro
-        email={email} setEmail={setEmail} password={password} setPassword={setPassword}
-        newName={newName} setNewName={setNewName} newRole={newRole} setNewRole={setNewRole}
-        newConselho={newConselho} setNewConselho={setNewConselho} masterCodeInput={masterCodeInput} setMasterCodeInput={setMasterCodeInput}
-        handleRegister={handleRegister} setIsRegistering={setIsRegistering} authError={authError} isLoading={isLoading}
-      />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200 w-full max-w-md animate-fadeIn">
+          <div className="text-center mb-8">
+            <div className="bg-emerald-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <UserPlus className="text-emerald-600" size={32} />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800">Primeiro Acesso</h2>
+            <p className="text-slate-500 text-sm">Ative a sua conta utilizando o seu CRM/COREN</p>
+          </div>
+
+          <form onSubmit={handleRegister} className="space-y-5">
+            {/* NÚMERO DO CONSELHO - A ÚNICA CHAVE NECESSÁRIA */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Número do Registro (CRM/COREN)</label>
+              <div className="relative">
+                <Hash className="absolute left-3 top-3 text-slate-400" size={18} />
+                <input 
+                  type="number" 
+                  required
+                  value={newConselho}
+                  onChange={(e) => setNewConselho(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-bold text-slate-700"
+                  placeholder="Ex: 3129"
+                />
+              </div>
+            </div>
+
+            {/* E-MAIL E SENHA PARA O FUTURO LOGIN */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">E-mail de Acesso</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 text-slate-400" size={18} />
+                <input 
+                  type="email" 
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-bold text-slate-700"
+                  placeholder="seu@email.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Criar Senha</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 text-slate-400" size={18} />
+                <input 
+                  type="password" 
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-bold text-slate-700"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            {authError && (
+              <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-xs font-bold flex items-center gap-2 animate-shake">
+                <AlertCircle size={16} /> {authError}
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isLoading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />}
+              {isLoading ? 'A validar registro...' : 'Ativar Minha Conta'}
+            </button>
+
+            <button 
+              type="button" 
+              onClick={() => setIsRegistering(false)} 
+              className="w-full text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              Voltar para o Login
+            </button>
+          </form>
+        </div>
+      </div>
     ) : (
       <TelaLogin
         email={email} setEmail={setEmail} password={password} setPassword={setPassword}
@@ -168,11 +275,7 @@ const AppRouter = () => {
     );
   }
 
-  if (userProfile?.isFirstLogin) {
-    return <TrocaSenhaObrigatoria user={user} userProfile={userProfile} setUserProfile={setUserProfile} />;
-  }
-
-// --- CRACHÁ MASTER (Administrador e Desenvolvedor têm acesso ao mapa geral) ---
+  // --- CRACHÁ MASTER (Administrador e Desenvolvedor têm acesso ao mapa geral) ---
   const isSuperUser = userProfile?.perfil === "Administrador" || userProfile?.perfil === "Desenvolvedor";
 
   if (userProfile?.isFirstLogin) {

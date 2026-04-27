@@ -55,7 +55,6 @@ const ModuloAdmin = ({ userProfile }) => {
     e.preventDefault();
     setIsUpdating(true);
     
-    // Pegar os dados do form
     const formData = new FormData(e.target);
     const unidadeIndex = formData.get("unidadeIndex");
     const cargoLocal = formData.get("cargoLocal");
@@ -64,18 +63,20 @@ const ModuloAdmin = ({ userProfile }) => {
     
     const novoVinculo = {
       ...unidadeSelecionada,
-      perfil: cargoLocal // Ex: "Médico Plantonista"
+      perfil: cargoLocal 
     };
 
     try {
-      const userRef = doc(db, "usuarios", selectedUser.id);
+      // MUDANÇA AQUI: Aponta para a coleção "profissionais"
+      const userRef = doc(db, "profissionais", selectedUser.id); 
+      
       await updateDoc(userRef, {
         vinculos: arrayUnion(novoVinculo)
       });
       
       alert(`Vínculo adicionado com sucesso para ${selectedUser.nome}!`);
       setIsModalOpen(false);
-      fetchUsuarios(); // Recarrega a lista para mostrar a mudança
+      
     } catch (error) {
       console.error("Erro ao atualizar vínculo:", error);
       alert("Erro ao atribuir vínculo.");

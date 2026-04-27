@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line 
 } from 'recharts';
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, onSnapshot, orderBy } from "firebase/firestore";
 import { db } from "../config/firebase";
 import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
@@ -24,6 +24,10 @@ const GestorDashboard = ({ userProfile }) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [plantaoEditado, setPlantaoEditado] = useState(null);
   const [novoPlantonista, setNovoPlantonista] = useState("");
+  // Controles do Modal de Vínculos
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [isUpdating, setIsUpdating] = useState(false);
   // Controles dos dados recebidos da base de dados
   const [plantoesDoDia, setPlantoesDoDia] = useState([]);
   const [isLoadingPlantoes, setIsLoadingPlantoes] = useState(false);
@@ -41,6 +45,85 @@ const GestorDashboard = ({ userProfile }) => {
   });
   const [erroConselho, setErroConselho] = useState('');
   const [isSalvandoProfissional, setIsSalvandoProfissional] = useState(false);
+  const [listaProfissionais, setListaProfissionais] = useState([]);
+
+  // Fica a "ouvir" a coleção profissionais em tempo real
+  useEffect(() => {
+    if (subViewEquipe === 'cadastro') {
+      const q = query(collection(db, "profissionais"), orderBy("nome", "asc"));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setListaProfissionais(dados);
+      });
+      return () => unsubscribe();
+    }
+  }, [subViewEquipe]);
+
+  // --- LÓGICA DE CADASTRO DE PROFISSIONAIS ---
+
+  // 1. Muda o conselho automaticamente de acordo com a categoria
+  const handleCategoriaChange = (e) => {
+    const cat = e.target.value;
+    let conselhoPadrao = 'Outro';
+    if (cat === 'Médico') conselhoPadrao = 'CRM';
+    if (cat === 'Enfermeiro' || cat === 'Téc. Enfermagem') conselhoPadrao = 'COREN';
+    if (cat === 'Fisioterapeuta') conselhoPadrao = 'CREFITO';
+    if (cat === 'Nutricionista') conselhoPadrao = 'CRN';
+    if (cat === 'Fonoaudiólogo') conselhoPadrao = 'CREFONO';
+
+    setNovoProfissional({ ...novoProfissional, categoria: cat, conselho: conselhoPadrao });
+  };
+
+  // 2. Verifica duplicidade de CRM/COREN ao sair do campo
+  const handleBlurConselho = async () => {
+    if (!novoProfissional.numeroConselho) {
+      setErroConselho('');
+      return;
+    }
+    
+    try {
+      const q = query(
+        collection(db, "profissionais"), 
+        where("numeroConselho", "==", novoProfissional.numeroConselho)
+      );
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        setErroConselho(`Atenção: Este ${novoProfissional.conselho} já está cadastrado!`);
+      } else {
+        setErroConselho('');
+      }
+    } catch (error) {
+      console.error("Erro ao verificar conselho:", error);
+    }
+  };
+
+  // 3. A FUNÇÃO QUE ESTAVA A FALTAR: Salva no Firebase
+  const salvarProfissional = async (e) => {
+    e.preventDefault(); 
+    if (erroConselho) return;
+
+    setIsSalvandoProfissional(true);
+    try {
+      // Grava na coleção "profissionais" para consulta do Primeiro Acesso
+      await addDoc(collection(db, "profissionais"), {
+        ...novoProfissional,
+        cadastradoEm: new Date().toISOString(),
+        status: 'Ativo'
+      });
+      
+      alert(`✅ Sucesso! ${novoProfissional.nome} agora faz parte da base oficial.`);
+      
+      // Limpa os campos para o próximo cadastro
+      setNovoProfissional({ nome: '', categoria: 'Médico', conselho: 'CRM', numeroConselho: '', vinculo: 'PJ', telefone: '' });
+      setSubViewEquipe('menu'); // Volta para o menu automaticamente
+    } catch (error) {
+      console.error("Erro ao salvar profissional:", error);
+      alert("❌ Erro ao salvar na base de dados.");
+    } finally {
+      setIsSalvandoProfissional(false);
+    }
+  };
   
   // Este "useEffect" dispara automaticamente sempre que o senhor muda a data ou a aba
   useEffect(() => {
@@ -688,7 +771,7 @@ const GestorDashboard = ({ userProfile }) => {
   const renderEquipe = () => {
 
     // ----------------------------------------------------
-    // TELA 1: O SUB-MENU COM OS 3 CARTÕES
+    // TELA 1: O SUB-MENU COM OS 4 CARTÕES
     // ----------------------------------------------------
     if (subViewEquipe === 'menu') {
       return (
@@ -709,7 +792,7 @@ const GestorDashboard = ({ userProfile }) => {
             </div>
           </div>
 
-          {/* Mini-Cards de Resumo (Mantivemos para você não perder a visão geral) */}
+          {/* Mini-Cards de Resumo */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
               <span className="text-[10px] font-bold text-slate-400 uppercase">Equipe Cadastrada</span>
@@ -729,46 +812,290 @@ const GestorDashboard = ({ userProfile }) => {
             </div>
           </div>
 
-          {/* OS 3 CARTÕES DE SELEÇÃO */}
-          <div className="grid md:grid-cols-3 gap-6">
+          {/* OS 4 CARTÕES DE SELEÇÃO */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             
             {/* CARTÃO 1: ACESSOS */}
             <button 
               onClick={() => setSubViewEquipe('acessos')}
-              className="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent hover:border-emerald-500 hover:shadow-md transition-all group text-left"
+              className="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent hover:border-emerald-500 hover:shadow-md transition-all group text-left flex flex-col h-full"
             >
               <div className="bg-emerald-100 w-12 h-12 rounded-xl flex items-center justify-center text-emerald-600 mb-4 group-hover:scale-110 transition-transform">
                 <Shield size={24} />
               </div>
               <h3 className="text-lg font-bold text-slate-800 mb-1">Controle de Perfis</h3>
-              <p className="text-slate-500 text-sm">Gerencie senhas, aprove credenciamentos e defina os cargos de cada profissional.</p>
+              <p className="text-slate-500 text-sm flex-grow">Gerencie senhas, aprove credenciamentos e defina os cargos de cada profissional.</p>
             </button>
 
             {/* CARTÃO 2: ESCALAS */}
             <button 
               onClick={() => setSubViewEquipe('escalas')}
-              className="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent hover:border-blue-500 hover:shadow-md transition-all group text-left"
+              className="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent hover:border-blue-500 hover:shadow-md transition-all group text-left flex flex-col h-full"
             >
               <div className="bg-blue-100 w-12 h-12 rounded-xl flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform">
                 <CalendarDays size={24} />
               </div>
               <h3 className="text-lg font-bold text-slate-800 mb-1">Gestão de Escalas</h3>
-              <p className="text-slate-500 text-sm">Monte o espelho de plantão (Médico, Enf e Fisio) e acompanhe as trocas de turno.</p>
+              <p className="text-slate-500 text-sm flex-grow">Monte o espelho de plantão (Médico, Enf e Fisio) e acompanhe trocas.</p>
             </button>
 
-            {/* CARTÃO 3: CONFIGURAÇÕES */}
+            {/* CARTÃO 3: NOVO - CADASTRO DE PROFISSIONAL (O Caminho A começa aqui) */}
+            <button 
+              onClick={() => setSubViewEquipe('cadastro')}
+              className="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent hover:border-amber-500 hover:shadow-md transition-all group text-left flex flex-col h-full"
+            >
+              <div className="bg-amber-100 w-12 h-12 rounded-xl flex items-center justify-center text-amber-600 mb-4 group-hover:scale-110 transition-transform">
+                <UserPlus size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-slate-800 mb-1">Cadastrar Profissional</h3>
+              <p className="text-slate-500 text-sm flex-grow">Registre o CRM/COREN da equipe na base oficial da UTI (Para integração).</p>
+            </button>
+
+            {/* CARTÃO 4: CONFIGURAÇÕES */}
             <button 
               onClick={() => setSubViewEquipe('config')}
-              className="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent hover:border-slate-500 hover:shadow-md transition-all group text-left"
+              className="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent hover:border-slate-500 hover:shadow-md transition-all group text-left flex flex-col h-full"
             >
               <div className="bg-slate-200 w-12 h-12 rounded-xl flex items-center justify-center text-slate-700 mb-4 group-hover:scale-110 transition-transform">
                 <Settings size={24} />
               </div>
               <h3 className="text-lg font-bold text-slate-800 mb-1">Configurações da UTI</h3>
-              <p className="text-slate-500 text-sm">Altere o número de leitos, mapeie áreas de isolamento e ajuste parâmetros gerais.</p>
+              <p className="text-slate-500 text-sm flex-grow">Altere o número de leitos, mapeie áreas e ajuste parâmetros gerais.</p>
             </button>
 
           </div>
+        </div>
+      );
+    }
+
+    // ----------------------------------------------------
+    // TELA DE CADASTRO E LISTA DE PROFISSIONAIS (RH)
+    // ----------------------------------------------------
+    if (subViewEquipe === 'cadastro') {
+      return (
+        <div className="animate-fadeIn max-w-7xl mx-auto pb-12">
+          {/* CABEÇALHO */}
+          <div className="flex items-center gap-4 mb-6">
+            <button onClick={() => setSubViewEquipe('menu')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
+              <ArrowLeft size={20} className="text-slate-700" />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                <Users className="text-emerald-600" /> Equipe e Setorização
+              </h2>
+              <p className="text-slate-500 text-sm">Cadastre novos membros e vincule-os aos seus respectivos setores.</p>
+            </div>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            
+            {/* COLUNA ESQUERDA: FORMULÁRIO */}
+            <div className="lg:col-span-1">
+              <form onSubmit={salvarProfissional} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm sticky top-4">
+                <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+                  <UserPlus size={18} className="text-emerald-500" /> Novo Registro
+                </h3>
+                
+                <div className="space-y-4">
+                  {/* NOME */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nome (Conforme Escala)</label>
+                    <input 
+                      type="text" required value={novoProfissional.nome}
+                      onChange={(e) => setNovoProfissional({...novoProfissional, nome: e.target.value.toUpperCase()})}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none"
+                      placeholder="DR. NOME DO MÉDICO"
+                    />
+                  </div>
+
+                  {/* SETOR / CATEGORIA (Aqui é feita a vinculação do setor) */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Vinculação de Setor</label>
+                    <select 
+                      value={novoProfissional.categoria} onChange={handleCategoriaChange}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none cursor-pointer"
+                    >
+                      <option value="Médico">Médico</option>
+                      <option value="Enfermeiro">Enfermeiro</option>
+                      <option value="Téc. Enfermagem">Téc. Enfermagem</option>
+                      <option value="Fisioterapeuta">Fisioterapeuta</option>
+                      <option value="Nutricionista">Nutricionista</option>
+                      <option value="Fonoaudiólogo">Fonoaudiólogo</option>
+                    </select>
+                  </div>
+
+                  {/* CONSELHO E VÍNCULO */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="relative">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{novoProfissional.conselho}</label>
+                      <input 
+                        type="number" required value={novoProfissional.numeroConselho}
+                        onChange={(e) => setNovoProfissional({...novoProfissional, numeroConselho: e.target.value})}
+                        onBlur={handleBlurConselho}
+                        className={`w-full p-2.5 bg-slate-50 border ${erroConselho ? 'border-red-500' : 'border-slate-200'} rounded-xl text-sm font-bold focus:border-emerald-500 outline-none`}
+                        placeholder="Número"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Vínculo</label>
+                      <select 
+                        value={novoProfissional.vinculo} onChange={(e) => setNovoProfissional({...novoProfissional, vinculo: e.target.value})}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none cursor-pointer"
+                      >
+                        <option value="PJ">PJ</option>
+                        <option value="CLT">CLT</option>
+                        <option value="Efetivo">Efetivo</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {erroConselho && (
+                    <p className="text-[10px] font-bold text-red-500 flex items-center gap-1">
+                      <AlertCircle size={12} /> {erroConselho}
+                    </p>
+                  )}
+
+                  <button 
+                    type="submit" disabled={isSalvandoProfissional || !!erroConselho}
+                    className="w-full bg-emerald-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all disabled:opacity-50"
+                  >
+                    {isSalvandoProfissional ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>}
+                    Salvar na Base Oficial
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* COLUNA DIREITA: TABELA DE PROFISSIONAIS */}
+            <div className="lg:col-span-2">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full">
+                <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                  <h3 className="font-bold text-slate-700">Base de Profissionais Autorizados</h3>
+                  <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full">
+                    {listaProfissionais.length} Registros
+                  </span>
+                </div>
+
+                {listaProfissionais.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400 font-medium">
+                    Nenhum profissional cadastrado na base oficial ainda.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
+                        <tr>
+                          <th className="px-4 py-3">Profissional / Setor</th>
+                          <th className="px-4 py-3">Registro</th>
+                          <th className="px-4 py-3">Vínculo</th>
+                          <th className="px-4 py-3 text-right">Ações</th> {/* NOVA COLUNA */}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {listaProfissionais.map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="font-bold text-slate-700 text-sm">{p.nome}</div>
+                              <div className="text-[10px] font-bold text-blue-500 uppercase">{p.categoria}</div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded font-bold text-slate-600">
+                                {p.conselho} {p.numeroConselho}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-500">
+                              {p.vinculo}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {/* O FAMOSO BOTÃO DE VÍNCULOS */}
+                              <button 
+                                onClick={() => openModal(p)}
+                                className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 hover:border-emerald-200 px-3 py-1.5 rounded-lg transition-all inline-flex items-center gap-1"
+                              >
+                                + Vínculos
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+          {/* MODAL DE ATRIBUIÇÃO DE VÍNCULO */}
+            {isModalOpen && selectedUser && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95">
+                    <div className="bg-emerald-600 p-6 flex justify-between items-center text-white">
+                    <div>
+                        <h3 className="font-black text-xl">Atribuir Unidade</h3>
+                        <p className="text-emerald-100 text-sm">Dr(a). {selectedUser.nome}</p>
+                    </div>
+                    <button onClick={() => setIsModalOpen(false)} className="hover:bg-white/20 p-2 rounded-full transition-colors">
+                        <X size={24} />
+                    </button>
+                    </div>
+                    
+                    <form onSubmit={handleAtribuirVinculo} className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Selecione o Hospital / Setor</label>
+                        <select name="unidadeIndex" required className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none">
+                        {unidadesDisponiveis.map((uni, idx) => (
+                            <option key={idx} value={idx}>
+                            {uni.instituicaoNome} - {uni.unidadeNome}
+                            </option>
+                        ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Cargo de Atuação nesta Unidade</label>
+                        <select name="cargoLocal" required defaultValue="" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none">
+                        <option value="" disabled>Selecione o cargo do profissional...</option>
+                        
+                        {/* Equipe Médica */}
+                        <option value="Médico">Médico (Plantonista/Diarista)</option>
+                        <option value="Nefrologista">Nefrologista</option>
+                        <option value="RT Médico">RT Médico (Coordenador)</option>
+                        
+                        {/* Equipe Assistencial Multi */}
+                        <option value="Enfermeiro">Enfermeiro</option>
+                        <option value="Téc. em Enf.">Téc. em Enf.</option>
+                        <option value="Fisioterapeuta">Fisioterapeuta</option>
+                        <option value="Nutricionista">Nutricionista</option>
+                        <option value="Fonoaudiólogo">Fonoaudiólogo</option>
+                        
+                        {/* Chefias e Coordenações */}
+                        <option value="Gerente de Enfermagem">Gerente de Enfermagem</option>
+                        <option value="RT da Fisioterapia">RT da Fisioterapia</option>
+                        <option value="CCIH UTI">CCIH UTI</option>
+                        <option value="CCIH Geral">CCIH Geral</option>
+                        
+                        {/* Gestão e Administrativo */}
+                        <option value="Diretor Administrativo">Diretor Administrativo</option>
+                        <option value="Recepção">Recepção / Faturamento</option>
+                        
+                        {/* TI / Suporte */}
+                        <option value="Desenvolvedor">Desenvolvedor do Sistema</option>
+                        </select>
+                        <p className="text-[10px] text-slate-500 mt-1">Este cargo define as abas e permissões de edição que o usuário terá ao acessar a unidade.</p>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100">
+                        <button 
+                        type="submit" disabled={isUpdating}
+                        className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+                        >
+                        {isUpdating ? <Loader2 size={20} className="animate-spin" /> : "Confirmar Liberação de Acesso"}
+                        </button>
+                    </div>
+                    </form>
+                </div>
+                </div>
+            )}
         </div>
       );
     }
