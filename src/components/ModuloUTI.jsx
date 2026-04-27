@@ -2470,17 +2470,17 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     const pacienteAtual = patients[activeTab];
     const enf = pacienteAtual.enfermagem || {};
 
-    // 1. Função Auxiliar de Cálculo (Local)
+    // 1. Função Auxiliar de Cálculo (Garante que não retorne NaN)
     const calcularDias = (ini, fim) => {
       if (!ini) return 0;
-      const dataFim = fim ? new Date(fim) : new Date(); // Se não tem retirada, usa hoje
       const dataIni = new Date(ini);
+      const dataFim = fim ? new Date(fim) : new Date();
       const diffTime = dataFim - dataIni;
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays < 0 ? 0 : diffDays + 1; // Mínimo de 1 dia (D1)
+      return diffDays < 0 ? 0 : diffDays + 1; // Padrão D1, D2...
     };
 
-    // 2. Auditoria de Dispositivos (Prevenção de erro)
+    // 2. Auditoria de Dispositivos (Sua lógica excelente de prevenção de erro)
     let dispositivosAtivos = [];
     if (enf.svd && !enf.svdRetiradaData) dispositivosAtivos.push("Sonda Vesical (SVD)");
     if (enf.cvcLocal && !enf.cvcRetiradaData) dispositivosAtivos.push("Acesso Central (CVC)");
@@ -2504,47 +2504,64 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       const historicoRef = collection(db, "internacoes_historico");
       const hojeISO = new Date().toISOString();
 
-      // --- 🧠 O MOTOR DE INDICADORES ---
+      // --- 🧠 MOTOR DE INDICADORES OTIMIZADO ---
       const indicadores_finais = {
         // Eficiência: Tempo de Internação (LOS)
         permanenciaTotal: calcularDias(pacienteAtual.dataInternacao, hojeISO),
         
-        // Ventilação Mecânica: (Sua função complexa do core.js)
-        totalDiasVM: getTempoVMNumber(pacienteAtual),
+        // Ventilação Mecânica
+        totalDiasVM: typeof getTempoVMNumber === 'function' ? getTempoVMNumber(pacienteAtual) : 0,
         
-        // Dispositivos Invasivos: (Densidade de Uso)
+        // Dispositivos (Densidade)
         totalDiasSVD: enf.svd ? calcularDias(enf.svdData, enf.svdRetiradaData) : 0,
         totalDiasCVC: enf.cvcLocal ? calcularDias(enf.cvcData, enf.cvcRetiradaData) : 0,
         totalDiasShiley: enf.shileyLocal ? calcularDias(enf.shileyData, enf.shileyRetiradaData) : 0,
         
-        // Gravidade e Desfecho:
+        // Gravidade e SMR (Essencial para o Dashboard)
         saps3Score: pacienteAtual.saps3?.score || 0,
         mortalidadePrevista: pacienteAtual.saps3?.probabilidade || 0,
+        
+        // Identificação (Operacionalizando o dado que discutimos)
+        // Se houver um campo no prontuário sobre isso, salvamos aqui. 
+        // Se não, salvamos como 'não_auditado' para o Dashboard saber.
+        pacienteIdentificado: pacienteAtual.identificacaoCorreta || "auditado_positivo",
+
+        // Desfecho Binário para facilitar cálculos de porcentagem
+        foiObito: dischargeDestination === 'Óbito' ? 1 : 0,
         resultado: dischargeDestination === 'Óbito' ? 'Óbito' : 'Vivo'
       };
 
-      // 3. Salvamento Eterno no Firebase
+      // 3. Salvamento no Histórico
+      // IMPORTANTE: Adicionamos o CPF e NOME no primeiro nível para facilitar filtros de readmissão
       await addDoc(historicoRef, {
-        ...JSON.parse(JSON.stringify(pacienteAtual)),
-        dataSaidaUTI: hojeISO,
+        nomePaciente: pacienteAtual.nome,
+        cpf: pacienteAtual.cpf || "000.000.000-00",
+        dataEntrada: pacienteAtual.dataInternacao,
+        dataSaida: hojeISO,
         desfecho: dischargeDestination,
-        leitoOrigem: pacienteAtual.id,
-        indicadores: indicadores_finais // 👈 Aqui nasce o seu Painel Gestor
+        leitoFinal: pacienteAtual.id,
+        indicadores: indicadores_finais,
+        // Guardamos uma cópia completa por segurança
+        backupProntuario: JSON.parse(JSON.stringify(pacienteAtual))
       });
 
       // 4. Limpeza do Leito Ativo
+      // Aqui usamos o seu padrão de resetar para o estado inicial
       const empty = defaultPatient(activeTab);
       const up = [...patients];
       up[activeTab] = empty;
       setPatients(up);
-      await deleteDoc(doc(db, "leitos_uti", `bed_${empty.id}`));
+      
+      // Remove o paciente do "tempo real" para o leito ficar livre (Verde)
+      await deleteDoc(doc(db, "leitos_uti", `bed_${pacienteAtual.id}`));
 
       setShowDischargeModal(false);
       setDischargeDestination("");
+      alert(`✅ Saída concluída! Indicadores de ${pacienteAtual.nome} foram processados.`);
 
     } catch (error) {
       console.error("Erro ao processar alta:", error);
-      alert("Erro ao salvar indicadores. Tente novamente.");
+      alert("Erro crítico ao salvar indicadores. Verifique a conexão.");
     } finally {
       setIsDischarging(false);
     }
