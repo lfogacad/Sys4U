@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, updateDoc, arrayUnion, addDoc, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, doc, updateDoc, deleteDoc, arrayUnion, addDoc, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useNavigate } from 'react-router-dom';
-import { Users, Search, ShieldCheck, AlertCircle, ArrowLeft, Loader2, Plus, X, UserPlus, Save } from 'lucide-react';
+import { Users, Search, ShieldCheck, AlertCircle, ArrowLeft, Loader2, Plus, X, UserPlus, Save, 
+         Settings, UserX, UserCheck, Trash2 } from 'lucide-react';
 
 const ModuloAdmin = ({ userProfile }) => {
   const navigate = useNavigate();
@@ -26,9 +27,7 @@ const ModuloAdmin = ({ userProfile }) => {
 
   // Simulação das Unidades Físicas
   const unidadesDisponiveis = [
-    { instituicaoId: "hosp_municipal", instituicaoNome: "Hospital Municipal", unidadeId: "uti_01", unidadeNome: "UTI Adulto" },
-    { instituicaoId: "hosp_municipal", instituicaoNome: "Hospital Municipal", unidadeId: "recepcao", unidadeNome: "Recepção Central" },
-    { instituicaoId: "samu_regional", instituicaoNome: "SAMU", unidadeId: "base_alfa", unidadeNome: "Base Alfa" }
+    { instituicaoId: "hosp_municipal", instituicaoNome: "HMA", unidadeId: "uti_01", unidadeNome: "UTI Adulto" },
   ];
 
   // ------------------------------------------------------------------
@@ -158,6 +157,38 @@ const ModuloAdmin = ({ userProfile }) => {
     u.categoria?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // --- NOVAS FUNÇÕES DE GESTÃO ---
+
+  const excluirProfissional = async (id, nome) => {
+    if (window.confirm(`🚨 ATENÇÃO: Tem a certeza que deseja excluir DEFINITIVAMENTE o cadastro de ${nome}? Esta ação não pode ser desfeita.`)) {
+      try {
+        await deleteDoc(doc(db, "profissionais", id));
+        alert("Profissional excluído com sucesso.");
+        // Se tiver uma função que recarrega a tabela (ex: fetchUsers), chame-a aqui!
+        // fetchUsers(); 
+      } catch (error) {
+        console.error("Erro ao excluir:", error);
+        alert("Erro ao excluir profissional.");
+      }
+    }
+  };
+
+  const toggleStatusProfissional = async (id, nome, statusAtivo) => {
+    const acao = statusAtivo === false ? 'reativar' : 'desativar (bloquear acesso de)';
+    if (window.confirm(`Deseja ${acao} ${nome}?`)) {
+      try {
+        await updateDoc(doc(db, "profissionais", id), { 
+          ativo: statusAtivo === false ? true : false 
+        });
+        // Se tiver uma função que recarrega a tabela (ex: fetchUsers), chame-a aqui!
+        // fetchUsers();
+      } catch (error) {
+        console.error("Erro ao mudar status:", error);
+        alert("Erro ao atualizar status.");
+      }
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto pb-12">
       {/* Cabeçalho */}
@@ -281,18 +312,19 @@ const ModuloAdmin = ({ userProfile }) => {
                       <th className="p-4 font-bold">Profissional</th>
                       <th className="p-4 font-bold">Registro / Vínculo</th>
                       <th className="p-4 font-bold">Status de Atuação</th>
-                      <th className="p-4 font-bold text-center">Ação</th>
+                      <th className="p-4 font-bold text-center">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredUsers.map((u) => {
                       const hasVinculo = u.vinculos && u.vinculos.length > 0;
-                      const isSuperAdmin = u.categoria === "Administrador"; // Adaptação de checagem
+                      const isSuperAdmin = u.categoria === "Administrador"; 
+                      const estaDesativado = u.ativo === false; // Checa se a flag de inativo existe
 
                       return (
-                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                        <tr key={u.id} className={`transition-colors ${estaDesativado ? 'bg-slate-50 opacity-60 grayscale-[0.5]' : 'hover:bg-slate-50'}`}>
                           <td className="p-4">
-                            <div className="font-bold text-slate-800">{u.nome}</div>
+                            <div className={`font-bold ${estaDesativado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{u.nome}</div>
                             <div className="text-xs font-bold text-emerald-600 uppercase mt-0.5">{u.categoria}</div>
                           </td>
                           <td className="p-4">
@@ -304,7 +336,11 @@ const ModuloAdmin = ({ userProfile }) => {
                             </div>
                           </td>
                           <td className="p-4">
-                            {isSuperAdmin ? (
+                            {estaDesativado ? (
+                               <div className="flex items-center gap-1 text-red-500 font-bold text-xs">
+                                 <UserX size={14} /> Conta Inativa
+                               </div>
+                            ) : isSuperAdmin ? (
                               <div className="flex items-center gap-1 text-emerald-600 font-bold text-xs">
                                 <ShieldCheck size={14} /> Acesso Global
                               </div>
@@ -318,13 +354,36 @@ const ModuloAdmin = ({ userProfile }) => {
                               </div>
                             )}
                           </td>
-                          <td className="p-4 text-center">
-                            <button 
-                              onClick={() => openModal(u)}
-                              className="px-3 py-2 bg-slate-100 text-slate-600 hover:bg-slate-800 hover:text-white rounded-lg transition-colors inline-flex items-center gap-2 font-bold text-xs"
-                            >
-                              <Plus size={14} /> Atribuir
-                            </button>
+                          <td className="p-4">
+                            {/* GRUPO DE BOTÕES DE AÇÃO */}
+                            <div className="flex items-center justify-center gap-2">
+                              {/* Botão: Gerenciar Vínculos / Atribuir */}
+                              <button 
+                                onClick={() => openModal(u)}
+                                title={hasVinculo ? "Gerenciar Vínculos" : "Atribuir Unidade"}
+                                className={`p-2 rounded-lg transition-colors ${hasVinculo ? 'bg-slate-100 text-slate-600 hover:bg-slate-800 hover:text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white'}`}
+                              >
+                                {hasVinculo ? <Settings size={16} /> : <Plus size={16} />}
+                              </button>
+
+                              {/* Botão: Desativar / Reativar */}
+                              <button 
+                                onClick={() => toggleStatusProfissional(u.id, u.nome, u.ativo)}
+                                title={estaDesativado ? "Reativar Profissional" : "Desativar Acesso"}
+                                className={`p-2 rounded-lg transition-colors ${estaDesativado ? 'bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-600 hover:text-white'}`}
+                              >
+                                {estaDesativado ? <UserCheck size={16} /> : <UserX size={16} />}
+                              </button>
+
+                              {/* Botão: Excluir */}
+                              <button 
+                                onClick={() => excluirProfissional(u.id, u.nome)}
+                                title="Excluir Definitivamente"
+                                className="p-2 bg-red-50 text-red-500 hover:bg-red-600 hover:text-white rounded-lg transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

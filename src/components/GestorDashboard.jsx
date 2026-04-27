@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line 
 } from 'recharts';
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
 import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
@@ -40,6 +40,19 @@ const GestorDashboard = ({ userProfile }) => {
 
   const [dadosDispositivos, setDadosDispositivos] = useState([]);
   const [dadosDesfechos, setDadosDesfechos] = useState([]);
+
+  // Controles da Configuração de Leitos
+  const [leitosConfig, setLeitosConfig] = useState([]);
+  const [capacidadeInput, setCapacidadeInput] = useState(10);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  // Métricas da Equipe
+  const [metricasEquipe, setMetricasEquipe] = useState({
+    total: 0,
+    ativos: 0,
+    pendentes: 0,
+    carregando: true
+  });
 
   const [metricasOperacionais, setMetricasOperacionais] = useState({
     ocupacao: 0,
@@ -253,6 +266,117 @@ const GestorDashboard = ({ userProfile }) => {
 
     carregarIndicadores();
   }, []);
+
+  // Carrega os leitos quando o gestor entra na tela de Configuração
+  useEffect(() => {
+    if (subViewEquipe === 'config') {
+      const carregarLeitosConfig = async () => {
+        const snap = await getDocs(collection(db, 'leitos_uti'));
+        const leitos = [];
+        snap.forEach(d => leitos.push({ id: d.id, ...d.data() }));
+        
+        // Ordena para Leito 1, Leito 2, etc.
+        leitos.sort((a, b) => {
+          const numA = parseInt(a.nome?.replace(/\D/g, '')) || 0;
+          const numB = parseInt(b.nome?.replace(/\D/g, '')) || 0;
+          return numA - numB;
+        });
+        
+        setLeitosConfig(leitos);
+        setCapacidadeInput(leitos.length > 0 ? leitos.length : 10);
+      };
+      carregarLeitosConfig();
+    }
+  }, [subViewEquipe]);
+
+  // Efeito 3: Busca de Métricas da Equipe (Coleção Profissionais)
+  useEffect(() => {
+    // Só dispara a busca se o gestor estiver na aba 'equipe'
+    if (activeView !== 'equipe') return;
+
+    const buscarDadosEquipe = async () => {
+      try {
+        const profissionaisRef = collection(db, "profissionais");
+        const snap = await getDocs(profissionaisRef);
+
+        let total = 0;
+        let ativos = 0;
+        let pendentes = 0;
+
+        snap.forEach(doc => {
+          const p = doc.data();
+          total++;
+          
+          // Lógica de Pendência: se o status for 'pendente' ou se campo 'aprovado' for falso
+          // Se na sua coleção o campo for diferente (ex: cadastroIncompleto), basta trocar aqui
+          if (p.status === 'pendente' || p.aprovado === false) {
+            pendentes++;
+          } else {
+            ativos++;
+          }
+        });
+
+        setMetricasEquipe({
+          total,
+          ativos,
+          pendentes,
+          carregando: false
+        });
+      } catch (error) {
+        console.error("Erro ao buscar profissionais:", error);
+        setMetricasEquipe(prev => ({ ...prev, carregando: false }));
+      }
+    };
+
+    buscarDadosEquipe();
+  }, [activeView]);
+
+  // Função para Gerar os Leitos no Firebase
+  const salvarConfiguracaoLeitos = async () => {
+    setIsSavingConfig(true);
+    try {
+      const novosLeitos = [...leitosConfig];
+      // Vai de 1 até o número que o senhor digitou
+      for (let i = 1; i <= capacidadeInput; i++) {
+        const bedId = `bed_${i}`;
+        const exists = novosLeitos.find(l => l.id === bedId);
+        
+        // Se o leito não existir, ele cria no banco
+        if (!exists) {
+          const novoLeito = { 
+            nome: `Leito ${i.toString().padStart(2, '0')}`, 
+            status: 'Livre', 
+            ignorarEstatistica: false, 
+            bloqueado: false,
+            isIsolamento: false // Adicionado este campo
+          };
+          await setDoc(doc(db, 'leitos_uti', bedId), novoLeito);
+          novosLeitos.push({ id: bedId, ...novoLeito });
+        }
+      }
+      
+      // Reordena e atualiza a tela
+      novosLeitos.sort((a,b) => (parseInt(a.nome?.replace(/\D/g, '')) || 0) - (parseInt(b.nome?.replace(/\D/g, '')) || 0));
+      setLeitosConfig(novosLeitos);
+      alert("✅ UTI reconfigurada com sucesso! Leitos sincronizados.");
+    } catch (error) {
+      console.error("Erro ao criar leitos:", error);
+      alert("Erro ao sincronizar com o servidor.");
+    }
+    setIsSavingConfig(false);
+  };
+
+  // Função para ligar/desligar "Morador" ou "Bloqueado" direto no banco
+  const toggleLeitoConfig = async (bedId, campo, valorAtual) => {
+    try {
+      const leitoRef = doc(db, 'leitos_uti', bedId);
+      await updateDoc(leitoRef, { [campo]: !valorAtual });
+      // Atualiza a tela instantaneamente
+      setLeitosConfig(prev => prev.map(l => l.id === bedId ? { ...l, [campo]: !valorAtual } : l));
+    } catch (error) {
+      console.error("Erro ao atualizar status do leito:", error);
+    }
+  };
 
   useEffect(() => {
   const processarDadosParaGraficos = async () => {
@@ -1031,11 +1155,55 @@ const GestorDashboard = ({ userProfile }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Equipe Cadastrada</span><div className="text-3xl font-black text-slate-800 mt-1">45</div></div>
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-emerald-200 bg-emerald-50/30"><span className="text-[10px] font-bold text-emerald-600 uppercase">Usuários Ativos</span><div className="text-3xl font-black text-emerald-700 mt-1">12</div></div>
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-amber-200 bg-amber-50/30"><span className="text-[10px] font-bold text-amber-600 uppercase">Pendências RH</span><div className="text-3xl font-black text-amber-700 mt-1">2</div></div>
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-blue-200 bg-blue-50/30"><span className="text-[10px] font-bold text-blue-600 uppercase">Furos na Escala</span><div className="text-3xl font-black text-blue-700 mt-1">0</div></div>
+          {/* CARDS DE GESTÃO DE PESSOAL - SINCRONIZADOS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {/* CARD 1: TOTAL */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Equipe Cadastrada</span>
+                  <div className="text-3xl font-black text-slate-800 mt-1">
+                    {metricasEquipe.carregando ? <Loader2 className="animate-spin text-slate-300" size={24}/> : metricasEquipe.total}
+                  </div>
+                </div>
+                <div className="bg-slate-100 p-2 rounded-lg text-slate-500">
+                  <Users size={20} />
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-4 italic">Total de profissionais no banco</p>
+            </div>
+            
+            {/* CARD 2: ATIVOS */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-100 bg-emerald-50/20">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Usuários Ativos</span>
+                  <div className="text-3xl font-black text-emerald-700 mt-1">
+                    {metricasEquipe.carregando ? <Loader2 className="animate-spin text-emerald-300" size={24}/> : metricasEquipe.ativos}
+                  </div>
+                </div>
+                <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600">
+                  <CheckCircle size={20} />
+                </div>
+              </div>
+              <p className="text-[10px] text-emerald-600/60 mt-4 font-bold">Com acesso total ao sistema</p>
+            </div>
+            
+            {/* CARD 3: PENDENTES */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 bg-amber-50/20">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Pendências RH</span>
+                  <div className="text-3xl font-black text-amber-700 mt-1">
+                    {metricasEquipe.carregando ? <Loader2 className="animate-spin text-amber-300" size={24}/> : metricasEquipe.pendentes}
+                  </div>
+                </div>
+                <div className="bg-amber-100 p-2 rounded-lg text-amber-600">
+                  <AlertCircle size={20} />
+                </div>
+              </div>
+              <p className="text-[10px] text-amber-600/60 mt-4 font-bold">Aguardando revisão ou aprovação</p>
+            </div>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
@@ -1246,26 +1414,139 @@ const GestorDashboard = ({ userProfile }) => {
     if (subViewEquipe === 'config') {
       return (
         <div className="animate-fadeIn pb-8">
+          {/* CABEÇALHO */}
           <div className="flex items-center gap-4 mb-6">
-            <button onClick={() => setSubViewEquipe('menu')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors"><ArrowLeft size={20} className="text-slate-700" /></button>
-            <div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Settings className="text-slate-600" /> Parâmetros e Configurações da Unidade</h2><p className="text-slate-500 text-sm mt-1">Ajuste o espelho físico da UTI e as regras de alertas do sistema.</p></div>
+            <button onClick={() => setSubViewEquipe('menu')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
+              <ArrowLeft size={20} className="text-slate-700" />
+            </button>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <Settings className="text-slate-600" /> Espelho Físico da Unidade
+              </h2>
+              <p className="text-slate-500 text-sm mt-1">Gere os leitos da UTI e defina regras de bloqueio ou pacientes moradores.</p>
+            </div>
           </div>
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-6 md:p-8 grid md:grid-cols-2 gap-8">
-              <div className="space-y-6">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2"><Bed className="text-emerald-500" size={20} /> Estrutura Física</h3>
-                <div><label className="block text-sm font-bold text-slate-700 mb-1">Capacidade Total (Número de Leitos)</label><input type="number" defaultValue={10} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" /><p className="text-[10px] text-slate-500 mt-1">Este número é a base para o cálculo da Taxa de Ocupação no Painel Gestor.</p></div>
-                <div><label className="block text-sm font-bold text-slate-700 mb-1">Leitos de Isolamento</label><input type="number" defaultValue={2} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" /></div>
-              </div>
-              <div className="space-y-6">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2"><Calculator className="text-blue-500" size={20} /> Protocolos Assistenciais</h3>
-                <div><label className="block text-sm font-bold text-slate-700 mb-1">Escore de Gravidade Padrão</label><select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"><option>SAPS 3 (Recomendado)</option><option>APACHE II</option></select></div>
-                <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2 mt-8"><Bell className="text-amber-500" size={20} /> Alertas Automáticos</h3>
-                <div className="flex items-center justify-between p-4 border border-amber-100 bg-amber-50 rounded-xl"><div><div className="font-bold text-slate-800 text-sm">Alerta de Lotação</div></div><div className="flex items-center gap-2"><input type="number" defaultValue={90} className="w-16 p-2 text-center font-bold text-amber-700 bg-white border border-amber-200 rounded-lg outline-none" /><span className="font-bold text-amber-700">%</span></div></div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {/* COLUNA ESQUERDA: GERAÇÃO DE LEITOS */}
+            <div className="md:col-span-1 space-y-6">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
+                  <Bed className="text-emerald-500" size={20} /> Dimensionamento
+                </h3>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Capacidade Total (Leitos)</label>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="number" 
+                    value={capacidadeInput} 
+                    onChange={(e) => setCapacidadeInput(Number(e.target.value))}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-black text-lg text-slate-800 text-center" 
+                  />
+                </div>
+                <button 
+                  onClick={salvarConfiguracaoLeitos} 
+                  disabled={isSavingConfig}
+                  className="w-full mt-4 bg-slate-800 hover:bg-slate-900 text-white p-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                >
+                  {isSavingConfig ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                  {isSavingConfig ? "A Sincronizar..." : "Gerar / Atualizar Leitos"}
+                </button>
+                <p className="text-[10px] text-slate-500 mt-4 leading-relaxed italic">
+                  * O sistema apenas adiciona leitos faltantes. Se reduzir a capacidade, os leitos existentes não são deletados para proteger os prontuários; utilize o botão "Bloqueado" para inativá-los.
+                </p>
               </div>
             </div>
-            <div className="bg-slate-50 p-6 border-t border-slate-200 flex justify-end">
-              <button onClick={() => { alert("✅ Configurações salvas."); setSubViewEquipe('menu'); }} className="bg-slate-800 hover:bg-slate-900 text-white px-8 py-3 rounded-xl font-bold transition-colors flex items-center gap-2"><Save size={20} /> Salvar Configurações</button>
+
+            {/* COLUNA DIREITA: GRID DE LEITOS */}
+            <div className="md:col-span-2">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 min-h-[400px]">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3 mb-6">
+                  <Settings className="text-blue-500" size={20} /> Gestão Individual de Leitos
+                </h3>
+                
+                {/* RESUMO RÁPIDO DO ESPELHO */}
+                {leitosConfig.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-6 p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                    <div className="bg-white px-3 py-1.5 rounded shadow-sm border border-slate-200 text-xs font-bold text-slate-700">
+                      Total Físico: <span className="text-blue-600">{leitosConfig.length}</span>
+                    </div>
+                    <div className="bg-white px-3 py-1.5 rounded shadow-sm border border-emerald-100 text-xs font-bold text-emerald-700">
+                      Operacionais: {leitosConfig.filter(l => !l.bloqueado).length}
+                    </div>
+                    <div className="bg-white px-3 py-1.5 rounded shadow-sm border border-red-100 text-xs font-bold text-red-700">
+                      Bloqueados: {leitosConfig.filter(l => l.bloqueado).length}
+                    </div>
+                    <div className="bg-white px-3 py-1.5 rounded shadow-sm border border-purple-100 text-xs font-bold text-purple-700">
+                      Isolamentos: {leitosConfig.filter(l => l.isIsolamento).length}
+                    </div>
+                    <div className="bg-white px-3 py-1.5 rounded shadow-sm border border-amber-100 text-xs font-bold text-amber-700">
+                      Moradores: {leitosConfig.filter(l => l.ignorarEstatistica).length}
+                    </div>
+                  </div>
+                )}
+                {leitosConfig.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 text-slate-400 italic">
+                    Nenhum leito gerado. Defina a capacidade ao lado.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {leitosConfig.map(leito => (
+                      <div key={leito.id} className={`p-4 rounded-xl border flex flex-col gap-3 transition-colors ${leito.bloqueado ? 'bg-slate-100 border-slate-200 opacity-75' : leito.ignorarEstatistica ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200 shadow-sm'}`}>
+                        
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-black text-slate-800 flex items-center gap-2">
+                              <Bed size={16} className={leito.bloqueado ? 'text-slate-400' : 'text-blue-500'} /> {leito.nome}
+                            </h4>
+                            {/* Badge Visual de Isolamento */}
+                            {leito.isIsolamento && (
+                              <span className="bg-purple-100 text-purple-700 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Isolamento</span>
+                            )}
+                          </div>
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${leito.status === 'Livre' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {leito.status}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 mt-2 pt-2 border-t border-slate-100/50">
+                          {/* TOGGLE 1: ISOLAMENTO (NOVO) */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-600">Leito de Isolamento</span>
+                            <button 
+                              onClick={() => toggleLeitoConfig(leito.id, 'isIsolamento', leito.isIsolamento)}
+                              className={`w-10 h-5 rounded-full relative transition-colors ${leito.isIsolamento ? 'bg-purple-600' : 'bg-slate-300'}`}
+                            >
+                              <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${leito.isIsolamento ? 'translate-x-5' : 'translate-x-1'}`}></div>
+                            </button>
+                          </div>
+
+                          {/* TOGGLE 2: BLOQUEADO */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-600">Leito Bloqueado (Manutenção)</span>
+                            <button 
+                              onClick={() => toggleLeitoConfig(leito.id, 'bloqueado', leito.bloqueado)}
+                              className={`w-10 h-5 rounded-full relative transition-colors ${leito.bloqueado ? 'bg-red-500' : 'bg-slate-300'}`}
+                            >
+                              <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${leito.bloqueado ? 'translate-x-5' : 'translate-x-1'}`}></div>
+                            </button>
+                          </div>
+
+                          {/* TOGGLE 3: MORADOR */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-600">Morador (Ignora Estatísticas)</span>
+                            <button 
+                              onClick={() => toggleLeitoConfig(leito.id, 'ignorarEstatistica', leito.ignorarEstatistica)}
+                              className={`w-10 h-5 rounded-full relative transition-colors ${leito.ignorarEstatistica ? 'bg-amber-500' : 'bg-slate-300'}`}
+                            >
+                              <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${leito.ignorarEstatistica ? 'translate-x-5' : 'translate-x-1'}`}></div>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
