@@ -307,11 +307,20 @@ const GestorDashboard = ({ userProfile }) => {
           const p = doc.data();
           total++;
           
-          // Lógica de Pendência: se o status for 'pendente' ou se campo 'aprovado' for falso
-          // Se na sua coleção o campo for diferente (ex: cadastroIncompleto), basta trocar aqui
-          if (p.status === 'pendente' || p.aprovado === false) {
+          // Verifica se o profissional tem alguma unidade atribuída
+          const hasVinculo = p.vinculos && p.vinculos.length > 0;
+          // Administradores Globais não precisam de vínculo para estarem ativos
+          const isSuperAdmin = p.categoria === "Administrador";
+          
+          // Lógica de contagem corrigida:
+          if (!isSuperAdmin && !hasVinculo) {
+            // Se não é admin e não tem UTI atribuída -> Fica retido no RH (Pendente)
             pendentes++;
-          } else {
+          } else if (p.status === 'pendente' || p.aprovado === false) {
+            // Se a conta em si ainda não foi aprovada
+            pendentes++;
+          } else if (p.ativo !== false) {
+            // Se passou por tudo e NÃO está desativado/excluído -> Está Ativo!
             ativos++;
           }
         });

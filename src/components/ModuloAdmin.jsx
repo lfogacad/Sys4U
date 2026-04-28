@@ -25,7 +25,11 @@ const ModuloAdmin = ({ userProfile }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Simulação das Unidades Físicas
+  // Filtros da Tabela de Profissionais
+  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
+  const [filtroUnidade, setFiltroUnidade] = useState('Todas');
+
+  // Unidades Físicas
   const unidadesDisponiveis = [
     { instituicaoId: "hosp_municipal", instituicaoNome: "HMA", unidadeId: "uti_01", unidadeNome: "UTI Adulto" },
   ];
@@ -151,11 +155,27 @@ const ModuloAdmin = ({ userProfile }) => {
   // ------------------------------------------------------------------
   // 4. RENDERIZAÇÃO DA TELA
   // ------------------------------------------------------------------
-  const filteredUsers = profissionaisList.filter(u => 
-    u.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    u.numeroConselho?.includes(searchTerm) ||
-    u.categoria?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Lógica de cruzamento de dados (Busca em Texto + Filtro Categoria + Filtro Unidade)
+  const filteredUsers = profissionaisList.filter(u => {
+    // 1. Busca por Texto (Nome, Conselho ou Categoria digitada)
+    const matchBusca = 
+      !searchTerm || 
+      u.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      u.numeroConselho?.includes(searchTerm) ||
+      u.categoria?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    // 2. Filtro de Área de Atuação (Dropdown)
+    const matchCategoria = filtroCategoria === 'Todas' || u.categoria === filtroCategoria;
+    
+    // 3. Filtro de Unidade (Dropdown) - CORRIGIDO PARA ARRAY DE OBJETOS
+    const hasVinculos = u.vinculos && Array.isArray(u.vinculos) && u.vinculos.length > 0;
+    
+    // O ".some" entra na lista e verifica se o unidadeId bate com o filtro selecionado
+    const matchUnidade = filtroUnidade === 'Todas' || (hasVinculos && u.vinculos.some(v => v.unidadeId === filtroUnidade));
+
+    // O profissional só aparece se passar nas 3 regras
+    return matchBusca && matchCategoria && matchUnidade;
+  });
 
   // --- NOVAS FUNÇÕES DE GESTÃO ---
 
@@ -200,107 +220,164 @@ const ModuloAdmin = ({ userProfile }) => {
           <p className="text-slate-500 text-sm mt-1">Cadastre novos profissionais e gerencie as unidades de atuação.</p>
         </div>
         
-        {/* Barra de Pesquisa */}
-        <div className="relative w-full md:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="Buscar por nome ou conselho..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
-          />
-        </div>
       </div>
 
-      {/* LAYOUT PRINCIPAL: FORMULÁRIO (ESQUERDA) + TABELA (DIREITA) */}
-      <div className="grid lg:grid-cols-3 gap-8">
+      {/* LAYOUT PRINCIPAL: FORMULÁRIO (TOPO) + TABELA (EM BAIXO) */}
+      <div className="flex flex-col gap-8">
         
-        {/* COLUNA ESQUERDA: FORMULÁRIO */}
-        <div className="lg:col-span-1">
-          <form onSubmit={salvarProfissional} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm sticky top-4">
-            <h3 className="font-bold text-slate-700 mb-6 flex items-center gap-2">
-              <UserPlus size={18} className="text-emerald-500" /> CADASTRAR SERVIDOR
+        {/* ==========================================
+            1. SEÇÃO DE CADASTRO (LARGURA TOTAL)
+            ========================================== */}
+        <form onSubmit={salvarProfissional} className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <UserPlus size={20} className="text-emerald-500" /> Cadastrar Novo Servidor
             </h3>
+          </div>
+          
+          {/* Campos dispostos em linha (Grid de 4 colunas) para economizar espaço vertical */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nome (Conforme Escala)</label>
-                <input 
-                  type="text" required value={novoProfissional.nome}
-                  onChange={(e) => setNovoProfissional({...novoProfissional, nome: e.target.value.toUpperCase()})}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none"
-                  placeholder=""
-                />
-              </div>
+            {/* Campo: Nome */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nome Completo</label>
+              <input 
+                type="text" required value={novoProfissional.nome}
+                onChange={(e) => setNovoProfissional({...novoProfissional, nome: e.target.value.toUpperCase()})}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none transition-colors"
+                placeholder=""
+              />
+            </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Área de Atuação</label>
+            {/* Campo: Área de Atuação */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Área de Atuação</label>
+              <select 
+                required 
+                value={novoProfissional.categoria} onChange={handleCategoriaChange}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none cursor-pointer transition-colors"
+              >
+                <option value="" disabled>Selecione...</option>
+                <option value="Médico">Médico</option>
+                <option value="Enfermeiro">Enfermeiro</option>
+                <option value="Téc. Enfermagem">Téc. Enfermagem</option>
+                <option value="Fisioterapeuta">Fisioterapeuta</option>
+                <option value="Nutricionista">Nutricionista</option>
+                <option value="Fonoaudiólogo">Fonoaudiólogo</option>
+                <option value="Administrativo">Administrativo</option>
+              </select>
+            </div>
+
+            {/* Campo: Registro */}
+            <div className="relative">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{novoProfissional.conselho || 'Registro'}</label>
+              <input 
+                type="number" required value={novoProfissional.numeroConselho}
+                onChange={(e) => setNovoProfissional({...novoProfissional, numeroConselho: e.target.value})}
+                onBlur={handleBlurConselho}
+                className={`w-full p-3 bg-slate-50 border ${erroConselho ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-emerald-500'} rounded-xl text-sm font-bold outline-none transition-colors`}
+                placeholder="Somente Números"
+              />
+              {erroConselho && (
+                <p className="absolute -bottom-5 left-0 text-[10px] font-bold text-red-500 flex items-center gap-1">
+                  <AlertCircle size={12} /> {erroConselho}
+                </p>
+              )}
+            </div>
+
+            {/* Campo: Contrato */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Vínculo Contratual</label>
+              <select 
+                value={novoProfissional.vinculo} onChange={(e) => setNovoProfissional({...novoProfissional, vinculo: e.target.value})}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none cursor-pointer transition-colors"
+              >
+                <option value="PJ">PJ</option>
+                <option value="CLT">CLT</option>
+                <option value="Efetivo">Efetivo</option>
+              </select>
+            </div>
+            
+          </div>
+
+          {/* Botão de Salvar posicionado à direita para dar um ar mais limpo */}
+          <div className="mt-6 flex justify-end border-t border-slate-100 pt-6">
+            <button 
+              type="submit" disabled={isSalvandoProfissional || !!erroConselho}
+              className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all disabled:opacity-50 min-w-[200px]"
+            >
+              {isSalvandoProfissional ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>}
+              {isSalvandoProfissional ? 'A guardar...' : 'Salvar na Base'}
+            </button>
+          </div>
+        </form>
+
+        {/* ==========================================
+            2. SEÇÃO DA TABELA E FILTROS
+            ========================================== */}
+        <div className="flex flex-col gap-4">
+          
+          {/* BARRA DE FILTROS SUPERIOR (AGORA COM BUSCA INTEGRADA) */}
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col xl:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-col md:flex-row gap-4 w-full flex-wrap items-center">
+              
+              {/* Filtro de Categoria / Área de Atuação */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider hidden md:block">Área de Atuação:</label>
                 <select 
-                  required // <--- Impede de salvar sem escolher
-                  value={novoProfissional.categoria} onChange={handleCategoriaChange}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none cursor-pointer"
+                  value={filtroCategoria}
+                  onChange={(e) => setFiltroCategoria(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 cursor-pointer min-w-[170px] transition-colors hover:bg-slate-100"
                 >
-                  <option value="" disabled>Selecione...</option> {/* <--- NOVA OPÇÃO */}
+                  <option value="Todas">Todas as Áreas</option>
                   <option value="Médico">Médico</option>
                   <option value="Enfermeiro">Enfermeiro</option>
                   <option value="Téc. Enfermagem">Téc. Enfermagem</option>
                   <option value="Fisioterapeuta">Fisioterapeuta</option>
-                  <option value="Nutricionista">Nutricionista</option>
                   <option value="Fonoaudiólogo">Fonoaudiólogo</option>
-                  <option value="Administrativo">Administrativo</option>
+                  <option value="Nutricionista">Nutricionista</option>
+                  <option value="Administrador">Administrador (Gestão)</option>
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="relative">
-                  {/* O Rótulo muda automaticamente para 'CPF ou Matrícula' se for Administrativo */}
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{novoProfissional.conselho}</label>
-                  <input 
-                    type="number" required value={novoProfissional.numeroConselho}
-                    onChange={(e) => setNovoProfissional({...novoProfissional, numeroConselho: e.target.value})}
-                    onBlur={handleBlurConselho}
-                    className={`w-full p-2.5 bg-slate-50 border ${erroConselho ? 'border-red-500' : 'border-slate-200'} rounded-xl text-sm font-bold focus:border-emerald-500 outline-none`}
-                    placeholder="Somente Números"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Contrato</label>
-                  <select 
-                    value={novoProfissional.vinculo} onChange={(e) => setNovoProfissional({...novoProfissional, vinculo: e.target.value})}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none cursor-pointer"
-                  >
-                    <option value="PJ">PJ</option>
-                    <option value="CLT">CLT</option>
-                    <option value="Efetivo">Efetivo</option>
-                  </select>
-                </div>
-              </div>
-
-              {erroConselho && (
-                <p className="text-[10px] font-bold text-red-500 flex items-center gap-1 mt-1">
-                  <AlertCircle size={12} /> {erroConselho}
-                </p>
-              )}
-
-              <div className="pt-2">
-                <button 
-                  type="submit" disabled={isSalvandoProfissional || !!erroConselho}
-                  className="w-full bg-emerald-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all disabled:opacity-50"
+              {/* Filtro de Unidade / Vínculo */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider hidden md:block">Vínculo / UTI:</label>
+                <select 
+                  value={filtroUnidade}
+                  onChange={(e) => setFiltroUnidade(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 cursor-pointer min-w-[170px] transition-colors hover:bg-slate-100"
                 >
-                  {isSalvandoProfissional ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>}
-                  Salvar na Base
-                </button>
+                  <option value="Todas">Todas as Unidades</option>
+                  <option value="uti_01">UTI Adulto (HMA)</option>
+                  <option value="uti_municipal">UTI Municipal de Ariquemes</option>
+                </select>
               </div>
-            </div>
-          </form>
-        </div>
 
-        {/* COLUNA DIREITA: TABELA DE GERENCIAMENTO */}
-        <div className="lg:col-span-2">
+              {/* NOVO: Campo de Busca de Texto Integrado */}
+              <div className="relative flex-1 min-w-[250px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  type="text"
+                  placeholder="Buscar por nome ou conselho..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:border-emerald-500 outline-none transition-colors"
+                />
+              </div>
+              
+            </div>
+            
+            {/* Resumo Rápido do Filtro */}
+            <div className="text-xs font-bold text-slate-400 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-100 whitespace-nowrap ml-auto">
+              Mostrando: <span className="text-slate-800 text-sm">{filteredUsers.length}</span> registros
+            </div>
+          </div>
+
+          {/* TABELA DE GERENCIAMENTO */}
           <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
             {isLoading ? (
-              <div className="p-12 flex flex-col items-center justify-center text-slate-400">
+              <div className="p-16 flex flex-col items-center justify-center text-slate-400">
                 <Loader2 size={40} className="animate-spin mb-4 text-emerald-500" />
                 <p className="font-bold">Carregando base de profissionais...</p>
               </div>
@@ -309,25 +386,25 @@ const ModuloAdmin = ({ userProfile }) => {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
-                      <th className="p-4 font-bold">Profissional</th>
-                      <th className="p-4 font-bold">Registro / Vínculo</th>
-                      <th className="p-4 font-bold">Status de Atuação</th>
-                      <th className="p-4 font-bold text-center">Ações</th>
+                      <th className="p-4 md:px-6 font-bold">Profissional</th>
+                      <th className="p-4 md:px-6 font-bold">Registro / Vínculo</th>
+                      <th className="p-4 md:px-6 font-bold">Status de Atuação</th>
+                      <th className="p-4 md:px-6 font-bold text-center">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredUsers.map((u) => {
                       const hasVinculo = u.vinculos && u.vinculos.length > 0;
                       const isSuperAdmin = u.categoria === "Administrador"; 
-                      const estaDesativado = u.ativo === false; // Checa se a flag de inativo existe
+                      const estaDesativado = u.ativo === false; 
 
                       return (
                         <tr key={u.id} className={`transition-colors ${estaDesativado ? 'bg-slate-50 opacity-60 grayscale-[0.5]' : 'hover:bg-slate-50'}`}>
-                          <td className="p-4">
+                          <td className="p-4 md:px-6">
                             <div className={`font-bold ${estaDesativado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{u.nome}</div>
                             <div className="text-xs font-bold text-emerald-600 uppercase mt-0.5">{u.categoria}</div>
                           </td>
-                          <td className="p-4">
+                          <td className="p-4 md:px-6">
                             <div className="font-mono text-sm text-slate-600 font-medium">
                               {u.conselho} {u.numeroConselho}
                             </div>
@@ -335,13 +412,13 @@ const ModuloAdmin = ({ userProfile }) => {
                               CONTRATO: {u.vinculo || 'N/A'}
                             </div>
                           </td>
-                          <td className="p-4">
+                          <td className="p-4 md:px-6">
                             {estaDesativado ? (
-                               <div className="flex items-center gap-1 text-red-500 font-bold text-xs">
+                               <div className="flex items-center gap-1.5 text-red-500 font-bold text-xs bg-red-50 inline-flex px-2 py-1 rounded-md">
                                  <UserX size={14} /> Conta Inativa
                                </div>
                             ) : isSuperAdmin ? (
-                              <div className="flex items-center gap-1 text-emerald-600 font-bold text-xs">
+                              <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-xs bg-emerald-50 inline-flex px-2 py-1 rounded-md">
                                 <ShieldCheck size={14} /> Acesso Global
                               </div>
                             ) : hasVinculo ? (
@@ -349,39 +426,36 @@ const ModuloAdmin = ({ userProfile }) => {
                                 {u.vinculos.length} unidade(s)
                               </div>
                             ) : (
-                              <div className="flex items-center gap-1 text-amber-500 font-bold text-xs">
+                              <div className="flex items-center gap-1.5 text-amber-600 font-bold text-xs bg-amber-50 inline-flex px-2 py-1 rounded-md">
                                 <AlertCircle size={14} /> Pendente (Sem Unidade)
                               </div>
                             )}
                           </td>
-                          <td className="p-4">
-                            {/* GRUPO DE BOTÕES DE AÇÃO */}
+                          <td className="p-4 md:px-6">
                             <div className="flex items-center justify-center gap-2">
-                              {/* Botão: Gerenciar Vínculos / Atribuir */}
+                              {/* Botões de Ação */}
                               <button 
                                 onClick={() => openModal(u)}
                                 title={hasVinculo ? "Gerenciar Vínculos" : "Atribuir Unidade"}
-                                className={`p-2 rounded-lg transition-colors ${hasVinculo ? 'bg-slate-100 text-slate-600 hover:bg-slate-800 hover:text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white'}`}
+                                className={`p-2.5 rounded-xl transition-colors ${hasVinculo ? 'bg-slate-100 text-slate-600 hover:bg-slate-800 hover:text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white'}`}
                               >
-                                {hasVinculo ? <Settings size={16} /> : <Plus size={16} />}
+                                {hasVinculo ? <Settings size={18} /> : <Plus size={18} />}
                               </button>
 
-                              {/* Botão: Desativar / Reativar */}
                               <button 
                                 onClick={() => toggleStatusProfissional(u.id, u.nome, u.ativo)}
                                 title={estaDesativado ? "Reativar Profissional" : "Desativar Acesso"}
-                                className={`p-2 rounded-lg transition-colors ${estaDesativado ? 'bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-600 hover:text-white'}`}
+                                className={`p-2.5 rounded-xl transition-colors ${estaDesativado ? 'bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-600 hover:text-white'}`}
                               >
-                                {estaDesativado ? <UserCheck size={16} /> : <UserX size={16} />}
+                                {estaDesativado ? <UserCheck size={18} /> : <UserX size={18} />}
                               </button>
 
-                              {/* Botão: Excluir */}
                               <button 
                                 onClick={() => excluirProfissional(u.id, u.nome)}
                                 title="Excluir Definitivamente"
-                                className="p-2 bg-red-50 text-red-500 hover:bg-red-600 hover:text-white rounded-lg transition-colors"
+                                className="p-2.5 bg-red-50 text-red-500 hover:bg-red-600 hover:text-white rounded-xl transition-colors"
                               >
-                                <Trash2 size={16} />
+                                <Trash2 size={18} />
                               </button>
                             </div>
                           </td>
@@ -390,8 +464,8 @@ const ModuloAdmin = ({ userProfile }) => {
                     })}
                     {filteredUsers.length === 0 && (
                       <tr>
-                        <td colSpan="4" className="p-8 text-center text-slate-400 font-medium">
-                          Nenhum profissional encontrado na base.
+                        <td colSpan="4" className="p-12 text-center text-slate-400 font-medium bg-slate-50/50">
+                          Nenhum profissional encontrado com os filtros atuais.
                         </td>
                       </tr>
                     )}
