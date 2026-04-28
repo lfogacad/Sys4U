@@ -3,6 +3,48 @@ import { AlertCircle, ShieldAlert, Droplets, Clock, Printer, RotateCcw, Scale, X
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
 
+// 1. COMPONENTE BHInput COMPLETO (A vacina contra o pisca-pisca)
+const BHInput = ({ value, className, onValidate, onSave }) => {
+  const [localVal, setLocalVal] = React.useState(value || "");
+  const [isFocused, setIsFocused] = React.useState(false);
+
+  React.useEffect(() => {
+    // Só atualiza com o Firebase se o médico/enfermeiro NÃO estiver digitando
+    if (!isFocused) {
+      setLocalVal(value || "");
+    }
+  }, [value]); // <-- A correção está aqui: tiramos o isFocused!
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    if (onValidate(val)) {
+      setLocalVal(val);
+    }
+  };
+
+  const handleFocus = () => setIsFocused(true);
+
+  const handleBlur = (e) => {
+    setIsFocused(false);
+    // Só envia pro Firebase quando sai do campo e se houver mudança
+    if (localVal !== (value || "")) {
+      onSave(localVal, e);
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      className={className}
+      value={localVal}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+    />
+  );
+};
+
+// 2. INÍCIO DO DASHBOARD ORIGINAL
 const TechDashboard = ({
   currentPatient,
   patients,
@@ -64,30 +106,22 @@ const TechDashboard = ({
     return matchedKey ? LIMITS[category][matchedKey] : null;
   };
 
-  const handleValidatedChange = (hour, category, item, e) => {
-    let val = e.target.value;
-    
-    if (val === "") {
-      updateBH(hour, category, item, val);
-      return;
+  const isValidInput = (category, item, val) => {
+  if (val === "") return true; // Permite apagar tudo
+  
+  const limits = getLimits(category, item);
+  
+  if (limits) {
+    // Trava para aceitar apenas números, ponto e vírgula
+    if (!/^-?\d*[.,]?\d*$/.test(val)) return false;
+
+    const numVal = parseFloat(val.replace(',', '.'));
+    if (!isNaN(numVal) && numVal > limits.max) {
+      return false; // Bloqueia fisicamente se passar do teto
     }
-    
-    const limits = getLimits(category, item);
-
-    // SE ESTIVER NA LISTA DE LIMITES: Aplica a barreira de números e teto máximo
-    if (limits) {
-      // Trava para aceitar apenas números, ponto e vírgula nos campos limitados
-      if (!/^-?\d*[.,]?\d*$/.test(val)) return;
-
-      const numVal = parseFloat(val.replace(',', '.'));
-      if (!isNaN(numVal) && numVal > limits.max) {
-        return; // Bloqueia fisicamente a tecla se passar do Teto
-      }
-    }
-
-    // Se NÃO estiver na lista, passa direto por aqui aceitando letras e números normalmente!
-    updateBH(hour, category, item, val);
-  };
+  }
+  return true; // Se não tiver limite ou passar em tudo, libera a digitação
+};
 
   const checkMinLimitOnBlur = (hour, category, item, e) => {
     let val = e.target.value;
@@ -236,14 +270,14 @@ const TechDashboard = ({
                       </td>
                       {BH_HOURS.map((h) => (
                         <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
-                          <input
-                            type="text"
+                          <BHInput
                             className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden"
                             value={displayedBH.gains[h]?.[item] || ""}
-                            onChange={(e) => handleValidatedChange(h, "gains", item, e)}
-                            onBlur={(e) => {
+                            onValidate={(val) => isValidInput("gains", item, val)}
+                            onSave={(val, e) => {
+                              updateBH(h, "gains", item, val);
                               checkMinLimitOnBlur(h, "gains", item, e);
-                              const val = e.target.value;
+                              
                               const newVal = parseFloat(val.replace(',', '.')) || 0;
                               const isNora = item.toLowerCase().includes("nora");
                               const todayStr = getManausDateStr();
@@ -254,6 +288,7 @@ const TechDashboard = ({
                               const isFirstTime = !modalAlreadyShownToday && val && val !== "0";
                               const isSignificantDrop = prevRate > 0 && newVal > 0 && newVal <= (prevRate * 0.5);
                               const isSignificantIncrease = prevRate > 0 && newVal > 0 && newVal >= (prevRate * 1.3);
+                              
                               if (isNora && !viewingPreviousBH && (isFirstTime || isSignificantDrop || isSignificantIncrease)) {
                                 setCurrentNoraHour(h);
                                 setCurrentNoraRate(val);
@@ -342,12 +377,14 @@ const TechDashboard = ({
                       </td>
                       {BH_HOURS.map((h) => (
                         <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
-                          <input 
-                            type="text" 
+                          <BHInput 
                             className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden" 
                             value={displayedBH.losses[h]?.[item] || ""} 
-                            onChange={(e) => handleValidatedChange(h, "losses", item, e)} 
-                            onBlur={(e) => checkMinLimitOnBlur(h, "losses", item, e)} 
+                            onValidate={(newVal) => isValidInput("losses", item, newVal)} 
+                            onSave={(newVal, e) => {
+                              updateBH(h, "losses", item, newVal);
+                              checkMinLimitOnBlur(h, "losses", item, e);
+                            }} 
                           />
                           <span className="hidden print:block text-center text-[8px] w-full align-middle">{displayedBH.losses[h]?.[item] || ""}</span>
                         </td>
@@ -459,12 +496,14 @@ const TechDashboard = ({
                     }
                     return (
                       <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
-                        <input 
-                          type="text" 
+                        <BHInput 
                           className={`w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden ${isRed ? "text-red-600 font-bold" : ""}`} 
                           value={val} 
-                          onChange={(e) => handleValidatedChange(h, "vitals", param, e)} 
-                          onBlur={(e) => checkMinLimitOnBlur(h, "vitals", param, e)} 
+                          onValidate={(newVal) => isValidInput("vitals", param, newVal)} 
+                          onSave={(newVal, e) => {
+                            updateBH(h, "vitals", param, newVal);
+                            checkMinLimitOnBlur(h, "vitals", param, e);
+                          }} 
                         />
                         <span className={`hidden print:block text-center text-[8px] w-full align-middle print:text-black ${isRed ? "font-bold" : ""}`}>
                           {val}
