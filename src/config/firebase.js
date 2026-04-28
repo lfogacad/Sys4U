@@ -4,13 +4,13 @@ import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot } from "fireb
 
 // --- CONFIGURAÇÃO FIREBASE ---
 const firebaseConfig = {
-  apiKey: "AIzaSyAl4mPSN5cFyoIloswM8Qv64jVo_VIzS_g",
-  authDomain: "fasthug-c0c7e.firebaseapp.com",
-  projectId: "fasthug-c0c7e",
-  storageBucket: "fasthug-c0c7e.firebasestorage.app",
-  messagingSenderId: "38672574925",
-  appId: "1:38672574925:web:22dd6a9a88a0cbc8d5fc84",
-  measurementId: "G-0BM706SM0H",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 let app, auth, db;
