@@ -83,30 +83,35 @@ return (
               
               <label className="relative inline-flex items-center cursor-pointer shrink-0">
                 <input 
-                type="checkbox" 
-                className="sr-only peer" 
-                checked={!!currentPatient.enfermagem?.identificacaoCorreta}
-                onChange={async (e) => {
-                  const novoValor = e.target.checked;
-                  
-                  // 1. Atualiza a tela instantaneamente (Visual macio para o usuário)
-                  updateNested("enfermagem", "identificacaoCorreta", novoValor);
-                  
-                  // 2. Salva DIRETO no Firebase (Sem depender da memória lenta do React)
-                  try {
-                    // Confirme se a sua coleção principal é 'leitos_uti' e se o ID segue esse padrão
-                    const leitoRef = doc(db, "leitos_uti", `bed_${currentPatient.id}`);
+                  type="checkbox" 
+                  className="sr-only peer" 
+                  checked={!!currentPatient.enfermagem?.identificacaoCorreta}
+                  onChange={async (e) => {
+                    const novoValor = e.target.checked;
                     
-                    await updateDoc(leitoRef, {
-                      // O uso das aspas com ponto atualiza APENAS este campo, sem apagar o resto da enfermagem
-                      "enfermagem.identificacaoCorreta": novoValor
-                    });
-                  } catch (error) {
-                    console.error("Erro crítico ao salvar identificação:", error);
-                  }
-                }}
-                disabled={!isEditable}
-              />
+                    // 1. Atualiza a tela instantaneamente (Visual macio para o usuário)
+                    updateNested("enfermagem", "identificacaoCorreta", novoValor);
+                    
+                    // 2. Salva DIRETO no Firebase com o ID Blindado
+                    try {
+                      // 👇 SUTURA DE SEGURANÇA (Igual à função save)
+                      let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
+                      const apenasNumero = String(idBruto).replace(/bed_/g, "");
+                      let numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
+                      const docId = `bed_${numeroFinal}`; // Garante que seja sempre bed_1, bed_2, etc.
+                      
+                      const leitoRef = doc(db, "leitos_uti", docId);
+                      
+                      await updateDoc(leitoRef, {
+                        // O uso das aspas com ponto atualiza APENAS este campo, sem apagar o resto
+                        "enfermagem.identificacaoCorreta": novoValor
+                      });
+                    } catch (error) {
+                      console.error("Erro crítico ao salvar identificação:", error);
+                    }
+                  }}
+                  disabled={!isEditable}
+                />
                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 disabled:opacity-50"></div>
               </label>
             </div>

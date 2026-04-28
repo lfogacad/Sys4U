@@ -440,18 +440,29 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     if (!db || !updatedPatient) return;
 
     // 👇 SUTURA DE SEGURANÇA: Esterilizando o payload
-    // O comando JSON.parse(JSON.stringify()) age como um filtro que "derrete" 
-    // qualquer valor 'undefined' do objeto, tornando-o 100% aceitável pelo Firebase.
     const pacienteSeguro = JSON.parse(JSON.stringify(updatedPatient));
 
     try {
-      // Garantia extra: Se o ID sumir por algum motivo, tentamos usar o número do leito
-      const docId = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
+      // 🎯 AJUSTE CIRÚRGICO: Normalização do ID
+      // 1. Pegamos o ID (ou o número do leito como backup)
+      let idBruto = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
       
-      await setDoc(doc(db, "leitos_uti", `bed_${docId}`), pacienteSeguro, { merge: true });
-      console.log(`[AUDITORIA]: ${logMsg}`);
+      // 2. Limpamos: se o ID for "bed_1" ou "bed_bed_1", extraímos apenas o "1"
+      // Se for apenas o número 0 ou 1, ele mantém o número.
+      const apenasNumero = String(idBruto).replace(/bed_/g, "");
+      
+      // 3. Montamos o ID final garantindo que o Leito 1 (índice 0) seja salvo como bed_1
+      // Nota: Se o número for "0", transformamos em "1" para alinhar com a UTI física
+      let numeroFinal = apenasNumero;
+      if (numeroFinal === "0") numeroFinal = "1"; 
+
+      const docId = `bed_${numeroFinal}`;
+      
+      // 4. Grava no Firebase com o ID limpo e único
+      await setDoc(doc(db, "leitos_uti", docId), pacienteSeguro, { merge: true });
+      
+      console.log(`[AUDITORIA]: ${logMsg} no documento ${docId}`);
     } catch (err) { 
-      // Se der erro agora, o senhor vai ver um alerta vermelho no navegador, não ficará cego!
       console.error("Erro fatal ao salvar no Firebase:", err);
       alert("Aviso: Ocorreu um erro ao gravar na nuvem. Verifique o console.");
     }
@@ -488,11 +499,11 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   // Função que efetiva a internação (tira da fila e põe no leito)
   const bindPatientToBed = async (patientFromQueue) => {
     try {
-      const bedIndex = selectedBedForAdmission;
+      const bedIndex = selectedBedForAdmission; // Para o computador, Leito 1 = 0
 
       const newPatientRecord = {
         ...defaultPatient(bedIndex),
-        id: bedIndex,
+        id: `bed_${bedIndex + 1}`,
         nome: patientFromQueue.nome,
         cpf: patientFromQueue.cpf,
         dataNascimento: patientFromQueue.dataNascimento,
@@ -502,18 +513,18 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         statusInternacao: "Aguardando Admissão Médica"
       };
 
-      // 1. Salva no Firebase
-      await setDoc(doc(db, "leitos_uti", `bed_${bedIndex}`), newPatientRecord);
+      // 1. Salva no Firebase (AQUI ENTRA O + 1: bed_0 vira bed_1)
+      await setDoc(doc(db, "leitos_uti", `bed_${bedIndex + 1}`), newPatientRecord);
 
-      // 2. A PEÇA QUE FALTAVA: Atualiza a tela (React) na mesma hora!
+      // 2. Atualiza a tela (React) na mesma hora! (Aqui continua sem o + 1)
       const up = [...patients];
       up[bedIndex] = newPatientRecord;
       setPatients(up);
 
-      // 3. Remove o paciente da Fila de Espera
+      // 3. Remove o paciente da Fila de Espera (Avisando o número real do leito)
       await updateDoc(doc(db, "fila_espera", patientFromQueue.id), {
         status: "internado",
-        leitoAtribuido: bedIndex,
+        leitoAtribuido: bedIndex + 1, // <--- Ajustado aqui também para o histórico da recepção
         dataInternada: serverTimestamp()
       });
 
@@ -2243,9 +2254,9 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     if (!p.enfermagem) p.enfermagem = {};
     p.enfermagem = { ...p.enfermagem, ...nursingData, lesoes: lesoesLista };
     
-    const up = [...patients];
-    up[activeTab] = p;
-    setPatients(up);
+    // 👇 REMOVEMOS a atualização manual do React (setPatients) que estava a clonar os botões.
+    // O sistema agora vai enviar para o Firebase, e o seu próprio "radar" em tempo real
+    // do Firebase vai atualizar a tela no milissegundo seguinte, na ordem correta.
 
     // Salva no banco de dados
     if (typeof save === "function") {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, Shield, 
@@ -14,6 +15,7 @@ import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
 
 const GestorDashboard = ({ userProfile }) => {
+  const navigate = useNavigate();
   // Controle de navegação principal (hub, indicadores, tendencias, qualidade, auditoria, equipe)
   const [activeView, setActiveView] = useState('hub');
   // Controle de navegação da aba Equipe (menu, acessos, escalas, config)
@@ -45,6 +47,9 @@ const GestorDashboard = ({ userProfile }) => {
   const [leitosConfig, setLeitosConfig] = useState([]);
   const [capacidadeInput, setCapacidadeInput] = useState(10);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  // Estado para a Barra Superior do Gestor
+  const [alertasHeader, setAlertasHeader] = useState({ eventosHoje: 0, pendenciasRH: 0 });
 
   // Métricas da Equipe
   const [metricasEquipe, setMetricasEquipe] = useState({
@@ -267,6 +272,53 @@ const GestorDashboard = ({ userProfile }) => {
     carregarIndicadores();
   }, []);
 
+  // Efeito para buscar Alertas do Header (Pendências RH + Eventos Adversos Reais)
+  useEffect(() => {
+    const buscarAlertasSincronizados = async () => {
+      try {
+        // --- PARTE 1: PENDÊNCIAS DE RH (PROFISSIONAIS) ---
+        const profSnap = await getDocs(collection(db, "profissionais"));
+        let countRH = 0;
+        profSnap.forEach(doc => {
+          const p = doc.data();
+          const semVinculo = !p.vinculos || p.vinculos.length === 0;
+          const naoAdmin = p.categoria !== "Administrador";
+          if ((naoAdmin && semVinculo) || p.status === 'pendente' || p.aprovado === false) {
+            countRH++;
+          }
+        });
+
+        // --- PARTE 2: EVENTOS ADVERSOS (BASEADO NA SUA CONST) ---
+        // Pegamos apenas o YYYY-MM-DD de hoje
+        const hojeISO = new Date().toISOString().split('T')[0]; 
+        
+        const eventosSnap = await getDocs(collection(db, "eventos_adversos"));
+        let countEventosHoje = 0;
+
+        eventosSnap.forEach(doc => {
+          const ev = doc.data();
+          // Verificamos se a string dataEvento começa com a data de hoje
+          if (ev.dataEvento && ev.dataEvento.startsWith(hojeISO)) {
+            countEventosHoje++;
+          }
+        });
+
+        // Atualiza o estado que alimenta os cards superiores
+        setAlertasHeader({
+          eventosHoje: countEventosHoje,
+          pendenciasRH: countRH
+        });
+
+      } catch (error) {
+        console.error("Erro na sincronização do Header:", error);
+      }
+    };
+
+    buscarAlertasSincronizados();
+    // Dica: Poderia colocar um setInterval aqui se quisesse que o número 
+    // mudasse sem precisar dar refresh na página.
+  }, []);
+
   // Carrega os leitos quando o gestor entra na tela de Configuração
   useEffect(() => {
     if (subViewEquipe === 'config') {
@@ -353,19 +405,26 @@ const GestorDashboard = ({ userProfile }) => {
         // Se o leito não existir, ele cria no banco
         if (!exists) {
           const novoLeito = { 
-            nome: `Leito ${i.toString().padStart(2, '0')}`, 
+            nome: "", // <--- CORRIGIDO: NOME DO PACIENTE VAZIO!
+            numeroLeito: i, // Campo auxiliar de segurança para sabermos o número
             status: 'Livre', 
+            statusInternacao: 'Livre', // Evita conflitos com as métricas de ocupação
             ignorarEstatistica: false, 
             bloqueado: false,
-            isIsolamento: false // Adicionado este campo
+            isIsolamento: false 
           };
           await setDoc(doc(db, 'leitos_uti', bedId), novoLeito);
           novosLeitos.push({ id: bedId, ...novoLeito });
         }
       }
       
-      // Reordena e atualiza a tela
-      novosLeitos.sort((a,b) => (parseInt(a.nome?.replace(/\D/g, '')) || 0) - (parseInt(b.nome?.replace(/\D/g, '')) || 0));
+      // CORRIGIDO: Reordena e atualiza a tela usando o ID (bed_1, bed_2) e não mais o nome
+      novosLeitos.sort((a, b) => {
+        const numeroA = parseInt(a.id?.replace('bed_', '')) || 0;
+        const numeroB = parseInt(b.id?.replace('bed_', '')) || 0;
+        return numeroA - numeroB;
+      });
+
       setLeitosConfig(novosLeitos);
       alert("✅ UTI reconfigurada com sucesso! Leitos sincronizados.");
     } catch (error) {
@@ -594,25 +653,48 @@ const GestorDashboard = ({ userProfile }) => {
   // ==========================================
   const renderHub = () => (
     <div className="animate-fadeIn">
-      {/* HEADER DE SINAIS VITAIS */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8 flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">Painel do Gestor</h2>
-          <p className="text-slate-500 text-sm mt-1">Visão estratégica e monitoramento da UTI</p>
+      {/* HEADER DE SINAIS VITAIS - SINCRONIZADO */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        
+        {/* TÍTULO COM BOTÃO DE VOLTAR */}
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => navigate('/hub')} 
+            title="Voltar para Seleção de Setores"
+            className="p-3 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors flex items-center justify-center"
+          >
+            <ArrowLeft size={24} className="text-slate-700" />
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">Painel do Gestor</h2>
+            <p className="text-slate-500 text-sm mt-1">Visão estratégica e monitoramento da UTI</p>
+          </div>
         </div>
-        <div className="flex gap-4">
-          <div className="bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100 flex flex-col items-center">
-            <span className="text-[10px] font-bold text-emerald-600 uppercase">Ocupação Atual</span>
-            <span className="text-lg font-black text-emerald-800">80%</span>
+
+        {/* CARDS RÁPIDOS */}
+        <div className="flex flex-wrap gap-4">
+          
+          <div className="bg-emerald-50 px-4 py-2.5 rounded-xl border border-emerald-100 flex flex-col items-center justify-center min-w-[110px] transition-all hover:shadow-md">
+            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">Ocupação Atual</span>
+            <span className="text-xl font-black text-emerald-800">
+              {metricasOperacionais?.ocupacao ? `${metricasOperacionais.ocupacao}%` : '0%'}
+            </span>
           </div>
-          <div className="bg-red-50 px-4 py-2 rounded-xl border border-red-100 flex flex-col items-center">
-            <span className="text-[10px] font-bold text-red-600 uppercase">Eventos 24h</span>
-            <span className="text-lg font-black text-red-800">2</span>
+          
+          <div className="bg-red-50 px-4 py-2.5 rounded-xl border border-red-100 flex flex-col items-center justify-center min-w-[110px]">
+            <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1">Eventos Hoje</span>
+            <span className="text-xl font-black text-red-800">
+              {alertasHeader.eventosHoje}
+            </span>
           </div>
-          <div className="bg-amber-50 px-4 py-2 rounded-xl border border-amber-100 flex flex-col items-center">
-            <span className="text-[10px] font-bold text-amber-600 uppercase">Pendências</span>
-            <span className="text-lg font-black text-amber-800">5</span>
+          
+          <div className="bg-amber-50 px-4 py-2.5 rounded-xl border border-amber-100 flex flex-col items-center justify-center min-w-[110px] transition-all hover:shadow-md">
+            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-1">Pendências RH</span>
+            <span className="text-xl font-black text-amber-800">
+              {alertasHeader.pendenciasRH}
+            </span>
           </div>
+
         </div>
       </div>
 
