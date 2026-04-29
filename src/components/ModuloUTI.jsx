@@ -169,6 +169,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [dischargeDestination, setDischargeDestination] = useState("");
   const [isDischarging, setIsDischarging] = useState(false);
 
+  const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
+
   const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
     if (!dadosAtualizados.gasoHora) return; 
 
@@ -312,6 +314,28 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     await Promise.all(promessasDeLeitura);
     setIsProcessingBulk(false);
   };
+
+  // ==========================================
+  // OLHEIRO DE EVENTOS ADVERSOS (QUALIDADE)
+  // ==========================================
+  useEffect(() => {
+    if (!db) return;
+    
+    // Busca todos os eventos adversos na nuvem
+    const q = collection(db, "eventos_adversos");
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const eventos = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setListaEventosAdversos(eventos);
+      console.log(`📊 Indicadores de Segurança atualizados: ${eventos.length} eventos lidos.`);
+    });
+
+    // Limpa a escuta quando o componente for fechado
+    return () => unsubscribe();
+  }, [db]); // Importante: adicionamos db como dependência para segurança
 
   // --- SINCRONIZAÇÃO DOS LEITOS COM O FIREBASE ---
   useEffect(() => {
@@ -3202,6 +3226,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       addLesao={addLesao}
                       removeLesao={removeLesao}
                       updateLesaoData={updateLesaoData}
+                      registrarEventoAdverso={registrarEventoAdverso}
                       handleNursingAdmission={() => setShowNursingModal(true)}
                       generateNursingAI_Evolution={generateNursingAI_Evolution}
                       isNursingRole={isNursingRole}

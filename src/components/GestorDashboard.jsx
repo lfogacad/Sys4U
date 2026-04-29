@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line 
 } from 'recharts';
-import { collection, getDocs, doc, setDoc, updateDoc, query, where } from "firebase/firestore";
+import { collection, onSnapshot, getDocs, doc, setDoc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
 import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
@@ -43,10 +43,14 @@ const GestorDashboard = ({ userProfile }) => {
   const [dadosDispositivos, setDadosDispositivos] = useState([]);
   const [dadosDesfechos, setDadosDesfechos] = useState([]);
 
+  const [listaCenso, setListaCenso] = useState([]);
+
   // Controles da Configuração de Leitos
   const [leitosConfig, setLeitosConfig] = useState([]);
   const [capacidadeInput, setCapacidadeInput] = useState(10);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
 
   // Estado para a Barra Superior do Gestor
   const [alertasHeader, setAlertasHeader] = useState({ eventosHoje: 0, pendenciasRH: 0 });
@@ -271,6 +275,34 @@ const GestorDashboard = ({ userProfile }) => {
 
     carregarIndicadores();
   }, []);
+
+  useEffect(() => {
+    if (!db) return;
+    
+    // Busca todos os eventos adversos na nuvem
+    const q = collection(db, "eventos_adversos");
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const eventos = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setListaEventosAdversos(eventos);
+    });
+
+    return () => unsubscribe();
+  }, [db]);
+
+  useEffect(() => {
+  if (!db) return;
+  const q = collection(db, "censo_diario");
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setListaCenso(dados);
+    console.log("📈 Dados do Censo Diário carregados!");
+  });
+  return () => unsubscribe();
+}, [db]);
 
   // Efeito para buscar Alertas do Header (Pendências RH + Eventos Adversos Reais)
   useEffect(() => {
@@ -1070,80 +1102,154 @@ const GestorDashboard = ({ userProfile }) => {
   // VISÃO 3: QUALIDADE E SEGURANÇA
   // ==========================================
   const renderQualidade = () => {
-    const dataPareto = [
-      { evento: 'Retirada SNE', quantidade: 14, fill: '#f59e0b' },
-      { evento: 'Queda do Leito', quantidade: 8, fill: '#ef4444' },
-      { evento: 'LPP Adquirida', quantidade: 5, fill: '#8b5cf6' },
-      { evento: 'Flebite', quantidade: 3, fill: '#ec4899' },
-      { evento: 'Extubação Acidental', quantidade: 1, fill: '#3b82f6' },
-    ];
+  // --- 1. CÁLCULO DOS DENOMINADORES EPIDEMIOLÓGICOS (DADOS REAIS DO ROBÔ) ---
+  // Somamos o histórico do censo diário para ter os denominadores das taxas
+  const totalDiasPaciente = listaCenso.reduce((acc, c) => acc + (Number(c.totalLeitosOcupados) || 0), 0);
+  const totalDiasVM = listaCenso.reduce((acc, c) => acc + (Number(c.pacientesEmVM) || 0), 0);
 
-    const dataTimeline = [
-      { dia: '01/Abr', eventos: 0 }, { dia: '05/Abr', eventos: 2 }, { dia: '10/Abr', eventos: 1 },
-      { dia: '15/Abr', eventos: 5 }, { dia: '20/Abr', eventos: 0 }, { dia: '25/Abr', eventos: 1 },
-    ];
+  // --- 2. PROCESSAMENTO PARA O PARETO (TOP INTERCORRÊNCIAS) ---
+  const contagemEventos = listaEventosAdversos.reduce((acc, curr) => {
+    acc[curr.tipo] = (acc[curr.tipo] || 0) + 1;
+    return acc;
+  }, {});
 
-    return (
-      <div className="animate-fadeIn">
-        <div className="flex items-center gap-4 mb-8">
-          <button onClick={() => setActiveView('hub')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
-            <ArrowLeft size={20} className="text-slate-700" />
-          </button>
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><ShieldAlert className="text-red-600" /> Qualidade e Segurança</h2>
-            <p className="text-slate-500 text-sm mt-1">Monitoramento de eventos adversos e gestão de riscos.</p>
+  const coresPareto = ['#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#3b82f6'];
+  
+  const dataPareto = Object.keys(contagemEventos)
+    .map((tipo, index) => ({
+      evento: tipo,
+      quantidade: contagemEventos[tipo],
+      fill: coresPareto[index % coresPareto.length]
+    }))
+    .sort((a, b) => b.quantidade - a.quantidade);
+
+  // --- 3. PROCESSAMENTO PARA A LINHA DO TEMPO (ÚLTIMOS 10 REGISTROS) ---
+  const contagemPorDia = listaEventosAdversos.reduce((acc, curr) => {
+    const data = new Date(curr.dataEvento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    acc[data] = (acc[data] || 0) + 1;
+    return acc;
+  }, {});
+
+  const dataTimeline = Object.keys(contagemPorDia).map(dia => ({
+    dia: dia,
+    eventos: contagemPorDia[dia]
+  })).slice(-10);
+
+  // --- 4. CÁLCULO DOS CARDS (INDICADORES DE PERFORMANCE) ---
+  
+  // Total Geral de Notificações
+  const totalNotificacoes = listaEventosAdversos.length;
+
+  // Incidência de LPP (% sobre Pacientes-Dia)
+  const totalLPP = listaEventosAdversos.filter(e => 
+    e.tipo.toUpperCase().includes("LPP") || e.tipo.toUpperCase().includes("LESÃO")
+  ).length;
+  const incidenciaLPP = totalDiasPaciente > 0 
+    ? ((totalLPP / totalDiasPaciente) * 100).toFixed(1) 
+    : 0;
+
+  // Taxa de Extubação Acidental (por 1000 dias-VM)
+  const totalExtubacao = listaEventosAdversos.filter(e => 
+    e.tipo.toUpperCase().includes("EXTUBAÇÃO")
+  ).length;
+  const taxaExtubacao = totalDiasVM > 0 
+    ? ((totalExtubacao / totalDiasVM) * 1000).toFixed(1) 
+    : 0;
+
+  // Dias Sem Quedas
+  const eventosQueda = listaEventosAdversos.filter(e => e.tipo.toUpperCase().includes("QUEDA"));
+  let diasSemQuedas = "0"; 
+
+  if (eventosQueda.length > 0) {
+    const datasQuedas = eventosQueda.map(e => new Date(e.dataEvento).getTime());
+    const ultimaQueda = new Date(Math.max(...datasQuedas));
+    const hoje = new Date();
+    const diferencaMs = Math.abs(hoje.getTime() - ultimaQueda.getTime());
+    diasSemQuedas = Math.floor(diferencaMs / (1000 * 60 * 60 * 24));
+  } else {
+    // Se não há quedas, o indicador é o tempo de operação do sistema (censo)
+    diasSemQuedas = listaCenso.length > 0 ? listaCenso.length : "∞";
+  }
+
+  return (
+    <div className="animate-fadeIn">
+      {/* CABEÇALHO */}
+      <div className="flex items-center gap-4 mb-8">
+        <button onClick={() => setActiveView('hub')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
+          <ArrowLeft size={20} className="text-slate-700" />
+        </button>
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <ShieldAlert className="text-red-600" /> Qualidade e Segurança
+          </h2>
+          <p className="text-slate-500 text-sm mt-1">Monitoramento de eventos adversos baseado em censo real.</p>
+        </div>
+      </div>
+
+      {/* CARDS DINÂMICOS */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Notificações</span>
+          <div className="text-3xl font-black text-slate-800 mt-1">{totalNotificacoes}</div>
+        </div>
+        
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Incidência de LPP</span>
+          <div className="text-3xl font-black text-red-600 mt-1">{incidenciaLPP}%</div>
+          <div className="text-[10px] text-slate-400 font-bold mt-1">{totalLPP} lesões adquiridas</div>
+        </div>
+        
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Extubação Acidental</span>
+          <div className="text-3xl font-black text-blue-600 mt-1">{taxaExtubacao}</div>
+          <div className="text-[10px] text-slate-400 font-bold mt-1">por 1000 dias-VM</div>
+        </div>
+        
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Dias Sem Quedas</span>
+          <div className="text-3xl font-black text-emerald-600 mt-1">{diasSemQuedas}</div>
+        </div>
+      </div>
+
+      {/* GRÁFICOS */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
+          <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+            <AlertCircle size={16} className="text-amber-500" /> Pareto de Intercorrências
+          </h3>
+          <div className="flex-1 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dataPareto} layout="vertical" margin={{ top: 0, right: 20, left: 20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
+                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                <YAxis type="category" dataKey="evento" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }} width={120} />
+                <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                <Bar dataKey="quantidade" radius={[0, 4, 4, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex gap-4 items-center">
-          <Calendar size={18} className="text-slate-400" />
-          <select className="bg-slate-50 border border-slate-200 p-2 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-red-500">
-            <option>Abril 2026</option><option>Março 2026</option>
-          </select>
-          <button className="ml-auto bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">Relatório de Conformidade</button>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Total de Notificações</span><div className="text-3xl font-black text-slate-800 mt-1">31</div></div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Incidência de LPP</span><div className="text-3xl font-black text-red-600 mt-1">2.5%</div><div className="text-[10px] text-slate-400 font-bold mt-1">5 lesões adquiridas</div></div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Extubação Acidental</span><div className="text-3xl font-black text-blue-600 mt-1">3.1</div><div className="text-[10px] text-slate-400 font-bold mt-1">por 1000 dias-VM</div></div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Dias Sem Quedas</span><div className="text-3xl font-black text-emerald-600 mt-1">12</div></div>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2"><AlertCircle size={16} className="text-amber-500" /> Pareto de Intercorrências</h3>
-            <div className="flex-1 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dataPareto} layout="vertical" margin={{ top: 0, right: 20, left: 20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <YAxis type="category" dataKey="evento" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#475569', fontWeight: 'bold' }} width={120} />
-                  <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Bar dataKey="quantidade" radius={[0, 6, 6, 0]} barSize={24} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="text-xs text-slate-400 text-center mt-2 italic">* 80% dos problemas estão concentrados nos primeiros itens.</p>
-          </div>
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2"><Activity size={16} className="text-red-500" /> Curva de Ocorrências (Abril)</h3>
-            <div className="flex-1 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dataTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="dia" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Line type="monotone" dataKey="eventos" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#white' }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
+          <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+            <Activity size={16} className="text-red-500" /> Curva de Ocorrências
+          </h3>
+          <div className="flex-1 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={dataTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="dia" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                <Line type="monotone" dataKey="eventos" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444' }} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // ==========================================
   // VISÃO 4: AUDITORIA E CONFORMIDADE
