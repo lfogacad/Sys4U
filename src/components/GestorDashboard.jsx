@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
@@ -37,13 +37,19 @@ const GestorDashboard = ({ userProfile }) => {
   const [isLoadingMes, setIsLoadingMes] = useState(false);
   const [consolidadoDia, setConsolidadoDia] = useState({});
 
-  const [dadosTendencia, setDadosTendencia] = useState([]);
   const [loadingGraficos, setLoadingGraficos] = useState(true);
 
   const [dadosDispositivos, setDadosDispositivos] = useState([]);
   const [dadosDesfechos, setDadosDesfechos] = useState([]);
 
   const [listaCenso, setListaCenso] = useState([]);
+
+  const [dataInicio, setDataInicio] = useState(
+    new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
+  );
+  const [dataFim, setDataFim] = useState(
+    new Date().toISOString().split('T')[0]
+  );
 
   // Controles da Configuração de Leitos
   const [leitosConfig, setLeitosConfig] = useState([]);
@@ -79,6 +85,42 @@ const GestorDashboard = ({ userProfile }) => {
     taxaIdentificacao: 0,
     carregando: true
   });
+
+  // --- NO CORPO PRINCIPAL DO GESTOR DASHBOARD (PERTO DOS OUTROS USESTATE) ---
+
+const dadosTendencia = useMemo(() => {
+    if (!listaCenso || listaCenso.length === 0) return [];
+
+    return listaCenso
+      .filter(dia => dia.data >= dataInicio && dia.data <= dataFim)
+      .sort((a, b) => a.data.localeCompare(b.data))
+      .map(dia => {
+        // ... (mantenha toda aquela lógica do switch que mandei antes)
+        // Certifique-se de copiar o switch completo aqui
+        let valor = 0;
+        const configIndicadores = {
+            mortalidade:   { key: 'morte' }, 
+            smr:           { key: 'smr' }, 
+            identificacao: { key: 'id' }, 
+            diasVM:        { key: 'vm' },
+            ocupacao:      { key: 'ocupacao' },
+            giroLeito:     { key: 'giroLeito' },
+            los:           { key: 'los' },
+            readmissao:    { key: 'readmissao' },
+        };
+        const keyAtual = configIndicadores[indicadorTendencia]?.key || 'morte';
+        
+        // Sua lógica de cálculo aqui...
+        if (indicadorTendencia === 'ocupacao') valor = (dia.totalLeitosOcupados / 10) * 100;
+        else if (indicadorTendencia === 'identificacao') valor = (dia.pacientesIdentificados / dia.totalLeitosOcupados) * 100;
+        else valor = dia[keyAtual] || 0;
+
+        return {
+          name: new Date(dia.data + "T00:00:00").toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+          [keyAtual]: Number(Number(valor).toFixed(1))
+        };
+      });
+}, [listaCenso, dataInicio, dataFim, indicadorTendencia]);
 
   // 2. MOTOR DE BUSCA E CÁLCULO (Versão Consolidada com Gráficos)
   useEffect(() => {
@@ -263,7 +305,6 @@ const GestorDashboard = ({ userProfile }) => {
           };
         }).sort((a,b) => a.rawDate.localeCompare(b.rawDate));
 
-        setDadosTendencia(listaTendencia);
         setLoadingGraficos(false);
 
       } catch (error) {
@@ -560,7 +601,6 @@ const GestorDashboard = ({ userProfile }) => {
       // Ordena por data (mais antigo para o mais recente)
       listaFinal.sort((a, b) => a.rawDate.localeCompare(b.rawDate));
 
-      setDadosTendencia(listaFinal);
       setLoadingGraficos(false);
 
     } catch (error) {
@@ -784,16 +824,26 @@ const GestorDashboard = ({ userProfile }) => {
           </div>
         </div>
 
-        {/* Filtro de Período */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-8 flex gap-4 items-center">
-          <Calendar size={18} className="text-slate-400" />
-          <select className="bg-slate-50 border border-slate-200 p-2 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500">
-            <option>Abril 2026</option>
-            <option>Março 2026</option>
-          </select>
-          <button className="ml-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
-            Exportar Relatório PDF
-          </button>
+        {/* FILTRO DE PERÍODO PERSONALIZADO */}
+        <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto items-center">
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase">De:</label>
+            <input 
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase">Até:</label>
+            <input 
+              type="date"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+              className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+            />
+          </div>
         </div>
 
         {/* =========================================
@@ -965,138 +1015,136 @@ const GestorDashboard = ({ userProfile }) => {
   // VISÃO 2.1: TENDÊNCIAS (FILME) - REAL TIME
   // ==========================================
   const renderTendencias = () => {
-    
-    // Mapeamento para as chaves reais que criamos no useEffect
-    const configIndicadores = {
-      mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444', key: 'morte' }, 
-      smr:           { label: 'SMR (SAPS 3)', color: '#10b981', key: 'smr' }, 
-      identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4', key: 'id' }, 
-      diasVM:        { label: 'Densidade de Ventilação Mecânica (p/ 1000 d-p)', color: '#6366f1', key: 'vm' },
-      ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6', key: 'ocupacao' },
-      giroLeito:     { label: 'Giro de Leito', color: '#8b5cf6', key: 'giroLeito' },
-      los:           { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b', key: 'los' },
-      readmissao:    { label: 'Readmissão em 48h (%)', color: '#f97316', key: 'readmissao' },
-    };
+  // 1. Mapeamento de configurações
+  const configIndicadores = {
+    mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444', key: 'morte' }, 
+    smr:           { label: 'SMR (SAPS 3)', color: '#10b981', key: 'smr' }, 
+    identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4', key: 'id' }, 
+    diasVM:        { label: 'Densidade de Ventilação Mecânica (p/ 1000 d-p)', color: '#6366f1', key: 'vm' },
+    ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6', key: 'ocupacao' },
+    giroLeito:     { label: 'Giro de Leito', color: '#8b5cf6', key: 'giroLeito' },
+    los:           { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b', key: 'los' },
+    readmissao:    { label: 'Readmissão em 48h (%)', color: '#f97316', key: 'readmissao' },
+  };
 
-    const configAtual = configIndicadores[indicadorTendencia] || configIndicadores['mortalidade'];
+  const configAtual = configIndicadores[indicadorTendencia] || configIndicadores['mortalidade'];
 
-    // Tela de carregamento enquanto o Firebase responde
-    if (loadingGraficos) {
-      return (
-        <div className="flex flex-col items-center justify-center h-96 bg-white rounded-3xl border border-slate-100 shadow-sm">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mb-4"></div>
-          <p className="text-slate-400 font-medium italic">Sincronizando com a Inteligência da Nuvem...</p>
-        </div>
-      );
-    }
-
+  // Tela de carregamento
+  if (loadingGraficos) {
     return (
-      <div className="animate-fadeIn max-w-6xl mx-auto">
-        {/* CABEÇALHO */}
-        <div className="flex items-center gap-4 mb-8">
-          <button onClick={() => setActiveView('indicadores')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
-            <ArrowLeft size={20} className="text-slate-700" />
-          </button>
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-              <TrendingUp className="text-emerald-600" /> Gráficos de Tendências Reais
-            </h2>
-            <p className="text-slate-500 text-sm mt-1">Dados processados a partir do histórico de altas e censo diário.</p>
-          </div>
-        </div>
-
-        {/* FILTROS E SELEÇÃO */}
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-bold text-slate-500 uppercase">Indicador:</label>
-              <select 
-                value={indicadorTendencia}
-                onChange={(e) => setIndicadorTendencia(e.target.value)}
-                className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 cursor-pointer min-w-[240px]"
-              >
-                <optgroup label="Desfechos Clínicos e Qualidade">
-                  <option value="mortalidade">Taxa de Mortalidade (%)</option>
-                  <option value="smr">SMR (SAPS 3)</option>
-                  <option value="identificacao">Identificação Correta (%)</option>
-                  <option value="readmissao">Readmissão em 48h (%)</option>
-                </optgroup>
-                <optgroup label="Dispositivos e Operacional">
-                  <option value="diasVM">Densidade de VM</option>
-                  <option value="ocupacao">Taxa de Ocupação (%)</option>
-                  <option value="giroLeito">Giro de Leito</option>
-                  <option value="los">Tempo Médio (LOS)</option>
-                </optgroup>
-              </select>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
-             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-             <span className="text-xs font-bold text-emerald-700 uppercase">Live Analytics</span>
-          </div>
-        </div>
-
-        {/* ÁREA DO GRÁFICO */}
-        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 h-[500px] flex flex-col">
-          <h3 className="font-black text-slate-800 mb-6 text-lg flex items-center gap-2 uppercase tracking-tight">
-            <div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
-            {configAtual.label}
-          </h3>
-          
-          <div className="flex-1 w-full">
-            {dadosTendencia.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-slate-400 italic text-center">
-                <Activity size={48} className="mb-4 opacity-20" />
-                Aguardando a primeira alta ou o fechamento <br/> do censo para gerar dados.
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dadosTendencia} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 13, fill: '#94a3b8', fontWeight: 600 }} 
-                    dy={15}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 13, fill: '#94a3b8', fontWeight: 600 }} 
-                    dx={-10}
-                  />
-                  <RechartsTooltip 
-                    cursor={{ stroke: '#cbd5e1', strokeWidth: 2, strokeDasharray: '5 5' }} 
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }} 
-                    itemStyle={{ fontWeight: '900', fontSize: '14px' }}
-                  />
-                  
-                  <Line 
-                    type="monotone" 
-                    dataKey={configAtual.key} 
-                    stroke={configAtual.color} 
-                    strokeWidth={5} 
-                    dot={{ r: 7, fill: configAtual.color, stroke: '#ffffff', strokeWidth: 3 }} 
-                    activeDot={{ r: 10, fill: configAtual.color, stroke: '#ffffff', strokeWidth: 4 }} 
-                    animationDuration={1200}
-                    connectNulls
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-          
-          <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-              Sys4U Analytics Cloud - Ariquemes/RO
-            </p>
-          </div>
-        </div>
+      <div className="flex flex-col items-center justify-center h-96 bg-white rounded-3xl border border-slate-100 shadow-sm">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mb-4"></div>
+        <p className="text-slate-400 font-medium italic">Sincronizando com a Inteligência da Nuvem...</p>
       </div>
     );
-  };
+  }
+
+  return (
+    <div className="animate-fadeIn max-w-6xl mx-auto">
+      {/* CABEÇALHO */}
+      <div className="flex items-center gap-4 mb-8">
+        <button onClick={() => setActiveView('indicadores')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
+          <ArrowLeft size={20} className="text-slate-700" />
+        </button>
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <TrendingUp className="text-emerald-600" /> Gráficos de Tendências Reais
+          </h2>
+          <p className="text-slate-500 text-sm mt-1">Análise histórica personalizada por período.</p>
+        </div>
+      </div>
+
+      {/* FILTROS DE CALENDÁRIO */}
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row gap-6 items-center justify-between">
+        <div className="flex flex-col md:flex-row gap-6 w-full md:w-auto items-center">
+          
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-bold text-slate-500 uppercase">Indicador:</label>
+            <select 
+              value={indicadorTendencia}
+              onChange={(e) => setIndicadorTendencia(e.target.value)}
+              className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 min-w-[240px] cursor-pointer"
+            >
+              <optgroup label="Desfechos Clínicos e Qualidade">
+                <option value="mortalidade">Taxa de Mortalidade (%)</option>
+                <option value="smr">SMR (SAPS 3)</option>
+                <option value="identificacao">Identificação Correta (%)</option>
+                <option value="readmissao">Readmissão em 48h (%)</option>
+              </optgroup>
+              
+              <optgroup label="Dispositivos e Operacional">
+                <option value="diasVM">Densidade de VM</option>
+                <option value="ocupacao">Taxa de Ocupação (%)</option>
+                <option value="giroLeito">Giro de Leito</option>
+                <option value="los">Tempo Médio (LOS)</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2">
+               <span className="text-[10px] font-black text-slate-400 uppercase">De:</span>
+               <input 
+                 type="date" 
+                 value={dataInicio} 
+                 onChange={(e) => setDataInicio(e.target.value)}
+                 className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+               />
+             </div>
+             <div className="flex items-center gap-2">
+               <span className="text-[10px] font-black text-slate-400 uppercase">Até:</span>
+               <input 
+                 type="date" 
+                 value={dataFim} 
+                 onChange={(e) => setDataFim(e.target.value)}
+                 className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+               />
+             </div>
+          </div>
+        </div>
+        
+        <div className="hidden md:flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
+           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+           <span className="text-xs font-bold text-emerald-700 uppercase">Live Cloud Sync</span>
+        </div>
+      </div>
+
+      {/* ÁREA DO GRÁFICO */}
+      <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 h-[500px] flex flex-col">
+        <h3 className="font-black text-slate-800 mb-6 text-lg flex items-center gap-2 uppercase tracking-tight">
+          <div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
+          {configAtual.label}
+        </h3>
+        
+        <div className="flex-1 w-full">
+          {dadosTendencia.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400 italic text-center">
+              <Activity size={48} className="mb-4 opacity-20" />
+              Nenhum dado encontrado para o período selecionado.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={dadosTendencia} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }} dy={15} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }} dx={-10} />
+                <RechartsTooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                <Line 
+                  type="monotone" 
+                  dataKey={configAtual.key} 
+                  stroke={configAtual.color} 
+                  strokeWidth={4} 
+                  dot={{ r: 6, fill: configAtual.color, stroke: '#fff', strokeWidth: 2 }} 
+                  activeDot={{ r: 8 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
   // ==========================================
   // VISÃO 3: QUALIDADE E SEGURANÇA
