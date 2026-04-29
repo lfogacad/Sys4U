@@ -51,44 +51,75 @@ const GestorDashboard = ({ userProfile }) => {
     new Date().toISOString().split('T')[0]
   );
 
-  // Controles da Configuração de Leitos
+// =========================================================
+  // 1. ESTADOS (useState) - O ALMOXARIFADO
+  // =========================================================
   const [leitosConfig, setLeitosConfig] = useState([]);
   const [capacidadeInput, setCapacidadeInput] = useState(10);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
-
   const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
-
   const [listaHistorico, setListaHistorico] = useState([]);
-
-useEffect(() => {
-  if (!db) return;
-  const q = collection(db, "internacoes_historico"); 
-  
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    setListaHistorico(dados);
-  });
-  return () => unsubscribe();
-}, [db]);
-
-  // Estado para a Barra Superior do Gestor
   const [alertasHeader, setAlertasHeader] = useState({ eventosHoje: 0, pendenciasRH: 0 });
-
-  // Métricas da Equipe
   const [metricasEquipe, setMetricasEquipe] = useState({
-    total: 0,
-    ativos: 0,
-    pendentes: 0,
-    carregando: true
+    total: 0, ativos: 0, pendentes: 0, carregando: true
   });
 
-  const [metricasOperacionais, setMetricasOperacionais] = useState({
-    ocupacao: 0,
-    giro: 0,
-    los: 0,
-    altas: 0
-  });
+  // =========================================================
+  // 2. EFEITOS (useEffect) - OS SINCRONIZADORES (DADOS BRUTOS)
+  // =========================================================
 
+  // Sincroniza Leitos (ESSENCIAL: Agora carrega assim que abre o painel)
+  useEffect(() => {
+    if (!db) return;
+    const q = collection(db, "leitos_uti");
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setLeitosConfig(dados);
+    });
+    return () => unsubscribe();
+  }, [db]);
+
+  // Sincroniza Histórico de Internações
+  useEffect(() => {
+    if (!db) return;
+    const q = collection(db, "internacoes_historico"); 
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setListaHistorico(dados);
+    });
+    return () => unsubscribe();
+  }, [db]);
+
+// =========================================================
+  // 3. CÁLCULOS (useMemo) - A INTELIGÊNCIA (DADOS PROCESSADOS)
+  // =========================================================
+
+  // Cálculo da Ocupação Atual, Giro e LOS (EM TEMPO REAL E HISTÓRICO)
+  const metricasOperacionais = useMemo(() => {
+    // 1. Ocupação em Tempo Real
+    const ocupadosAgora = leitosConfig.filter(l => l.status !== "Livre" && l.status !== "limpeza").length;
+    const capacidadeTotal = capacidadeInput || 10;
+
+    // 2. Dados de Performance (Vindo da lista de histórico que o ModuloUTI alimenta)
+    const altasMes = listaHistorico.length;
+    
+    // 3. Cálculo do Tempo Médio de Permanência (LOS)
+    const somaDiasInternacao = listaHistorico.reduce((acc, h) => {
+      const entrada = new Date(h.dataEntrada);
+      const saida = new Date(h.dataSaida);
+      const diffDias = (saida - entrada) / (1000 * 60 * 60 * 24);
+      return acc + (diffDias > 0 ? diffDias : 0.5); // mínimo de meio dia para altas rápidas
+    }, 0);
+
+    return {
+      ocupacao: ((ocupadosAgora / capacidadeTotal) * 100).toFixed(1),
+      giro: (altasMes / capacidadeTotal).toFixed(2),
+      los: altasMes > 0 ? (somaDiasInternacao / altasMes).toFixed(1) : "0.0",
+      altas: altasMes
+    };
+  }, [leitosConfig, capacidadeInput, listaHistorico]);
+
+  // Cálculo para os Gráficos de Tendência
   const dadosTendencia = useMemo(() => {
     if (!listaCenso || listaCenso.length === 0) return [];
 
@@ -96,8 +127,6 @@ useEffect(() => {
       .filter(dia => dia.data >= dataInicio && dia.data <= dataFim)
       .sort((a, b) => a.data.localeCompare(b.data))
       .map(dia => {
-        // ... (mantenha toda aquela lógica do switch que mandei antes)
-        // Certifique-se de copiar o switch completo aqui
         let valor = 0;
         const configIndicadores = {
             mortalidade:   { key: 'morte' }, 
@@ -111,17 +140,20 @@ useEffect(() => {
         };
         const keyAtual = configIndicadores[indicadorTendencia]?.key || 'morte';
         
-        // Sua lógica de cálculo aqui...
-        if (indicadorTendencia === 'ocupacao') valor = (dia.totalLeitosOcupados / 10) * 100;
-        else if (indicadorTendencia === 'identificacao') valor = (dia.pacientesIdentificados / dia.totalLeitosOcupados) * 100;
-        else valor = dia[keyAtual] || 0;
+        if (indicadorTendencia === 'ocupacao') {
+          valor = (dia.totalLeitosOcupados / (capacidadeInput || 10)) * 100;
+        } else if (indicadorTendencia === 'identificacao') {
+          valor = dia.totalLeitosOcupados > 0 ? (dia.pacientesIdentificados / dia.totalLeitosOcupados) * 100 : 0;
+        } else {
+          valor = dia[keyAtual] || 0;
+        }
 
         return {
           name: new Date(dia.data + "T00:00:00").toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
           [keyAtual]: Number(Number(valor).toFixed(1))
         };
       });
-}, [listaCenso, dataInicio, dataFim, indicadorTendencia]);
+  }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput]);
 
   const metricasQualidade = useMemo(() => {
   if (!listaCenso.length && !listaHistorico.length) {
@@ -327,15 +359,7 @@ useEffect(() => {
           carregando: false
         });
 
-        // Cards Operacionais
-        setMetricasOperacionais({
-          ocupacao: ((ocupadosAgora / capacidadeTotal) * 100).toFixed(1),
-          giro: (altasMes / capacidadeTotal).toFixed(2),
-          los: altasMes > 0 ? (somaDiasInternacaoMes / altasMes).toFixed(1) : "0.0",
-          altas: altasMes
-        });
-
-        // Gráfico de Barras (Dispositivos)
+       // Gráfico de Barras (Dispositivos)
         setDadosDispositivos([
           { name: 'VMI', dias: diasVMMes, fill: '#3b82f6' },
           { name: 'CVC', dias: diasCVCMes, fill: '#8b5cf6' },
