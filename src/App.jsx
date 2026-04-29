@@ -2,7 +2,7 @@ import './index.css';
 import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { auth, db } from "./config/firebase";
 import { UserPlus, Hash, Mail, Lock, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
 
@@ -59,12 +59,16 @@ const AppRouter = () => {
       setIsLoading(true);
       if (firebaseUser) {
         setUser(firebaseUser);
+        
+        // 👇 O CÓDIGO ORIGINAL VOLTA A RESPIRAR SOZINHO:
         try {
           const docRef = doc(db, "usuarios", firebaseUser.uid);
           const docSnap = await getDoc(docRef);
+          
           if (docSnap.exists()) {
             const data = docSnap.data();
             setUserProfile(data);
+            
             if (data.vinculos && data.vinculos.length === 1) {
               setUnidadeAtiva(data.vinculos[0]);
             }
@@ -75,6 +79,7 @@ const AppRouter = () => {
         } catch (error) {
           console.error("Erro ao buscar perfil:", error);
         }
+
       } else {
         setUser(null);
         setUserProfile(null);
@@ -90,7 +95,7 @@ const AppRouter = () => {
     setIsLoading(true);
     setAuthError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (err) {
       setAuthError("Email ou senha incorretos.");
       setIsLoading(false);
@@ -284,7 +289,10 @@ const AppRouter = () => {
 
   // O SuperUser ignora o bloqueio de falta de vínculos para poder configurar o sistema
   if (!unidadeAtiva && !isSuperUser) {
-    if (!userProfile.vinculos || userProfile.vinculos.length === 0) {
+    
+    // 👇 A SUTURA VEM AQUI: Os pontos de interrogação salvam o sistema!
+    // Se o userProfile não existir, ou se a lista de vínculos estiver vazia, ele mostra a tela de bloqueio.
+    if (!userProfile?.vinculos || userProfile?.vinculos?.length === 0) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
           <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md text-center border border-slate-100">
@@ -295,6 +303,7 @@ const AppRouter = () => {
         </div>
       );
     }
+    
     return <SeletorUnidade userProfile={userProfile} onSelectUnit={setUnidadeAtiva} />;
   }
 

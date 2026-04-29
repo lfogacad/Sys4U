@@ -121,7 +121,7 @@ const ModuloAdmin = ({ userProfile }) => {
     setIsModalOpen(true);
   };
 
-  const handleAtribuirVinculo = async (e) => {
+const handleAtribuirVinculo = async (e) => {
     e.preventDefault();
     setIsUpdating(true);
     
@@ -137,16 +137,45 @@ const ModuloAdmin = ({ userProfile }) => {
     };
 
     try {
-      const userRef = doc(db, "profissionais", selectedUser.id); 
-      await updateDoc(userRef, {
+      // 1. Atualiza a coleção 'profissionais' (Objeto complexo)
+      const profRef = doc(db, "profissionais", selectedUser.id); 
+      await updateDoc(profRef, {
         vinculos: arrayUnion(novoVinculo)
       });
+
+      // 2. 🔍 PREPARAÇÃO DA BUSCA: Converte o conselho forçadamente para String (Texto)
+      const conselhoString = String(selectedUser.numeroConselho);
+      console.log("🔍 Procurando usuário na portaria com o Conselho:", conselhoString);
+
+      const q = query(
+        collection(db, "usuarios"), 
+        where("numeroConselho", "==", conselhoString)
+      );
       
-      alert(`Vínculo adicionado com sucesso para ${selectedUser.nome}!`);
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        // ACHAOU O USUÁRIO NA PORTARIA!
+        const userDoc = querySnapshot.docs[0];
+        const userRef = doc(db, "usuarios", userDoc.id);
+        
+        // 💉 SUTURA CRÍTICA: Grava apenas o nome da unidade no array 'vinculos' para o App.jsx
+        await updateDoc(userRef, {
+          vinculos: arrayUnion(unidadeSelecionada.unidadeNome),
+          perfil: cargoLocal
+        });
+        
+        alert(`Vínculo e Acesso liberados com sucesso para ${selectedUser.nome}!`);
+      } else {
+        console.error("❌ Erro de Ligação: Usuário não achado na coleção 'usuarios'.");
+        alert("O vínculo foi salvo no painel, mas não achamos o login dele para abrir a porta. Peça para ele fazer o cadastro inicial.");
+      }
+
       setIsModalOpen(false);
+      
     } catch (error) {
       console.error("Erro ao atualizar vínculo:", error);
-      alert("Erro ao atribuir vínculo.");
+      alert("Erro ao atribuir vínculo. Verifique o console.");
     } finally {
       setIsUpdating(false);
     }
