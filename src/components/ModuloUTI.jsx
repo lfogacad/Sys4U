@@ -321,20 +321,26 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     const q = collection(db, "leitos_uti");
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      // Começamos com um array de leitos padrão (vazios)
-      // Ajuste o '10' para a quantidade de leitos que o senhor tiver
-      const updatedPatients = Array(10).fill(null).map((_, i) => defaultPatient(i));
+      // 1. Pegamos todos os documentos que existem no Firebase
+      const firestoreBeds = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
-      snapshot.forEach((doc) => {
-        // O id do documento é 'bed_0', 'bed_1', etc. 
-        // Extraímos o número para saber em qual posição do array colocar
-        const bedIndex = parseInt(doc.id.replace('bed_', ''));
-        if (bedIndex >= 0 && bedIndex < updatedPatients.length) {
-          updatedPatients[bedIndex] = mergePatientData(defaultPatient(bedIndex), doc.data());
-        }
+      // 2. Ordenamos pelo número do leito para não ficarem bagunçados (1, 2, 3...)
+      firestoreBeds.sort((a, b) => {
+        const numA = parseInt(a.id.replace('bed_', ''));
+        const numB = parseInt(b.id.replace('bed_', ''));
+        return numA - numB;
       });
 
-      console.log("Leitos sincronizados com a nuvem!");
+      // 3. Garantimos que cada dado do Firebase passe pelo mergePatientData
+      const updatedPatients = firestoreBeds.map(bedData => {
+        const index = parseInt(bedData.id.replace('bed_', '')) - 1;
+        return mergePatientData(defaultPatient(index), bedData);
+      });
+
+      console.log("Leitos sincronizados dinamicamente!");
       setPatients(updatedPatients);
     });
 
