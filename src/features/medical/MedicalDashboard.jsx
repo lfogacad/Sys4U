@@ -163,7 +163,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
           }`}
           title="Reabrir e editar dados da Admissão Médica"
         >
-          <Edit3 size={16} /> Reabrir Admissão Médica
+          <Edit3 size={16} /> Ver Admissão Médica
         </button>
       </div>
 

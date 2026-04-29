@@ -835,30 +835,59 @@ const clearAntibiotic = (i) => {
   };
 
   const handleAdmitPatient = () => {
-    // MUDANÇA CRUCIAL: Pega os dados do paciente que já está na maca do leito!
+    // Pegamos os dados do paciente que está na maca do leito
     const p = currentPatient;
-
+    
     console.log(">>> CLICOU EM ADMITIR! Puxando dados do leito:", p);
 
-    setAdmissionData({
-      // Puxa o que foi preenchido na hora de vincular da Fila de Espera
-      nome: p?.nome || "",
-      sexo: p?.sexo || "",
-      dataNascimento: p?.dataNascimento || "",
-      origem: p?.procedencia === "Recepção" ? "" : (p?.procedencia || ""),
+    // 👇 MÁGICA: Puxa do "Cofre" primeiro! Se não tiver, puxa da evolução atual, se não, fica vazio.
+    const dadosSalvos = p?.admissaoMedica || p?.admissionData || {};
 
-      // Restante dos campos zerados para o médico preencher
-      historia: "", exameGeral: "", exameACV: "", exameAR: "",
-      exameABD: "", exameExtremidades: "", exameNeuro: "",
-      ecg_ao: "", ecg_rv: "", ecg_rm: "", ecg_basal_ao: "", ecg_basal_rv: "", ecg_basal_rm: "",
-      rass: "", pupilas: "", dva: false, drogasDVA: [],
-      sedacao: false, drogasSedacao: [], medicamentos: "",
-      conscienciaBasal: "", mobilidadeBasal: "", examesComplementares: "",
-      diagAgudos: "", diagCronicos: "", conduta: "",
-      saps_origem: "", saps_dias: "", saps_motivo: "", saps_sistema: "",
-      saps_infeccao: "", saps_sitioInfeccao: "",
-      saps_cirurgiaUrgente: false, saps_imunossupressao: false,
-      saps_comorbidades: [],
+    setAdmissionData({
+      // 1. DADOS DE CADASTRO (Imutáveis, sempre vêm do paciente base)
+      nome: p?.nome || dadosSalvos.nome || "",
+      sexo: p?.sexo || dadosSalvos.sexo || "",
+      dataNascimento: p?.dataNascimento || dadosSalvos.dataNascimento || "",
+      origem: dadosSalvos.origem || (p?.procedencia === "Recepção" ? "" : (p?.procedencia || "")),
+
+      // 2. DADOS CLÍNICOS (Puxa do cofre se existir, senão inicia vazio)
+      historia: dadosSalvos.historia || "", 
+      exameGeral: dadosSalvos.exameGeral || "", 
+      exameACV: dadosSalvos.exameACV || "", 
+      exameAR: dadosSalvos.exameAR || "",
+      exameABD: dadosSalvos.exameABD || "", 
+      exameExtremidades: dadosSalvos.exameExtremidades || "", 
+      exameNeuro: dadosSalvos.exameNeuro || "",
+      ecg_ao: dadosSalvos.ecg_ao || "", 
+      ecg_rv: dadosSalvos.ecg_rv || "", 
+      ecg_rm: dadosSalvos.ecg_rm || "", 
+      ecg_basal_ao: dadosSalvos.ecg_basal_ao || "", 
+      ecg_basal_rv: dadosSalvos.ecg_basal_rv || "", 
+      ecg_basal_rm: dadosSalvos.ecg_basal_rm || "",
+      rass: dadosSalvos.rass || "", 
+      pupilas: dadosSalvos.pupilas || "", 
+      dva: dadosSalvos.dva || false, 
+      drogasDVA: dadosSalvos.drogasDVA || [],
+      sedacao: dadosSalvos.sedacao || false, 
+      drogasSedacao: dadosSalvos.drogasSedacao || [], 
+      medicamentos: dadosSalvos.medicamentos || "",
+      conscienciaBasal: dadosSalvos.conscienciaBasal || "", 
+      mobilidadeBasal: dadosSalvos.mobilidadeBasal || "", 
+      examesComplementares: dadosSalvos.examesComplementares || "",
+      diagAgudos: dadosSalvos.diagAgudos || "", 
+      diagCronicos: dadosSalvos.diagCronicos || "", 
+      conduta: dadosSalvos.conduta || "",
+      
+      // 3. SAPS 3 (Obrigatórios)
+      saps_origem: dadosSalvos.saps_origem || "", 
+      saps_dias: dadosSalvos.saps_dias || "", 
+      saps_motivo: dadosSalvos.saps_motivo || "", 
+      saps_sistema: dadosSalvos.saps_sistema || "",
+      saps_infeccao: dadosSalvos.saps_infeccao || "", 
+      saps_sitioInfeccao: dadosSalvos.saps_sitioInfeccao || "",
+      saps_cirurgiaUrgente: dadosSalvos.saps_cirurgiaUrgente || false, 
+      saps_imunossupressao: dadosSalvos.saps_imunossupressao || false,
+      saps_comorbidades: dadosSalvos.saps_comorbidades || [],
     });
 
     setShowAdmissionModal(true);
@@ -878,24 +907,45 @@ const clearAntibiotic = (i) => {
   };
 
   const handleFinalizeAdmission = async () => {
+    // 1. VERIFICAÇÃO DE NOME (Já existia)
     if (!admissionData.nome || !admissionData.nome.trim()) {
       return alert(
         "O preenchimento do NOME é obrigatório para admitir o paciente."
       );
     }
 
+    // 2. VERIFICAÇÃO SAPS 3 (NOVA OBRIGATORIEDADE)
+    const requiredSapsFields = ["saps_dias", "saps_origem", "saps_motivo", "saps_sistema", "saps_infeccao"];
+    for (let field of requiredSapsFields) {
+      if (!admissionData[field]) {
+        return alert("⚠️ O preenchimento de todos os Fatores SAPS 3 Pré-Admissão é obrigatório para admitir o paciente!");
+      }
+    }
+
     const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
     
-    // --- NOVO: GERADOR DE IDENTIDADE DE INTERNAÇÃO ---
+    // ========================================================
+    // O COFRE DA ADMISSÃO MÉDICA (Congela a imagem inicial)
+    // ========================================================
+    if (!r.admissaoMedica) {
+      r.admissaoMedica = {
+        ...admissionData,
+        dataRegistroAdmissao: new Date().toISOString()
+      };
+    }
+
+    // --- GERADOR DE IDENTIDADE DE INTERNAÇÃO ---
     // Criamos um ID único combinando CPF e a data/hora atual
     const idInternacao = `${admissionData.cpf || 'SEM_CPF'}_${Date.now()}`;
-    r.idInternacao = idInternacao; 
+    // Só cria o ID de internação se não houver um! (Garante que se o médico reabrir, não gera um ID novo)
+    if (!r.idInternacao) r.idInternacao = idInternacao; 
+
     r.statusInternacao = "Ativo"; // Libera o cadeado da Aba Médica
     r.nome = admissionData.nome.trim().toUpperCase();
     r.sexo = admissionData.sexo || "";
     r.dataNascimento = admissionData.dataNascimento || "";
-    r.dataInternacao = getManausDateStr();
-    r.bh.date = getManausDateStr();
+    r.dataInternacao = r.dataInternacao || getManausDateStr(); // Protege a data original
+    r.bh.date = r.bh.date || getManausDateStr();
     r.procedencia = admissionData.origem;
     r.diagnostico = admissionData.diagAgudos;
     r.comorbidades = admissionData.diagCronicos;
@@ -998,9 +1048,9 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
     // Agora a Aba Médica recebe apenas o resumo
     r.historiaClinica = historiaAbaMedica;
-    r.admissionData = admissionData;
+    r.admissionData = admissionData; // Mantém abastecendo o dia a dia normalmente
 
-    // --- NOVO: ENVIANDO PARA O PAINEL GESTOR ---
+    // --- ENVIANDO PARA O PAINEL GESTOR ---
     try {
       await addDoc(collection(db, "indicadores_performance"), {
         cpf: r.cpf || admissionData.cpf,
@@ -1015,6 +1065,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
         }
       });
     } catch (e) { console.error("Erro indicador SAPS3:", e); }
+    
     // -----------------------------------------
     const up = [...patients];
     up[activeTab] = r;
@@ -3412,6 +3463,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
         handleBlurSave={handleBlurSave}
         toggleSAPSComorbidade={toggleSAPSComorbidade}
         handleFinalizeAdmission={handleFinalizeAdmission}
+        isReadOnly={!!patients[activeTab]?.admissaoMedica}
       />
 
       {/* MODAL: TEXTO GERADO PÓS-ADMISSÃO E ENFERMAGEM */}
