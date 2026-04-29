@@ -20,7 +20,7 @@ const NursingDashboard = ({
 return (
     <div className="space-y-6 animate-fadeIn text-left">
       {/* 1. SE A ADMISSÃO NÃO FOI FEITA, MOSTRAMOS O BOTÃO LIVRE DO FIELDSET */}
-      {!currentPatient.enfermagem?.braden_percepcao ? (
+      {!currentPatient.admissaoEnfermagem ? (
         <div className="flex flex-col items-center justify-center py-16 px-4 bg-white rounded-xl border-2 border-dashed border-orange-200 shadow-sm print:hidden">
           <AlertTriangle size={64} className="text-orange-300 mb-4" />
           <h3 className="text-xl font-bold text-slate-700 mb-2 text-center">Admissão de Enfermagem Pendente</h3>
@@ -121,7 +121,7 @@ return (
               onClick={(e) => { e.preventDefault(); handleNursingAdmission(); }}
               className="bg-slate-200 text-slate-700 px-6 rounded-xl text-sm font-bold hover:bg-slate-300 flex items-center justify-center gap-2 transition-colors border border-slate-300 shadow-sm print:hidden shrink-0"
             >
-              <Edit3 size={18} /> Reabrir Admissão
+              <Edit3 size={18} /> Ver Admissão
             </button>
 
           </div>

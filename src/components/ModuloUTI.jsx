@@ -1028,7 +1028,9 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
   };
 
   const handleNursingAdmission = () => {
-    const p = patients[activeTab].enfermagem || {};
+    // 👇 A MÁGICA ESTÁ AQUI: Puxamos do "Cofre" primeiro!
+    const p = patients[activeTab]?.admissaoEnfermagem || patients[activeTab]?.enfermagem || {};
+    
     setNursingData({
       dor: p.dor || "",
       hemodialise: p.hemodialise || false,
@@ -2280,14 +2282,21 @@ ESCALAS DE RISCO:
 Documento gerado eletronicamente e registrado nos indicadores de performance da unidade.
 `;
 
-    // 6. ATUALIZAÇÃO DO OBJETO DO PACIENTE
+    // 6. ATUALIZAÇÃO DO OBJETO DO PACIENTE (O SEGREDO DO COFRE ESTÁ AQUI)
+    
+    // A. Cria o "Cofre" da Admissão (só grava se ainda não existir)
+    if (!p.admissaoEnfermagem) {
+      p.admissaoEnfermagem = { 
+        ...nursingData, 
+        lesoes: lesoesLista,
+        dataRegistroAdmissao: new Date().toISOString()
+      };
+    }
+
+    // B. Alimenta a evolução diária (para que o NursingDashboard já nasça preenchido)
     if (!p.enfermagem) p.enfermagem = {};
     p.enfermagem = { ...p.enfermagem, ...nursingData, lesoes: lesoesLista };
     
-    // 👇 REMOVEMOS a atualização manual do React (setPatients) que estava a clonar os botões.
-    // O sistema agora vai enviar para o Firebase, e o seu próprio "radar" em tempo real
-    // do Firebase vai atualizar a tela no milissegundo seguinte, na ordem correta.
-
     // Salva no banco de dados
     if (typeof save === "function") {
       save(p, "Enfermagem: Admissão e Indicadores Atualizados");
@@ -3358,6 +3367,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
         setNursingData={setNursingData}
         handleBlurSave={handleBlurSave}
         handleFinalizeNursingAdmission={handleFinalizeNursingAdmission}
+        isReadOnly={!!patients[activeTab]?.admissaoEnfermagem}
       />
 
       {/* MODAL: ADMISSÃO DE FISIOTERAPIA */}
