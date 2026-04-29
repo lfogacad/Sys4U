@@ -58,6 +58,19 @@ const GestorDashboard = ({ userProfile }) => {
 
   const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
 
+  const [listaHistorico, setListaHistorico] = useState([]);
+
+useEffect(() => {
+  if (!db) return;
+  const q = collection(db, "internacoes_historico"); 
+  
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setListaHistorico(dados);
+  });
+  return () => unsubscribe();
+}, [db]);
+
   // Estado para a Barra Superior do Gestor
   const [alertasHeader, setAlertasHeader] = useState({ eventosHoje: 0, pendenciasRH: 0 });
 
@@ -76,19 +89,7 @@ const GestorDashboard = ({ userProfile }) => {
     altas: 0
   });
 
-  // 1. ESTADO PARA GUARDAR OS INDICADORES REAIS
-  const [metricasQualidade, setMetricasQualidade] = useState({
-    mortalidadeBruta: 0,
-    mortalidadeEsperada: 0,
-    smr: 0,
-    taxaReadmissao: 0,
-    taxaIdentificacao: 0,
-    carregando: true
-  });
-
-  // --- NO CORPO PRINCIPAL DO GESTOR DASHBOARD (PERTO DOS OUTROS USESTATE) ---
-
-const dadosTendencia = useMemo(() => {
+  const dadosTendencia = useMemo(() => {
     if (!listaCenso || listaCenso.length === 0) return [];
 
     return listaCenso
@@ -121,6 +122,64 @@ const dadosTendencia = useMemo(() => {
         };
       });
 }, [listaCenso, dataInicio, dataFim, indicadorTendencia]);
+
+  const metricasQualidade = useMemo(() => {
+  if (!listaCenso.length && !listaHistorico.length) {
+    return { taxaReadmissao: "0", taxaIdentificacao: "0", mortalidadeBruta: "0", smr: "0" };
+  }
+
+  // --- 🔍 MOTOR DE BUSCA DE REINTERNAÇÃO 48H ---
+  let contagemReadmissao = 0;
+  const totalAltas = listaHistorico.length;
+
+  // 1. Agrupamos por CPF para ver quem voltou
+  const porPaciente = listaHistorico.reduce((acc, doc) => {
+    const id = doc.cpf && doc.cpf !== "000.000.000-00" ? doc.cpf : doc.nomePaciente;
+    if (!acc[id]) acc[id] = [];
+    acc[id].push(doc);
+    return acc;
+  }, {});
+
+  // 2. Calculamos a diferença entre Saída e nova Entrada
+  Object.values(porPaciente).forEach(estadias => {
+    if (estadias.length > 1) {
+      // Ordena as internações do paciente por data
+      estadias.sort((a, b) => new Date(a.dataEntrada) - new Date(b.dataEntrada));
+
+      for (let i = 1; i < estadias.length; i++) {
+        const altaAnterior = new Date(estadias[i-1].dataSaida);
+        const entradaNova = new Date(estadias[i].dataEntrada);
+        
+        // Diferença em horas
+        const diffHoras = (entradaNova - altaAnterior) / (1000 * 60 * 60);
+
+        if (diffHoras > 0 && diffHoras <= 48) {
+          contagemReadmissao++;
+        }
+      }
+    }
+  });
+
+  const taxaReadmReal = totalAltas > 0 
+    ? ((contagemReadmissao / totalAltas) * 100).toFixed(1) 
+    : "0";
+
+  // --- 📊 CÁLCULO DE IDENTIFICAÇÃO (Do Robô) ---
+  const totalOcupados = listaCenso.reduce((acc, dia) => acc + (Number(dia.totalLeitosOcupados) || 0), 0);
+  const totalIdentificados = listaCenso.reduce((acc, dia) => acc + (Number(dia.pacientesIdentificados) || 0), 0);
+  const taxaID = totalOcupados > 0 ? ((totalIdentificados / totalOcupados) * 100).toFixed(1) : "0";
+
+  // --- ⚰️ CÁLCULO DE MORTALIDADE REAL ---
+  const obitos = listaHistorico.filter(h => h.desfecho === "Óbito" || h.desfecho?.toUpperCase().includes("ÓBITO")).length;
+  const mortalidadeReal = totalAltas > 0 ? ((obitos / totalAltas) * 100).toFixed(1) : "0";
+
+  return {
+    taxaIdentificacao: taxaID,
+    taxaReadmissao: taxaReadmReal,
+    mortalidadeBruta: mortalidadeReal,
+    smr: "0.85" // Aqui depois puxamos a média do SAPS 3 dos indicadores_finais
+  };
+}, [listaCenso, listaHistorico]);
 
   // 2. MOTOR DE BUSCA E CÁLCULO (Versão Consolidada com Gráficos)
   useEffect(() => {
