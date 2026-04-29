@@ -28,6 +28,7 @@ const GestorDashboard = ({ userProfile }) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [plantaoEditado, setPlantaoEditado] = useState(null);
   const [novoPlantonista, setNovoPlantonista] = useState("");
+  const [tipoTrocaPlantao, setTipoTrocaPlantao] = useState('Total'); // Pode ser 'Total', 'Dia' ou 'Noite'
   const [indicadorTendencia, setIndicadorTendencia] = useState('mortalidade');
   
   // Controles de Dados do Firebase
@@ -818,15 +819,60 @@ const GestorDashboard = ({ userProfile }) => {
     buscarPlantoesMes();
   }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
 
-  const abrirModalTroca = (turno, nomeAtual) => {
-    setPlantaoEditado({ turno, nomeAtual });
+  const abrirModalTroca = (plantaoId, turnoEHorario, nomeAtual) => {
+    setPlantaoEditado({ 
+      id: plantaoId,             // A coordenada exata do plantão na tela!
+      turno: turnoEHorario,      // "DN (07:00 - 07:00)"
+      nomeAtual: nomeAtual       // "Dr. Augusto"
+    });
+    
     setNovoPlantonista(nomeAtual.includes('Pendente') ? "" : nomeAtual);
+    setTipoTrocaPlantao('Total'); // Garante que o rádio button sempre nasça zerado
     setIsEditModalOpen(true);
   };
 
   const salvarTrocaPlantao = () => {
-    alert(`Escala atualizada! O turno ${plantaoEditado.turno} foi assumido por: ${novoPlantonista}`);
+    if (!novoPlantonista.trim()) {
+      alert("Por favor, digite o nome do novo plantonista.");
+      return;
+    }
+
+    const nomeOriginal = plantaoEditado.nomeAtual;
+    const nomeNovo = novoPlantonista.trim();
+    let nomeFinal = "";
+
+    // A mágica de "fatiar" o plantão de 24h
+    if (tipoTrocaPlantao === 'Dia') {
+      nomeFinal = `${nomeNovo} (D) / ${nomeOriginal} (N)`;
+    } else if (tipoTrocaPlantao === 'Noite') {
+      nomeFinal = `${nomeOriginal} (D) / ${nomeNovo} (N)`;
+    } else {
+      nomeFinal = nomeNovo; // Troca Total
+    }
+
+    // ========================================================
+    // ATUALIZANDO A TELA (State do React)
+    // ========================================================
+    // Varremos a lista de plantões do dia. Quando achar o ID exato, injeta o nome novo.
+    setPlantoesDoDia(listaAnterior => 
+      listaAnterior.map(plantao => {
+        if (plantao.id === plantaoEditado.id) {
+          return { ...plantao, nome: nomeFinal };
+        }
+        return plantao;
+      })
+    );
+
+    // 🚨 ATENÇÃO PARA O FIREBASE:
+    // Se o senhor salva essa escala no banco de dados, o comando de update entraria aqui!
+    // Exemplo:
+    // await updateDoc(doc(db, "escalas", dataSelecionada), { 
+    //   [`plantonistas.${plantaoEditado.id}`]: nomeFinal 
+    // });
+
+    console.log("✅ Troca realizada com sucesso:", nomeFinal);
     setIsEditModalOpen(false);
+    setNovoPlantonista("");
   };
 
   const formatarDataBR = (strData) => {
@@ -1690,7 +1736,7 @@ const GestorDashboard = ({ userProfile }) => {
                         <div key={plantao.id} className={`p-4 ${corBg} border ${corBorder} rounded-xl relative group`}>
                           <span className={`text-[10px] font-bold ${corText} uppercase`}>{plantao.turno} ({plantao.horario})</span>
                           <div className="text-lg font-black text-slate-800 mt-1">{plantao.nome}</div>
-                          <button onClick={() => abrirModalTroca(`${plantao.turno} (${plantao.horario})`, plantao.nome)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Substituir Plantonista">
+                          <button onClick={() => abrirModalTroca(plantao.id, `${plantao.turno} (${plantao.horario})`, plantao.nome)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Substituir Plantonista">
                             <Settings size={16} />
                           </button>
                         </div>
@@ -1755,13 +1801,37 @@ const GestorDashboard = ({ userProfile }) => {
                 <div className="p-6 space-y-4">
                   <div><div className="text-xs font-bold text-slate-400 uppercase">Turno e Horário</div><div className="font-bold text-slate-700">{plantaoEditado.turno}</div></div>
                   <div><div className="text-xs font-bold text-slate-400 uppercase">Plantonista Original (Excel)</div><div className="text-sm text-slate-500 line-through">{plantaoEditado.nomeAtual}</div></div>
+                  
+                  {/* LÓGICA DE DESMEMBRAMENTO DE PLANTÃO DN */}
+                  {(plantaoEditado.turno === 'DN' || plantaoEditado.turno?.toUpperCase().includes('24H')) && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <label className="block text-sm font-bold text-blue-600 mb-2">Qual período será trocado?</label>
+                      <div className="flex flex-col gap-2">
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors">
+                          <input type="radio" name="tipoTroca" value="Total" checked={tipoTrocaPlantao === 'Total'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> 
+                          Plantão Completo (DN)
+                        </label>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors">
+                          <input type="radio" name="tipoTroca" value="Dia" checked={tipoTrocaPlantao === 'Dia'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> 
+                          Somente Dia (D)
+                        </label>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors">
+                          <input type="radio" name="tipoTroca" value="Noite" checked={tipoTrocaPlantao === 'Noite'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> 
+                          Somente Noite (N)
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="pt-2 border-t border-slate-100">
-                    <label className="block text-sm font-bold text-blue-600 mb-2">Novo Plantonista Assumindo:</label>
+                    <label className="block text-sm font-bold text-blue-600 mb-2">
+                      Novo Plantonista Assumindo {tipoTrocaPlantao !== 'Total' && plantaoEditado.turno === 'DN' ? `(Turno ${tipoTrocaPlantao})` : ''}:
+                    </label>
                     <input type="text" value={novoPlantonista} onChange={(e) => setNovoPlantonista(e.target.value)} placeholder="Ex: Dr. Carlos Silva" className="w-full p-3 bg-blue-50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-bold" />
                   </div>
                 </div>
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
-                  <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
+                  <button onClick={() => { setIsEditModalOpen(false); setTipoTrocaPlantao('Total'); }} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
                   <button onClick={salvarTrocaPlantao} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">Confirmar Troca</button>
                 </div>
               </div>
