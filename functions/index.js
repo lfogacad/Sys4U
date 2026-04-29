@@ -16,9 +16,10 @@ exports.gerarCensoUTI = onSchedule({
   try {
     const leitosSnapshot = await db.collection("leitos_uti").get();
     
-    const hoje = new Date().toLocaleString("pt-BR", { timeZone: "America/Porto_Velho" }).split(" ")[0];
+    const agora = new Date();
+    agora.setHours(agora.getHours() - 4);
     const [dia, mes, ano] = hoje.split("/");
-    const dataFormatada = `${ano}-${mes}-${dia}`;
+    const dataFormatada = agora.toISOString().split('T')[0];
 
     let contadores = {
       data: dataFormatada,

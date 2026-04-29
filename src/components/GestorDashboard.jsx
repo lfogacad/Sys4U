@@ -59,7 +59,6 @@ const GestorDashboard = ({ userProfile }) => {
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
   const [listaHistorico, setListaHistorico] = useState([]);
-  const [alertasHeader, setAlertasHeader] = useState({ eventosHoje: 0, pendenciasRH: 0 });
   const [metricasEquipe, setMetricasEquipe] = useState({
     total: 0, ativos: 0, pendentes: 0, carregando: true
   });
@@ -93,6 +92,29 @@ const GestorDashboard = ({ userProfile }) => {
 // =========================================================
   // 3. CÁLCULOS (useMemo) - A INTELIGÊNCIA (DADOS PROCESSADOS)
   // =========================================================
+  
+  // =========================================================
+  // ALERTAS DO CABEÇALHO (FILTRO DIÁRIO)
+  // =========================================================
+  const alertasHeader = useMemo(() => {
+    // 1. Pegamos o dia de hoje no formato "29 abr" (igual à linha do tempo)
+    const hojeFormatado = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+
+    // 2. Filtramos quem bate exatamente com o dia de hoje
+    const eventosDeHoje = listaEventosAdversos.filter(evento => {
+      if (!evento.dataEvento) return false;
+      
+      // Converte a data do evento para o mesmo formato "29 abr"
+      const dataEventoFormatada = new Date(evento.dataEvento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+      
+      return dataEventoFormatada === hojeFormatado;
+    }).length;
+
+    return {
+      eventosHoje: eventosDeHoje,
+      pendenciasRH: 0 
+    };
+  }, [listaEventosAdversos]);
 
   // Cálculo da Ocupação Atual, Giro e LOS (EM TEMPO REAL E HISTÓRICO)
   const metricasOperacionais = useMemo(() => {
@@ -119,38 +141,58 @@ const GestorDashboard = ({ userProfile }) => {
     };
   }, [leitosConfig, capacidadeInput, listaHistorico]);
 
-  // Cálculo para os Gráficos de Tendência
+// =========================================================
+  // 3. MOTOR DE TENDÊNCIAS (BLINDADO CONTRA FORMATOS DE DATA)
+  // =========================================================
   const dadosTendencia = useMemo(() => {
     if (!listaCenso || listaCenso.length === 0) return [];
 
     return listaCenso
-      .filter(dia => dia.data >= dataInicio && dia.data <= dataFim)
-      .sort((a, b) => a.data.localeCompare(b.data))
+      .map(dia => {
+        // TRADUTOR: Remove vírgulas e padroniza para YYYY-MM-DD
+        let dataLimpa = String(dia.data || "").replace(',', '').trim();
+        let dataPadrao = "";
+        
+        if (dataLimpa.includes("/")) {
+          const partes = dataLimpa.split("/");
+          if (partes.length >= 3) {
+            dataPadrao = `${partes[2].trim()}-${partes[1].padStart(2, '0')}-${partes[0].padStart(2, '0')}`;
+          }
+        } else {
+          dataPadrao = dataLimpa.substring(0, 10);
+        }
+
+        return { ...dia, dataPadrao };
+      })
+      .filter(dia => {
+        // Agora a comparação será entre "2026-04-29" e "2026-03-30"
+        return dia.dataPadrao >= dataInicio && dia.dataPadrao <= dataFim;
+      })
+      .sort((a, b) => a.dataPadrao.localeCompare(b.dataPadrao))
       .map(dia => {
         let valor = 0;
-        const configIndicadores = {
-            mortalidade:   { key: 'morte' }, 
-            smr:           { key: 'smr' }, 
-            identificacao: { key: 'id' }, 
-            diasVM:        { key: 'vm' },
-            ocupacao:      { key: 'ocupacao' },
-            giroLeito:     { key: 'giroLeito' },
-            los:           { key: 'los' },
-            readmissao:    { key: 'readmissao' },
+        const chavesDoGrafico = {
+          mortalidade: 'morte', smr: 'smr', identificacao: 'id',
+          diasVM: 'vm', ocupacao: 'ocupacao', giroLeito: 'giroLeito',
+          los: 'los', readmissao: 'readmissao'
         };
-        const keyAtual = configIndicadores[indicadorTendencia]?.key || 'morte';
-        
+        const chaveExata = chavesDoGrafico[indicadorTendencia] || 'ocupacao';
+
         if (indicadorTendencia === 'ocupacao') {
-          valor = (dia.totalLeitosOcupados / (capacidadeInput || 10)) * 100;
+          valor = ((dia.totalLeitosOcupados || 0) / (capacidadeInput || 10)) * 100;
         } else if (indicadorTendencia === 'identificacao') {
-          valor = dia.totalLeitosOcupados > 0 ? (dia.pacientesIdentificados / dia.totalLeitosOcupados) * 100 : 0;
+          valor = dia.totalLeitosOcupados > 0 ? ((dia.pacientesIdentificados || 0) / dia.totalLeitosOcupados) * 100 : 0;
+        } else if (indicadorTendencia === 'mortalidade') {
+          valor = dia.obitos || 0;
+        } else if (indicadorTendencia === 'diasVM') {
+          valor = dia.pacientesEmVM || 0;
         } else {
-          valor = dia[keyAtual] || 0;
+          valor = dia[chaveExata] || 0;
         }
 
         return {
-          name: new Date(dia.data + "T00:00:00").toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
-          [keyAtual]: Number(Number(valor).toFixed(1))
+          name: new Date(dia.dataPadrao + "T12:00:00").toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+          [chaveExata]: Number(Number(valor).toFixed(1))
         };
       });
   }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput]);
@@ -234,6 +276,11 @@ const GestorDashboard = ({ userProfile }) => {
         // --- 2. BUSCA NO HISTÓRICO E CENSO ---
         const historicoSnap = await getDocs(collection(db, "internacoes_historico"));
         const censoSnap = await getDocs(collection(db, "censo_diario"));
+        const dadosBrutosCenso = censoSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setListaCenso(dadosBrutosCenso);
 
         const consolidadoMensal = {};
         
@@ -350,15 +397,6 @@ const GestorDashboard = ({ userProfile }) => {
         const mReal = altasMes > 0 ? (obitosMes / altasMes) : 0;
         const mEsp = sapsCalculadosMes > 0 ? (somaProbMes / sapsCalculadosMes) / 100 : 0;
 
-        setMetricasQualidade({
-          mortalidadeBruta: (mReal * 100).toFixed(1),
-          mortalidadeEsperada: (mEsp * 100).toFixed(1),
-          smr: mEsp > 0 ? (mReal / mEsp).toFixed(2) : "0.00",
-          taxaReadmissao: altasMes > 0 ? ((readmissoes / altasMes) * 100).toFixed(1) : 0,
-          taxaIdentificacao: somaLeitosCensoMes > 0 ? ((somaIdentificadosCensoMes / somaLeitosCensoMes) * 100).toFixed(0) : 0,
-          carregando: false
-        });
-
        // Gráfico de Barras (Dispositivos)
         setDadosDispositivos([
           { name: 'VMI', dias: diasVMMes, fill: '#3b82f6' },
@@ -457,12 +495,6 @@ const GestorDashboard = ({ userProfile }) => {
           if (ev.dataEvento && ev.dataEvento.startsWith(hojeISO)) {
             countEventosHoje++;
           }
-        });
-
-        // Atualiza o estado que alimenta os cards superiores
-        setAlertasHeader({
-          eventosHoje: countEventosHoje,
-          pendenciasRH: countRH
         });
 
       } catch (error) {
@@ -1100,14 +1132,14 @@ const GestorDashboard = ({ userProfile }) => {
   const renderTendencias = () => {
   // 1. Mapeamento de configurações
   const configIndicadores = {
-    mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444', key: 'morte' }, 
+    mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444', key: 'obitos' }, 
     smr:           { label: 'SMR (SAPS 3)', color: '#10b981', key: 'smr' }, 
-    identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4', key: 'id' }, 
-    diasVM:        { label: 'Densidade de Ventilação Mecânica (p/ 1000 d-p)', color: '#6366f1', key: 'vm' },
-    ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6', key: 'ocupacao' },
-    giroLeito:     { label: 'Giro de Leito', color: '#8b5cf6', key: 'giroLeito' },
-    los:           { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b', key: 'los' },
-    readmissao:    { label: 'Readmissão em 48h (%)', color: '#f97316', key: 'readmissao' },
+    identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4', key: 'pacientesIdentificados' }, 
+    diasVM:        { label: 'Densidade de Ventilação Mecânica (p/ 1000 d-p)', color: '#6366f1', key: 'pacientesEmVM' },
+    ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6', key: 'totalLeitosOcupados' },
+    giroLeito:     { label: 'Giro de Leito', color: '#8b5cf6', key: 'giro' },
+    los:           { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b', key: 'losMedia' },
+    readmissao:    { label: 'Readmissão em 48h (%)', color: '#f97316', key: 'readmissoes' },
   };
 
   const configAtual = configIndicadores[indicadorTendencia] || configIndicadores['mortalidade'];
