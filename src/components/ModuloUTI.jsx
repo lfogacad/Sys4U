@@ -1126,6 +1126,19 @@ Paciente apresentou boa tolerância às manobras, sem intercorrências hemodinâ
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
 
+    // ========================================================
+    // O COFRE DA FISIOTERAPIA (Congela a imagem da Admissão)
+    // ========================================================
+    if (!p.admissaoFisioterapia) {
+      p.admissaoFisioterapia = { 
+        ...physioData,
+        dataRegistroAdmissao: new Date().toISOString()
+      };
+    }
+
+    // ========================================================
+    // ALIMENTANDO A LOUSA DE EVOLUÇÃO DIÁRIA
+    // ========================================================
     if (!p.physio) p.physio = {};
 
     p.physio.admissao_estadoGeral = physioData.estadoGeral;
@@ -3379,6 +3392,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
         setPhysioData={setPhysioData}
         handleBlurSave={handleBlurSave}
         handleFinalizePhysioAdmission={handleFinalizePhysioAdmission}
+        isReadOnly={!!patients[activeTab]?.admissaoFisioterapia}
       />
 
       {/* MODAL: TEXTO GERADO PÓS-ADMISSÃO FISIO */}

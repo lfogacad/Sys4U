@@ -218,7 +218,7 @@ const PhysioDashboard = ({
           onClick={(e) => { e.preventDefault(); handlePhysioAdmission(); }}
           className="flex items-center gap-2 px-4 py-2 bg-white border border-cyan-200 text-cyan-700 hover:bg-cyan-50 rounded-lg text-sm font-bold shadow-sm transition-colors"
         >
-          <UserPlus size={16} /> Reabrir Admissão Fisioterapêutica
+          <UserPlus size={16} /> Ver Admissão Fisioterapêutica
         </button>
       </div>
 
