@@ -208,16 +208,45 @@ const handleAtribuirVinculo = async (e) => {
 
   // --- NOVAS FUNÇÕES DE GESTÃO ---
 
-  const excluirProfissional = async (id, nome) => {
-    if (window.confirm(`🚨 ATENÇÃO: Tem a certeza que deseja excluir DEFINITIVAMENTE o cadastro de ${nome}? Esta ação não pode ser desfeita.`)) {
+  const excluirProfissional = async (profissional) => {
+    const { id, nome, numeroConselho } = profissional;
+
+    if (window.confirm(`🚨 ATENÇÃO: Tem a certeza que deseja excluir DEFINITIVAMENTE o cadastro de ${nome}? \n\nIsso apagará o acesso e o histórico nas duas bases.`)) {
       try {
+        setIsUpdating(true); // Se tiver esse state para loading
+
+        // 1. 🗑️ Apaga da coleção 'profissionais'
         await deleteDoc(doc(db, "profissionais", id));
-        alert("Profissional excluído com sucesso.");
-        // Se tiver uma função que recarrega a tabela (ex: fetchUsers), chame-a aqui!
-        // fetchUsers(); 
+        console.log("✅ Removido da coleção profissionais");
+
+        // 2. 🔍 Radar para achar e apagar na coleção 'usuarios' (Portaria)
+        const conselhoString = String(numeroConselho);
+        const q = query(
+          collection(db, "usuarios"), 
+          where("numeroConselho", "==", conselhoString)
+        );
+        
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          const userDocId = querySnapshot.docs[0].id;
+          await deleteDoc(doc(db, "usuarios", userDocId));
+          console.log("✅ Removido da coleção usuários");
+        }
+
+        alert(`${nome} foi removido com sucesso das bases de dados.`);
+        
+        // 3. 💡 Nota sobre o Authentication:
+        alert("Nota: O acesso foi bloqueado no banco, mas por segurança, você deve apagar o e-mail manualmente no painel 'Authentication' do Firebase caso deseje liberar o e-mail para um novo cadastro.");
+
+        // Recarregue sua lista aqui
+        // fetchProfissionais();
+
       } catch (error) {
-        console.error("Erro ao excluir:", error);
-        alert("Erro ao excluir profissional.");
+        console.error("Erro ao realizar exclusão total:", error);
+        alert("Erro ao excluir profissional. Verifique o console.");
+      } finally {
+        setIsUpdating(false);
       }
     }
   };
@@ -480,7 +509,7 @@ const handleAtribuirVinculo = async (e) => {
                               </button>
 
                               <button 
-                                onClick={() => excluirProfissional(u.id, u.nome)}
+                                onClick={() => excluirProfissional(u)}
                                 title="Excluir Definitivamente"
                                 className="p-2.5 bg-red-50 text-red-500 hover:bg-red-600 hover:text-white rounded-xl transition-colors"
                               >
