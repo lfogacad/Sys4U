@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
-  ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, Shield, 
+  ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, 
   Bed, Save, Bell, Calculator, Loader2, ArrowRight 
 } from 'lucide-react';
 import { 
@@ -37,6 +37,13 @@ const GestorDashboard = ({ userProfile }) => {
   const [plantoesDoMes, setPlantoesDoMes] = useState({});
   const [isLoadingMes, setIsLoadingMes] = useState(false);
   const [consolidadoDia, setConsolidadoDia] = useState({});
+
+  const [statusPlantonista, setStatusPlantonista] = useState('Normal'); // 'Normal', 'Falta', 'Atestado'
+  const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
+  const [extraTurno, setExtraTurno] = useState('DN');
+  const [extraNome, setExtraNome] = useState('');
+
+  const [listaMedicos, setListaMedicos] = useState([]);
 
   const [loadingGraficos, setLoadingGraficos] = useState(true);
 
@@ -89,6 +96,34 @@ const GestorDashboard = ({ userProfile }) => {
     });
     return () => unsubscribe();
   }, [db]);
+
+  // BUSCA A EQUIPE DE MÉDICOS NO FIREBASE
+  useEffect(() => {
+    const carregarEquipeMedica = async () => {
+      try {
+        // Aponta para a coleção 'profissionais' filtrando apenas por 'Médico'
+        // (Ajuste o nome do campo se no seu banco estiver diferente de "categoria" ou "cargo")
+        const profRef = collection(db, "profissionais");
+        const q = query(profRef, where("categoria", "==", "Médico")); 
+        
+        const querySnapshot = await getDocs(q);
+        const medicosTemp = [];
+        
+        querySnapshot.forEach((doc) => {
+          medicosTemp.push({ id: doc.id, ...doc.data() });
+        });
+
+        // Coloca em ordem alfabética para facilitar a busca
+        medicosTemp.sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+        
+        setListaMedicos(medicosTemp);
+      } catch (error) {
+        console.error("Erro ao carregar a lista de médicos:", error);
+      }
+    };
+
+    carregarEquipeMedica();
+  }, []);
 
 // =========================================================
   // 3. CÁLCULOS (useMemo) - A INTELIGÊNCIA (DADOS PROCESSADOS)
@@ -789,16 +824,73 @@ const GestorDashboard = ({ userProfile }) => {
 
         querySnapshot.forEach((doc) => {
           const p = doc.data();
+          
           if (p.data && p.data.startsWith(anoMesAlvo)) {
-            if (!dadosAgrupados[p.nome]) dadosAgrupados[p.nome] = {};
-            const dia = p.data.split('-')[2]; 
-            if (!dadosAgrupados[p.nome][dia]) dadosAgrupados[p.nome][dia] = [];
-            if (!dadosAgrupados[p.nome][dia].includes(p.sigla)) {
-              dadosAgrupados[p.nome][dia].push(p.sigla);
+            let atribuicoes = [];
+            let strNome = p.nome || "";
+            let siglaOriginal = p.sigla;
+
+            // ======================================================
+            // DECODIFICADOR DE SUBSTITUIÇÕES E OCORRÊNCIAS
+            // ======================================================
+            
+            // 1. É um EXTRA?
+            if (strNome.includes('[EXTRA]')) {
+              atribuicoes.push({ nome: strNome.replace('[EXTRA]', '').trim(), sigla: siglaOriginal });
+            } 
+            // 2. É uma Troca Fatiada (Dia / Noite)?
+            else if (strNome.includes(' / ')) {
+              let partes = strNome.split(' / ');
+              partes.forEach(parte => {
+                // Tenta achar o nome e o turno, ex: "Dra. Julia (D)"
+                let match = parte.match(/(.+?)\s*\((D|N)\)/);
+                if (match) {
+                  let nomeExt = match[1].trim();
+                  let siglaExt = match[2];
+                  // Só atribui se o médico daquele turno NÃO faltou
+                  if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]')) {
+                    atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
+                  }
+                }
+              });
+            } 
+            // 3. É uma Cobertura Total?
+            else if (strNome.includes('(Cobrindo:')) {
+              // Pega apenas quem está cobrindo, ignorando quem faltou
+              let match = strNome.match(/(.+?)\s*\(Cobrindo:/);
+              if (match) {
+                atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
+              }
+            } 
+            // 4. O médico faltou ou deu atestado e NINGUÉM cobriu?
+            else if (strNome.includes('[FALTOU]') || strNome.includes('[ATESTADO]')) {
+               // Ninguém recebe o plantão, o buraco fica vazio na escala do mês!
+            } 
+            // 5. Plantão Normal
+            else {
+              atribuicoes.push({ nome: strNome.trim(), sigla: siglaOriginal });
             }
+
+            // ======================================================
+            // INJETAR OS RESULTADOS NA GRADE MENSAL
+            // ======================================================
+            const dia = p.data.split('-')[2]; 
+            
+            atribuicoes.forEach(attr => {
+              const nomeFinal = attr.nome.toUpperCase(); // Normaliza o nome para evitar linhas duplicadas
+              const siglaFinal = attr.sigla;
+
+              if (!dadosAgrupados[nomeFinal]) dadosAgrupados[nomeFinal] = {};
+              if (!dadosAgrupados[nomeFinal][dia]) dadosAgrupados[nomeFinal][dia] = [];
+              
+              if (!dadosAgrupados[nomeFinal][dia].includes(siglaFinal)) {
+                dadosAgrupados[nomeFinal][dia].push(siglaFinal);
+              }
+            });
           }
         });
 
+        // Ordenar os turnos bonitinho dentro do mesmo dia (se fizer M e depois N)
         const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6 };
         Object.keys(dadosAgrupados).forEach(nome => {
           Object.keys(dadosAgrupados[nome]).forEach(dia => {
@@ -808,7 +900,15 @@ const GestorDashboard = ({ userProfile }) => {
           });
         });
 
-        setPlantoesDoMes(dadosAgrupados);
+        // Ordena os nomes em ordem alfabética para a tabela
+        const dadosOrdenados = Object.keys(dadosAgrupados)
+          .sort()
+          .reduce((acc, key) => {
+            acc[key] = dadosAgrupados[key];
+            return acc;
+          }, {});
+
+        setPlantoesDoMes(dadosOrdenados);
       } catch (error) {
         console.error("Erro ao buscar a escala do mês:", error);
       } finally {
@@ -821,58 +921,124 @@ const GestorDashboard = ({ userProfile }) => {
 
   const abrirModalTroca = (plantaoId, turnoEHorario, nomeAtual) => {
     setPlantaoEditado({ 
-      id: plantaoId,             // A coordenada exata do plantão na tela!
-      turno: turnoEHorario,      // "DN (07:00 - 07:00)"
-      nomeAtual: nomeAtual       // "Dr. Augusto"
+      id: plantaoId, 
+      turno: turnoEHorario, 
+      nomeAtual: nomeAtual 
     });
     
-    setNovoPlantonista(nomeAtual.includes('Pendente') ? "" : nomeAtual);
-    setTipoTrocaPlantao('Total'); // Garante que o rádio button sempre nasça zerado
+    setNovoPlantonista("");
+    setTipoTrocaPlantao('Total'); 
+    setStatusPlantonista('Normal'); // Reseta para Normal ao abrir
     setIsEditModalOpen(true);
   };
 
-  const salvarTrocaPlantao = () => {
-    if (!novoPlantonista.trim()) {
-      alert("Por favor, digite o nome do novo plantonista.");
+  const salvarTrocaPlantao = async () => {
+    // Validação da Troca Normal
+    if (statusPlantonista === 'Normal' && !novoPlantonista.trim()) {
+      alert("Por favor, selecione o nome do novo plantonista.");
       return;
     }
 
-    const nomeOriginal = plantaoEditado.nomeAtual;
-    const nomeNovo = novoPlantonista.trim();
+    // ======================================================
+    // 1. LAVA JATO DE TAGS (Evita o acúmulo de [FALTOU] [ATESTADO])
+    // Pega o nome atual e arranca qualquer tag ou barra anterior
+    // ======================================================
+    let nomeLimpo = plantaoEditado.nomeAtual
+      .replace(/\[FALTOU\]/g, '')
+      .replace(/\[ATESTADO\]/g, '')
+      .replace(/\(D\)/g, '')
+      .replace(/\(N\)/g, '')
+      .split('/')[0] // Se for uma troca antiga fatiada (Ex: João / Maria), pega só o primeiro para resetar
+      .trim();
+
     let nomeFinal = "";
 
-    // A mágica de "fatiar" o plantão de 24h
-    if (tipoTrocaPlantao === 'Dia') {
-      nomeFinal = `${nomeNovo} (D) / ${nomeOriginal} (N)`;
-    } else if (tipoTrocaPlantao === 'Noite') {
-      nomeFinal = `${nomeOriginal} (D) / ${nomeNovo} (N)`;
-    } else {
-      nomeFinal = nomeNovo; // Troca Total
+    // ======================================================
+    // 2. APLICA A NOVA REGRA SIMPLIFICADA
+    // ======================================================
+    if (statusPlantonista === 'Falta') {
+      // Falta é irreversível para o plantão todo na visão desse bloco
+      nomeFinal = `${nomeLimpo} [FALTOU]`; 
+    } 
+    else if (statusPlantonista === 'Atestado') {
+      // Atestado pode ser parcial
+      if (tipoTrocaPlantao === 'Dia') nomeFinal = `${nomeLimpo} [ATESTADO] (D) / ${nomeLimpo} (N)`;
+      else if (tipoTrocaPlantao === 'Noite') nomeFinal = `${nomeLimpo} (D) / ${nomeLimpo} [ATESTADO] (N)`;
+      else nomeFinal = `${nomeLimpo} [ATESTADO]`; // Total
+    } 
+    else if (statusPlantonista === 'Normal') {
+      // Troca simples de nomes
+      const novo = novoPlantonista.trim();
+      if (tipoTrocaPlantao === 'Dia') nomeFinal = `${novo} (D) / ${nomeLimpo} (N)`;
+      else if (tipoTrocaPlantao === 'Noite') nomeFinal = `${nomeLimpo} (D) / ${novo} (N)`;
+      else nomeFinal = novo; // Total
     }
 
-    // ========================================================
-    // ATUALIZANDO A TELA (State do React)
-    // ========================================================
-    // Varremos a lista de plantões do dia. Quando achar o ID exato, injeta o nome novo.
+    // ======================================================
+    // 3. ATUALIZA A TELA E O BANCO
+    // ======================================================
     setPlantoesDoDia(listaAnterior => 
       listaAnterior.map(plantao => {
-        if (plantao.id === plantaoEditado.id) {
-          return { ...plantao, nome: nomeFinal };
-        }
+        if (plantao.id === plantaoEditado.id) return { ...plantao, nome: nomeFinal };
         return plantao;
       })
     );
 
-    // 🚨 ATENÇÃO PARA O FIREBASE:
-    // Se o senhor salva essa escala no banco de dados, o comando de update entraria aqui!
-    // Exemplo:
-    // await updateDoc(doc(db, "escalas", dataSelecionada), { 
-    //   [`plantonistas.${plantaoEditado.id}`]: nomeFinal 
-    // });
+    try {
+      const escalaRef = doc(db, "escalas", plantaoEditado.id); 
+      await updateDoc(escalaRef, {
+        nome: nomeFinal,
+        statusAlteracao: statusPlantonista, 
+        modificadoEm: new Date().toISOString()
+      });
+      console.log("✅ Atualização salva no Firebase com sucesso!");
+    } catch (error) {
+      console.error("❌ Erro ao salvar troca no Firebase:", error);
+    }
 
-    console.log("✅ Troca realizada com sucesso:", nomeFinal);
     setIsEditModalOpen(false);
-    setNovoPlantonista("");
+  };
+
+  const adicionarPlantonistaExtra = async () => {
+    if (!extraNome.trim()) {
+      alert("Por favor, digite o nome do plantonista extra.");
+      return;
+    }
+
+    let horario = extraTurno === 'DN' ? '07:00 às 07:00' : extraTurno === 'D' ? '07:00 às 19:00' : '19:00 às 07:00';
+    let turnoFormatado = extraTurno === 'DN' ? 'Plantão 24h' : extraTurno === 'D' ? 'Plantão Dia' : 'Plantão Noite';
+    
+    // Montamos o objeto exatamente como o seu Firebase exige
+    const novoPlantaoDB = {
+      cadastradoEm: new Date().toISOString(),
+      categoria: categoriaAtiva, // Deve ser "Médico" baseado no seu painel
+      data: dataSelecionada, // A data que o senhor está visualizando na tela
+      horario: horario,
+      nome: `${extraNome.trim().toUpperCase()} [EXTRA]`,
+      sigla: extraTurno,
+      status: "Confirmado",
+      tipo: "plantao_extra",
+      turno: turnoFormatado
+    };
+
+    // Criamos um ID no mesmo padrão do seu sistema para manter a organização
+    const novoDocId = `${dataSelecionada}_${categoriaAtiva}_EXTRA_${Date.now()}`;
+
+    // 1. ATUALIZA A TELA INSTANTANEAMENTE
+    setPlantoesDoDia([...plantoesDoDia, { id: novoDocId, ...novoPlantaoDB }]);
+    
+    // 2. CRIA O NOVO DOCUMENTO NO FIREBASE
+    try {
+      // Usamos setDoc para criar um documento com ID específico na coleção "escalas"
+      await setDoc(doc(db, "escalas", novoDocId), novoPlantaoDB);
+      console.log("✅ Plantonista Extra criado no Firebase!");
+    } catch (error) {
+      console.error("❌ Erro ao criar Extra no Firebase:", error);
+    }
+
+    setIsExtraModalOpen(false);
+    setExtraNome("");
+    setExtraTurno("DN");
   };
 
   const formatarDataBR = (strData) => {
@@ -1461,81 +1627,123 @@ const GestorDashboard = ({ userProfile }) => {
 };
 
   // ==========================================
-  // VISÃO 4: AUDITORIA E CONFORMIDADE
+  // VISÃO 4: GESTÃO DE RISCO E EVENTOS ADVERSOS
   // ==========================================
   const renderAuditoria = () => {
-    const dataConformidade = [
-      { setor: 'Médico', preenchido: 85, pendente: 15 },
-      { setor: 'Enfermagem', preenchido: 96, pendente: 4 },
-      { setor: 'Fisioterapia', preenchido: 90, pendente: 10 },
+    // Dados temporários (Mocks) para visualização até criarmos o banco de dados
+    const dadosCategorias = [
+      { categoria: 'Medicação/Soro', ocorrencias: 8 },
+      { categoria: 'Lesão por Pressão', ocorrencias: 5 },
+      { categoria: 'Perda de Dispositivo', ocorrencias: 4 },
+      { categoria: 'Infecção (IRAS)', ocorrencias: 3 },
+      { categoria: 'Queda', ocorrencias: 0 },
     ];
 
-    const alertasPendencias = [
-      { id: 1, leito: '02', paciente: 'João S. (45a)', pendencia: 'Evolução Médica Diária ausente', tempo: 'Atrasado > 24h', gravidade: 'alta' },
-      { id: 2, leito: '05', paciente: 'Maria C. (72a)', pendencia: 'Escala de Braden não atualizada', tempo: 'Venceu às 14h', gravidade: 'media' },
-      { id: 3, leito: '08', paciente: 'Carlos R. (59a)', pendencia: 'Falta assinar alta de ontem', tempo: 'Pendente Doc', gravidade: 'alta' },
-      { id: 4, leito: '10', paciente: 'Ana P. (81a)', pendencia: 'Checklist de CVC em branco', tempo: 'D2 do Acesso', gravidade: 'baixa' },
+    const ultimasNotificacoes = [
+      { id: 1, data: '30/04', leito: '03', evento: 'Extubação Acidental', gravidade: 'grave', status: 'Pendente RT' },
+      { id: 2, data: '29/04', leito: '07', evento: 'Erro de Dose de Noradrenalina', gravidade: 'moderada', status: 'Em Análise' },
+      { id: 3, data: '28/04', leito: '02', evento: 'Lesão por Pressão Estágio II', gravidade: 'moderada', status: 'Plano de Ação Criado' },
+      { id: 4, data: '28/04', leito: '09', evento: 'Flebite em Acesso Periférico', gravidade: 'leve', status: 'Concluído' },
     ];
 
     return (
       <div className="animate-fadeIn">
+        {/* CABEÇALHO */}
         <div className="flex items-center gap-4 mb-8">
           <button onClick={() => setActiveView('hub')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
             <ArrowLeft size={20} className="text-slate-700" />
           </button>
           <div>
-            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><FileCheck className="text-amber-600" /> Auditoria de Prontuários</h2>
-            <p className="text-slate-500 text-sm mt-1">Conformidade de preenchimento, escalas e checagem de prescrições.</p>
+            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+              <ShieldAlert className="text-red-600" /> Gestão de Risco e Eventos Adversos
+            </h2>
+            <p className="text-slate-500 text-sm mt-1">Monitoramento contínuo da Segurança do Paciente e Cultura Não Punitiva.</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex gap-4 items-center">
+        {/* BARRA DE AÇÕES E FILTROS */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-wrap gap-4 items-center">
           <Clock size={18} className="text-slate-400" />
-          <select className="bg-slate-50 border border-slate-200 p-2 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-amber-500">
-            <option>Plantão Atual (Hoje)</option><option>Consolidado do Mês</option>
+          <select className="bg-slate-50 border border-slate-200 p-2 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-red-500">
+            <option>Mês Atual (Abril/2026)</option>
+            <option>Mês Anterior (Março/2026)</option>
+            <option>Acumulado do Ano</option>
           </select>
-          <button className="ml-auto bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">Notificar Equipe</button>
+          <button className="ml-auto bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow-sm">
+            <PlusCircle size={16} /> Nova Notificação
+          </button>
         </div>
 
+        {/* KPIs SUPERIORES */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Adesão Global (Prontuário)</span><div className="text-3xl font-black text-emerald-600 mt-1">90%</div><div className="text-[10px] text-slate-400 font-bold mt-1">Meta: &gt; 95%</div></div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Evoluções Pendentes</span><div className="text-3xl font-black text-red-600 mt-1">3</div><div className="text-[10px] text-slate-400 font-bold mt-1">Das últimas 24h</div></div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Assinaturas Faltantes</span><div className="text-3xl font-black text-amber-500 mt-1">12</div><div className="text-[10px] text-slate-400 font-bold mt-1">Documentos abertos</div></div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><span className="text-[10px] font-bold text-slate-400 uppercase">Prescrições Checadas</span><div className="text-3xl font-black text-blue-600 mt-1">98%</div><div className="text-[10px] text-slate-400 font-bold mt-1">Pela Enfermagem</div></div>
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Notificações</span>
+            <div className="text-3xl font-black text-slate-800 mt-1">20</div>
+            <div className="text-[10px] text-emerald-500 font-bold mt-1 flex items-center gap-1">Notificar é um ato de segurança</div>
+          </div>
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Eventos Graves / Sentinela</span>
+            <div className="text-3xl font-black text-red-600 mt-1">1</div>
+            <div className="text-[10px] text-slate-400 font-bold mt-1">Requer análise raiz (Ishikawa)</div>
+          </div>
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Investigações Pendentes</span>
+            <div className="text-3xl font-black text-amber-500 mt-1">3</div>
+            <div className="text-[10px] text-slate-400 font-bold mt-1">Aguardando parecer do RT</div>
+          </div>
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Maior Incidência</span>
+            <div className="text-xl font-black text-blue-600 mt-1 truncate">Medicação</div>
+            <div className="text-[10px] text-slate-400 font-bold mt-1">8 ocorrências no período</div>
+          </div>
         </div>
 
+        {/* GRÁFICO E LISTA */}
         <div className="grid md:grid-cols-2 gap-6">
+          {/* GRÁFICO DE EPIDEMIOLOGIA */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2"><CheckCircle size={16} className="text-emerald-500" /> Adesão ao Preenchimento (%)</h3>
+            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+              <BarChart2 size={16} className="text-blue-500" /> Epidemiologia dos Eventos
+            </h3>
             <div className="flex-1 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dataConformidade} layout="vertical" margin={{ top: 0, right: 20, left: 20, bottom: 0 }}>
+                <BarChart data={dadosCategorias} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
                   <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="setor" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#475569', fontWeight: 'bold' }} width={90} />
+                  <YAxis type="category" dataKey="categoria" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }} width={110} />
                   <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
-                  <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px' }} />
-                  <Bar dataKey="preenchido" name="Conforme" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} barSize={24} />
-                  <Bar dataKey="pendente" name="Em Branco/Atrasado" stackId="a" fill="#f87171" radius={[0, 6, 6, 0]} barSize={24} />
+                  <Bar dataKey="ocorrencias" name="Nº de Ocorrências" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
+
+          {/* LISTA DE ÚLTIMAS NOTIFICAÇÕES */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col overflow-hidden">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2"><AlertTriangle size={16} className="text-amber-500" /> Radar de Pendências Críticas</h3>
+            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-500" /> Feed de Notificações
+            </h3>
             <div className="flex-1 overflow-y-auto pr-2 space-y-3">
-              {alertasPendencias.map((alerta) => (
-                <div key={alerta.id} className="flex p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors">
-                  <div className={`w-2 rounded-full mr-3 ${alerta.gravidade === 'alta' ? 'bg-red-500' : alerta.gravidade === 'media' ? 'bg-amber-500' : 'bg-blue-400'}`}></div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start">
-                      <span className="text-xs font-bold text-slate-800">Leito {alerta.leito} - {alerta.paciente}</span>
-                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{alerta.tempo}</span>
+              {ultimasNotificacoes.map((alerta) => (
+                <div key={alerta.id} className="flex p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
+                  <div className={`w-2 rounded-full mr-3 shrink-0 ${alerta.gravidade === 'grave' ? 'bg-red-600' : alerta.gravidade === 'moderada' ? 'bg-amber-500' : 'bg-blue-400'}`}></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-xs font-black text-slate-800 uppercase truncate pr-2">{alerta.evento}</span>
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded shrink-0">{alerta.data}</span>
                     </div>
-                    <p className="text-sm text-slate-600 mt-1">{alerta.pendencia}</p>
+                    <div className="flex justify-between items-center mt-1">
+                      <p className="text-xs text-slate-500">Leito {alerta.leito}</p>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${alerta.status === 'Pendente RT' ? 'bg-red-100 text-red-700' : alerta.status === 'Concluído' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {alerta.status}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
+              <button className="w-full py-2 mt-2 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 hover:bg-blue-100 rounded-lg">
+                Ver todas as notificações do mês
+              </button>
             </div>
           </div>
         </div>
@@ -1693,22 +1901,75 @@ const GestorDashboard = ({ userProfile }) => {
                  </div>
                  <div className="p-6 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {categorias.filter(c => c.id !== 'Visão Geral').map(cat => {
-                      const profissionais = consolidadoDia[cat.id] || [];
+                      // 1. Pega os profissionais crus
+                      const profissionaisRaw = consolidadoDia[cat.id] || [];
+                      
+                      // 2. O FILTRO DECODIFICADOR (Limpa os dados para a tela principal)
+                      let profissionaisAtivos = [];
+                      
+                      profissionaisRaw.forEach(p => {
+                        let strNome = p.nome || "";
+                        let siglaBase = p.sigla || "";
+                        
+                        if (strNome.includes('[EXTRA]')) {
+                          profissionaisAtivos.push({ ...p, nome: strNome.replace('[EXTRA]', '').trim() });
+                        } else if (strNome.includes(' / ')) {
+                          let partes = strNome.split(' / ');
+                          partes.forEach((parte, index) => {
+                            let match = parte.match(/(.+?)\s*\((D|N)\)/);
+                            if (match) {
+                              let nomeExt = match[1].trim();
+                              let siglaExt = match[2];
+                              if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]')) {
+                                profissionaisAtivos.push({ ...p, id: `${p.id}_${index}`, nome: nomeExt, sigla: siglaExt });
+                              }
+                            }
+                          });
+                        } else if (strNome.includes('(Cobrindo:')) {
+                          let match = strNome.match(/(.+?)\s*\(Cobrindo:/);
+                          if (match) {
+                            profissionaisAtivos.push({ ...p, nome: match[1].trim() });
+                          }
+                        } else if (strNome.includes('[FALTOU]') || strNome.includes('[ATESTADO]')) {
+                          // Oculta do painel consolidado (Escala Descoberta)
+                        } else {
+                          profissionaisAtivos.push({ ...p, nome: strNome.trim() });
+                        }
+                      });
+
                       return (
-                        <div key={cat.id} className="p-4 border border-slate-100 rounded-xl bg-slate-50 flex flex-col">
-                          <h4 className="text-[10px] font-black text-slate-400 uppercase mb-3 flex justify-between items-center">{cat.id} {profissionais.length > 0 && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{profissionais.length}</span>}</h4>
+                        <div key={cat.id} className="p-4 border border-slate-100 rounded-xl bg-slate-50 flex flex-col hover:shadow-md transition-shadow">
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase mb-3 flex justify-between items-center">
+                            {cat.id} 
+                            {profissionaisAtivos.length > 0 && (
+                              <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                                {profissionaisAtivos.length}
+                              </span>
+                            )}
+                          </h4>
                           <div className="space-y-2 flex-grow">
-                            {profissionais.length === 0 ? (
-                              <div className="text-[10px] text-slate-400 italic py-2">Sem escala para hoje</div>
+                            {profissionaisAtivos.length === 0 ? (
+                              <div className="text-[10px] text-red-400 font-bold italic py-2 bg-red-50 p-2 rounded border border-red-100">
+                                Nenhum profissional ativo / Escala Descoberta
+                              </div>
                             ) : (
-                              profissionais.sort((a,b) => (a.sigla === 'V' ? -1 : 1)).map(p => {
+                              profissionaisAtivos.sort((a,b) => (a.sigla === 'V' ? -1 : 1)).map(p => {
                                 let corBarra = "border-blue-500";
-                                if (p.sigla === 'V') corBarra = "border-emerald-500";
-                                if (p.sigla === 'N') corBarra = "border-indigo-500";
+                                let corFundoSigla = "bg-slate-100";
+                                let corTextoSigla = "text-slate-500";
+
+                                if (p.sigla === 'V') { 
+                                  corBarra = "border-emerald-500"; corFundoSigla = "bg-emerald-100"; corTextoSigla = "text-emerald-700";
+                                } else if (p.sigla === 'N') { 
+                                  corBarra = "border-indigo-500"; corFundoSigla = "bg-indigo-100"; corTextoSigla = "text-indigo-700";
+                                }
+
                                 return (
                                   <div key={p.id} className={`bg-white p-2 rounded shadow-sm border-l-4 ${corBarra} flex justify-between items-center`}>
-                                    <div className="text-xs font-bold text-slate-700 truncate pr-2">{p.nome}</div>
-                                    <div className="text-[9px] font-black bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{p.sigla}</div>
+                                    <div className="text-xs font-bold text-slate-700 truncate pr-2" title={p.nome}>{p.nome}</div>
+                                    <div className={`text-[9px] font-black px-1.5 py-0.5 rounded ${corFundoSigla} ${corTextoSigla}`}>
+                                      {p.sigla}
+                                    </div>
                                   </div>
                                 );
                               })
@@ -1722,21 +1983,38 @@ const GestorDashboard = ({ userProfile }) => {
             ) : modoVisao === 'dia' ? (
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                  <h3 className="font-bold text-slate-800 mb-4 flex justify-between items-center">Escala de {categoriaAtiva} <span className="text-xs text-slate-400 font-normal">Dia {dataSelecionada.split('-')[2]}</span></h3>
+                  
+                  {/* CABEÇALHO DA SEÇÃO DE ESCALA COM BOTÃO DE EXTRA */}
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-800 flex justify-between items-center">
+                      Escala de {categoriaAtiva} <span className="ml-2 text-xs text-slate-400 font-normal">Dia {dataSelecionada.split('-')[2]}</span>
+                    </h3>
+                    <button 
+                      onClick={() => setIsExtraModalOpen(true)}
+                      className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-200 transition-colors flex items-center gap-1"
+                    >
+                      + Adicionar Extra
+                    </button>
+                  </div>
+
                   <div className="space-y-4">
                     {isLoadingPlantoes && <div className="p-8 text-center text-slate-400 font-bold animate-pulse bg-slate-50 rounded-xl border border-dashed border-slate-200"><Loader2 className="animate-spin inline mr-2" size={20} /> A carregar a escala da base de dados...</div>}
                     {!isLoadingPlantoes && plantoesDoDia.length === 0 && <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">Nenhum profissional escalado para este dia nesta categoria.</div>}
                     {!isLoadingPlantoes && plantoesDoDia.map((plantao) => {
                       let corBg = 'bg-slate-50'; let corBorder = 'border-slate-100'; let corText = 'text-slate-600';
-                      if (plantao.sigla === 'V') { corBg = 'bg-emerald-50'; corBorder = 'border-emerald-100'; corText = 'text-emerald-600'; }
+                      
+                      // Ajuste de cores baseado na sigla ou se for EXTRA/FALTA/ATESTADO
+                      if (plantao.nome.includes('[FALTOU]')) { corBg = 'bg-red-50'; corBorder = 'border-red-200'; corText = 'text-red-600'; }
+                      else if (plantao.nome.includes('[ATESTADO]')) { corBg = 'bg-orange-50'; corBorder = 'border-orange-200'; corText = 'text-orange-600'; }
+                      else if (plantao.nome.includes('[EXTRA]') || plantao.sigla === 'V') { corBg = 'bg-emerald-50'; corBorder = 'border-emerald-100'; corText = 'text-emerald-600'; }
                       else if (plantao.sigla === 'N') { corBg = 'bg-indigo-50'; corBorder = 'border-indigo-100'; corText = 'text-indigo-600'; }
-                      else if (plantao.sigla.includes('D') || plantao.sigla.includes('M') || plantao.sigla.includes('T')) { corBg = 'bg-blue-50'; corBorder = 'border-blue-100'; corText = 'text-blue-600'; }
+                      else if (plantao.sigla?.includes('D') || plantao.sigla?.includes('M') || plantao.sigla?.includes('T')) { corBg = 'bg-blue-50'; corBorder = 'border-blue-100'; corText = 'text-blue-600'; }
 
                       return (
                         <div key={plantao.id} className={`p-4 ${corBg} border ${corBorder} rounded-xl relative group`}>
                           <span className={`text-[10px] font-bold ${corText} uppercase`}>{plantao.turno} ({plantao.horario})</span>
                           <div className="text-lg font-black text-slate-800 mt-1">{plantao.nome}</div>
-                          <button onClick={() => abrirModalTroca(plantao.id, `${plantao.turno} (${plantao.horario})`, plantao.nome)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Substituir Plantonista">
+                          <button onClick={() => abrirModalTroca(plantao.id, `${plantao.turno} (${plantao.horario})`, plantao.nome)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Gerenciar Plantonista">
                             <Settings size={16} />
                           </button>
                         </div>
@@ -1759,80 +2037,144 @@ const GestorDashboard = ({ userProfile }) => {
                  <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-50">
-                        <th className="p-2 border border-slate-200 font-bold text-slate-500">Profissional</th>
+                        <th className="p-2 border border-slate-200 font-bold text-slate-500 text-left">Profissional</th>
                         {[...Array(31)].map((_, i) => <th key={i} className="p-1 border border-slate-200 font-bold text-slate-500 text-center w-8">{(i + 1).toString().padStart(2, '0')}</th>)}
                       </tr>
                     </thead>
                     <tbody>
-                      {isLoadingMes && <tr><td colSpan="32" className="p-8 text-center text-slate-400 animate-pulse">A carregar o mês completo...</td></tr>}
-                      {!isLoadingMes && Object.keys(plantoesDoMes).length === 0 && <tr><td colSpan="32" className="p-8 text-center text-slate-400">Nenhum plantão encontrado para {dataSelecionada.substring(0,7)}.</td></tr>}
+                      {isLoadingMes && <tr><td colSpan="32" className="p-8 text-center text-slate-400 font-bold animate-pulse">A carregar e compilar o mês completo...</td></tr>}
+                      {!isLoadingMes && Object.keys(plantoesDoMes).length === 0 && <tr><td colSpan="32" className="p-8 text-center text-slate-400">Nenhum plantão processado para {dataSelecionada.substring(0,7)}.</td></tr>}
+                      
                       {!isLoadingMes && Object.entries(plantoesDoMes).map(([nome, dias]) => (
-                        <tr key={nome} className="hover:bg-slate-50 border-b border-slate-100">
+                        <tr key={nome} className="hover:bg-slate-50 border-b border-slate-100 transition-colors">
                           <td className="p-2 border-r border-slate-200 font-bold text-slate-700 whitespace-nowrap text-[10px] uppercase">{nome}</td>
                           {[...Array(31)].map((_, i) => {
                             const diaStr = (i + 1).toString().padStart(2, '0');
                             const sigla = dias[diaStr]; 
-                            let corLetra = 'text-slate-200'; let corFundo = '';
+                            let corLetra = 'text-slate-300'; let corFundo = '';
+                            
                             if (sigla) {
-                              if (sigla === 'V') { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; } 
-                              else if (sigla === 'N') { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; } 
+                              if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; } 
+                              else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; } 
                               else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; } 
                               else { corLetra = 'text-slate-700'; corFundo = 'bg-slate-50'; }
                             }
-                            return <td key={i} className={`p-1 border-r border-slate-200 text-center font-black ${corLetra} ${corFundo}`}>{sigla || '-'}</td>;
+                            
+                            return (
+                              <td key={i} className={`p-1 border-r border-slate-200 text-center font-black ${corLetra} ${corFundo}`}>
+                                {sigla || '-'}
+                              </td>
+                            );
                           })}
                         </tr>
                       ))}
                     </tbody>
                  </table>
-                 <p className="text-right text-[10px] text-slate-400 mt-4 font-bold uppercase">Total de {Object.keys(plantoesDoMes).length} profissionais listados em {dataSelecionada.substring(0,7)}</p>
+                 <p className="text-right text-[10px] text-slate-400 mt-4 font-bold uppercase">
+                   Total de {Object.keys(plantoesDoMes).length} profissionais com plantões ativos em {dataSelecionada.substring(0,7)}
+                 </p>
               </div>
             )}
           </div>
 
-          {/* MODAL DE TROCA DE PLANTÃO */}
+          {/* ============================================== */}
+          {/* 1. MODAL DE EDIÇÃO / FALTAS / ATESTADOS          */}
+          {/* ============================================== */}
           {isEditModalOpen && plantaoEditado && (
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-fadeIn">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-fadeIn">
                 <div className="bg-slate-800 p-5 flex justify-between items-center text-white">
-                  <div><h3 className="font-black text-lg">Alterar Plantonista</h3><p className="text-slate-300 text-xs">Substituição Manual</p></div>
+                  <div><h3 className="font-black text-lg">Gerenciar Plantão</h3><p className="text-slate-300 text-xs">Substituição e Ocorrências</p></div>
                   <button onClick={() => setIsEditModalOpen(false)} className="hover:bg-white/20 p-2 rounded-full transition-colors text-white font-bold">FECHAR</button>
                 </div>
+                
                 <div className="p-6 space-y-4">
-                  <div><div className="text-xs font-bold text-slate-400 uppercase">Turno e Horário</div><div className="font-bold text-slate-700">{plantaoEditado.turno}</div></div>
-                  <div><div className="text-xs font-bold text-slate-400 uppercase">Plantonista Original (Excel)</div><div className="text-sm text-slate-500 line-through">{plantaoEditado.nomeAtual}</div></div>
+                  <div><div className="text-xs font-bold text-slate-400 uppercase">Turno / Plantonista Atual</div><div className="font-bold text-slate-700">{plantaoEditado.turno} - {plantaoEditado.nomeAtual}</div></div>
                   
-                  {/* LÓGICA DE DESMEMBRAMENTO DE PLANTÃO DN */}
-                  {(plantaoEditado.turno === 'DN' || plantaoEditado.turno?.toUpperCase().includes('24H')) && (
-                    <div className="pt-2 border-t border-slate-100">
-                      <label className="block text-sm font-bold text-blue-600 mb-2">Qual período será trocado?</label>
+                  {/* BOTÕES DE OCORRÊNCIA MÉDICA */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <label className="block text-sm font-bold text-blue-600 mb-2">O que ocorreu?</label>
+                    <div className="flex gap-2">
+                      <button onClick={() => setStatusPlantonista('Normal')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${statusPlantonista === 'Normal' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-300'}`}>Troca</button>
+                      <button onClick={() => setStatusPlantonista('Atestado')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${statusPlantonista === 'Atestado' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-300'}`}>Atestado</button>
+                      <button onClick={() => setStatusPlantonista('Falta')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${statusPlantonista === 'Falta' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-500 border-slate-300'}`}>Falta</button>
+                    </div>
+                  </div>
+
+                  {/* LÓGICA DE DESMEMBRAMENTO (Só aparece se for DN e se NÃO for falta) */}
+                  {(plantaoEditado.turno === 'DN' || plantaoEditado.turno?.toUpperCase().includes('24H')) && statusPlantonista !== 'Falta' && (
+                    <div className="pt-2 border-t border-slate-100 animate-fadeIn">
+                      <label className="block text-sm font-bold text-blue-600 mb-2">Qual período?</label>
                       <div className="flex flex-col gap-2">
-                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors">
-                          <input type="radio" name="tipoTroca" value="Total" checked={tipoTrocaPlantao === 'Total'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> 
-                          Plantão Completo (DN)
-                        </label>
-                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors">
-                          <input type="radio" name="tipoTroca" value="Dia" checked={tipoTrocaPlantao === 'Dia'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> 
-                          Somente Dia (D)
-                        </label>
-                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors">
-                          <input type="radio" name="tipoTroca" value="Noite" checked={tipoTrocaPlantao === 'Noite'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> 
-                          Somente Noite (N)
-                        </label>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors"><input type="radio" value="Total" checked={tipoTrocaPlantao === 'Total'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> Plantão Completo</label>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors"><input type="radio" value="Dia" checked={tipoTrocaPlantao === 'Dia'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> Somente Dia (D)</label>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors"><input type="radio" value="Noite" checked={tipoTrocaPlantao === 'Noite'} onChange={(e) => setTipoTrocaPlantao(e.target.value)} className="w-4 h-4 text-blue-600 focus:ring-blue-500" /> Somente Noite (N)</label>
                       </div>
                     </div>
                   )}
 
-                  <div className="pt-2 border-t border-slate-100">
-                    <label className="block text-sm font-bold text-blue-600 mb-2">
-                      Novo Plantonista Assumindo {tipoTrocaPlantao !== 'Total' && plantaoEditado.turno === 'DN' ? `(Turno ${tipoTrocaPlantao})` : ''}:
-                    </label>
-                    <input type="text" value={novoPlantonista} onChange={(e) => setNovoPlantonista(e.target.value)} placeholder="Ex: Dr. Carlos Silva" className="w-full p-3 bg-blue-50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-bold" />
+                  {/* SELETOR DE MÉDICO (SÓ APARECE NA TROCA NORMAL) */}
+                  {statusPlantonista === 'Normal' && (
+                    <div className="pt-2 border-t border-slate-100 animate-fadeIn">
+                      <label className="block text-sm font-bold text-blue-600 mb-1">Novo Plantonista Assumindo:</label>
+                      <select 
+                        value={novoPlantonista} 
+                        onChange={(e) => setNovoPlantonista(e.target.value)} 
+                        className="w-full p-3 bg-blue-50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-bold"
+                      >
+                        <option value="">Selecione o médico...</option>
+                        {listaMedicos.map((med) => (
+                          <option key={med.id} value={med.nome}>{med.nome}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+                  <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
+                  <button onClick={salvarTrocaPlantao} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">Confirmar Alteração</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================== */}
+          {/* 2. NOVO: MODAL DE PLANTONISTA EXTRA              */}
+          {/* ============================================== */}
+          {isExtraModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-fadeIn">
+                <div className="bg-emerald-600 p-5 flex justify-between items-center text-white">
+                  <div><h3 className="font-black text-lg">Adicionar Extra</h3><p className="text-emerald-100 text-xs">Reforço para a UTI</p></div>
+                  <button onClick={() => setIsExtraModalOpen(false)} className="hover:bg-black/20 p-2 rounded-full transition-colors text-white font-bold">FECHAR</button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-emerald-700 mb-2">Turno do Reforço:</label>
+                    <select value={extraTurno} onChange={(e) => setExtraTurno(e.target.value)} className="w-full p-3 bg-emerald-50 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-700">
+                      <option value="DN">DN (24 Horas)</option>
+                      <option value="D">D (Somente Dia)</option>
+                      <option value="N">N (Somente Noite)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-emerald-700 mb-2">Nome do Médico Extra:</label>
+                    <select 
+                      value={extraNome} 
+                      onChange={(e) => setExtraNome(e.target.value)} 
+                      className="w-full p-3 bg-emerald-50 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 font-bold"
+                    >
+                      <option value="">Selecione o reforço...</option>
+                      {listaMedicos.map((med) => (
+                        <option key={med.id} value={med.nome}>{med.nome}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
-                  <button onClick={() => { setIsEditModalOpen(false); setTipoTrocaPlantao('Total'); }} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
-                  <button onClick={salvarTrocaPlantao} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">Confirmar Troca</button>
+                  <button onClick={() => setIsExtraModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
+                  <button onClick={adicionarPlantonistaExtra} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">Incluir Extra</button>
                 </div>
               </div>
             </div>
