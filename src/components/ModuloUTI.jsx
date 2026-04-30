@@ -5,7 +5,7 @@ import { db } from '../config/firebase';
 import {
   Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
   Droplets, Syringe, Pill, Thermometer, Scale, Gauge, Move,
-  Activity, ClipboardCheck, FileText, FileCheck, Target,
+  Activity, ClipboardCheck, FileText, FileCheck, Target, ShieldAlert,
   Printer, Bot, BrainCircuit, Sparkles, Mic, Table, UploadCloud,
   FolderInput, List, Copy, User, Search, ArrowLeft, X, PlusCircle,
   Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle,
@@ -170,6 +170,20 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [isDischarging, setIsDischarging] = useState(false);
 
   const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
+  const [eventoSelecionado, setEventoSelecionado] = useState(null);
+  const [formEvento, setFormEvento] = useState({
+    leito: '',
+    dataHora: '',
+    relato: '',
+    grauDano: '',
+    acoesImediatas: '',
+    impactoPaciente: ''
+  });
+
+  // Guarda os pacientes internados para o modal de eventos cruzar os dados
+  const [listaCenso, setListaCenso] = useState([]);
+
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
 
   const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
     if (!dadosAtualizados.gasoHora) return; 
@@ -315,6 +329,85 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     setIsProcessingBulk(false);
   };
 
+  const salvarNotificacaoEvento = async () => {
+    // Validação agora exige o leito
+    if (!formEvento.leito || !formEvento.dataHora || !formEvento.relato || !formEvento.grauDano || !formEvento.acoesImediatas || !formEvento.impactoPaciente) {
+      alert("Por favor, preencha todos os campos obrigatórios (incluindo o Leito) para enviar a notificação.");
+      return;
+    }
+
+    // 1. BUSCA O PACIENTE NO CENSO ATUAL
+    // Procura na sua listaCenso quem está no leito selecionado
+    const pacienteAtual = (listaCenso || []).find(p => p.leito === formEvento.leito || p.id === formEvento.leito) || null;
+
+    // Função auxiliar para pegar as iniciais do paciente (Ex: João Silva Costa -> JSC)
+    const extrairIniciais = (nomeCompleto) => {
+      if (!nomeCompleto) return "";
+      return nomeCompleto.split(' ').map(n => n[0]).join('').substring(0, 3).toUpperCase();
+    };
+
+    // ======================================================
+    // 2. MONTANDO O PACOTE DE DADOS PADRÃO ANVISA/CCIH
+    // ======================================================
+    const payloadNotificacao = {
+      // --- Identificação da Instituição ---
+      cnes: "2494299",
+      instituicao: "Hospital Municipal de Ariquemes",
+      localizacao: "Ariquemes/RO",
+
+      // --- Características do Paciente (Puxa do Censo automaticamente) ---
+      leitoOcorrencia: formEvento.leito,
+      pacienteIniciais: extrairIniciais(pacienteAtual?.nome), 
+      pacienteDataNascimento: pacienteAtual?.dataNascimento || "",
+      pacienteSexo: pacienteAtual?.sexo || "",
+      pacienteRaca: pacienteAtual?.raca || "",
+      
+      // --- Registros Clínicos ---
+      prontuario: pacienteAtual?.prontuario || "", 
+      diagnosticoPrincipal: pacienteAtual?.diagnostico || "",
+
+      // --- Detalhes do Incidente ---
+      dataHoraOcorrencia: formEvento.dataHora,
+      dataDeteccao: new Date().toISOString(), // Hora exata do clique
+      setor: "UTI Geral",
+      faseCuidado: "", // CCIH preencherá depois
+      tipoEvento: eventoSelecionado,
+      relatoIncidente: formEvento.relato,
+
+      // --- Consequências para o Paciente ---
+      impactoGerado: formEvento.impactoPaciente,
+      grauDano: formEvento.grauDano,
+
+      // --- Ações e Prevenção ---
+      acoesImediatas: formEvento.acoesImediatas,
+      medidasPreventivas: "", // CCIH preencherá depois
+      fatoresContribuintes: "", // CCIH preencherá depois
+
+      // --- Metadados do Sistema ---
+      statusAnalise: "Pendente NSP",
+      notificadoPor: "Profissional Assistencial" 
+    };
+
+    // ======================================================
+    // 3. ENVIANDO PARA O FIREBASE
+    // ======================================================
+    try {
+      await addDoc(collection(db, "eventos_adversos"), payloadNotificacao);
+      
+      console.log("📝 Evento Registrado com Sucesso:", payloadNotificacao);
+      alert("Notificação enviada com sucesso ao Núcleo de Gestão de Risco. Agradecemos o compromisso com a segurança do paciente.");
+      
+      // Reseta o formulário
+      setFormEvento({ leito: '', dataHora: '', relato: '', grauDano: '', acoesImediatas: '', impactoPaciente: '' });
+      setEventoSelecionado(null);
+      setIsEventModalOpen(false);
+
+    } catch (error) {
+      console.error("❌ Erro ao salvar notificação:", error);
+      alert("Erro ao conectar com o banco de dados. Tente novamente.");
+    }
+  };
+
   // ==========================================
   // OLHEIRO DE EVENTOS ADVERSOS (QUALIDADE)
   // ==========================================
@@ -370,6 +463,26 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
     // Para de ouvir quando o componente for fechado (logout)
     return () => unsubscribe();
+  }, []);
+
+  // BUSCA OS PACIENTES INTERNADOS (Para auto-preencher as notificações)
+  useEffect(() => {
+    const carregarCenso = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "leitos_uti"));
+        const pacientesTemp = [];
+        
+        querySnapshot.forEach((doc) => {
+          pacientesTemp.push({ id: doc.id, ...doc.data() });
+        });
+        
+        setListaCenso(pacientesTemp);
+      } catch (error) {
+        console.error("Erro ao carregar o censo para notificações:", error);
+      }
+    };
+
+    carregarCenso();
   }, []);
 
   // Efeito para buscar a fila de espera da UTI em tempo real
@@ -3048,8 +3161,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
 
               <div
                 ref={navScrollRef}
-                // SUTURA: px-[40vw] garante que mesmo com 1 ou 2 abas, você consiga "deslizar" ela para fora do centro
-                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center px-[40vw] md:px-0`}
+                // MUDANÇA: Aumentei o gap para 'gap-4' no mobile, facilita acertar o botão
+                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-4 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center px-[40vw] md:px-0`}
               >
                 {allNavButtons.map((btn, index) => {
                   const isActive = viewMode === btn.id;
@@ -3065,10 +3178,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       key={btn.id}
                       id={`nav-${btn.id}`}
                       style={{ zIndex: zIndexCascata }} 
-                      className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out 
-                        ${window.innerWidth < 768 ? '-ml-5 first:ml-0' : ''} 
-                        hover:z-[100]
-                      `}
+                      className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out hover:z-[100]`}
                     >
                       <button
                         onClick={() => {
@@ -3084,20 +3194,22 @@ const userRole = userProfile?.role || userProfile?.perfil;
                             setViewMode(btn.id);
                           }
                         }}
-                        className={`flex items-center h-12 md:h-12 min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
+                        // MUDANÇA: h-16 w-16 no mobile (antes era 12). Botões maiores!
+                        className={`flex items-center h-16 md:h-12 min-w-[4rem] md:min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
                           ${
                             isActive
                               ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
                               : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm"
                           }
-                          ${isExpandedMobile ? "w-[160px]" : "w-12"}
-                          md:w-12 md:hover:w-[180px]
+                          ${isExpandedMobile ? "w-[170px]" : "w-16 md:w-12"}
+                          md:hover:w-[180px]
                         `}
                         title={btn.label}
                       >
                         {/* ÍCONE */}
-                        <div className={`flex-shrink-0 flex items-center justify-center w-12 h-12 transition-transform duration-300 ${isActive ? 'text-white' : 'text-slate-500'}`}>
-                          <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
+                        <div className={`flex-shrink-0 flex items-center justify-center w-16 h-16 md:w-12 md:h-12 transition-transform duration-300 ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                          {/* MUDANÇA: scale-125 no mobile para ícones mais nítidos */}
+                          <div className={isExpandedMobile || isActive ? "scale-125 md:scale-100" : "scale-110 md:scale-90"}>
                             {btn.icon}
                           </div>
                         </div>
@@ -3108,7 +3220,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                             ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
                           `}
                         >
-                          <span className="text-xs md:text-sm font-bold tracking-wide">
+                          <span className="text-sm font-bold tracking-wide">
                             {btn.label}
                           </span>
                         </div>
@@ -3116,6 +3228,40 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     </div>
                   );
                 })}
+
+                {/* ========================================================= */}
+                {/* O NOVO BOTÃO DE NOTIFICAÇÃO DE EVENTOS (Fixo no final)    */}
+                {/* ========================================================= */}
+                <div
+                  id="nav-notificacao"
+                  style={{ zIndex: 5 }} 
+                  className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out hover:z-[100] mt-0 md:mt-4`}
+                >
+                  <button
+                    onClick={() => setIsEventModalOpen(true)}
+                    className={`flex items-center h-16 md:h-12 min-w-[4rem] md:min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
+                      bg-red-50 border-red-200 text-red-600 hover:bg-red-100
+                      w-16 md:w-12 md:hover:w-[190px]
+                    `}
+                    title="Notificar Evento Adverso"
+                  >
+                    <div className="flex-shrink-0 flex items-center justify-center w-16 h-16 md:w-12 md:h-12 transition-transform duration-300">
+                      <div className="scale-125 md:scale-100">
+                        <AlertTriangle size={22} className="text-red-600 group-hover:scale-110 transition-transform" />
+                      </div>
+                    </div>
+                    <div
+                      className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+                        opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100
+                      `}
+                    >
+                      <span className="text-sm font-bold tracking-wide text-red-700">
+                        Notificar Evento
+                      </span>
+                    </div>
+                  </button>
+                </div>
+
               </div>
             </div>
           </div>
@@ -3652,6 +3798,198 @@ const userRole = userProfile?.role || userProfile?.perfil;
         handleBlurSave={handleBlurSave}
         handleSepsisResponse={handleSepsisResponse}
       />
+
+          {/* ============================================== */}
+          {/* MODAL GLOBAL DE EVENTOS ADVERSOS                 */}
+          {/* ============================================== */}
+          {isEventModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-fadeIn flex flex-col max-h-[90vh]">
+                
+                {/* CABEÇALHO DO MODAL */}
+                <div className="bg-red-600 p-5 flex justify-between items-center text-white shrink-0">
+                  <div className="flex items-center gap-3">
+                    <ShieldAlert size={24} className="text-red-200" />
+                    <div>
+                      <h3 className="font-black text-lg">
+                        {eventoSelecionado ? `Notificar: ${eventoSelecionado}` : 'Notificação de Eventos Adversos'}
+                      </h3>
+                      <p className="text-red-200 text-xs">Gestão de Risco e Segurança do Paciente</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setIsEventModalOpen(false);
+                      setEventoSelecionado(null);
+                    }} 
+                    className="hover:bg-red-700 p-2 rounded-full transition-colors text-white font-bold"
+                  >
+                    FECHAR
+                  </button>
+                </div>
+                
+                {/* CORPO DO MODAL (Com rolagem caso a tela seja pequena) */}
+                <div className="p-6 bg-slate-50 overflow-y-auto flex-1">
+                  
+                  {!eventoSelecionado ? (
+                    /* TELA 1: SELEÇÃO DO EVENTO */
+                    <div className="animate-fadeIn">
+                      <p className="text-sm text-red-800 font-bold mb-6 bg-red-100 p-3 rounded-xl border border-red-200 flex items-start gap-2">
+                        <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                        Selecione o evento ocorrido. Esta notificação não é punitiva, serve exclusivamente para mapearmos riscos e melhorarmos processos.
+                      </p>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {[
+                          { label: "Queda", icon: "🤕" },
+                          { label: "Retirada Acidental SNE", icon: "👃" },
+                          { label: "Retirada Acidental CVC", icon: "🫀" },
+                          { label: "Retirada Acidental SVD", icon: "💧" },
+                          { label: "Extubação Acidental", icon: "🗣️" },
+                          { label: "Erro de Medicação", icon: "💊" },
+                          { label: "Obstrução de SNE", icon: "❌" },
+                          { label: "Flebite / Extravasamento", icon: "💉" }
+                        ].map((evento) => (
+                          <button
+                            key={evento.label}
+                            onClick={() => setEventoSelecionado(evento.label)}
+                            className="flex flex-col items-center justify-center p-4 bg-white border border-slate-200 rounded-2xl hover:bg-red-50 hover:border-red-400 hover:shadow-md transition-all group"
+                          >
+                            <span className="text-3xl mb-2 group-hover:scale-110 transition-transform drop-shadow-sm">{evento.icon}</span>
+                            <span className="text-[11px] font-bold text-slate-700 text-center leading-tight group-hover:text-red-700">
+                              {evento.label}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    /* TELA 2: FORMULÁRIO DE PREENCHIMENTO */
+                    <div className="space-y-5 animate-fadeIn">
+                      
+                      {/* LEITO E DATA/HORA (Lado a Lado em telas maiores) */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Seletor de Leito (NOVO) */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Leito do Evento <span className="text-red-500">*</span></label>
+                          <select 
+                            value={formEvento.leito}
+                            onChange={(e) => setFormEvento({...formEvento, leito: e.target.value})}
+                            className="w-full p-3 bg-red-50 border border-red-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-red-900 font-bold"
+                          >
+                            <option value="">Selecione o leito...</option>
+                            {/* Gera os 10 leitos dinamicamente. Se o senhor puxa o censo do banco, pode mapear o listaCenso aqui */}
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
+                              const leitoFormatado = num.toString().padStart(2, '0');
+                              // Tenta achar o nome do paciente para mostrar na lista e ajudar o profissional
+                              const pac = (listaCenso || []).find(p => p.leito === leitoFormatado || p.leito === num.toString());
+                              return (
+                                <option key={num} value={leitoFormatado}>
+                                  Leito {leitoFormatado} {pac && pac.nome ? `- ${pac.nome.split(' ')[0]}` : '(Vazio/Desconhecido)'}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        {/* Data e Hora */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Data e hora exatas <span className="text-red-500">*</span></label>
+                          <input 
+                            type="datetime-local" 
+                            value={formEvento.dataHora}
+                            onChange={(e) => setFormEvento({...formEvento, dataHora: e.target.value})}
+                            className="w-full p-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-slate-700 font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Relato */}
+                      <div>
+                        <label className="flex justify-between items-end mb-1">
+                          <span className="text-xs font-bold text-slate-600 uppercase">Breve relato do incidente <span className="text-red-500">*</span></span>
+                          <span className="text-[10px] text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded">⚠️ NÃO identifique paciente ou profissional</span>
+                        </label>
+                        <textarea 
+                          rows="3" 
+                          placeholder="Descreva o que ocorreu de forma objetiva..."
+                          value={formEvento.relato}
+                          onChange={(e) => setFormEvento({...formEvento, relato: e.target.value})}
+                          className="w-full p-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-slate-700 text-sm resize-none"
+                        ></textarea>
+                      </div>
+
+                      {/* Impacto no Paciente (NOVO) */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
+                          Caracterização do impacto gerado <span className="text-red-500">*</span>
+                        </label>
+                        <textarea 
+                          rows="2" 
+                          placeholder="Qual foi a consequência direta no paciente? (Ex: Necessitou de reintubação, aumento de drogas...)"
+                          value={formEvento.impactoPaciente}
+                          onChange={(e) => setFormEvento({...formEvento, impactoPaciente: e.target.value})}
+                          className="w-full p-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-slate-700 text-sm resize-none"
+                        ></textarea>
+                      </div>
+
+                      {/* Grau do Dano */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Classificação do grau de dano <span className="text-red-500">*</span></label>
+                        <select 
+                          value={formEvento.grauDano}
+                          onChange={(e) => setFormEvento({...formEvento, grauDano: e.target.value})}
+                          className="w-full p-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-slate-700 font-bold text-sm"
+                        >
+                          <option value="">Selecione a gravidade...</option>
+                          <option value="Nenhum">Nenhum (Incidente sem dano ou Near Miss)</option>
+                          <option value="Leve">Leve (Baixa gravidade / Sintomas leves)</option>
+                          <option value="Moderado">Moderado (Morbidade prolongada / Necessidade de intervenção)</option>
+                          <option value="Grave">Grave (Ameaça imediata à vida / Dano permanente)</option>
+                          <option value="Óbito">Óbito (Evento resultou em morte)</option>
+                        </select>
+                      </div>
+
+                      {/* Ações Imediatas */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Ações imediatas adotadas pela equipe <span className="text-red-500">*</span></label>
+                        <textarea 
+                          rows="2" 
+                          placeholder="O que foi feito imediatamente para mitigar ou reverter o dano ao paciente?"
+                          value={formEvento.acoesImediatas}
+                          onChange={(e) => setFormEvento({...formEvento, acoesImediatas: e.target.value})}
+                          className="w-full p-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-slate-700 text-sm resize-none"
+                        ></textarea>
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+
+                {/* RODAPÉ E BOTÕES DE AÇÃO (SÓ APARECEM NO FORMULÁRIO) */}
+                {eventoSelecionado && (
+                  <div className="p-4 bg-white border-t border-slate-200 flex justify-end gap-3 shrink-0">
+                    <button 
+                      onClick={() => {
+                        setEventoSelecionado(null); // Volta para a tela de ícones
+                        setFormEvento({ dataHora: '', relato: '', grauDano: '', acoesImediatas: '' });
+                      }} 
+                      className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+                    >
+                      Voltar
+                    </button>
+                    <button 
+                      onClick={salvarNotificacaoEvento} 
+                      className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm flex items-center gap-2"
+                    >
+                      <ShieldAlert size={16} /> Submeter Notificação
+                    </button>
+                  </div>
+                )}
+
+              </div>
+            </div>
+          )}
 
       {/* MODAL DE DADOS CADASTRAIS (SOMENTE LEITURA) */}
       {showPatientDataModal && (
