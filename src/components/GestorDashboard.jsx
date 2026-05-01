@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, 
-  Bed, Save, Bell, Calculator, Loader2, ArrowRight 
+  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter 
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -71,6 +71,30 @@ const GestorDashboard = ({ userProfile }) => {
     total: 0, ativos: 0, pendentes: 0, carregando: true
   });
 
+  // ESTADOS DA GESTÃO DE RISCO (NSP) - Exclusivo do Dashboard
+  const [abaRiscoAtiva, setAbaRiscoAtiva] = useState('eventos');
+  const [listaEventos, setListaEventos] = useState([]);
+  const [eventoEmInvestigacao, setEventoEmInvestigacao] = useState(null);
+  const [formInvestigacao, setFormInvestigacao] = useState({
+    prontuario: '',
+    faseCuidado: '',
+    fatoresContribuintes: '',
+    medidasPreventivas: '',
+    statusAnalise: 'Em Análise'
+  });
+
+  // ESTADOS DO FILTRO DE DATAS (Padrão: Últimos 30 dias)
+  const hoje = new Date();
+  const trintaDiasAtras = new Date();
+  trintaDiasAtras.setDate(hoje.getDate() - 30);
+
+  const [filtroDataInicio, setFiltroDataInicio] = useState(trintaDiasAtras.toISOString().split('T')[0]);
+  const [filtroDataFim, setFiltroDataFim] = useState(hoje.toISOString().split('T')[0]);
+
+  // ESTADOS DAS ESCALAS ASSISTENCIAIS (AUDITORIA)
+  const [listaEscalas, setListaEscalas] = useState([]);
+  const [modalEscala, setModalEscala] = useState(null);
+
   // =========================================================
   // 2. EFEITOS (useEffect) - OS SINCRONIZADORES (DADOS BRUTOS)
   // =========================================================
@@ -124,6 +148,129 @@ const GestorDashboard = ({ userProfile }) => {
 
     carregarEquipeMedica();
   }, []);
+
+ // BUSCA OS EVENTOS ADVERSOS EM TEMPO REAL (Câmera ao Vivo)
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "eventos_adversos"), (snapshot) => {
+      const eventosTemp = [];
+      
+      snapshot.forEach((doc) => {
+        // Empacota o documento com o ID para a lista
+        eventosTemp.push({ id: doc.id, ...doc.data() });
+      });
+
+      // Ordena dos mais recentes para os mais antigos (opcional, mas recomendado)
+      eventosTemp.sort((a, b) => new Date(b.dataHoraOcorrencia) - new Date(a.dataHoraOcorrencia));
+      
+      // A atualização da tela fica FORA do forEach
+      setListaEventos(eventosTemp);
+      
+    }, (error) => {
+      console.error("Erro ao sincronizar eventos adversos ao vivo:", error);
+    });
+
+    // Quando o senhor trocar de tela, ele desliga o radar para economizar memória e internet
+    return () => unsubscribe();
+  }, []);
+
+  // BUSCA DADOS DE ESCALAS (ATIVOS E HISTÓRICO COM FILTRO DE DATA)
+  useEffect(() => {
+    if (abaRiscoAtiva === 'escalas') {
+      const buscarAuditoriaEscalas = async () => {
+        try {
+          // 1. Busca os pacientes que já tiveram alta (Histórico)
+          const snapHist = await getDocs(collection(db, "internacoes_historico"));
+          const historico = snapHist.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              idInternacao: data.idInternacao,
+              nome: data.nomePaciente || data.nome,
+              dataInternacao: data.dataEntrada || data.dataInternacao,
+              status: 'Alta/Óbito'
+            };
+          });
+
+          // 2. Busca os pacientes internados agora nos 10 leitos
+          const snapAtivos = await getDocs(collection(db, "leitos_uti"));
+          const ativos = snapAtivos.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(p => p.nome) // Filtra apenas camas ocupadas
+            .map(p => ({
+              id: p.id,
+              idInternacao: p.idInternacao,
+              nome: p.nome,
+              dataInternacao: p.dataInternacao,
+              status: 'Internado'
+            }));
+
+          // 3. Junta tudo e prepara o filtro de tempo
+          let todos = [...ativos, ...historico];
+          
+          const inicio = new Date(`${filtroDataInicio}T00:00:00`);
+          const fim = new Date(`${filtroDataFim}T23:59:59`);
+
+          // 4. Aplica o funil de datas
+          todos = todos.filter(pac => {
+            if (!pac.dataInternacao) return false;
+            let dataPac;
+            if (pac.dataInternacao.includes('/')) {
+              const [dia, mes, ano] = pac.dataInternacao.split('/');
+              dataPac = new Date(`${ano}-${mes}-${dia}T12:00:00`);
+            } else {
+              dataPac = new Date(pac.dataInternacao);
+            }
+            return dataPac >= inicio && dataPac <= fim;
+          });
+
+          // =========================================================================
+          // 🔥 O SEGREDO: Buscar as escalas no "Cofre" de Indicadores de Performance
+          // =========================================================================
+          const snapIndicadores = await getDocs(collection(db, "indicadores_performance"));
+          const indicadores = snapIndicadores.docs.map(doc => doc.data());
+
+          // Cruzamos o paciente com as escalas dele achadas no cofre
+          const pacientesComEscalas = todos.map(pac => {
+            // Procura usando o ID da Internação ou o Nome como segurança
+            const indSaps = indicadores.find(ind => ind.tipo === "SAPS 3" && (ind.idInternacao === pac.idInternacao || ind.nomePaciente === pac.nome));
+            const indBraden = indicadores.find(ind => ind.tipo === "BRADEN" && (ind.idInternacao === pac.idInternacao || ind.nomePaciente === pac.nome));
+            const indMorse = indicadores.find(ind => ind.tipo === "MORSE" && (ind.idInternacao === pac.idInternacao || ind.nomePaciente === pac.nome));
+
+            return {
+              ...pac,
+              // Formatamos exatamente como o nosso Modal de Auditoria espera ler!
+              saps3: indSaps ? { score: indSaps.valor, respostas: indSaps.respostas } : null,
+              braden: indBraden ? { score: indBraden.valor, respostas: indBraden.respostas } : null,
+              morse: indMorse ? { score: indMorse.valor, respostas: indMorse.respostas } : null
+            };
+          });
+
+          // 5. Ordena do mais recente para o mais antigo
+          pacientesComEscalas.sort((a, b) => {
+            const dateA = a.dataInternacao.includes('/') ? new Date(a.dataInternacao.split('/').reverse().join('-')) : new Date(a.dataInternacao);
+            const dateB = b.dataInternacao.includes('/') ? new Date(b.dataInternacao.split('/').reverse().join('-')) : new Date(b.dataInternacao);
+            return dateB - dateA;
+          });
+          
+          setListaEscalas(pacientesComEscalas);
+        } catch (error) {
+          console.error("Erro ao buscar auditoria de escalas:", error);
+        }
+      };
+      buscarAuditoriaEscalas();
+    }
+  }, [abaRiscoAtiva, filtroDataInicio, filtroDataFim]);
+
+  // Função para organizar os dados e abrir o modal da escala específica
+  const abrirAuditoriaEscala = (nomeEscala, nomePaciente, dadosEscala) => {
+    if (!dadosEscala) return;
+    setModalEscala({
+      titulo: nomeEscala,
+      paciente: nomePaciente,
+      score: dadosEscala.score || dadosEscala.pontuacao || dadosEscala.total || 'N/D',
+      respostas: dadosEscala.respostas || dadosEscala.detalhes || dadosEscala // Flexível para o formato que o senhor salvou
+    });
+  };
 
 // =========================================================
   // 3. CÁLCULOS (useMemo) - A INTELIGÊNCIA (DADOS PROCESSADOS)
@@ -1041,6 +1188,40 @@ const GestorDashboard = ({ userProfile }) => {
     setExtraTurno("DN");
   };
 
+  const salvarInvestigacaoEvento = async () => {
+    if (!eventoEmInvestigacao) return;
+
+    try {
+      const eventoRef = doc(db, "eventos_adversos", eventoEmInvestigacao.id);
+      
+      // Atualiza apenas os campos da Gestão/CCIH
+      await updateDoc(eventoRef, {
+        prontuario: formInvestigacao.prontuario,
+        faseCuidado: formInvestigacao.faseCuidado,
+        fatoresContribuintes: formInvestigacao.fatoresContribuintes,
+        medidasPreventivas: formInvestigacao.medidasPreventivas,
+        statusAnalise: formInvestigacao.statusAnalise,
+        dataFechamentoAnalise: formInvestigacao.statusAnalise === 'Concluído' ? new Date().toISOString() : null
+      });
+
+      // Atualiza a tela imediatamente (Memória Curta) sem precisar recarregar o banco
+      setListaEventos(listaAnterior => 
+        listaAnterior.map(ev => 
+          ev.id === eventoEmInvestigacao.id 
+            ? { ...ev, ...formInvestigacao, dataFechamentoAnalise: formInvestigacao.statusAnalise === 'Concluído' ? new Date().toISOString() : null } 
+            : ev
+        )
+      );
+
+      alert("Análise salva com sucesso no Núcleo de Segurança do Paciente.");
+      setEventoEmInvestigacao(null); // Fecha o modal
+
+    } catch (error) {
+      console.error("Erro ao salvar investigação:", error);
+      alert("Erro ao atualizar o evento no banco de dados.");
+    }
+  };
+
   const formatarDataBR = (strData) => {
     if (!strData) return "";
     const [ano, mes, dia] = strData.split('-');
@@ -1116,7 +1297,7 @@ const GestorDashboard = ({ userProfile }) => {
         <button onClick={() => setActiveView('auditoria')} className="bg-white p-8 rounded-3xl shadow-sm border-2 border-transparent hover:border-amber-500 hover:shadow-xl transition-all group text-left relative overflow-hidden">
           <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 group-hover:scale-110 transition-all"><FileCheck size={100} /></div>
           <div className="bg-amber-100 w-14 h-14 rounded-2xl flex items-center justify-center text-amber-600 mb-6"><FileCheck size={28} /></div>
-          <h3 className="text-xl font-bold text-slate-800 mb-2">Auditoria (Prontuários)</h3>
+          <h3 className="text-xl font-bold text-slate-800 mb-2">Auditoria</h3>
           <p className="text-slate-500 text-sm pr-8">Varredura de evoluções pendentes, escalas de risco não preenchidas e adesão a protocolos.</p>
         </button>
 
@@ -1627,126 +1808,500 @@ const GestorDashboard = ({ userProfile }) => {
 };
 
   // ==========================================
-  // VISÃO 4: GESTÃO DE RISCO E EVENTOS ADVERSOS
+  // VISÃO DA GESTÃO DE RISCO E QUALIDADE (NSP)
   // ==========================================
-  const renderAuditoria = () => {
-    // Dados temporários (Mocks) para visualização até criarmos o banco de dados
-    const dadosCategorias = [
-      { categoria: 'Medicação/Soro', ocorrencias: 8 },
-      { categoria: 'Lesão por Pressão', ocorrencias: 5 },
-      { categoria: 'Perda de Dispositivo', ocorrencias: 4 },
-      { categoria: 'Infecção (IRAS)', ocorrencias: 3 },
-      { categoria: 'Queda', ocorrencias: 0 },
-    ];
+  const renderGestaoRisco = () => {
+    // Calcula a epidemiologia real baseada no que veio do Firebase
+    const ocorrenciasPorTipo = listaEventos.reduce((acc, evento) => {
+      acc[evento.tipoEvento] = (acc[evento.tipoEvento] || 0) + 1;
+      return acc;
+    }, {});
+    
+    const dadosCategorias = Object.keys(ocorrenciasPorTipo).map(tipo => ({
+      categoria: tipo,
+      ocorrencias: ocorrenciasPorTipo[tipo]
+    })).sort((a, b) => b.ocorrencias - a.ocorrencias); // Ordena do maior para o menor
 
-    const ultimasNotificacoes = [
-      { id: 1, data: '30/04', leito: '03', evento: 'Extubação Acidental', gravidade: 'grave', status: 'Pendente RT' },
-      { id: 2, data: '29/04', leito: '07', evento: 'Erro de Dose de Noradrenalina', gravidade: 'moderada', status: 'Em Análise' },
-      { id: 3, data: '28/04', leito: '02', evento: 'Lesão por Pressão Estágio II', gravidade: 'moderada', status: 'Plano de Ação Criado' },
-      { id: 4, data: '28/04', leito: '09', evento: 'Flebite em Acesso Periférico', gravidade: 'leve', status: 'Concluído' },
-    ];
+    const totalEventos = listaEventos.length;
+    const eventosGraves = listaEventos.filter(e => e.grauDano === 'Grave' || e.grauDano === 'Óbito').length;
+    const investigacoesPendentes = listaEventos.filter(e => e.statusAnalise === 'Pendente NSP' || e.statusAnalise === 'Em Análise').length;
+    const maiorIncidencia = dadosCategorias.length > 0 ? dadosCategorias[0].categoria : 'Nenhum';
 
     return (
       <div className="animate-fadeIn">
         {/* CABEÇALHO */}
-        <div className="flex items-center gap-4 mb-8">
+        <div className="flex items-center gap-4 mb-6">
           <button onClick={() => setActiveView('hub')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
             <ArrowLeft size={20} className="text-slate-700" />
           </button>
           <div>
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-              <ShieldAlert className="text-red-600" /> Gestão de Risco e Eventos Adversos
+              <ShieldAlert className="text-red-600" /> Núcleo de Segurança e Gestão de Risco
             </h2>
-            <p className="text-slate-500 text-sm mt-1">Monitoramento contínuo da Segurança do Paciente e Cultura Não Punitiva.</p>
+            <p className="text-slate-500 text-sm mt-1">Análise de incidentes, causas raiz e monitoramento de escalas preditivas.</p>
           </div>
         </div>
 
-        {/* BARRA DE AÇÕES E FILTROS */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-wrap gap-4 items-center">
-          <Clock size={18} className="text-slate-400" />
-          <select className="bg-slate-50 border border-slate-200 p-2 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-red-500">
-            <option>Mês Atual (Abril/2026)</option>
-            <option>Mês Anterior (Março/2026)</option>
-            <option>Acumulado do Ano</option>
-          </select>
-          <button className="ml-auto bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow-sm">
-            <PlusCircle size={16} /> Nova Notificação
+        {/* NAVEGAÇÃO INTERNA (ABAS) */}
+        <div className="flex gap-2 border-b border-slate-200 mb-6 overflow-x-auto scrollbar-hide">
+          <button 
+            onClick={() => setAbaRiscoAtiva('eventos')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaRiscoAtiva === 'eventos' ? 'border-red-600 text-red-700 bg-red-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            Notificações de Eventos Adversos
+          </button>
+          <button 
+            onClick={() => setAbaRiscoAtiva('escalas')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'escalas' ? 'border-blue-600 text-blue-700 bg-blue-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            Escalas Assistenciais
           </button>
         </div>
 
-        {/* KPIs SUPERIORES */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Notificações</span>
-            <div className="text-3xl font-black text-slate-800 mt-1">20</div>
-            <div className="text-[10px] text-emerald-500 font-bold mt-1 flex items-center gap-1">Notificar é um ato de segurança</div>
-          </div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Eventos Graves / Sentinela</span>
-            <div className="text-3xl font-black text-red-600 mt-1">1</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">Requer análise raiz (Ishikawa)</div>
-          </div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Investigações Pendentes</span>
-            <div className="text-3xl font-black text-amber-500 mt-1">3</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">Aguardando parecer do RT</div>
-          </div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Maior Incidência</span>
-            <div className="text-xl font-black text-blue-600 mt-1 truncate">Medicação</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">8 ocorrências no período</div>
-          </div>
-        </div>
+        {/* ============================================================== */}
+        {/* CONTEÚDO: EVENTOS ADVERSOS                                     */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'eventos' && (
+          <div className="space-y-4">
+            
+            {/* KPIs SUPERIORES (Agora são reais, calculados pelo Firebase) */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Notificações</span>
+                <div className="text-3xl font-black text-slate-800 mt-1">{totalEventos}</div>
+                <div className="text-[10px] text-emerald-500 font-bold mt-1">Notificar é um ato de segurança</div>
+              </div>
+              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Eventos Graves / Sentinela</span>
+                <div className="text-3xl font-black text-red-600 mt-1">{eventosGraves}</div>
+                <div className="text-[10px] text-slate-400 font-bold mt-1">Requer análise raiz imediata</div>
+              </div>
+              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Investigações Pendentes</span>
+                <div className="text-3xl font-black text-amber-500 mt-1">{investigacoesPendentes}</div>
+                <div className="text-[10px] text-slate-400 font-bold mt-1">Aguardando parecer da RT/CCIH</div>
+              </div>
+              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Maior Incidência</span>
+                <div className="text-xl font-black text-blue-600 mt-1 truncate" title={maiorIncidencia}>{maiorIncidencia}</div>
+                <div className="text-[10px] text-slate-400 font-bold mt-1">Foco prioritário para treinamento</div>
+              </div>
+            </div>
 
-        {/* GRÁFICO E LISTA */}
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* GRÁFICO DE EPIDEMIOLOGIA */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-              <BarChart2 size={16} className="text-blue-500" /> Epidemiologia dos Eventos
-            </h3>
-            <div className="flex-1 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dadosCategorias} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="categoria" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }} width={110} />
-                  <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
-                  <Bar dataKey="ocorrencias" name="Nº de Ocorrências" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
-                </BarChart>
-              </ResponsiveContainer>
+            {/* GRÁFICO E LISTA */}
+            <div className="grid md:grid-cols-2 gap-6">
+              
+              {/* GRÁFICO DE EPIDEMIOLOGIA */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
+                <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+                  <BarChart2 size={16} className="text-blue-500" /> Epidemiologia dos Eventos
+                </h3>
+                <div className="flex-1 w-full">
+                  {dadosCategorias.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={dadosCategorias.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
+                        <XAxis type="number" hide />
+                        <YAxis type="category" dataKey="categoria" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#475569', fontWeight: 'bold' }} width={110} />
+                        <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                        <Bar dataKey="ocorrencias" name="Nº de Ocorrências" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-sm text-slate-400 italic">Sem dados suficientes para o gráfico.</div>
+                  )}
+                </div>
+              </div>
+
+              {/* LISTA DE NOTIFICAÇÕES (FEED REAL DO FIREBASE) */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col overflow-hidden">
+                <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-500" /> Feed de Notificações
+                </h3>
+                <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+                  {listaEventos.length === 0 ? (
+                    <div className="text-center text-sm text-slate-400 italic py-10">Nenhuma notificação encontrada no sistema.</div>
+                  ) : (
+                    listaEventos.map((evento) => {
+                      let corStatus = "bg-slate-100 text-slate-600";
+                      if (evento.statusAnalise === 'Pendente NSP') corStatus = "bg-red-100 text-red-700";
+                      else if (evento.statusAnalise === 'Em Análise') corStatus = "bg-amber-100 text-amber-700";
+                      else if (evento.statusAnalise === 'Concluído') corStatus = "bg-emerald-100 text-emerald-700";
+
+                      let corBarra = "bg-slate-300";
+                      if (evento.grauDano === 'Óbito') corBarra = "bg-black";
+                      else if (evento.grauDano === 'Grave') corBarra = "bg-red-600";
+                      else if (evento.grauDano === 'Moderado') corBarra = "bg-amber-500";
+                      else if (evento.grauDano === 'Leve') corBarra = "bg-blue-400";
+                      else if (evento.grauDano === 'Nenhum') corBarra = "bg-emerald-400";
+
+                      return (
+                        <div key={evento.id} onClick={() => setEventoEmInvestigacao(evento)} className="flex p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
+                          <div className={`w-2 rounded-full mr-3 shrink-0 ${corBarra}`}></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="text-xs font-black text-slate-800 uppercase truncate pr-2">{evento.tipoEvento}</span>
+                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded shrink-0">
+                                {new Date(evento.dataHoraOcorrencia).toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center mt-1">
+                              <p className="text-xs text-slate-500">Leito {evento.leitoOcorrencia} ({evento.pacienteIniciais || 'SN'})</p>
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${corStatus}`}>
+                                {evento.statusAnalise}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
           </div>
+        )}
 
-          {/* LISTA DE ÚLTIMAS NOTIFICAÇÕES */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col overflow-hidden">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-              <AlertTriangle size={16} className="text-amber-500" /> Feed de Notificações
-            </h3>
-            <div className="flex-1 overflow-y-auto pr-2 space-y-3">
-              {ultimasNotificacoes.map((alerta) => (
-                <div key={alerta.id} className="flex p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
-                  <div className={`w-2 rounded-full mr-3 shrink-0 ${alerta.gravidade === 'grave' ? 'bg-red-600' : alerta.gravidade === 'moderada' ? 'bg-amber-500' : 'bg-blue-400'}`}></div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="text-xs font-black text-slate-800 uppercase truncate pr-2">{alerta.evento}</span>
-                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded shrink-0">{alerta.data}</span>
+        {/* ============================================================== */}
+        {/* ESTRUTURA PARA AS ESCALAS ASSISTENCIAIS (AUDITORIA)            */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'escalas' && (
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden animate-fadeIn">
+            <div className="p-5 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                  <Activity className="text-blue-600" /> Auditoria de Escalas Clínicas Admissão
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">Verificação de conformidade do SAPS 3, Braden e Morse de todas as internações.</p>
+              </div>
+
+              {/* 🔥 NOVO BLOCO: O CONTROLE DO FILTRO DE TEMPO */}
+              <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                <Filter size={16} className="text-slate-400 ml-2" />
+                <span className="text-xs font-bold text-slate-600 uppercase">Período:</span>
+                <input 
+                  type="date" 
+                  value={filtroDataInicio} 
+                  onChange={(e) => setFiltroDataInicio(e.target.value)}
+                  className="p-1.5 border border-slate-200 rounded text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
+                />
+                <span className="text-slate-400 text-xs">até</span>
+                <input 
+                  type="date" 
+                  value={filtroDataFim} 
+                  onChange={(e) => setFiltroDataFim(e.target.value)}
+                  className="p-1.5 border border-slate-200 rounded text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
+                    <th className="p-4 w-1/4">Paciente / Admissão</th>
+                    <th className="p-4 text-center border-l border-slate-200">SAPS 3 (Gravidade)</th>
+                    <th className="p-4 text-center border-l border-slate-200">Braden (Lesão)</th>
+                    <th className="p-4 text-center border-l border-slate-200">Morse (Queda)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {listaEscalas.length === 0 ? (
+                    <tr><td colSpan="4" className="p-8 text-center text-slate-400 italic">Carregando histórico de internações...</td></tr>
+                  ) : (
+                    listaEscalas.map((pac, index) => (
+                      <tr key={`${pac.id}-${index}`} className="hover:bg-slate-50 transition-colors">
+                        
+                        {/* COLUNA 1: IDENTIFICAÇÃO */}
+                        <td className="p-4">
+                          <div className="font-bold text-slate-800 text-sm">{pac.nome}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-slate-500">{new Date(pac.dataInternacao).toLocaleDateString('pt-BR')}</span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${pac.status === 'Internado' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
+                              {pac.status}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* COLUNA 2: SAPS 3 */}
+                        <td className="p-4 text-center border-l border-slate-100">
+                          {pac.saps3 ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="font-black text-slate-700 text-lg">{pac.saps3.score || pac.saps3.pontuacao || '-'}</span>
+                              <button onClick={() => abrirAuditoriaEscala('SAPS 3', pac.nome, pac.saps3)} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
+                                <Search size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded">Pendente</span>
+                          )}
+                        </td>
+
+                        {/* COLUNA 3: BRADEN */}
+                        <td className="p-4 text-center border-l border-slate-100">
+                          {pac.braden ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="font-black text-slate-700 text-lg">{pac.braden.score || pac.braden.pontuacao || '-'}</span>
+                              <button onClick={() => abrirAuditoriaEscala('Braden', pac.nome, pac.braden)} className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
+                                <Search size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded">Pendente</span>
+                          )}
+                        </td>
+
+                        {/* COLUNA 4: MORSE */}
+                        <td className="p-4 text-center border-l border-slate-100">
+                          {pac.morse ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="font-black text-slate-700 text-lg">{pac.morse.score || pac.morse.pontuacao || '-'}</span>
+                              <button onClick={() => abrirAuditoriaEscala('Morse', pac.nome, pac.morse)} className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
+                                <Search size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded">Pendente</span>
+                          )}
+                        </td>
+
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* MODAL DE INVESTIGAÇÃO DE CAUSA RAIZ (CCIH/RT)                  */}
+        {/* ============================================================== */}
+        {eventoEmInvestigacao && (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-fadeIn flex flex-col max-h-[95vh]">
+              
+              {/* CABEÇALHO DO MODAL */}
+              <div className="bg-slate-800 p-5 flex justify-between items-center text-white shrink-0">
+                <div>
+                  <h3 className="font-black text-lg flex items-center gap-2">
+                    <ShieldAlert className="text-red-400" /> Investigação de Evento Adverso
+                  </h3>
+                  <p className="text-slate-300 text-xs mt-1">Preenchimento exclusivo da Gestão (RT/CCIH/NSP)</p>
+                </div>
+                <button onClick={() => setEventoEmInvestigacao(null)} className="text-slate-400 hover:text-white p-1 transition-colors">FECHAR</button>
+              </div>
+
+              {/* CORPO DO MODAL (DUAS COLUNAS EM TELAS GRANDES) */}
+              <div className="p-6 bg-slate-50 flex-1 overflow-y-auto grid md:grid-cols-2 gap-8">
+                
+                {/* LADO ESQUERDO: O RELATO DA LINHA DE FRENTE (Somente Leitura) */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">
+                    Dados da Ocorrência (Equipe Assistencial)
+                  </h4>
+                  
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><span className="block text-[10px] text-slate-400 font-bold uppercase">Tipo de Evento</span><span className="font-bold text-slate-800 text-sm">{eventoEmInvestigacao.tipoEvento}</span></div>
+                      <div><span className="block text-[10px] text-slate-400 font-bold uppercase">Leito / Iniciais</span><span className="font-bold text-slate-800 text-sm">{eventoEmInvestigacao.leitoOcorrencia} ({eventoEmInvestigacao.pacienteIniciais || 'SN'})</span></div>
+                      <div><span className="block text-[10px] text-slate-400 font-bold uppercase">Data/Hora</span><span className="font-bold text-slate-800 text-sm">{eventoEmInvestigacao.dataHoraOcorrencia ? new Date(eventoEmInvestigacao.dataHoraOcorrencia).toLocaleString('pt-BR') : 'Data Indisponível'}</span></div>
+                      <div>
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">Grau do Dano</span>
+                        <span className={`inline-block mt-0.5 text-xs font-bold px-2 py-0.5 rounded border ${eventoEmInvestigacao.grauDano === 'Grave' || eventoEmInvestigacao.grauDano === 'Óbito' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                          {eventoEmInvestigacao.grauDano || 'Não Classificado'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center mt-1">
-                      <p className="text-xs text-slate-500">Leito {alerta.leito}</p>
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${alerta.status === 'Pendente RT' ? 'bg-red-100 text-red-700' : alerta.status === 'Concluído' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {alerta.status}
-                      </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <span className="block text-xs text-slate-500 font-bold mb-1">Breve Relato do Incidente:</span>
+                      <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-wrap">{eventoEmInvestigacao.relatoIncidente || 'Nenhum relato fornecido.'}</div>
+                    </div>
+                    <div>
+                      <span className="block text-xs text-slate-500 font-bold mb-1">Impacto Gerado no Paciente:</span>
+                      <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-wrap">{eventoEmInvestigacao.impactoGerado || 'Nenhum impacto descrito.'}</div>
+                    </div>
+                    <div>
+                      <span className="block text-xs text-slate-500 font-bold mb-1">Ações Imediatas Adotadas:</span>
+                      <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-wrap">{eventoEmInvestigacao.acoesImediatas || 'Nenhuma ação descrita.'}</div>
                     </div>
                   </div>
                 </div>
-              ))}
-              <button className="w-full py-2 mt-2 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 hover:bg-blue-100 rounded-lg">
-                Ver todas as notificações do mês
-              </button>
+
+                {/* LADO DIREITO: FORMULÁRIO DE ANÁLISE DA GESTÃO (Editável) */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">
+                    Análise Sistêmica e Prevenção (RT/NSP)
+                  </h4>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nº do Prontuário</label>
+                      <input 
+                        type="text" value={formInvestigacao.prontuario || ''} onChange={(e) => setFormInvestigacao({...formInvestigacao, prontuario: e.target.value})}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm font-bold text-slate-700" placeholder="Ex: 123456"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fase do Cuidado</label>
+                      <select 
+                        value={formInvestigacao.faseCuidado || ''} onChange={(e) => setFormInvestigacao({...formInvestigacao, faseCuidado: e.target.value})}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm font-bold text-slate-700"
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="Admissão">Admissão</option>
+                        <option value="Manutenção/Rotina">Manutenção / Rotina Diária</option>
+                        <option value="Realização de Procedimento">Realização de Procedimento</option>
+                        <option value="Transporte Intra-hospitalar">Transporte Intra-hospitalar</option>
+                        <option value="Alta/Transferência">Alta / Transferência</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex justify-between">
+                      Fatores Contribuintes / Causa Raiz <span className="text-amber-500 lowercase font-normal italic">(Ex: Falha humana, protocolo?)</span>
+                    </label>
+                    <textarea 
+                      rows="3" value={formInvestigacao.fatoresContribuintes || ''} onChange={(e) => setFormInvestigacao({...formInvestigacao, fatoresContribuintes: e.target.value})}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm resize-none text-slate-700"
+                      placeholder="Identifique as falhas no processo que permitiram a ocorrência..."
+                    ></textarea>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex justify-between">
+                      Plano de Ação / Medidas Preventivas <span className="text-emerald-500 lowercase font-normal italic">(O que faremos para não repetir?)</span>
+                    </label>
+                    <textarea 
+                      rows="3" value={formInvestigacao.medidasPreventivas || ''} onChange={(e) => setFormInvestigacao({...formInvestigacao, medidasPreventivas: e.target.value})}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm resize-none text-slate-700"
+                      placeholder="Ações de educação, revisão de pops..."
+                    ></textarea>
+                  </div>
+
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mt-2">
+                    <label className="block text-xs font-bold text-blue-800 uppercase mb-2">Status da Investigação</label>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setFormInvestigacao({...formInvestigacao, statusAnalise: 'Em Análise'})}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${formInvestigacao.statusAnalise === 'Em Análise' ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        Em Análise
+                      </button>
+                      <button 
+                        onClick={() => setFormInvestigacao({...formInvestigacao, statusAnalise: 'Concluído'})}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors flex items-center justify-center gap-1 ${formInvestigacao.statusAnalise === 'Concluído' ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        <CheckCircle size={14} /> Fechar Análise
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* RODAPÉ DO MODAL (BOTÃO DE SALVAR) */}
+              <div className="bg-slate-100 border-t border-slate-200 p-4 flex justify-end gap-3 shrink-0">
+                <button onClick={() => setEventoEmInvestigacao(null)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">
+                  Cancelar
+                </button>
+                <button onClick={salvarInvestigacaoEvento} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm">
+                  Salvar Investigação
+                </button>
+              </div>
+
             </div>
           </div>
-        </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* MODAL DE AUDITORIA DA ESCALA ESPECÍFICA                        */}
+        {/* ============================================================== */}
+        {modalEscala && (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              
+              <div className="bg-slate-800 p-5 flex justify-between items-center text-white shrink-0">
+                <div>
+                  <h3 className="font-black text-lg flex items-center gap-2">
+                    <Activity className="text-blue-400" /> Auditoria de Preenchimento: {modalEscala.titulo}
+                  </h3>
+                  <p className="text-slate-300 text-sm mt-1">Paciente: <span className="font-bold text-white">{modalEscala.paciente}</span></p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="bg-white/10 px-4 py-2 rounded-lg text-center">
+                    <span className="block text-[10px] font-bold text-slate-300 uppercase">Score Final</span>
+                    <span className="block text-xl font-black text-white leading-none">{modalEscala.score}</span>
+                  </div>
+                  <button onClick={() => setModalEscala(null)} className="text-slate-400 hover:text-white transition-colors">
+                    <XCircle size={24} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-50 flex-1 overflow-y-auto">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">
+                  Detalhamento dos Fatores Assinalados pela Equipe
+                </h4>
+                
+                <div className="space-y-3">
+                  {/* VERIFICA SE AS RESPOSTAS SÃO UM ARRAY (Formato do SAPS 3) */}
+                  {Array.isArray(modalEscala.respostas) ? (
+                    modalEscala.respostas.length > 0 ? (
+                      modalEscala.respostas.map((item, idx) => {
+                        // Divide a string "Idade 85 anos: +18" em duas partes para ficar bonito
+                        const partes = String(item).split(':');
+                        const textoFator = partes[0];
+                        const pontuacao = partes[1] ? partes[1].trim() : '';
+
+                        return (
+                          <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
+                            <span className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                              <CheckCircle size={14} className="text-blue-500" /> {textoFator}
+                            </span>
+                            {pontuacao && (
+                              <span className={`text-sm font-black px-3 py-1 rounded-md text-right ${pontuacao.includes('-') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                {pontuacao}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-center text-slate-400 italic p-4">Nenhum fator de gravidade foi pontuado.</div>
+                    )
+                  ) : (
+                    /* CASO SEJA UM OBJETO (Formato do Braden e Morse que fizemos antes) */
+                    Object.entries(modalEscala.respostas || {}).map(([chave, valor], idx) => {
+                      if (chave === 'score' || chave === 'pontuacao' || chave === 'total' || chave === 'data') return null;
+                      return (
+                        <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
+                          <span className="text-sm font-bold text-slate-600 capitalize">
+                            {chave.replace(/([A-Z])/g, ' $1').trim()}
+                          </span>
+                          <span className="text-sm font-black text-slate-800 bg-slate-100 px-3 py-1 rounded-md text-right max-w-[50%]">
+                            {typeof valor === 'object' ? JSON.stringify(valor) : String(valor)}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                  
+                  {(!modalEscala.respostas || (Array.isArray(modalEscala.respostas) ? modalEscala.respostas.length === 0 : Object.keys(modalEscala.respostas).length === 0)) && (
+                    <div className="text-center text-slate-400 italic p-4">
+                      O detalhamento específico desta escala não foi salvo no momento do preenchimento.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     );
   };
@@ -2335,7 +2890,7 @@ const GestorDashboard = ({ userProfile }) => {
       {activeView === 'indicadores' && renderIndicadores()}
       {activeView === 'tendencias' && renderTendencias()}
       {activeView === 'qualidade' && renderQualidade()}
-      {activeView === 'auditoria' && renderAuditoria()}
+      {activeView === 'auditoria' && renderGestaoRisco()} 
       {activeView === 'equipe' && renderEquipe()}
     </div>
   );

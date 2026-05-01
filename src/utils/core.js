@@ -322,6 +322,7 @@ export const calculateSAPS3Score = (patient) => {
   // 6. GLASGOW (CONSIDERANDO SEDAÇÃO)
   const isSedated = patient.neuro?.sedacao === true || (patient.neuro?.rass && patient.neuro.rass !== "" && patient.neuro.rass !== "NT");
   let glasgow = 0;
+  let tipoGlasgow = "Glasgow Atual"; // Rótulo padrão
 
   if (isSedated) {
     const getVal = (s) => parseInt(s?.split(" ")[0]) || 0;
@@ -329,16 +330,24 @@ export const calculateSAPS3Score = (patient) => {
     const rv = patient.neuro?.glasgowBasalRV?.startsWith("T") ? 1 : getVal(patient.neuro?.glasgowBasalRV);
     const rm = getVal(patient.neuro?.glasgowBasalRM);
     const basalTotal = ao + rv + rm;
-    glasgow = basalTotal > 0 ? basalTotal : calculateGlasgowTotal(patient);
-    if (basalTotal > 0) details.push(`Paciente Sedado -> Usando Glasgow Basal (${glasgow})`);
+    
+    if (basalTotal > 0) {
+        glasgow = basalTotal;
+        tipoGlasgow = "Glasgow Basal (Sedado)"; // Muda o rótulo se achou o basal
+    } else {
+        glasgow = calculateGlasgowTotal(patient);
+    }
   } else {
     glasgow = calculateGlasgowTotal(patient);
   }
 
+  // Faz a pontuação e anota em uma linha única e clara!
   if (glasgow > 0) {
-    if (glasgow <= 6) { score += 15; details.push(`Glasgow (${glasgow}): +15`); }
-    else if (glasgow <= 12) { score += 7; details.push(`Glasgow (${glasgow}): +7`); }
-    else if (glasgow <= 14) { score += 2; details.push(`Glasgow (${glasgow}): +2`); }
+    if (glasgow <= 6) { score += 15; details.push(`${tipoGlasgow} (${glasgow}): +15`); }
+    else if (glasgow <= 12) { score += 7; details.push(`${tipoGlasgow} (${glasgow}): +7`); }
+    else if (glasgow <= 14) { score += 2; details.push(`${tipoGlasgow} (${glasgow}): +2`); }
+    // Opcional: Se o Glasgow for 15, o SAPS 3 dá 0 pontos, mas o senhor pode querer ver que foi avaliado:
+    else if (glasgow === 15) { details.push(`${tipoGlasgow} (15): +0`); }
   }
 
   // 7. EXAMES LABORATORIAIS (PRIMEIRA COLETA)
@@ -372,44 +381,55 @@ export const calculateSAPS3Score = (patient) => {
     else if (pf < 250) { score += 7; details.push(`PaO2/FiO2 (100-249): +7`); }
   }
 
-  // 8. SINAIS VITAIS (PRIMEIRO REGISTRO DA ADMISSÃO)
+  // 8. SINAIS VITAIS (PRIMEIRO REGISTRO DA ADMISSÃO / 1ª HORA)
   let fcInicial = 0;
   let pasInicial = 0;
-  let tempMin = 99; // Mantido busca da menor temperatura das 24h
+  let tempInicial = 0;
 
   if (patient.bh?.vitals) {
     const horarios = Object.keys(patient.bh.vitals).sort();
     
-    // Busca FC e PAS iniciais
+    // Busca os PRIMEIROS sinais vitais registrados
     for (let h of horarios) {
       const v = patient.bh.vitals[h];
       const fc = safeNumber(v["FC (bpm)"]);
       const pas = safeNumber(v["PAS"]);
+      const t = safeNumber(v["Temp (ºC)"]);
       
+      // Salva o primeiro valor que não for zero
       if (fc > 0 && fcInicial === 0) fcInicial = fc;
       if (pas > 0 && pasInicial === 0) pasInicial = pas;
-      if (fcInicial > 0 && pasInicial > 0) break;
+      if (t > 0 && tempInicial === 0) tempInicial = t;
+      
+      // Se já achou os 3 primeiros, aborta a busca para não olhar o resto do dia
+      if (fcInicial > 0 && pasInicial > 0 && tempInicial > 0) break;
     }
-
-    // Busca menor temperatura (Critério padrão SAPS 3 permanece o pior valor)
-    Object.values(patient.bh.vitals).forEach((v) => {
-      const t = safeNumber(v["Temp (ºC)"]);
-      if (t > 0 && t < tempMin) tempMin = t;
-    });
   }
 
+  // Pontuação FC Inicial
   if (fcInicial >= 160) { score += 7; details.push(`FC Inicial (${fcInicial}): +7`); }
   else if (fcInicial >= 120) { score += 5; details.push(`FC Inicial (${fcInicial}): +5`); }
 
+  // Pontuação PAS Inicial
   if (pasInicial > 0) {
     if (pasInicial < 70) { score += 11; details.push(`PAS Inicial (${pasInicial}): +11`); }
     else if (pasInicial < 90) { score += 5; details.push(`PAS Inicial (${pasInicial}): +5`); }
     else if (pasInicial < 120) { score += 2; details.push(`PAS Inicial (${pasInicial}): +2`); }
   }
 
-  if (tempMin > 0 && tempMin < 35.0) { score += 5; details.push(`Temperatura Mínima (< 35.0ºC): +5`); }
+  // Pontuação Temperatura Inicial
+  if (tempInicial > 0) {
+    if (tempInicial < 35.0) { score += 5; details.push(`Temp. Inicial (< 35.0ºC): +5`); }
+    else if (tempInicial >= 39.0) { score += 3; details.push(`Temp. Inicial (≥ 39.0ºC): +3`); } 
+  }
 
-  // 9. CÁLCULO DA PROBABILIDADE (LOGIT)
+  // 9. USO DE DROGAS VASOATIVAS (Vinculado exclusivamente ao Checkbox da Admissão)
+  if (patient.cardio?.dva || patient.admissaoMedica?.dva) {
+    score += 3;
+    details.push(`Uso de Vasoativo na Admissão: +3`);
+  }
+
+  // 10. CÁLCULO DA PROBABILIDADE (LOGIT)
   const logit = -32.6659 + 7.3068 * Math.log(Math.max(score, 1) + 20.5958);
   const prob = ((Math.exp(logit) / (1 + Math.exp(logit))) * 100).toFixed(1);
 

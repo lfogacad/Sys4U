@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { doc, setDoc, deleteDoc, collection, addDoc, onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
   Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
@@ -185,6 +185,16 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
 
+  // ESTADOS DA GESTÃO DE RISCO (NSP)
+  const [abaRiscoAtiva, setAbaRiscoAtiva] = useState('eventos'); // 'eventos' ou 'escalas'
+  const [formInvestigacao, setFormInvestigacao] = useState({
+    prontuario: '',
+    faseCuidado: '',
+    fatoresContribuintes: '',
+    medidasPreventivas: '',
+    statusAnalise: 'Em Análise'
+  });
+
   const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
     if (!dadosAtualizados.gasoHora) return; 
 
@@ -337,8 +347,14 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     }
 
     // 1. BUSCA O PACIENTE NO CENSO ATUAL
-    // Procura na sua listaCenso quem está no leito selecionado
-    const pacienteAtual = (listaCenso || []).find(p => p.leito === formEvento.leito || p.id === formEvento.leito) || null;
+    // Transforma o valor do select ("01") em número puro ("1") para procurar o documento correto
+    const leitoSelecionadoLimpo = parseInt(formEvento.leito, 10).toString(); 
+    
+    // Busca o paciente internado no momento
+    const pacienteAtual = (listaCenso || []).find(p => 
+      p.id === `bed_${leitoSelecionadoLimpo}` || 
+      p.leito === formEvento.leito
+    ) || null;
 
     // Função auxiliar para pegar as iniciais do paciente (Ex: João Silva Costa -> JSC)
     const extrairIniciais = (nomeCompleto) => {
@@ -484,6 +500,27 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
     carregarCenso();
   }, []);
+
+  // BUSCA OS EVENTOS ADVERSOS NO FIREBASE
+  useEffect(() => {
+    if (viewMode === 'auditoria') { // Só busca se o usuário abrir a tela de Gestão de Risco
+      const carregarEventos = async () => {
+        try {
+          const querySnapshot = await getDocs(collection(db, "eventos_adversos"));
+          const eventosTemp = [];
+          querySnapshot.forEach((doc) => {
+            eventosTemp.push({ id: doc.id, ...doc.data() });
+          });
+          // Ordena dos mais recentes para os mais antigos
+          eventosTemp.sort((a, b) => new Date(b.dataHoraOcorrencia) - new Date(a.dataHoraOcorrencia));
+          setListaEventos(eventosTemp);
+        } catch (error) {
+          console.error("Erro ao carregar eventos adversos:", error);
+        }
+      };
+      carregarEventos();
+    }
+  }, [viewMode]);
 
   // Efeito para buscar a fila de espera da UTI em tempo real
   useEffect(() => {
@@ -1163,22 +1200,6 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     r.historiaClinica = historiaAbaMedica;
     r.admissionData = admissionData; // Mantém abastecendo o dia a dia normalmente
 
-    // --- ENVIANDO PARA O PAINEL GESTOR ---
-    try {
-      await addDoc(collection(db, "indicadores_performance"), {
-        cpf: r.cpf || admissionData.cpf,
-        idInternacao: r.idInternacao,
-        tipo: "SAPS 3",
-        dataRegistro: serverTimestamp(),
-        valor: r.saps3, // Salvamos o objeto completo para o Gestor calcular ou auditar
-        nomePaciente: r.nome,
-        periodo: {
-            mes: new Date().getMonth() + 1,
-            ano: new Date().getFullYear()
-        }
-      });
-    } catch (e) { console.error("Erro indicador SAPS3:", e); }
-    
     // -----------------------------------------
     const up = [...patients];
     up[activeTab] = r;
@@ -1502,12 +1523,12 @@ ${physioData.condutas}`;
     }
   };
 
-  const handleLockSAPS3 = () => {
+  const handleLockSAPS3 = async () => { // 🔥 Adicionamos o 'async' aqui
     const up = [...patients];
     const p = up[activeTab];
     const calc = calculateSAPS3Score(p);
 
-    // 1. TRAVA O SAPS 3 (O código original do senhor)
+    // 1. TRAVA O SAPS 3
     if (!p.saps3) p.saps3 = {};
     p.saps3.isLocked = true;
     p.saps3.lockedScore = calc.score;
@@ -1519,17 +1540,38 @@ ${physioData.condutas}`;
     const evolucaoAtual = p.medical.evolucao || "";
     const textoSaps = `\n\n--- ADMISSÃO ---\nEscore SAPS 3: ${calc.score} pontos (Mortalidade Estimada: ${calc.prob}%).\n----------------\n`;
 
-    // Verifica se o texto já existe para evitar duplicidade (caso o médico destrave e trave de novo)
     if (!evolucaoAtual.includes("Escore SAPS 3:")) {
       p.medical.evolucao = evolucaoAtual + textoSaps;
-      alert("SAPS 3 Travado e carimbado na Evolução Médica com sucesso!");
+      alert("SAPS 3 Calculado, Travado e carimbado na Evolução Médica com sucesso!");
     } else {
       alert("SAPS 3 Travado com sucesso!");
     }
 
-    // 3. SALVA TUDO NO BANCO DE DADOS
+    // 3. SALVA O ESTADO LOCAL DO PACIENTE
     setPatients(up);
-    save(p);
+    if (typeof save === "function") save(p, "SAPS 3 Travado Definitivo");
+
+    // 4. 🔥 O NOVO PASSO: ENVIA A FOTO DEFINITIVA PARA A AUDITORIA DO GESTOR
+    try {
+      const historicoRef = collection(db, "indicadores_performance");
+      await addDoc(historicoRef, {
+        cpf: p.cpf || "SEM_CPF",
+        idInternacao: p.idInternacao || `${p.cpf || 'SEM_CPF'}_${Date.now()}`,
+        tipo: "SAPS 3",
+        dataRegistro: serverTimestamp(),
+        valor: calc.score, 
+        probabilidadeMorte: calc.prob,
+        respostas: calc.details, // O array detalhado que o modal vai ler
+        nomePaciente: p.nome,
+        periodo: {
+            mes: new Date().getMonth() + 1,
+            ano: new Date().getFullYear()
+        }
+      });
+      console.log("Auditoria do SAPS 3 salva no banco de gestão.");
+    } catch (e) {
+      console.error("Erro ao salvar indicador SAPS3 definitivo:", e);
+    }
   };
 
   const handleUnlockSAPS3 = () => {
@@ -2419,7 +2461,7 @@ const handleFinalizeNursingAdmission = async () => {
     const morseTotal = reqMorse.reduce((acc, curr) => acc + (parseInt(nursingData[curr]) || 0), 0);
     let morseRisco = morseTotal >= 45 ? "Alto" : morseTotal >= 25 ? "Baixo" : "Sem Risco";
 
-    // 3. PROCESSAMENTO DE LESÕES E CURATIVOS (NOVO)
+    // 3. PROCESSAMENTO DE LESÕES E CURATIVOS
     const lesoesLista = nursingData.lesoes || [];
     const textoLesoes = lesoesLista.length > 0 
       ? lesoesLista.map(l => `- [${l.origem === 'incidencia' ? 'ADQUIRIDA NA UTI' : 'PRÉVIA'}] ${l.localizacao}. Curativo: ${l.curativo || "Não especificado"}`).join('\n')
@@ -2430,7 +2472,7 @@ const handleFinalizeNursingAdmission = async () => {
     const adm = p.admissionData || p.admissoes || {};
     const historia = adm.historia || "Sem registro prévio";
 
-    // 5. O NOVO CARIMBADOR (Texto Integrado com tudo o que incluímos)
+    // 5. O NOVO CARIMBADOR (Texto Integrado)
     const text = `ADMISSÃO DE ENFERMAGEM COMPLETA
 
 --- HISTÓRIA CLÍNICA (ADMISSÃO MÉDICA) ---
@@ -2459,9 +2501,7 @@ ESCALAS DE RISCO:
 Documento gerado eletronicamente e registrado nos indicadores de performance da unidade.
 `;
 
-    // 6. ATUALIZAÇÃO DO OBJETO DO PACIENTE (O SEGREDO DO COFRE ESTÁ AQUI)
-    
-    // A. Cria o "Cofre" da Admissão (só grava se ainda não existir)
+    // 6. ATUALIZAÇÃO DO OBJETO DO PACIENTE
     if (!p.admissaoEnfermagem) {
       p.admissaoEnfermagem = { 
         ...nursingData, 
@@ -2470,14 +2510,34 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       };
     }
 
-    // B. Alimenta a evolução diária (para que o NursingDashboard já nasça preenchido)
     if (!p.enfermagem) p.enfermagem = {};
     p.enfermagem = { ...p.enfermagem, ...nursingData, lesoes: lesoesLista };
     
-    // Salva no banco de dados
     if (typeof save === "function") {
       save(p, "Enfermagem: Admissão e Indicadores Atualizados");
     }
+
+    // =========================================================================
+    // 🔥 TRADUÇÃO DOS DETALHES DAS ESCALAS PARA AUDITORIA (NOVO BLOCO)
+    // =========================================================================
+    // Usamos '==' em vez de '===' para ignorar diferenças entre String("1") e Number(1)
+    const detalhesBraden = {
+      percepcaoSensorial: BRADEN_OPTIONS.percepcao.find(opt => opt.value == nursingData.braden_percepcao)?.label || "N/D",
+      umidade: BRADEN_OPTIONS.umidade.find(opt => opt.value == nursingData.braden_umidade)?.label || "N/D",
+      atividade: BRADEN_OPTIONS.atividade.find(opt => opt.value == nursingData.braden_atividade)?.label || "N/D",
+      mobilidade: BRADEN_OPTIONS.mobilidade.find(opt => opt.value == nursingData.braden_mobilidade)?.label || "N/D",
+      nutricao: BRADEN_OPTIONS.nutricao.find(opt => opt.value == nursingData.braden_nutricao)?.label || "N/D",
+      friccaoCisalhamento: BRADEN_OPTIONS.friccao.find(opt => opt.value == nursingData.braden_friccao)?.label || "N/D",
+    };
+
+    const detalhesMorse = {
+      historicoDeQuedas: MORSE_OPTIONS.historico.find(opt => opt.value == nursingData.morse_historico)?.label || "N/D",
+      diagnosticoSecundario: MORSE_OPTIONS.diagnostico.find(opt => opt.value == nursingData.morse_diagnostico)?.label || "N/D",
+      auxilioNaMarcha: MORSE_OPTIONS.auxilio.find(opt => opt.value == nursingData.morse_auxilio)?.label || "N/D",
+      terapiaEndovenosa: MORSE_OPTIONS.terapiaIV.find(opt => opt.value == nursingData.morse_terapiaIV)?.label || "N/D",
+      marcha: MORSE_OPTIONS.marcha.find(opt => opt.value == nursingData.morse_marcha)?.label || "N/D",
+      estadoMental: MORSE_OPTIONS.estadoMental.find(opt => opt.value == nursingData.morse_estadoMental)?.label || "N/D",
+    };
 
     // 7. CARIMBADOR DE INDICADORES (Firebase)
     try {
@@ -2489,9 +2549,9 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         nomePaciente: p.nome
       };
 
-      // Braden e Morse
-      await addDoc(historicoRef, { ...baseData, tipo: "BRADEN", valor: bradenTotal, risco: bradenRisco });
-      await addDoc(historicoRef, { ...baseData, tipo: "MORSE", valor: morseTotal, risco: morseRisco });
+      // 🔥 Adicionamos o campo 'respostas' no payload do Firebase
+      await addDoc(historicoRef, { ...baseData, tipo: "BRADEN", valor: bradenTotal, risco: bradenRisco, respostas: detalhesBraden });
+      await addDoc(historicoRef, { ...baseData, tipo: "MORSE", valor: morseTotal, risco: morseRisco, respostas: detalhesMorse });
 
       // Registro de Dispositivos (Inícios e Retiradas)
       const dispositivos = [
@@ -2707,7 +2767,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       return diffDays < 0 ? 0 : diffDays + 1; // Padrão D1, D2...
     };
 
-    // 2. Auditoria de Dispositivos (Sua lógica excelente de prevenção de erro)
+    // 2. Auditoria de Dispositivos
     let dispositivosAtivos = [];
     if (enf.svd && !enf.svdRetiradaData) dispositivosAtivos.push("Sonda Vesical (SVD)");
     if (enf.cvcLocal && !enf.cvcRetiradaData) dispositivosAtivos.push("Acesso Central (CVC)");
@@ -2733,33 +2793,19 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
 
       // --- 🧠 MOTOR DE INDICADORES OTIMIZADO ---
       const indicadores_finais = {
-        // Eficiência: Tempo de Internação (LOS)
         permanenciaTotal: calcularDias(pacienteAtual.dataInternacao, hojeISO),
-        
-        // Ventilação Mecânica
         totalDiasVM: typeof getTempoVMNumber === 'function' ? getTempoVMNumber(pacienteAtual) : 0,
-        
-        // Dispositivos (Densidade)
         totalDiasSVD: enf.svd ? calcularDias(enf.svdData, enf.svdRetiradaData) : 0,
         totalDiasCVC: enf.cvcLocal ? calcularDias(enf.cvcData, enf.cvcRetiradaData) : 0,
         totalDiasShiley: enf.shileyLocal ? calcularDias(enf.shileyData, enf.shileyRetiradaData) : 0,
-        
-        // Gravidade e SMR (Essencial para o Dashboard)
         saps3Score: pacienteAtual.saps3?.score || 0,
         mortalidadePrevista: pacienteAtual.saps3?.probabilidade || 0,
-        
-        // Identificação (Operacionalizando o dado que discutimos)
-        // Se houver um campo no prontuário sobre isso, salvamos aqui. 
-        // Se não, salvamos como 'não_auditado' para o Dashboard saber.
         pacienteIdentificado: pacienteAtual.identificacaoCorreta || "auditado_positivo",
-
-        // Desfecho Binário para facilitar cálculos de porcentagem
         foiObito: dischargeDestination === 'Óbito' ? 1 : 0,
         resultado: dischargeDestination === 'Óbito' ? 'Óbito' : 'Vivo'
       };
 
       // 3. Salvamento no Histórico
-      // IMPORTANTE: Adicionamos o CPF e NOME no primeiro nível para facilitar filtros de readmissão
       await addDoc(historicoRef, {
         nomePaciente: pacienteAtual.nome,
         cpf: pacienteAtual.cpf || "000.000.000-00",
@@ -2768,23 +2814,36 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         desfecho: dischargeDestination,
         leitoFinal: pacienteAtual.id,
         indicadores: indicadores_finais,
-        // Guardamos uma cópia completa por segurança
         backupProntuario: JSON.parse(JSON.stringify(pacienteAtual))
       });
 
-      // 4. Limpeza do Leito Ativo
-      // Aqui usamos o seu padrão de resetar para o estado inicial
-      const empty = defaultPatient(activeTab);
-      const up = [...patients];
-      up[activeTab] = empty;
-      setPatients(up);
+      // ==========================================
+      // 4. LIMPEZA DO LEITO ATIVO (BLINDADA)
+      // ==========================================
       
-      // Remove o paciente do "tempo real" para o leito ficar livre (Verde)
-      await deleteDoc(doc(db, "leitos_uti", `bed_${pacienteAtual.id}`));
+      // Puxa o template vazio
+      const empty = defaultPatient(activeTab);
+      
+      // 🔥 TRAVA DE SEGURANÇA 1: Garante que a cama vazia não perca sua "placa de identificação"
+      empty.id = pacienteAtual.id;
+      
+      // 🔥 TRAVA DE SEGURANÇA 2: Atualiza a tela sem quebrar a ordem ou apagar os leitos vizinhos
+      setPatients(listaAnterior => 
+        listaAnterior.map(paciente => 
+          paciente.id === pacienteAtual.id ? empty : paciente
+        )
+      );
+      
+      // 🔥 TRAVA DE SEGURANÇA 3: Descobre o nome certo do documento para não duplicar o "bed_"
+      const docId = pacienteAtual.id.includes('bed_') ? pacienteAtual.id : `bed_${pacienteAtual.id}`;
+      
+      // Sobrescreve o documento correto no Firebase com os dados vazios
+      await setDoc(doc(db, "leitos_uti", docId), empty);
 
+      // Finaliza a interface
       setShowDischargeModal(false);
       setDischargeDestination("");
-      alert(`✅ Saída concluída! Indicadores de ${pacienteAtual.nome} foram processados.`);
+      alert(`✅ Saída concluída! O leito de ${pacienteAtual.nome} agora está livre e limpo.`);
 
     } catch (error) {
       console.error("Erro ao processar alta:", error);
@@ -3878,14 +3937,25 @@ const userRole = userProfile?.role || userProfile?.perfil;
                             className="w-full p-3 bg-red-50 border border-red-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-red-900 font-bold"
                           >
                             <option value="">Selecione o leito...</option>
-                            {/* Gera os 10 leitos dinamicamente. Se o senhor puxa o censo do banco, pode mapear o listaCenso aqui */}
+                            {/* Gera os 10 leitos dinamicamente. */}
                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
-                              const leitoFormatado = num.toString().padStart(2, '0');
-                              // Tenta achar o nome do paciente para mostrar na lista e ajudar o profissional
-                              const pac = (listaCenso || []).find(p => p.leito === leitoFormatado || p.leito === num.toString());
+                              const leitoFormatado = num.toString().padStart(2, '0'); // Ex: "01"
+                              const leitoSemZero = num.toString(); // Ex: "1"
+                              
+                              // 🔥 BUSCA BLINDADA: Tenta achar o leito por todas as chaves possíveis
+                              const pac = (listaCenso || []).find(p => 
+                                p.id === `bed_${leitoSemZero}` ||   // Procura pelo ID do documento (bed_1)
+                                p.id === `bed_${leitoFormatado}` || // Procura pelo ID do documento (bed_01)
+                                p.leito === leitoFormatado ||       // Procura pelo campo interno "01"
+                                p.leito === leitoSemZero            // Procura pelo campo interno "1"
+                              );
+
+                              // Garante que o nome existe antes de tentar cortar o primeiro nome
+                              const nomePaciente = pac && pac.nome ? pac.nome.split(' ')[0] : null;
+
                               return (
                                 <option key={num} value={leitoFormatado}>
-                                  Leito {leitoFormatado} {pac && pac.nome ? `- ${pac.nome.split(' ')[0]}` : '(Vazio/Desconhecido)'}
+                                  Leito {leitoFormatado} {nomePaciente ? `- ${nomePaciente}` : '(Vazio/Desconhecido)'}
                                 </option>
                               );
                             })}
