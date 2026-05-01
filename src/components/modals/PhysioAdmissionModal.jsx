@@ -144,7 +144,9 @@ const PhysioAdmissionModal = ({
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-cyan-100 pt-4">
               <div>
-                <label className="block text-xs font-bold text-cyan-700 mb-1">Escore MRC (0-60)</label>
+                <label className="block text-xs font-bold text-cyan-700 mb-1">
+                  Escore MRC (0-60) <span className="text-red-500 ml-0.5">*</span>
+                </label>
                 <input
                   type="number" min="0" max="60"
                   className="w-full p-2 border rounded bg-slate-50 outline-none focus:ring-2 focus:ring-cyan-200"
@@ -155,7 +157,9 @@ const PhysioAdmissionModal = ({
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-cyan-700 mb-1">ICU Mobility Scale (IMS)</label>
+                <label className="block text-xs font-bold text-cyan-700 mb-1">
+                  ICU Mobility Scale (IMS) <span className="text-red-500 ml-0.5">*</span>
+                </label>
                 <select
                   className="w-full p-2 border rounded bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-cyan-200"
                   value={physioData.ims || ""}
@@ -173,7 +177,8 @@ const PhysioAdmissionModal = ({
             {/* --- NOVA SEÇÃO: SUPORTE VENTILATÓRIO --- */}
             <div className="mt-4 border-t border-cyan-100 pt-4">
               <label className="font-bold text-cyan-800 text-xs uppercase flex items-center gap-2 mb-3">
-                <Wind size={14} className="text-cyan-600" /> Suporte Ventilatório
+                <Wind size={14} className="text-cyan-600" /> 
+                Suporte Ventilatório <span className="text-red-500 text-lg leading-none">*</span>
               </label>
               <select
                 className="w-full p-2 border rounded mb-3 bg-white outline-none focus:ring-2 focus:ring-cyan-200 text-xs font-bold text-slate-700"
@@ -392,17 +397,49 @@ const PhysioAdmissionModal = ({
           </div>
         </div>
 
+        {/* ============================================================== */}
+        {/* RODAPÉ DO MODAL (BOTÕES)                                       */}
+        {/* ============================================================== */}
         <div className="p-4 bg-slate-100 border-t flex flex-col-reverse sm:flex-row justify-end gap-3 sticky bottom-0 z-10">
           <button onClick={() => setShowPhysioModal(false)} className="px-6 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto">
             {isReadOnly ? "Fechar" : "Cancelar"}
           </button>
           
-          {/* BOTÃO DE SALVAR SÓ APARECE SE NÃO ESTIVER TRAVADO */}
-          {!isReadOnly && (
-            <button onClick={handleFinalizePhysioAdmission} className="px-6 py-3 rounded-xl font-bold text-white bg-cyan-600 hover:bg-cyan-700 shadow-lg transition-colors flex items-center justify-center gap-2 w-full sm:w-auto">
-              <FileText size={18} /> Finalizar e Gerar Texto
-            </button>
-          )}
+          {/* BOTÃO DE SALVAR (Inteligente e com trava de segurança) */}
+          {!isReadOnly && (() => {
+            // Verifica se os campos vitais estão preenchidos
+            const hasMrc = physioData.mrcScore !== "" && physioData.mrcScore !== undefined;
+            const hasIms = physioData.ims !== "" && physioData.ims !== undefined;
+            const hasSuporte = physioData.suporte !== "" && physioData.suporte !== undefined;
+            
+            const isFormValid = hasMrc && hasIms && hasSuporte;
+            
+            // Texto dinâmico para orientar a equipe
+            let btnText = "Finalizar e Gerar Texto";
+            if (!isFormValid) {
+              const missing = [];
+              if (!hasMrc) missing.push("MRC");
+              if (!hasIms) missing.push("IMS");
+              if (!hasSuporte) missing.push("Suporte");
+              btnText = `Preencha: ${missing.join(", ")}`;
+            }
+
+            return (
+              <button 
+                onClick={handleFinalizePhysioAdmission} 
+                disabled={!isFormValid}
+                className={`px-6 py-3 rounded-xl font-bold text-white shadow-lg transition-colors flex items-center justify-center gap-2 w-full sm:w-auto ${
+                  isFormValid 
+                    ? "bg-cyan-600 hover:bg-cyan-700 cursor-pointer" 
+                    : "bg-slate-400 cursor-not-allowed opacity-70"
+                }`}
+                title={!isFormValid ? "Preenchimento obrigatório pendente" : "Finalizar Admissão"}
+              >
+                {!isFormValid ? <Lock size={18} /> : <FileText size={18} />}
+                {btnText}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>
