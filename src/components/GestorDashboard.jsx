@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
-  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line 
+  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ReferenceLine, Label  
 } from 'recharts';
 import { collection, onSnapshot, getDocs, doc, setDoc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
@@ -299,32 +299,83 @@ const GestorDashboard = ({ userProfile }) => {
     };
   }, [listaEventosAdversos]);
 
-  // Cálculo da Ocupação Atual, Giro e LOS (EM TEMPO REAL E HISTÓRICO)
+  // ================================================================
+  // 🔥 MOTOR OPERACIONAL E FLUXO (ÚLTIMOS 30 DIAS + FILTRO DE MORADOR)
+  // ================================================================
   const metricasOperacionais = useMemo(() => {
-    // 1. Ocupação em Tempo Real
-    const ocupadosAgora = leitosConfig.filter(l => l.status !== "Livre" && l.status !== "limpeza").length;
-    const capacidadeTotal = capacidadeInput || 10;
+    // 1. Descobrir a verdadeira capacidade instalada (Ignorando Bloqueados e Moradores)
+    const leitosValidos = leitosConfig && leitosConfig.length > 0
+      ? leitosConfig.filter(l => !l.bloqueado && !l.ignorarEstatistica).length
+      : 10; // Fallback seguro para 10 leitos
 
-    // 2. Dados de Performance (Vindo da lista de histórico que o ModuloUTI alimenta)
-    const altasMes = listaHistorico.length;
-    
-    // 3. Cálculo do Tempo Médio de Permanência (LOS)
-    const somaDiasInternacao = listaHistorico.reduce((acc, h) => {
-      const entrada = new Date(h.dataEntrada);
-      const saida = new Date(h.dataSaida);
-      const diffDias = (saida - entrada) / (1000 * 60 * 60 * 24);
-      return acc + (diffDias > 0 ? diffDias : 0.5); // mínimo de meio dia para altas rápidas
-    }, 0);
+    // Trava de segurança: se a UTI inteira for bloqueada, evita divisão por zero na matemática
+    const leitosEstatisticos = leitosValidos > 0 ? leitosValidos : 1;
+
+    if (!listaCenso.length && !listaHistorico.length) {
+      return { ocupacao: "0.0", giro: "0.0", los: "0.0", saidasTotais: 0 };
+    }
+
+    const hoje = new Date();
+    const trintaDiasAtras = new Date();
+    trintaDiasAtras.setDate(hoje.getDate() - 30);
+
+    const parseData = (dataStr) => {
+      if (!dataStr) return new Date(0);
+      if (dataStr.includes && dataStr.includes('/')) {
+        const parts = dataStr.split(' ')[0].split('/');
+        if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+      }
+      return new Date(dataStr);
+    };
+
+    // 2. TAXA DE OCUPAÇÃO (Baseado no Censo Diário)
+    let totalPacientesDia30d = 0;
+
+    listaCenso.forEach(dia => {
+      const dataCenso = parseData(dia.data || dia.idRegistro || dia.id);
+      if (dataCenso >= trintaDiasAtras && dataCenso <= hoje) {
+        totalPacientesDia30d += (Number(dia.totalLeitosOcupados) || 0);
+      }
+    });
+
+    // Capacidade da janela de 30 dias usando apenas os leitos QUE PRODUZEM
+    const capacidadeInstalada30d = leitosEstatisticos * 30; 
+    let ocupacaoCalc = totalPacientesDia30d > 0 ? ((totalPacientesDia30d / capacidadeInstalada30d) * 100).toFixed(1) : "0.0";
+    if (parseFloat(ocupacaoCalc) > 100) ocupacaoCalc = "100.0"; // Trava para não ultrapassar 100%
+
+    // 3. GIRO, LOS (Tempo Médio) E SAÍDAS
+    let totalSaidas30d = 0;
+    let somaDiasInternacao30d = 0;
+
+    listaHistorico.forEach(pac => {
+      const dataEntrada = parseData(pac.dataEntrada || pac.dataAdmissao);
+      const dataSaida = parseData(pac.dataSaida || pac.dataDesfecho);
+
+      // Avalia apenas quem SAIU nos últimos 30 dias
+      if (dataSaida >= trintaDiasAtras && dataSaida <= hoje) {
+        totalSaidas30d++;
+
+        let dias = (dataSaida - dataEntrada) / (1000 * 60 * 60 * 24);
+        if (dias < 1) dias = 1; // SUS: internou e saiu no mesmo dia = 1 diária
+        somaDiasInternacao30d += dias;
+      }
+    });
+
+    // Giro = Total de Saídas / Leitos Válidos (Mostra a verdadeira rotatividade da equipe)
+    const giroCalc = (totalSaidas30d / leitosEstatisticos).toFixed(1);
+
+    // LOS = Soma de dias / Total de Saídas
+    const losCalc = totalSaidas30d > 0 ? (somaDiasInternacao30d / totalSaidas30d).toFixed(1) : "0.0";
 
     return {
-      ocupacao: ((ocupadosAgora / capacidadeTotal) * 100).toFixed(1),
-      giro: (altasMes / capacidadeTotal).toFixed(2),
-      los: altasMes > 0 ? (somaDiasInternacao / altasMes).toFixed(1) : "0.0",
-      altas: altasMes
+      ocupacao: ocupacaoCalc,
+      giro: giroCalc,
+      los: losCalc,
+      saidasTotais: totalSaidas30d
     };
-  }, [leitosConfig, capacidadeInput, listaHistorico]);
+  }, [listaCenso, listaHistorico, leitosConfig]);
 
-// =========================================================
+  // =========================================================
   // 3. MOTOR DE TENDÊNCIAS (BLINDADO CONTRA FORMATOS DE DATA)
   // =========================================================
   const dadosTendencia = useMemo(() => {
@@ -380,63 +431,187 @@ const GestorDashboard = ({ userProfile }) => {
       });
   }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput]);
 
-  const metricasQualidade = useMemo(() => {
-  if (!listaCenso.length && !listaHistorico.length) {
-    return { taxaReadmissao: "0", taxaIdentificacao: "0", mortalidadeBruta: "0", smr: "0" };
-  }
+// ================================================================
+  // 🔥 MOTOR DO GRÁFICO: SMR DOS ÚLTIMOS 12 MESES (VIA FIREBASE)
+  // ================================================================
+  const dadosSMRAnual = useMemo(() => {
+    if (!listaHistorico || listaHistorico.length === 0) return [];
 
-  // --- 🔍 MOTOR DE BUSCA DE REINTERNAÇÃO 48H ---
-  let contagemReadmissao = 0;
-  const totalAltas = listaHistorico.length;
+    const parseData = (dataStr) => {
+      if (!dataStr) return new Date(0);
+      if (dataStr.includes && dataStr.includes('/')) {
+        const parts = dataStr.split(' ')[0].split('/');
+        if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+      }
+      return new Date(dataStr);
+    };
 
-  // 1. Agrupamos por CPF para ver quem voltou
-  const porPaciente = listaHistorico.reduce((acc, doc) => {
-    const id = doc.cpf && doc.cpf !== "000.000.000-00" ? doc.cpf : doc.nomePaciente;
-    if (!acc[id]) acc[id] = [];
-    acc[id].push(doc);
-    return acc;
-  }, {});
+    // 1. Cria o esqueleto dos últimos 12 meses
+    const mesesArray = [];
+    const agrupamento = {};
+    const hoje = new Date();
 
-  // 2. Calculamos a diferença entre Saída e nova Entrada
-  Object.values(porPaciente).forEach(estadias => {
-    if (estadias.length > 1) {
-      // Ordena as internações do paciente por data
-      estadias.sort((a, b) => new Date(a.dataEntrada) - new Date(b.dataEntrada));
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      let mesStr = d.toLocaleString('pt-BR', { month: 'short' });
+      mesStr = mesStr.charAt(0).toUpperCase() + mesStr.slice(1, 3);
+      const anoStr = d.getFullYear().toString().slice(-2);
+      
+      const label = `${mesStr}/${anoStr}`;
+      mesesArray.push(label);
+      agrupamento[label] = { esperados: 0, observados: 0 };
+    }
 
-      for (let i = 1; i < estadias.length; i++) {
-        const altaAnterior = new Date(estadias[i-1].dataSaida);
-        const entradaNova = new Date(estadias[i].dataEntrada);
-        
-        // Diferença em horas
-        const diffHoras = (entradaNova - altaAnterior) / (1000 * 60 * 60);
+    // 2. Distribui os pacientes do Firebase nos meses corretos
+    listaHistorico.forEach(pac => {
+      const dataSaida = parseData(pac.dataSaida || pac.dataDesfecho || pac.dataEntrada);
+      if (dataSaida.getFullYear() < 2000) return;
 
-        if (diffHoras > 0 && diffHoras <= 48) {
-          contagemReadmissao++;
+      let mesStr = dataSaida.toLocaleString('pt-BR', { month: 'short' });
+      mesStr = mesStr.charAt(0).toUpperCase() + mesStr.slice(1, 3);
+      const anoStr = dataSaida.getFullYear().toString().slice(-2);
+      const label = `${mesStr}/${anoStr}`;
+
+      if (agrupamento[label]) {
+        const saps3Prob = pac.backupProntuario?.saps3?.lockedProb || pac.saps3?.lockedProb;
+        if (saps3Prob) {
+          agrupamento[label].esperados += (parseFloat(saps3Prob) / 100);
+          const desfecho = String(pac.desfecho || pac.motivoSaida || pac.status).toLowerCase();
+          if (desfecho.includes('óbito') || desfecho.includes('obito')) {
+            agrupamento[label].observados += 1;
+          }
         }
       }
+    });
+
+    // 3. Executa a divisão (SMR)
+    return mesesArray.map(mes => {
+      const dadosMes = agrupamento[mes];
+      let smrCalculado = 0;
+      if (dadosMes.esperados > 0) {
+        smrCalculado = Number((dadosMes.observados / dadosMes.esperados).toFixed(2));
+      }
+      return { mes: mes, smr: smrCalculado };
+    });
+
+  }, [listaHistorico]);
+
+const metricasQualidade = useMemo(() => {
+    if (!listaCenso.length && !listaHistorico.length) {
+      return { taxaReadmissao: "0.0", taxaIdentificacao: "0.0", mortalidadeBruta: "0.0", mortalidadeEsperada: "0.0", smr: "0.00" };
     }
-  });
 
-  const taxaReadmReal = totalAltas > 0 
-    ? ((contagemReadmissao / totalAltas) * 100).toFixed(1) 
-    : "0";
+    const hoje = new Date();
+    const trintaDiasAtras = new Date();
+    trintaDiasAtras.setDate(hoje.getDate() - 30);
 
-  // --- 📊 CÁLCULO DE IDENTIFICAÇÃO (Do Robô) ---
-  const totalOcupados = listaCenso.reduce((acc, dia) => acc + (Number(dia.totalLeitosOcupados) || 0), 0);
-  const totalIdentificados = listaCenso.reduce((acc, dia) => acc + (Number(dia.pacientesIdentificados) || 0), 0);
-  const taxaID = totalOcupados > 0 ? ((totalIdentificados / totalOcupados) * 100).toFixed(1) : "0";
+    // Função auxiliar blindada para entender qualquer formato de data do Firebase
+    const parseData = (dataStr) => {
+      if (!dataStr) return new Date(0);
+      if (dataStr.includes && dataStr.includes('/')) {
+        const parts = dataStr.split(' ')[0].split('/');
+        if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+      }
+      return new Date(dataStr);
+    };
 
-  // --- ⚰️ CÁLCULO DE MORTALIDADE REAL ---
-  const obitos = listaHistorico.filter(h => h.desfecho === "Óbito" || h.desfecho?.toUpperCase().includes("ÓBITO")).length;
-  const mortalidadeReal = totalAltas > 0 ? ((obitos / totalAltas) * 100).toFixed(1) : "0";
+    // ================================================================
+    // 1. MOTOR DE DESFECHOS (Mortalidade Bruta, SMR e Total de Altas)
+    // ================================================================
+    let totalDesfechos30d = 0;
+    let obitosTotais30d = 0;
+    let pacientesComSaps30d = 0;
+    let obitosEsperadosSaps30d = 0;
+    let obitosObservadosSaps30d = 0;
 
-  return {
-    taxaIdentificacao: taxaID,
-    taxaReadmissao: taxaReadmReal,
-    mortalidadeBruta: mortalidadeReal,
-    smr: "0.85" // Aqui depois puxamos a média do SAPS 3 dos indicadores_finais
-  };
-}, [listaCenso, listaHistorico]);
+    listaHistorico.forEach(pac => {
+      const dataPac = parseData(pac.dataSaida || pac.dataDesfecho || pac.dataEntrada);
+      
+      // O paciente saiu nos últimos 30 dias?
+      if (dataPac >= trintaDiasAtras && dataPac <= hoje) {
+        totalDesfechos30d++;
+        
+        const desfecho = String(pac.desfecho || pac.motivoSaida || pac.status).toLowerCase();
+        const isObito = desfecho.includes('óbito') || desfecho.includes('obito');
+        
+        if (isObito) obitosTotais30d++;
+
+        // Checagem do SAPS 3 para o SMR
+        const saps3Prob = pac.backupProntuario?.saps3?.lockedProb || pac.saps3?.lockedProb;
+        if (saps3Prob) {
+          pacientesComSaps30d++;
+          obitosEsperadosSaps30d += (parseFloat(saps3Prob) / 100);
+          if (isObito) obitosObservadosSaps30d++;
+        }
+      }
+    });
+
+    // ================================================================
+    // 2. MOTOR DE READMISSÃO (Reinternação < 48h nos últimos 30 dias)
+    // ================================================================
+    let contagemReadmissao30d = 0;
+    
+    const porPaciente = listaHistorico.reduce((acc, doc) => {
+      const id = doc.cpf && doc.cpf !== "000.000.000-00" ? doc.cpf : doc.nomePaciente;
+      if (!acc[id]) acc[id] = [];
+      acc[id].push(doc);
+      return acc;
+    }, {});
+
+    Object.values(porPaciente).forEach(estadias => {
+      if (estadias.length > 1) {
+        estadias.sort((a, b) => parseData(a.dataEntrada) - parseData(b.dataEntrada));
+        
+        for (let i = 1; i < estadias.length; i++) {
+          const altaAnterior = parseData(estadias[i-1].dataSaida);
+          const entradaNova = parseData(estadias[i].dataEntrada);
+          const diffHoras = (entradaNova - altaAnterior) / (1000 * 60 * 60);
+          
+          // Conta apenas se a RE-ENTRADA aconteceu nesta nossa janela de 30 dias
+          if (entradaNova >= trintaDiasAtras && entradaNova <= hoje) {
+            if (diffHoras > 0 && diffHoras <= 48) {
+              contagemReadmissao30d++;
+            }
+          }
+        }
+      }
+    });
+
+    // ================================================================
+    // 3. MOTOR DE IDENTIFICAÇÃO (Média diária dos últimos 30 dias)
+    // ================================================================
+    let totalOcupados30d = 0;
+    let totalIdentificados30d = 0;
+    
+    listaCenso.forEach(dia => {
+      const dataCenso = parseData(dia.data || dia.idRegistro || dia.id);
+      
+      // Avalia o preenchimento apenas dos plantões dos últimos 30 dias
+      if (dataCenso >= trintaDiasAtras && dataCenso <= hoje) {
+        totalOcupados30d += (Number(dia.totalLeitosOcupados) || 0);
+        totalIdentificados30d += (Number(dia.pacientesIdentificados) || 0);
+      }
+    });
+
+    // ================================================================
+    // 4. MATEMÁTICA FINAL DE TODOS OS INDICADORES
+    // ================================================================
+    const mortalidadeBrutaCalc = totalDesfechos30d > 0 ? ((obitosTotais30d / totalDesfechos30d) * 100).toFixed(1) : "0.0";
+    const mortalidadeEsperadaCalc = pacientesComSaps30d > 0 ? ((obitosEsperadosSaps30d / pacientesComSaps30d) * 100).toFixed(1) : "0.0";
+    const smrCalculado = obitosEsperadosSaps30d > 0 ? (obitosObservadosSaps30d / obitosEsperadosSaps30d).toFixed(2) : "0.00";
+    
+    // A taxa de readmissão divide as readmissões pelo total de saídas do período
+    const taxaReadmReal = totalDesfechos30d > 0 ? ((contagemReadmissao30d / totalDesfechos30d) * 100).toFixed(1) : "0.0";
+    const taxaID30d = totalOcupados30d > 0 ? ((totalIdentificados30d / totalOcupados30d) * 100).toFixed(1) : "0.0";
+
+    return {
+      mortalidadeBruta: mortalidadeBrutaCalc,
+      mortalidadeEsperada: mortalidadeEsperadaCalc,
+      smr: smrCalculado,
+      taxaReadmissao: taxaReadmReal,
+      taxaIdentificacao: taxaID30d
+    };
+  }, [listaCenso, listaHistorico]);
 
   // 2. MOTOR DE BUSCA E CÁLCULO (Versão Consolidada com Gráficos)
   useEffect(() => {
@@ -1332,66 +1507,60 @@ const GestorDashboard = ({ userProfile }) => {
           </div>
         </div>
 
-        {/* FILTRO DE PERÍODO PERSONALIZADO */}
-        <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto items-center">
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase">De:</label>
-            <input 
-              type="date"
-              value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
-              className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase">Até:</label>
-            <input 
-              type="date"
-              value={dataFim}
-              onChange={(e) => setDataFim(e.target.value)}
-              className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
-            />
-          </div>
-        </div>
-
         {/* =========================================
             GRUPO 1: INDICADORES OPERACIONAIS E FLUXO 
             ========================================= */}
-        <h3 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
-          <Bed size={16} className="text-blue-500" /> Operacional e Fluxo
-        </h3>
+        <div className="flex items-center gap-3 mb-3">
+          <h3 className="text-sm font-bold text-slate-500 uppercase flex items-center gap-2 m-0">
+            <Bed size={16} className="text-blue-500" /> Operacional e Fluxo
+          </h3>
+          <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full uppercase tracking-wider">
+            Últimos 30 dias
+          </span>
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white p-5 rounded-xl border border-slate-200 relative overflow-hidden">
+          {/* CARD 1: TAXA DE OCUPAÇÃO */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 relative overflow-hidden shadow-sm">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Taxa de Ocupação</span>
             <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.ocupacao}%</div>
             {/* A barra azul cresce dinamicamente conforme a ocupação */}
-            <div className="absolute bottom-0 left-0 h-1 bg-blue-500 transition-all duration-1000" style={{ width: `${metricasOperacionais.ocupacao}%` }}></div>
+            <div className="absolute bottom-0 left-0 h-1.5 transition-all duration-1000 ease-out bg-blue-500" style={{ width: `${metricasOperacionais.ocupacao}%` }}></div>
           </div>
           
-          <div className="bg-white p-5 rounded-xl border border-slate-200">
+          {/* CARD 2: GIRO DE LEITO */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Giro de Leito</span>
             <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.giro}</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">Pacientes / Leito / Mês</div>
+            <div className="text-[10px] text-slate-400 font-bold mt-1">Saídas / Leito Válido</div>
           </div>
 
-          <div className="bg-white p-5 rounded-xl border border-slate-200">
+          {/* CARD 3: TEMPO MÉDIO (LOS) */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Tempo Médio (LOS)</span>
             <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.los} <span className="text-sm font-normal text-slate-500">dias</span></div>
           </div>
 
-          <div className="bg-white p-5 rounded-xl border border-slate-200">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Altas</span>
-            <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.altas}</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">No período selecionado</div>
+          {/* CARD 4: TOTAL DE SAÍDAS */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Saídas</span>
+            <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.saidasTotais}</div>
+            <div className="text-[10px] text-slate-400 font-bold mt-1">Altas e Óbitos</div>
           </div>
+
         </div>
 
         {/* =========================================
             GRUPO 2: DESFECHOS CLÍNICOS E SEGURANÇA
             ========================================= */}
-        <h3 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
-          <ShieldAlert size={16} className="text-emerald-500" /> Desfechos Clínicos e Qualidade
-        </h3>
+        <div className="flex items-center gap-3 mb-3">
+          <h3 className="text-sm font-bold text-slate-500 uppercase flex items-center gap-2 m-0">
+            <ShieldAlert size={16} className="text-emerald-500" /> Desfechos Clínicos e Qualidade
+          </h3>
+          <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full uppercase tracking-wider">
+            Últimos 30 dias
+          </span>
+        </div>
         
         {metricasQualidade.carregando ? (
            <div className="text-sm text-slate-400 p-4 animate-pulse">Carregando indicadores...</div>
@@ -1408,28 +1577,44 @@ const GestorDashboard = ({ userProfile }) => {
             {/* CARD 2: SMR (COR DINÂMICA) */}
             {(() => {
               const smrVal = parseFloat(metricasQualidade.smr);
-              // Lógica de cores baseada em performance
+              
+              // 1. Tratamento da falta de dados
+              const semDados = isNaN(smrVal) || smrVal === 0; 
+              
+              if (semDados) {
+                return (
+                  <div className="p-5 rounded-xl shadow-sm border relative overflow-hidden bg-slate-50/50 border-slate-200">
+                    <span className="text-[10px] font-bold uppercase text-slate-500">SMR (SAPS 3)</span>
+                    <div className="text-3xl font-black mt-1 text-slate-400">-</div>
+                    <div className="absolute bottom-2 right-4 text-[10px] font-bold px-2 py-1 rounded bg-slate-200 text-slate-500">
+                      Aguardando Saídas
+                    </div>
+                  </div>
+                );
+              }
+
+              // 2. Lógica de cores baseada em performance
               const isExcelente = smrVal < 1.0;
               const isAlerta = smrVal >= 1.0 && smrVal <= 1.2;
               
               const bgClass = isExcelente ? "bg-emerald-50/30 border-emerald-200" : isAlerta ? "bg-amber-50/30 border-amber-200" : "bg-red-50/30 border-red-200";
               const textClass = isExcelente ? "text-emerald-700" : isAlerta ? "text-amber-700" : "text-red-700";
               const badgeBg = isExcelente ? "bg-emerald-100" : isAlerta ? "bg-amber-100" : "bg-red-100";
-              const label = isExcelente ? "Salvando Mais!" : isAlerta ? "Dentro do Esperado" : "Atenção: Acima da Meta";
+              const label = isExcelente ? "Salvando Mais!" : isAlerta ? "Dentro do Esperado" : "Acima da Meta";
 
               return (
-                <div className={`p-5 rounded-xl shadow-sm border relative overflow-hidden ${bgClass}`}>
+                <div className={`p-5 rounded-xl shadow-sm border relative overflow-hidden ${bgClass} animate-fadeIn`}>
                   <span className={`text-[10px] font-bold uppercase ${textClass}`}>SMR (SAPS 3)</span>
-                  <div className={`text-3xl font-black mt-1 ${textClass}`}>{metricasQualidade.smr}</div>
+                  <div className={`text-3xl font-black mt-1 relative z-10 ${textClass}`}>{smrVal.toFixed(2)}</div>
                   <div className={`absolute bottom-2 right-4 text-[10px] font-bold px-2 py-1 rounded ${badgeBg} ${textClass}`}>
-                    {smrVal === 0 ? "Sem dados" : label}
+                    {label}
                   </div>
                 </div>
               );
             })()}
 
             {/* CARD 3: READMISSÃO */}
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative">
               <span className="text-[10px] font-bold text-slate-400 uppercase">Readmissão em 48h</span>
               <div className={`text-3xl font-black mt-1 ${parseFloat(metricasQualidade.taxaReadmissao) > 5 ? "text-red-600" : "text-amber-600"}`}>
                 {metricasQualidade.taxaReadmissao}%
@@ -1440,13 +1625,12 @@ const GestorDashboard = ({ userProfile }) => {
             {/* CARD 4: IDENTIFICAÇÃO CORRETA */}
             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
               <span className="text-[10px] font-bold text-slate-400 uppercase">Identificação Correta</span>
-              <div className={`text-3xl font-black mt-1 ${parseFloat(metricasQualidade.taxaIdentificacao) >= 95 ? "text-emerald-600" : "text-blue-600"}`}>
+              <div className={`text-3xl font-black mt-1 relative z-10 ${parseFloat(metricasQualidade.taxaIdentificacao) >= 95 ? "text-emerald-600" : "text-blue-600"}`}>
                 {metricasQualidade.taxaIdentificacao}%
               </div>
-              <div className="text-[10px] text-slate-400 font-bold mt-1">Meta Interna: 100%</div>
-              {/* Barra de progresso preenche com o valor real */}
+              <div className="text-[10px] text-slate-400 font-bold mt-1 relative z-10">Meta Interna: 100%</div>
               <div 
-                className={`absolute bottom-0 left-0 h-1 ${parseFloat(metricasQualidade.taxaIdentificacao) >= 95 ? "bg-emerald-400" : "bg-amber-400"}`} 
+                className={`absolute bottom-0 left-0 h-1.5 transition-all duration-1000 ease-out ${parseFloat(metricasQualidade.taxaIdentificacao) >= 95 ? "bg-emerald-400" : "bg-amber-400"}`} 
                 style={{ width: `${metricasQualidade.taxaIdentificacao}%` }}
               ></div>
             </div>
@@ -1490,29 +1674,67 @@ const GestorDashboard = ({ userProfile }) => {
             </div>
           </div>
 
-          {/* GRÁFICO 2: DESFECHOS */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-            <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-              <TrendingUp size={16} className="text-emerald-500" /> Distribuição de Desfechos
-            </h3>
-            <div className="flex-1 w-full flex items-center justify-center">
-              {dadosDesfechos.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-slate-400 italic text-xs text-center">
-                  Nenhum desfecho (alta/óbito) <br/> registado neste mês.
+          {/* GRÁFICO 2: EVOLUÇÃO DO SMR (LINHA DE TENDÊNCIA) */}
+          {(() => {
+            // A matemática visual usa os dados reais que vieram do Motor lá de cima
+            const dataMax = dadosSMRAnual.length > 0 ? Math.max(...dadosSMRAnual.map(d => d.smr)) : 0;
+            const dataMin = dadosSMRAnual.length > 0 ? Math.min(...dadosSMRAnual.map(d => d.smr)) : 0;
+            
+            const tetoEixoY = Math.max(dataMax, 1.5);
+
+            let gradientOffset = 0;
+            if (dataMax <= 1.0) {
+              gradientOffset = 0; 
+            } else if (dataMin >= 1.0) {
+              gradientOffset = 1; 
+            } else {
+              gradientOffset = (dataMax - 1.0) / (dataMax - dataMin);
+            }
+
+            return (
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
+                <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+                  <Activity size={16} className="text-blue-500" /> Evolução do SMR (Últimos 12 Meses)
+                </h3>
+                <div className="flex-1 w-full">
+                  {dadosSMRAnual.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-slate-400 italic text-xs text-center">
+                      Carregando histórico ou sem dados suficientes...
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={dadosSMRAnual} margin={{ top: 15, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="corSMR" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#ef4444" stopOpacity={1} />
+                            <stop offset={`${gradientOffset * 100}%`} stopColor="#ef4444" stopOpacity={1} />
+                            <stop offset={`${gradientOffset * 100}%`} stopColor="#10b981" stopOpacity={1} />
+                            <stop offset="100%" stopColor="#10b981" stopOpacity={1} />
+                          </linearGradient>
+                        </defs>
+                        
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="mes" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} dy={10} />
+                        <YAxis domain={[0, Math.ceil(tetoEixoY * 10) / 10]} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                        
+                        <RechartsTooltip 
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          formatter={(value) => [Number(value).toFixed(2), "SMR"]}
+                          labelStyle={{ fontWeight: 'bold', color: '#334155' }}
+                        />
+
+                        <ReferenceLine y={1} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1}>
+                           <Label value="Corte (1.0)" position="insideBottomLeft" fill="#ef4444" fontSize={10} fontWeight="bold" />
+                        </ReferenceLine>
+                        
+                        <Line type="monotone" dataKey="smr" stroke="url(#corSMR)" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#64748b" }} activeDot={{ r: 6, strokeWidth: 0, fill: "#3b82f6" }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={dadosDesfechos} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value">
-                      {dadosDesfechos.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />)}
-                    </Pie>
-                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
+              </div>
+            );
+          })()}
 
         </div>
       </div>
