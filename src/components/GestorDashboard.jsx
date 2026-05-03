@@ -272,6 +272,37 @@ const GestorDashboard = ({ userProfile }) => {
     });
   };
 
+  // Calcula a epidemiologia real baseada no que veio do Firebase + NursingDashboard
+    const ocorrenciasPorTipo = listaEventos.reduce((acc, evento) => {
+      
+      // 1. O sistema tenta ler o nome padrão do evento
+      let nomeCategoria = evento.tipoEvento || evento.tipo;
+
+      // 2. O PULO DO GATO (Integração com a Enfermagem): 
+      // Se não tem nome, mas tem a marcação de 'incidência' do painel de curativos, nós o batizamos corretamente.
+      if (!nomeCategoria) {
+        if (evento.origem === 'incidencia' || evento.lesao) {
+          nomeCategoria = "LPP (Adquirida na UTI)";
+        } else {
+          nomeCategoria = "Registro Incompleto"; 
+        }
+      }
+
+      // 3. Soma na contagem
+      acc[nomeCategoria] = (acc[nomeCategoria] || 0) + 1;
+      return acc;
+    }, {});
+    
+    const dadosCategorias = Object.keys(ocorrenciasPorTipo).map(tipo => ({
+      categoria: tipo,
+      ocorrencias: ocorrenciasPorTipo[tipo]
+    })).sort((a, b) => b.ocorrencias - a.ocorrencias); // Ordena do maior para o menor
+
+    const totalEventos = listaEventos.length;
+    const eventosGraves = listaEventos.filter(e => e.grauDano === 'Grave' || e.grauDano === 'Óbito').length;
+    const investigacoesPendentes = listaEventos.filter(e => e.statusAnalise === 'Pendente NSP' || e.statusAnalise === 'Em Análise').length;
+    const maiorIncidencia = dadosCategorias.length > 0 ? dadosCategorias[0].categoria : 'Nenhum';
+
 // =========================================================
   // 3. CÁLCULOS (useMemo) - A INTELIGÊNCIA (DADOS PROCESSADOS)
   // =========================================================
@@ -280,17 +311,38 @@ const GestorDashboard = ({ userProfile }) => {
   // ALERTAS DO CABEÇALHO (FILTRO DIÁRIO)
   // =========================================================
   const alertasHeader = useMemo(() => {
-    // 1. Pegamos o dia de hoje no formato "29 abr" (igual à linha do tempo)
-    const hojeFormatado = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    // 1. Pega a data de hoje no fuso local para comparação exata
+    const hoje = new Date();
+    const diaHoje = hoje.getDate();
+    const mesHoje = hoje.getMonth();
+    const anoHoje = hoje.getFullYear();
 
     // 2. Filtramos quem bate exatamente com o dia de hoje
     const eventosDeHoje = listaEventosAdversos.filter(evento => {
-      if (!evento.dataEvento) return false;
+      // Busca a data de onde quer que ela tenha vindo (Notificação ou Enfermagem)
+      const dataBruta = evento.dataHoraOcorrencia || evento.dataEvento || evento.dataRegistro;
       
-      // Converte a data do evento para o mesmo formato "29 abr"
-      const dataEventoFormatada = new Date(evento.dataEvento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+      if (!dataBruta) return false;
       
-      return dataEventoFormatada === hojeFormatado;
+      let dataObj;
+      
+      // Se for um Timestamp nativo do Firebase
+      if (dataBruta.toDate) {
+        dataObj = dataBruta.toDate();
+      } else {
+        // Se for uma String (ex: 2026-05-03)
+        dataObj = new Date(dataBruta);
+      }
+
+      // Se por algum motivo for uma data inválida, ignoramos
+      if (isNaN(dataObj.getTime())) return false;
+
+      // 3. Compara cirurgicamente Dia, Mês e Ano (ignora as horas e os problemas de String)
+      return (
+        dataObj.getDate() === diaHoje &&
+        dataObj.getMonth() === mesHoje &&
+        dataObj.getFullYear() === anoHoje
+      );
     }).length;
 
     return {
@@ -376,7 +428,7 @@ const GestorDashboard = ({ userProfile }) => {
   }, [listaCenso, listaHistorico, leitosConfig]);
 
   // =========================================================
-  // 3. MOTOR DE TENDÊNCIAS (BLINDADO CONTRA FORMATOS DE DATA)
+  // 3. MOTOR DE TENDÊNCIAS (BLINDADO E PADRONIZADO)
   // =========================================================
   const dadosTendencia = useMemo(() => {
     if (!listaCenso || listaCenso.length === 0) return [];
@@ -398,35 +450,30 @@ const GestorDashboard = ({ userProfile }) => {
 
         return { ...dia, dataPadrao };
       })
-      .filter(dia => {
-        // Agora a comparação será entre "2026-04-29" e "2026-03-30"
-        return dia.dataPadrao >= dataInicio && dia.dataPadrao <= dataFim;
-      })
+      .filter(dia => dia.dataPadrao >= dataInicio && dia.dataPadrao <= dataFim)
       .sort((a, b) => a.dataPadrao.localeCompare(b.dataPadrao))
       .map(dia => {
-        let valor = 0;
-        const chavesDoGrafico = {
-          mortalidade: 'morte', smr: 'smr', identificacao: 'id',
-          diasVM: 'vm', ocupacao: 'ocupacao', giroLeito: 'giroLeito',
-          los: 'los', readmissao: 'readmissao'
-        };
-        const chaveExata = chavesDoGrafico[indicadorTendencia] || 'ocupacao';
+        let valorCalculado = 0;
 
+        // O motor agora calcula a matemática real dependendo do indicador escolhido
+        // Usamos Number() para garantir que Firebase não sabote o cálculo enviando texto
         if (indicadorTendencia === 'ocupacao') {
-          valor = ((dia.totalLeitosOcupados || 0) / (capacidadeInput || 10)) * 100;
+          valorCalculado = ((Number(dia.totalLeitosOcupados) || 0) / (capacidadeInput || 10)) * 100;
         } else if (indicadorTendencia === 'identificacao') {
-          valor = dia.totalLeitosOcupados > 0 ? ((dia.pacientesIdentificados || 0) / dia.totalLeitosOcupados) * 100 : 0;
+          valorCalculado = Number(dia.totalLeitosOcupados) > 0 ? ((Number(dia.pacientesIdentificados) || 0) / Number(dia.totalLeitosOcupados)) * 100 : 0;
         } else if (indicadorTendencia === 'mortalidade') {
-          valor = dia.obitos || 0;
+          valorCalculado = Number(dia.obitos) || 0;
         } else if (indicadorTendencia === 'diasVM') {
-          valor = dia.pacientesEmVM || 0;
+          valorCalculado = Number(dia.pacientesEmVM) || 0;
         } else {
-          valor = dia[chaveExata] || 0;
+          // Fallback seguro para outros indicadores diretos (smr, los, etc)
+          valorCalculado = Number(dia[indicadorTendencia]) || 0;
         }
 
         return {
           name: new Date(dia.dataPadrao + "T12:00:00").toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
-          [chaveExata]: Number(Number(valor).toFixed(1))
+          // FORÇAMOS A CHAVE UNIVERSAL: O gráfico não vai mais se perder
+          valor: Number(Number(valorCalculado).toFixed(1))
         };
       });
   }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput]);
@@ -1369,27 +1416,38 @@ const metricasQualidade = useMemo(() => {
     try {
       const eventoRef = doc(db, "eventos_adversos", eventoEmInvestigacao.id);
       
-      // Atualiza apenas os campos da Gestão/CCIH
+      // 1. Atualiza os campos da Gestão/CCIH (incluindo os novos campos de Dano e Impacto)
       await updateDoc(eventoRef, {
-        prontuario: formInvestigacao.prontuario,
-        faseCuidado: formInvestigacao.faseCuidado,
-        fatoresContribuintes: formInvestigacao.fatoresContribuintes,
-        medidasPreventivas: formInvestigacao.medidasPreventivas,
-        statusAnalise: formInvestigacao.statusAnalise,
+        prontuario: formInvestigacao.prontuario || "",
+        faseCuidado: formInvestigacao.faseCuidado || "",
+        fatoresContribuintes: formInvestigacao.fatoresContribuintes || "",
+        medidasPreventivas: formInvestigacao.medidasPreventivas || "",
+        statusAnalise: formInvestigacao.statusAnalise || "Em Análise",
+        grauDano: formInvestigacao.grauDano || eventoEmInvestigacao.grauDano || "",
+        impactoGerado: formInvestigacao.impactoGerado || "",
         dataFechamentoAnalise: formInvestigacao.statusAnalise === 'Concluído' ? new Date().toISOString() : null
       });
 
-      // Atualiza a tela imediatamente (Memória Curta) sem precisar recarregar o banco
+      // 2. Atualiza a tela imediatamente (Memória Curta) sem precisar recarregar o banco
       setListaEventos(listaAnterior => 
         listaAnterior.map(ev => 
           ev.id === eventoEmInvestigacao.id 
-            ? { ...ev, ...formInvestigacao, dataFechamentoAnalise: formInvestigacao.statusAnalise === 'Concluído' ? new Date().toISOString() : null } 
+            ? { 
+                ...ev, 
+                ...formInvestigacao, 
+                // Garante que o grau de dano atualizado reflita imediatamente na cor da barra lateral
+                grauDano: formInvestigacao.grauDano || ev.grauDano,
+                dataFechamentoAnalise: formInvestigacao.statusAnalise === 'Concluído' ? new Date().toISOString() : null 
+              } 
             : ev
         )
       );
 
       alert("Análise salva com sucesso no Núcleo de Segurança do Paciente.");
-      setEventoEmInvestigacao(null); // Fecha o modal
+      
+      // 3. O PULO DO GATO: Esvazia o rascunho e fecha o modal
+      setFormInvestigacao({}); 
+      setEventoEmInvestigacao(null); 
 
     } catch (error) {
       console.error("Erro ao salvar investigação:", error);
@@ -1428,13 +1486,47 @@ const metricasQualidade = useMemo(() => {
 
         {/* CARDS RÁPIDOS */}
         <div className="flex flex-wrap gap-4">
-          
-          <div className="bg-emerald-50 px-4 py-2.5 rounded-xl border border-emerald-100 flex flex-col items-center justify-center min-w-[110px] transition-all hover:shadow-md">
-            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">Ocupação Atual</span>
-            <span className="text-xl font-black text-emerald-800">
-              {metricasOperacionais?.ocupacao ? `${metricasOperacionais.ocupacao}%` : '0%'}
-            </span>
-          </div>
+
+          {/* CARD: OCUPAÇÃO EM TEMPO REAL */}
+          {(() => {
+            // 1. Filtra a sua capacidade real (ignora moradores e leitos em manutenção)
+            const leitosValidos = leitosConfig?.filter(l => !l.bloqueado && !l.ignorarEstatistica) || [];
+            const totalValidos = leitosValidos.length > 0 ? leitosValidos.length : 10;
+            
+            // 2. DIAGNÓSTICO APLICADO: O banco omite a tag "status" quando o leito enche.
+            // Agora verificamos o "nome" do paciente e o "statusInternacao".
+            const ocupadosAgora = leitosValidos.filter(l => {
+              const temNome = l.nome && String(l.nome).trim() !== '';
+              const statusInternacaoOcupado = l.statusInternacao && String(l.statusInternacao).toLowerCase() !== 'livre';
+              const statusOcupado = l.status && String(l.status).toLowerCase() !== 'livre';
+              
+              // Se qualquer uma dessas for verdade, há um paciente no leito
+              return temNome || statusInternacaoOcupado || statusOcupado;
+            }).length;
+            
+            // 3. Matemática exata do momento
+            const ocupacaoHoje = Math.round((ocupadosAgora / totalValidos) * 100);
+
+            // 4. Alerta Visual (Design focado em segurança)
+            const isLotado = ocupacaoHoje >= 100;
+            const isAlerta = ocupacaoHoje >= 80 && ocupacaoHoje < 100;
+
+            const bgClass = isLotado ? "bg-red-50 border-red-200" : isAlerta ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-100";
+            const textClass = isLotado ? "text-red-800" : isAlerta ? "text-amber-800" : "text-emerald-800";
+            const labelClass = isLotado ? "text-red-600" : isAlerta ? "text-amber-600" : "text-emerald-600";
+
+            return (
+              <div className={`${bgClass} px-4 py-2.5 rounded-xl border flex flex-col items-center justify-center min-w-[110px] transition-all hover:shadow-md animate-fadeIn`}>
+                <span className={`text-[10px] font-bold ${labelClass} uppercase tracking-wider mb-1`}>Ocupação Atual</span>
+                <span className={`text-xl font-black ${textClass}`}>
+                  {isNaN(ocupacaoHoje) ? '0' : ocupacaoHoje}%
+                </span>
+                <span className={`text-[8px] font-bold ${labelClass} opacity-75 uppercase tracking-wider mt-0.5`}>
+                  Tempo Real
+                </span>
+              </div>
+            );
+          })()}
           
           <div className="bg-red-50 px-4 py-2.5 rounded-xl border border-red-100 flex flex-col items-center justify-center min-w-[110px]">
             <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1">Eventos Hoje</span>
@@ -1472,8 +1564,8 @@ const metricasQualidade = useMemo(() => {
         <button onClick={() => setActiveView('auditoria')} className="bg-white p-8 rounded-3xl shadow-sm border-2 border-transparent hover:border-amber-500 hover:shadow-xl transition-all group text-left relative overflow-hidden">
           <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 group-hover:scale-110 transition-all"><FileCheck size={100} /></div>
           <div className="bg-amber-100 w-14 h-14 rounded-2xl flex items-center justify-center text-amber-600 mb-6"><FileCheck size={28} /></div>
-          <h3 className="text-xl font-bold text-slate-800 mb-2">Auditoria</h3>
-          <p className="text-slate-500 text-sm pr-8">Varredura de evoluções pendentes, escalas de risco não preenchidas e adesão a protocolos.</p>
+          <h3 className="text-xl font-bold text-slate-800 mb-2">NSP e Auditoria</h3>
+          <p className="text-slate-500 text-sm pr-8">Auditoria de Eventos Adversos, Escalas de risco, Adesão a protocolos.</p>
         </button>
 
         <button onClick={() => setActiveView('equipe')} className="bg-white p-8 rounded-3xl shadow-sm border-2 border-transparent hover:border-emerald-500 hover:shadow-xl transition-all group text-left relative overflow-hidden">
@@ -1745,16 +1837,16 @@ const metricasQualidade = useMemo(() => {
   // VISÃO 2.1: TENDÊNCIAS (FILME) - REAL TIME
   // ==========================================
   const renderTendencias = () => {
-  // 1. Mapeamento de configurações
+  // 1. Mapeamento de configurações (Apenas Label e Cor)
   const configIndicadores = {
-    mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444', key: 'obitos' }, 
-    smr:           { label: 'SMR (SAPS 3)', color: '#10b981', key: 'smr' }, 
-    identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4', key: 'pacientesIdentificados' }, 
-    diasVM:        { label: 'Densidade de Ventilação Mecânica (p/ 1000 d-p)', color: '#6366f1', key: 'pacientesEmVM' },
-    ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6', key: 'totalLeitosOcupados' },
-    giroLeito:     { label: 'Giro de Leito', color: '#8b5cf6', key: 'giro' },
-    los:           { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b', key: 'losMedia' },
-    readmissao:    { label: 'Readmissão em 48h (%)', color: '#f97316', key: 'readmissoes' },
+    mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444' }, 
+    smr:           { label: 'SMR (SAPS 3)', color: '#10b981' }, 
+    identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4' }, 
+    diasVM:        { label: 'Densidade de Ventilação Mecânica (p/ 1000 d-p)', color: '#6366f1' },
+    ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6' },
+    giroLeito:     { label: 'Giro de Leito', color: '#8b5cf6' },
+    los:           { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b' },
+    readmissao:    { label: 'Readmissão em 48h (%)', color: '#f97316' },
   };
 
   const configAtual = configIndicadores[indicadorTendencia] || configIndicadores['mortalidade'];
@@ -1861,7 +1953,7 @@ const metricasQualidade = useMemo(() => {
                 <RechartsTooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
                 <Line 
                   type="monotone" 
-                  dataKey={configAtual.key} 
+                  dataKey="valor" 
                   stroke={configAtual.color} 
                   strokeWidth={4} 
                   dot={{ r: 6, fill: configAtual.color, stroke: '#fff', strokeWidth: 2 }} 
@@ -1876,78 +1968,98 @@ const metricasQualidade = useMemo(() => {
   );
 };
 
-  // ==========================================
+ // ==========================================
   // VISÃO 3: QUALIDADE E SEGURANÇA
   // ==========================================
   const renderQualidade = () => {
-  // --- 1. CÁLCULO DOS DENOMINADORES EPIDEMIOLÓGICOS (DADOS REAIS DO ROBÔ) ---
-  // Somamos o histórico do censo diário para ter os denominadores das taxas
-  const totalDiasPaciente = listaCenso.reduce((acc, c) => acc + (Number(c.totalLeitosOcupados) || 0), 0);
-  const totalDiasVM = listaCenso.reduce((acc, c) => acc + (Number(c.pacientesEmVM) || 0), 0);
+    // --- 1. CÁLCULO DOS DENOMINADORES EPIDEMIOLÓGICOS ---
+    // Somamos o histórico do censo diário para ter os denominadores das taxas
+    const totalDiasPaciente = listaCenso.reduce((acc, c) => acc + (Number(c.totalLeitosOcupados) || 0), 0);
+    const totalDiasVM = listaCenso.reduce((acc, c) => acc + (Number(c.pacientesEmVM) || 0), 0);
 
-  // --- 2. PROCESSAMENTO PARA O PARETO (TOP INTERCORRÊNCIAS) ---
-  const contagemEventos = listaEventosAdversos.reduce((acc, curr) => {
-    acc[curr.tipo] = (acc[curr.tipo] || 0) + 1;
-    return acc;
-  }, {});
+    // --- 2. PROCESSAMENTO PARA A LINHA DO TEMPO (ÚLTIMOS 10 DIAS BLINDADO) ---
+    const contagemPorDia = listaEventosAdversos.reduce((acc, curr) => {
+      // Busca a data nos campos mais prováveis do Firebase
+      const dataBruta = curr.dataHoraOcorrencia || curr.dataEvento;
+      let dataFormatada = "S/D"; // Sem Data
 
-  const coresPareto = ['#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#3b82f6'];
-  
-  const dataPareto = Object.keys(contagemEventos)
-    .map((tipo, index) => ({
-      evento: tipo,
-      quantidade: contagemEventos[tipo],
-      fill: coresPareto[index % coresPareto.length]
-    }))
-    .sort((a, b) => b.quantidade - a.quantidade);
+      if (dataBruta) {
+        if (dataBruta.toDate) {
+          // É um Timestamp nativo do Firebase
+          dataFormatada = dataBruta.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+        } else {
+          // É uma String (ex: 2026-05-03)
+          const dataObj = new Date(dataBruta);
+          if (!isNaN(dataObj.getTime())) {
+            dataFormatada = dataObj.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+          } else {
+            // Texto formatado de outra forma
+            dataFormatada = String(dataBruta).substring(0, 5);
+          }
+        }
+      }
 
-  // --- 3. PROCESSAMENTO PARA A LINHA DO TEMPO (ÚLTIMOS 10 REGISTROS) ---
-  const contagemPorDia = listaEventosAdversos.reduce((acc, curr) => {
-    const data = new Date(curr.dataEvento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-    acc[data] = (acc[data] || 0) + 1;
-    return acc;
-  }, {});
+      if (dataFormatada !== "S/D") {
+        acc[dataFormatada] = (acc[dataFormatada] || 0) + 1;
+      }
+      return acc;
+    }, {});
 
-  const dataTimeline = Object.keys(contagemPorDia).map(dia => ({
-    dia: dia,
-    eventos: contagemPorDia[dia]
-  })).slice(-10);
+    const dataTimeline = Object.keys(contagemPorDia).map(dia => ({
+      dia: dia,
+      eventos: contagemPorDia[dia]
+    })).slice(-10);
 
-  // --- 4. CÁLCULO DOS CARDS (INDICADORES DE PERFORMANCE) ---
-  
-  // Total Geral de Notificações
-  const totalNotificacoes = listaEventosAdversos.length;
+    // --- 3. CÁLCULO DOS CARDS (INDICADORES DE PERFORMANCE) ---
+    
+    // Total Geral de Notificações
+    const totalNotificacoes = listaEventosAdversos.length;
 
-  // Incidência de LPP (% sobre Pacientes-Dia)
-  const totalLPP = listaEventosAdversos.filter(e => 
-    e.tipo.toUpperCase().includes("LPP") || e.tipo.toUpperCase().includes("LESÃO")
-  ).length;
-  const incidenciaLPP = totalDiasPaciente > 0 
-    ? ((totalLPP / totalDiasPaciente) * 100).toFixed(1) 
-    : 0;
+    // Incidência de LPP (% sobre Pacientes-Dia)
+    const totalLPP = listaEventosAdversos.filter(e => {
+      const tipoSeguro = String(e.tipo || e.tipoEvento || "").toUpperCase();
+      return tipoSeguro.includes("LPP") || tipoSeguro.includes("LESÃO");
+    }).length;
+    
+    const incidenciaLPP = totalDiasPaciente > 0 
+      ? ((totalLPP / totalDiasPaciente) * 100).toFixed(1) 
+      : 0;
 
-  // Taxa de Extubação Acidental (por 1000 dias-VM)
-  const totalExtubacao = listaEventosAdversos.filter(e => 
-    e.tipo.toUpperCase().includes("EXTUBAÇÃO")
-  ).length;
-  const taxaExtubacao = totalDiasVM > 0 
-    ? ((totalExtubacao / totalDiasVM) * 1000).toFixed(1) 
-    : 0;
+    // Taxa de Extubação Acidental (por 1000 dias-VM)
+    const totalExtubacao = listaEventosAdversos.filter(e => {
+      const tipoSeguro = String(e.tipo || e.tipoEvento || "").toUpperCase();
+      return tipoSeguro.includes("EXTUBAÇÃO") || tipoSeguro.includes("EXTUBACAO");
+    }).length;
+    
+    const taxaExtubacao = totalDiasVM > 0 
+      ? ((totalExtubacao / totalDiasVM) * 1000).toFixed(1) 
+      : 0;
 
-  // Dias Sem Quedas
-  const eventosQueda = listaEventosAdversos.filter(e => e.tipo.toUpperCase().includes("QUEDA"));
-  let diasSemQuedas = "0"; 
+    // Dias Sem Quedas
+    const eventosQueda = listaEventosAdversos.filter(e => 
+      String(e.tipo || e.tipoEvento || "").toUpperCase().includes("QUEDA")
+    );
+    
+    let diasSemQuedas = "0";
+    if (eventosQueda.length > 0) {
+      // Blindagem para ler a data da queda corretamente
+      const datasQuedas = eventosQueda.map(e => {
+        const db = e.dataHoraOcorrencia || e.dataEvento;
+        if (db && db.toDate) return db.toDate().getTime();
+        if (db) return new Date(db).getTime();
+        return 0;
+      }).filter(t => !isNaN(t) && t > 0);
 
-  if (eventosQueda.length > 0) {
-    const datasQuedas = eventosQueda.map(e => new Date(e.dataEvento).getTime());
-    const ultimaQueda = new Date(Math.max(...datasQuedas));
-    const hoje = new Date();
-    const diferencaMs = Math.abs(hoje.getTime() - ultimaQueda.getTime());
-    diasSemQuedas = Math.floor(diferencaMs / (1000 * 60 * 60 * 24));
-  } else {
-    // Se não há quedas, o indicador é o tempo de operação do sistema (censo)
-    diasSemQuedas = listaCenso.length > 0 ? listaCenso.length : "∞";
-  }
+      if (datasQuedas.length > 0) {
+        const ultimaQueda = new Date(Math.max(...datasQuedas));
+        const hoje = new Date();
+        const diferencaMs = Math.abs(hoje.getTime() - ultimaQueda.getTime());
+        diasSemQuedas = Math.floor(diferencaMs / (1000 * 60 * 60 * 24));
+      }
+    } else {
+      // Se não há quedas, mostra os dias monitorados no censo
+      diasSemQuedas = listaCenso.length > 0 ? listaCenso.length : "∞";
+    }
 
   return (
     <div className="animate-fadeIn">
@@ -1991,23 +2103,30 @@ const metricasQualidade = useMemo(() => {
 
       {/* GRÁFICOS */}
       <div className="grid md:grid-cols-2 gap-6">
+        
+        {/* GRÁFICO 1: EPIDEMIOLOGIA DOS EVENTOS */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
           <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-            <AlertCircle size={16} className="text-amber-500" /> Pareto de Intercorrências
+            <BarChart2 size={16} className="text-blue-500" /> Epidemiologia dos Eventos
           </h3>
           <div className="flex-1 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dataPareto} layout="vertical" margin={{ top: 0, right: 20, left: 20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                <YAxis type="category" dataKey="evento" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }} width={120} />
-                <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
-                <Bar dataKey="quantidade" radius={[0, 4, 4, 0]} barSize={20} />
-              </BarChart>
-            </ResponsiveContainer>
+            {dadosCategorias && dadosCategorias.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dadosCategorias.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="categoria" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#475569', fontWeight: 'bold' }} width={110} />
+                  <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                  <Bar dataKey="ocorrencias" name="Nº de Ocorrências" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-sm text-slate-400 italic">Sem dados suficientes para o gráfico.</div>
+            )}
           </div>
         </div>
 
+        {/* GRÁFICO 2: CURVA DE OCORRÊNCIAS */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
           <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
             <Activity size={16} className="text-red-500" /> Curva de Ocorrências
@@ -2024,6 +2143,7 @@ const metricasQualidade = useMemo(() => {
             </ResponsiveContainer>
           </div>
         </div>
+        
       </div>
     </div>
   );
@@ -2034,20 +2154,7 @@ const metricasQualidade = useMemo(() => {
   // ==========================================
   const renderGestaoRisco = () => {
     // Calcula a epidemiologia real baseada no que veio do Firebase
-    const ocorrenciasPorTipo = listaEventos.reduce((acc, evento) => {
-      acc[evento.tipoEvento] = (acc[evento.tipoEvento] || 0) + 1;
-      return acc;
-    }, {});
     
-    const dadosCategorias = Object.keys(ocorrenciasPorTipo).map(tipo => ({
-      categoria: tipo,
-      ocorrencias: ocorrenciasPorTipo[tipo]
-    })).sort((a, b) => b.ocorrencias - a.ocorrencias); // Ordena do maior para o menor
-
-    const totalEventos = listaEventos.length;
-    const eventosGraves = listaEventos.filter(e => e.grauDano === 'Grave' || e.grauDano === 'Óbito').length;
-    const investigacoesPendentes = listaEventos.filter(e => e.statusAnalise === 'Pendente NSP' || e.statusAnalise === 'Em Análise').length;
-    const maiorIncidencia = dadosCategorias.length > 0 ? dadosCategorias[0].categoria : 'Nenhum';
 
     return (
       <div className="animate-fadeIn">
@@ -2110,77 +2217,52 @@ const metricasQualidade = useMemo(() => {
               </div>
             </div>
 
-            {/* GRÁFICO E LISTA */}
-            <div className="grid md:grid-cols-2 gap-6">
-              
-              {/* GRÁFICO DE EPIDEMIOLOGIA */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-                <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-                  <BarChart2 size={16} className="text-blue-500" /> Epidemiologia dos Eventos
-                </h3>
-                <div className="flex-1 w-full">
-                  {dadosCategorias.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={dadosCategorias.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                        <XAxis type="number" hide />
-                        <YAxis type="category" dataKey="categoria" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#475569', fontWeight: 'bold' }} width={110} />
-                        <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
-                        <Bar dataKey="ocorrencias" name="Nº de Ocorrências" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-sm text-slate-400 italic">Sem dados suficientes para o gráfico.</div>
-                  )}
-                </div>
-              </div>
+            {/* LISTA DE NOTIFICAÇÕES (FEED REAL DO FIREBASE - LARGURA TOTAL) */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col overflow-hidden w-full">
+              <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-500" /> Feed de Notificações
+              </h3>
+              <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+                {listaEventos.length === 0 ? (
+                  <div className="text-center text-sm text-slate-400 italic py-10">Nenhuma notificação encontrada no sistema.</div>
+                ) : (
+                  listaEventos.map((evento) => {
+                    let corStatus = "bg-slate-100 text-slate-600";
+                    if (evento.statusAnalise === 'Pendente NSP') corStatus = "bg-red-100 text-red-700";
+                    else if (evento.statusAnalise === 'Em Análise') corStatus = "bg-amber-100 text-amber-700";
+                    else if (evento.statusAnalise === 'Concluído') corStatus = "bg-emerald-100 text-emerald-700";
 
-              {/* LISTA DE NOTIFICAÇÕES (FEED REAL DO FIREBASE) */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col overflow-hidden">
-                <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-amber-500" /> Feed de Notificações
-                </h3>
-                <div className="flex-1 overflow-y-auto pr-2 space-y-3">
-                  {listaEventos.length === 0 ? (
-                    <div className="text-center text-sm text-slate-400 italic py-10">Nenhuma notificação encontrada no sistema.</div>
-                  ) : (
-                    listaEventos.map((evento) => {
-                      let corStatus = "bg-slate-100 text-slate-600";
-                      if (evento.statusAnalise === 'Pendente NSP') corStatus = "bg-red-100 text-red-700";
-                      else if (evento.statusAnalise === 'Em Análise') corStatus = "bg-amber-100 text-amber-700";
-                      else if (evento.statusAnalise === 'Concluído') corStatus = "bg-emerald-100 text-emerald-700";
+                    let corBarra = "bg-slate-300";
+                    if (evento.grauDano === 'Óbito') corBarra = "bg-black";
+                    else if (evento.grauDano === 'Grave') corBarra = "bg-red-600";
+                    else if (evento.grauDano === 'Moderado') corBarra = "bg-amber-500";
+                    else if (evento.grauDano === 'Leve') corBarra = "bg-blue-400";
+                    else if (evento.grauDano === 'Nenhum') corBarra = "bg-emerald-400";
 
-                      let corBarra = "bg-slate-300";
-                      if (evento.grauDano === 'Óbito') corBarra = "bg-black";
-                      else if (evento.grauDano === 'Grave') corBarra = "bg-red-600";
-                      else if (evento.grauDano === 'Moderado') corBarra = "bg-amber-500";
-                      else if (evento.grauDano === 'Leve') corBarra = "bg-blue-400";
-                      else if (evento.grauDano === 'Nenhum') corBarra = "bg-emerald-400";
-
-                      return (
-                        <div key={evento.id} onClick={() => setEventoEmInvestigacao(evento)} className="flex p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
-                          <div className={`w-2 rounded-full mr-3 shrink-0 ${corBarra}`}></div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="text-xs font-black text-slate-800 uppercase truncate pr-2">{evento.tipoEvento}</span>
-                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded shrink-0">
-                                {new Date(evento.dataHoraOcorrencia).toLocaleDateString('pt-BR')}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center mt-1">
-                              <p className="text-xs text-slate-500">Leito {evento.leitoOcorrencia} ({evento.pacienteIniciais || 'SN'})</p>
-                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${corStatus}`}>
-                                {evento.statusAnalise}
-                              </span>
-                            </div>
+                    return (
+                      <div key={evento.id} onClick={() => setEventoEmInvestigacao(evento)} className="flex p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
+                        <div className={`w-2 rounded-full mr-3 shrink-0 ${corBarra}`}></div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="text-xs font-black text-slate-800 uppercase truncate pr-2">{evento.tipoEvento}</span>
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded shrink-0">
+                              {new Date(evento.dataHoraOcorrencia).toLocaleDateString('pt-BR')}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center mt-1">
+                            <p className="text-xs text-slate-500">Leito {evento.leitoOcorrencia} ({evento.pacienteIniciais || 'SN'})</p>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${corStatus}`}>
+                              {evento.statusAnalise}
+                            </span>
                           </div>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
+            
           </div>
         )}
 
@@ -2309,9 +2391,9 @@ const metricasQualidade = useMemo(() => {
                   <h3 className="font-black text-lg flex items-center gap-2">
                     <ShieldAlert className="text-red-400" /> Investigação de Evento Adverso
                   </h3>
-                  <p className="text-slate-300 text-xs mt-1">Preenchimento exclusivo da Gestão (RT/CCIH/NSP)</p>
+                  <p className="text-slate-300 text-xs mt-1">Auditoria e Validação Exclusiva da Gestão (RT/NSP)</p>
                 </div>
-                <button onClick={() => setEventoEmInvestigacao(null)} className="text-slate-400 hover:text-white p-1 transition-colors">FECHAR</button>
+                <button onClick={() => { setFormInvestigacao({}); setEventoEmInvestigacao(null); }} className="text-slate-400 hover:text-white p-1 transition-colors">FECHAR</button>
               </div>
 
               {/* CORPO DO MODAL (DUAS COLUNAS EM TELAS GRANDES) */}
@@ -2320,35 +2402,25 @@ const metricasQualidade = useMemo(() => {
                 {/* LADO ESQUERDO: O RELATO DA LINHA DE FRENTE (Somente Leitura) */}
                 <div className="space-y-4">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">
-                    Dados da Ocorrência (Equipe Assistencial)
+                    Dados da Ocorrência (Relato Assistencial)
                   </h4>
                   
                   <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-4">
                       <div><span className="block text-[10px] text-slate-400 font-bold uppercase">Tipo de Evento</span><span className="font-bold text-slate-800 text-sm">{eventoEmInvestigacao.tipoEvento}</span></div>
                       <div><span className="block text-[10px] text-slate-400 font-bold uppercase">Leito / Iniciais</span><span className="font-bold text-slate-800 text-sm">{eventoEmInvestigacao.leitoOcorrencia} ({eventoEmInvestigacao.pacienteIniciais || 'SN'})</span></div>
-                      <div><span className="block text-[10px] text-slate-400 font-bold uppercase">Data/Hora</span><span className="font-bold text-slate-800 text-sm">{eventoEmInvestigacao.dataHoraOcorrencia ? new Date(eventoEmInvestigacao.dataHoraOcorrencia).toLocaleString('pt-BR') : 'Data Indisponível'}</span></div>
-                      <div>
-                        <span className="block text-[10px] text-slate-400 font-bold uppercase">Grau do Dano</span>
-                        <span className={`inline-block mt-0.5 text-xs font-bold px-2 py-0.5 rounded border ${eventoEmInvestigacao.grauDano === 'Grave' || eventoEmInvestigacao.grauDano === 'Óbito' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                          {eventoEmInvestigacao.grauDano || 'Não Classificado'}
-                        </span>
-                      </div>
+                      <div className="col-span-2"><span className="block text-[10px] text-slate-400 font-bold uppercase">Data/Hora da Ocorrência</span><span className="font-bold text-slate-800 text-sm">{eventoEmInvestigacao.dataHoraOcorrencia ? new Date(eventoEmInvestigacao.dataHoraOcorrencia).toLocaleString('pt-BR') : 'Data Indisponível'}</span></div>
                     </div>
                   </div>
 
                   <div className="space-y-3">
                     <div>
                       <span className="block text-xs text-slate-500 font-bold mb-1">Breve Relato do Incidente:</span>
-                      <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-wrap">{eventoEmInvestigacao.relatoIncidente || 'Nenhum relato fornecido.'}</div>
-                    </div>
-                    <div>
-                      <span className="block text-xs text-slate-500 font-bold mb-1">Impacto Gerado no Paciente:</span>
-                      <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-wrap">{eventoEmInvestigacao.impactoGerado || 'Nenhum impacto descrito.'}</div>
+                      <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-wrap">{eventoEmInvestigacao.relatoIncidente || 'Nenhum relato fornecido pela equipe.'}</div>
                     </div>
                     <div>
                       <span className="block text-xs text-slate-500 font-bold mb-1">Ações Imediatas Adotadas:</span>
-                      <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-wrap">{eventoEmInvestigacao.acoesImediatas || 'Nenhuma ação descrita.'}</div>
+                      <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-wrap">{eventoEmInvestigacao.acoesImediatas || 'Nenhuma ação descrita pela equipe.'}</div>
                     </div>
                   </div>
                 </div>
@@ -2356,10 +2428,40 @@ const metricasQualidade = useMemo(() => {
                 {/* LADO DIREITO: FORMULÁRIO DE ANÁLISE DA GESTÃO (Editável) */}
                 <div className="space-y-4">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">
-                    Análise Sistêmica e Prevenção (RT/NSP)
+                    Classificação e Análise (RT / NSP)
                   </h4>
 
+                  {/* NOVOS CAMPOS EDITÁVEIS: GRAU DO DANO E IMPACTO */}
                   <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex justify-between">
+                        Grau do Dano (Classificação Oficial) <span className="text-blue-500 lowercase font-normal italic">(Auditoria do RT)</span>
+                      </label>
+                      <select 
+                        value={formInvestigacao.grauDano !== undefined ? formInvestigacao.grauDano : (eventoEmInvestigacao.grauDano || '')} 
+                        onChange={(e) => setFormInvestigacao({...formInvestigacao, grauDano: e.target.value})}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm font-bold text-slate-700"
+                      >
+                        <option value="">Selecione a Gravidade Real...</option>
+                        <option value="Nenhum">Sem Dano (Near Miss / Incidente)</option>
+                        <option value="Leve">Leve (Sintomas leves, sem intervenção maior)</option>
+                        <option value="Moderado">Moderado (Intervenção médica, aumento do tempo de VM/UTI)</option>
+                        <option value="Grave">Grave (Intervenção para salvar vida, dano permanente)</option>
+                        <option value="Óbito">Óbito</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Impacto Clínico no Paciente</label>
+                      <textarea 
+                        rows="2" 
+                        value={formInvestigacao.impactoGerado !== undefined ? formInvestigacao.impactoGerado : (eventoEmInvestigacao.impactoGerado || '')} 
+                        onChange={(e) => setFormInvestigacao({...formInvestigacao, impactoGerado: e.target.value})}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm resize-none text-slate-700"
+                        placeholder="Edite ou descreva o impacto real (Ex: Necessitou de reintubação, nova linha venosa, etc)..."
+                      ></textarea>
+                    </div>
+
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nº do Prontuário</label>
                       <input 
@@ -2385,10 +2487,10 @@ const metricasQualidade = useMemo(() => {
 
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex justify-between">
-                      Fatores Contribuintes / Causa Raiz <span className="text-amber-500 lowercase font-normal italic">(Ex: Falha humana, protocolo?)</span>
+                      Fatores Contribuintes / Causa Raiz <span className="text-amber-500 lowercase font-normal italic">(Falha humana, sistema?)</span>
                     </label>
                     <textarea 
-                      rows="3" value={formInvestigacao.fatoresContribuintes || ''} onChange={(e) => setFormInvestigacao({...formInvestigacao, fatoresContribuintes: e.target.value})}
+                      rows="2" value={formInvestigacao.fatoresContribuintes || ''} onChange={(e) => setFormInvestigacao({...formInvestigacao, fatoresContribuintes: e.target.value})}
                       className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm resize-none text-slate-700"
                       placeholder="Identifique as falhas no processo que permitiram a ocorrência..."
                     ></textarea>
@@ -2399,13 +2501,13 @@ const metricasQualidade = useMemo(() => {
                       Plano de Ação / Medidas Preventivas <span className="text-emerald-500 lowercase font-normal italic">(O que faremos para não repetir?)</span>
                     </label>
                     <textarea 
-                      rows="3" value={formInvestigacao.medidasPreventivas || ''} onChange={(e) => setFormInvestigacao({...formInvestigacao, medidasPreventivas: e.target.value})}
+                      rows="2" value={formInvestigacao.medidasPreventivas || ''} onChange={(e) => setFormInvestigacao({...formInvestigacao, medidasPreventivas: e.target.value})}
                       className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm resize-none text-slate-700"
                       placeholder="Ações de educação, revisão de pops..."
                     ></textarea>
                   </div>
 
-                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mt-2">
+                  <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 mt-2">
                     <label className="block text-xs font-bold text-blue-800 uppercase mb-2">Status da Investigação</label>
                     <div className="flex gap-2">
                       <button 
@@ -2428,7 +2530,7 @@ const metricasQualidade = useMemo(() => {
 
               {/* RODAPÉ DO MODAL (BOTÃO DE SALVAR) */}
               <div className="bg-slate-100 border-t border-slate-200 p-4 flex justify-end gap-3 shrink-0">
-                <button onClick={() => setEventoEmInvestigacao(null)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">
+                <button onClick={() => { setFormInvestigacao({}); setEventoEmInvestigacao(null); }} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">
                   Cancelar
                 </button>
                 <button onClick={salvarInvestigacaoEvento} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm">

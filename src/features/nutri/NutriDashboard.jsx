@@ -5,11 +5,15 @@ import { calculateEvacDays } from '../../utils/core';
 
 const NutriDashboard = ({
   currentPatient,
+  patients, 
+  activeTab, 
+  setPatients,
   isEditable,
   updateNested,
   toggleArrayItem,
   handleBlurSave,
-  abrirAdmissaoNutri
+  handleNutriAdmission,
+  handleViewNutriAdmission
 }) => {
 
   if (!currentPatient?.nutri?.admitido) {
@@ -23,7 +27,7 @@ const NutriDashboard = ({
           Realize a admissão nutricional para definir os parâmetros base do paciente.
         </p>
         <button
-          onClick={abrirAdmissaoNutri}
+          onClick={(e) => { e.preventDefault(); handleNutriAdmission(); }} 
           disabled={!isEditable}
           className="flex items-center gap-2 px-8 py-4 bg-lime-600 hover:bg-lime-700 text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50"
         >
@@ -38,10 +42,10 @@ const NutriDashboard = ({
       
       <div className="flex justify-end mb-2">
         <button
-          onClick={abrirAdmissaoNutri}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-lime-200 text-lime-700 hover:bg-lime-50 rounded-lg text-sm font-bold shadow-sm transition-colors"
+          onClick={(e) => { e.preventDefault(); handleViewNutriAdmission(); }}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-lime-200 text-lime-700 hover:bg-lime-50 rounded-lg text-sm font-bold shadow-sm transition-colors print:hidden"
         >
-          <ClipboardSignature size={16} /> Editar Admissão Nutricional
+          <ClipboardSignature size={16} /> Ver Admissão Nutricional
         </button>
       </div>
 

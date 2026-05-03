@@ -1,12 +1,13 @@
 import React from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, 
-Syringe, Activity, AlertCircle, CheckCircle, Loader2, BrainCircuit } from 'lucide-react';
+Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit } from 'lucide-react';
 import { ESCALA_DOR, PRECAUCOES, CARACTERISTICAS_DIURESE } from '../../constants/clinicalLists';
 
 const NursingDashboard = ({
   currentPatient,
   isEditable,
   handleNursingAdmission,
+  handleViewNursingAdmission,
   updateNested,
   handleBlurSave,
   addLesao,
@@ -54,74 +55,14 @@ return (
           {/* ======================================================== */}
           {/* CABEÇALHO DA ABA: IDENTIFICAÇÃO E BOTÃO REABRIR          */}
           {/* ======================================================== */}
-          <div className="flex flex-col md:flex-row gap-4 mb-4 mt-4 items-stretch">
+          <div className="flex justify-end mb-2 mt-4 print:hidden">
             
-            {/* CARD DA IDENTIFICAÇÃO */}
-            <div className={`flex-1 p-4 rounded-xl border transition-all duration-300 flex items-center justify-between shadow-sm ${
-                currentPatient.enfermagem?.identificacaoCorreta 
-                  ? 'bg-emerald-50 border-emerald-200' 
-                  : 'bg-white border-slate-200'
-              }`}
-            >
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl transition-colors hidden sm:flex ${
-                  currentPatient.enfermagem?.identificacaoCorreta 
-                    ? 'bg-emerald-100 text-emerald-600' 
-                    : 'bg-slate-100 text-slate-500'
-                }`}>
-                  <UserCheck size={24} />
-                </div>
-                <div>
-                  <h4 className={`text-sm font-bold ${currentPatient.enfermagem?.identificacaoCorreta ? 'text-emerald-800' : 'text-slate-700'}`}>
-                    Identificação Correta do Paciente
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-1 pr-2">
-                    Confirmo que o paciente possui pulseira e placa no leito com os dados corretos.
-                  </p>
-                </div>
-              </div>
-              
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input 
-                  type="checkbox" 
-                  className="sr-only peer" 
-                  checked={!!currentPatient.enfermagem?.identificacaoCorreta}
-                  onChange={async (e) => {
-                    const novoValor = e.target.checked;
-                    
-                    // 1. Atualiza a tela instantaneamente (Visual macio para o usuário)
-                    updateNested("enfermagem", "identificacaoCorreta", novoValor);
-                    
-                    // 2. Salva DIRETO no Firebase com o ID Blindado
-                    try {
-                      // 👇 SUTURA DE SEGURANÇA (Igual à função save)
-                      let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
-                      const apenasNumero = String(idBruto).replace(/bed_/g, "");
-                      let numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
-                      const docId = `bed_${numeroFinal}`; // Garante que seja sempre bed_1, bed_2, etc.
-                      
-                      const leitoRef = doc(db, "leitos_uti", docId);
-                      
-                      await updateDoc(leitoRef, {
-                        // O uso das aspas com ponto atualiza APENAS este campo, sem apagar o resto
-                        "enfermagem.identificacaoCorreta": novoValor
-                      });
-                    } catch (error) {
-                      console.error("Erro crítico ao salvar identificação:", error);
-                    }
-                  }}
-                  disabled={!isEditable}
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 disabled:opacity-50"></div>
-              </label>
-            </div>
-
-            {/* BOTÃO DE REABRIR ADMISSÃO */}
+            {/* BOTÃO DE REABRIR/VER ADMISSÃO DA ENFERMAGEM */}
             <button
-              onClick={(e) => { e.preventDefault(); handleNursingAdmission(); }}
-              className="bg-slate-200 text-slate-700 px-6 rounded-xl text-sm font-bold hover:bg-slate-300 flex items-center justify-center gap-2 transition-colors border border-slate-300 shadow-sm print:hidden shrink-0"
+              onClick={(e) => { e.preventDefault(); handleViewNursingAdmission(); }}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold shadow-sm transition-colors print:hidden"
             >
-              <Edit3 size={18} /> Ver Admissão
+              <ClipboardSignature size={16} /> Ver Admissão de Enfermagem
             </button>
 
           </div>

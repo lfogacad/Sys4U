@@ -2,28 +2,6 @@ import React, { useEffect } from 'react';
 import { Wind, X, Shield, Activity, ClipboardCheck, FileText, Lock } from 'lucide-react';
 import { ICU_MOBILITY_SCALE, SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO } from '../../constants/clinicalLists';
 
-// 1. DICIONÁRIO DE TEXTOS PADRÃO (BOILERPLATE)
-const DEFAULT_TEXTS = {
-  estadoGeral: "BEG/REG/MEG, LOTE, cooperativo, sem queixas sistêmicas no momento da avaliação.",
-  sistemaNervoso: "Paciente sedado/sem sedação, sob protocolo de sedação contínua, em uso de xx em x ml/h e xx em x ml/h (BIC), RASS: xx/ escala de Coma de Glasgow: (AO: 4 – RV: 5 – RM:6) = 15T. Paciente consciente e orientado/ rebaixado. Pupilas: Isocóricas / anisocóricas, fotorreagentes / não fotorreagentes, simétricas ou assimétricas, reflexos preservados/ausentes.",
-  sistemaRespiratorio: "Paciente em ventilação mecânica invasiva, TOT/TQT, N° x, rima x / oxigenoterapia / ar ambiente. Padrão respiratório eupneico/taquipneico/bradipneico. Apresenta expansibilidade torácica simétrica/assimétrica, com predomínio costal/abdominal/misto. Ausculta pulmonar: murmúrio vesicular presente/abolido/diminuído bilateralmente, com presença de estertores crepitantes/roncos/sibilos em bases/apex/hemitorax D ou E. Apresenta tosse eficaz/ineficaz/ausente, com presença/ausência de secreção traqueobrônquica, de aspecto fluido/espesso, coloração clara/amarelada/esverdeada/purulenta/sanguinolenta, em pequena/média/grande quantidade. Paciente com uso/não uso de musculatura acessória, sem sinais de desconforto respiratório/ com sinais de desconforto respiratório (batimento de asa de nariz, tiragem intercostal). SpO₂ mantida em torno de xx%, com suporte ventilatório adequado no momento.",
-  sistemaCardiovascular: "Paciente sob monitorização cardíaca contínua, apresentando ritmo cardíaco regular/irregular. Estável/instável hemodinamicamente em uso/não uso de drogas vasoativas: xx em x ml/h (BIC) com FC em torno de x bpm,  PA: 95/76 mmHg, PAM: 98mmHg, Tº: 34.7°. Perfusão periférica adequada/reduzida, com extremidades aquecidas/frias, sem cianose, tempo de enchimento capilar </> 3 segundos. Presença/ausência de edema em membros inferiores/superiores (grau ___).",
-  sistemaDigestivo: "Paciente com abdômen plano/globoso/distendido/flácido/semigloboso, indolor/doloroso à palpação. Ruídos hidroaéreos presentes/diminuídos/ausentes. Em uso de dieta oral/enteral/parenteral, por via oral/sonda nasoenteral/nasogástrica/gastrostomia. Paciente com risco baixo/moderado/alto para broncoaspiração, anictérico.",
-  sistemaMusculoesqueletico: "Força muscular reduzida/preservada (avaliada quando possível). Tônus muscular normotônico/hipotônico/hipertônico. Amplitude de movimento preservada/reduzida em x. Presença de imobilidade no leito, com risco para fraqueza muscular adquirida na UTI. Sem/com sinais de retrações musculares. Independência prévia: x",
-  funcionalidade: "Paciente dependente parcialmente/dependente/independente para mudanças de decúbito e atividades funcionais no leito. Não deambula. Apresenta limitações funcionais decorrentes do estado clínico atual/tempo de internação em UTI.",
-  condutas: `• Monitorização contínua de sinais vitais e vigilância respiratória;
-• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;
-• Avaliação de mecânica ventilatória e parâmetros do ventilador;
-• Ajuste e monitorização de parâmetros ventilatórios (desmame/correção assincronias/correção gasometria);
-• Higiene brônquica com vibração/compressão torácica/AFE/drenagem postural/estímulo de tosse/bag squeezing;
-• Aspiração de vias aéreas sistema aberto/fechado, com retirada de secreção [descrever];
-• Técnicas de reexpansão pulmonar com exercícios ventilatórios/EPAP/CPAP recrutamento;
-• Mobilização [passiva/ativo-assistida/ativa] de MMSS e MMII (3x10 repetições);
-• Sedestação no leito/à beira do leito/poltrona - ortostatismo/marcha assistida/deambulação;
-
-Paciente apresentou boa tolerância às manobras, sem intercorrências hemodinâmicas. Melhora discreta da expansibilidade torácica e redução de secreção espessa em vias aéreas. Mantida estabilidade dos sinais vitais durante todo atendimento.`
-};
-
 const PhysioAdmissionModal = ({
   showPhysioModal,
   setShowPhysioModal,
@@ -32,30 +10,10 @@ const PhysioAdmissionModal = ({
   setPhysioData,
   handleFinalizePhysioAdmission,
   handleSyncGasometriaAdmissao,
-  isReadOnly // <-- NOVA PROP: Define se o modal está travado
+  isReadOnly
 }) => {
-
-  // GATILHO INTELIGENTE: Preenche automaticamente os campos vazios ao abrir o modal (Mas não se for modo leitura)
-  useEffect(() => {
-    if (showPhysioModal && physioData && !isReadOnly) {
-      let needsUpdate = false;
-      const updatedData = { ...physioData };
-
-      Object.keys(DEFAULT_TEXTS).forEach(key => {
-        if (!updatedData[key]) {
-          updatedData[key] = DEFAULT_TEXTS[key];
-          needsUpdate = true;
-        }
-      });
-
-      if (needsUpdate) {
-        setPhysioData(updatedData);
-      }
-    }
-  }, [showPhysioModal, isReadOnly]);
-
-  if (!showPhysioModal) return null;
-
+  console.log("Dados recebidos no Modal:", physioData);
+  
   return (
     <div className="fixed inset-0 bg-slate-900/80 z-[80] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] overflow-y-auto flex flex-col shadow-2xl">

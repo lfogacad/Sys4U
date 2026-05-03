@@ -1,7 +1,9 @@
 import React from 'react';
-import { AlertCircle, ShieldAlert, Droplets, Clock, Printer, RotateCcw, Scale, X, PlusCircle, Activity, CheckCircle, Edit3 } from 'lucide-react';
+import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, RotateCcw, Scale, X, PlusCircle, Activity, CheckCircle, Edit3 } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 
 const TechDashboard = ({
   currentPatient,
@@ -297,6 +299,74 @@ const TechDashboard = ({
         <span className="w-20 text-center">IDADE: {calculateAge(currentPatient.dataNascimento) || "__"}a</span>
         <span className="w-20 text-center">LEITO: {currentPatient.leito}</span>
         <span className="w-24 text-right">DATA: {formatDateDDMM(displayedBH.date || getManausDateStr())}</span>
+      </div>
+
+      {viewingPreviousBH && (
+        <div className="bg-orange-100 border border-orange-300 text-orange-800 p-3 rounded-xl mb-4 text-sm font-bold flex items-center justify-center gap-2 print:hidden">
+          <AlertCircle size={18} />
+          VOCÊ ESTÁ VISUALIZANDO O BALANÇO HÍDRICO DO DIA ANTERIOR (SOMENTE LEITURA).
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* CHECK DE IDENTIFICAÇÃO DO PACIENTE (ATRIBUIÇÃO DO TÉCNICO) */}
+      {/* ======================================================== */}
+      <div className={`p-4 rounded-xl border transition-all duration-300 flex items-center justify-between shadow-sm print:hidden mb-6 ${
+          currentPatient.enfermagem?.identificacaoCorreta 
+            ? 'bg-emerald-50 border-emerald-200' 
+            : 'bg-white border-slate-200'
+        }`}
+      >
+        <div className="flex items-center gap-4">
+          <div className={`p-3 rounded-xl transition-colors hidden sm:flex ${
+            currentPatient.enfermagem?.identificacaoCorreta 
+              ? 'bg-emerald-100 text-emerald-600' 
+              : 'bg-slate-100 text-slate-500'
+          }`}>
+            <UserCheck size={24} />
+          </div>
+          <div>
+            <h4 className={`text-sm font-bold ${currentPatient.enfermagem?.identificacaoCorreta ? 'text-emerald-800' : 'text-slate-700'}`}>
+              Identificação Correta do Paciente
+            </h4>
+            <p className="text-xs text-slate-500 mt-1 pr-2">
+              Confirmo que o paciente possui pulseira e placa no leito com os dados corretos.
+            </p>
+          </div>
+        </div>
+        
+        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+          <input 
+            type="checkbox" 
+            className="sr-only peer" 
+            checked={!!currentPatient.enfermagem?.identificacaoCorreta}
+            onChange={async (e) => {
+              const novoValor = e.target.checked;
+              
+              // 1. Atualiza a tela instantaneamente (Visual macio para o usuário)
+              updateNested("enfermagem", "identificacaoCorreta", novoValor);
+              
+              // 2. Salva DIRETO no Firebase com o ID Blindado
+              try {
+                let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
+                const apenasNumero = String(idBruto).replace(/bed_/g, "");
+                let numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
+                const docId = `bed_${numeroFinal}`; // Garante que seja sempre bed_1, bed_2, etc.
+                
+                const leitoRef = doc(db, "leitos_uti", docId);
+                
+                await updateDoc(leitoRef, {
+                  // O uso das aspas com ponto atualiza APENAS este campo, sem apagar o resto do objeto
+                  "enfermagem.identificacaoCorreta": novoValor
+                });
+              } catch (error) {
+                console.error("Erro crítico ao salvar identificação:", error);
+              }
+            }}
+            disabled={!isEditable}
+          />
+          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 disabled:opacity-50"></div>
+        </label>
       </div>
 
       {viewingPreviousBH && (

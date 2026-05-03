@@ -154,6 +154,10 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
   const [showPatientDataModal, setShowPatientDataModal] = useState(false);
 
+  const [isReadOnly, setIsReadOnly] = useState(false);
+
+  const [isNutriReadOnly, setIsNutriReadOnly] = useState(false);
+  
   const rawPatient = patients[activeTab] || defaultPatient(0);
   const currentPatient = ensureBHStructure(rawPatient);
   const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
@@ -883,26 +887,54 @@ const clearAntibiotic = (i) => {
     save(p, "Sistema: Limpou Campo de Data");
   };
 
-  const registrarEventoAdverso = async (tipo, detalhes = "") => {
+  const registrarEventoAdverso = async (dadosOuTipo, detalhes = "") => {
     const pacienteAtual = patients[activeTab];
     // Verifica se há um paciente no leito antes de registrar
     if (!pacienteAtual?.nome) return;
 
     try {
-      await addDoc(collection(db, "eventos_adversos"), {
-        idInternacao: pacienteAtual.idInternacao || "N/A",
-        pacienteNome: pacienteAtual.nome,
-        leito: activeTab,
-        tipo: tipo,
-        detalhes: detalhes,
-        // Usamos ISOString para manter o padrão dos seus outros indicadores
-        dataEvento: new Date().toISOString(), 
-        registradoPor: userProfile?.nome || "Não identificado",
-        perfil: userProfile?.perfil || userProfile?.role || "Enfermeiro"
-      });
+      let payload = {};
+
+      // 1. SE RECEBER O PACOTE COMPLETO (Ex: Gatilho automático da LPP)
+      if (typeof dadosOuTipo === 'object' && dadosOuTipo !== null) {
+        payload = {
+          ...dadosOuTipo,
+          // Mantém o rastreio de quem estava logado no momento do disparo
+          registradoPor: userProfile?.nome || "Não identificado",
+          perfil: userProfile?.perfil || userProfile?.role || "Enfermeiro"
+        };
+      } 
+      // 2. SE RECEBER O PADRÃO ANTIGO (Ex: Um botão simples chamando "Queda")
+      else {
+        // Extrai as iniciais caso seja uma notificação manual
+        const iniciais = pacienteAtual.nome.split(" ").map(n => n[0]).join("").substring(0, 3).toUpperCase();
+        
+        payload = {
+          idInternacao: pacienteAtual.idInternacao || "N/A",
+          pacienteNome: pacienteAtual.nome,
+          pacienteIniciais: iniciais,
+          leitoOcorrencia: activeTab,     // Campo lido pelo novo Dashboard
+          leito: activeTab,               // Mantido para retrocompatibilidade
+          tipoEvento: dadosOuTipo,        // Campo lido pelo novo Dashboard
+          tipo: dadosOuTipo,              // Mantido para retrocompatibilidade
+          detalhes: detalhes,
+          dataHoraOcorrencia: new Date().toISOString(), // Lido pelo novo Dashboard
+          dataEvento: new Date().toISOString(),         // Mantido para retrocompatibilidade
+          statusAnalise: "Pendente NSP",
+          grauDano: "Moderado",
+          registradoPor: userProfile?.nome || "Não identificado",
+          perfil: userProfile?.perfil || userProfile?.role || "Enfermeiro"
+        };
+      }
+
+      // Envia para o banco de dados (Mantive a coleção "eventos_adversos" do seu código)
+      await addDoc(collection(db, "eventos_adversos"), payload);
       
-      console.log(`[SEGURANÇA]: Evento ${tipo} registrado.`);
-      alert(`✅ Evento registrado: ${tipo}.\nIsso foi enviado para o relatório mensal de segurança.`);
+      // Feedback visual para a equipe
+      const nomeEvento = typeof dadosOuTipo === 'object' ? dadosOuTipo.tipoEvento : dadosOuTipo;
+      console.log(`[SEGURANÇA]: Evento ${nomeEvento} registrado.`);
+      alert(`✅ Evento registrado: ${nomeEvento}.\nIsso foi enviado para o relatório mensal de segurança.`);
+      
     } catch (error) {
       console.error("Erro ao registrar evento adverso:", error);
       alert("Erro técnico ao salvar evento. Comunique o suporte.");
@@ -1213,202 +1245,167 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
   };
 
   const handleNursingAdmission = () => {
-    // 👇 A MÁGICA ESTÁ AQUI: Puxamos do "Cofre" primeiro!
-    const p = patients[activeTab]?.admissaoEnfermagem || patients[activeTab]?.enfermagem || {};
-    
+    // CAMPO ESTÉRIL ABSOLUTO: Injeta uma prancheta 100% vazia.
+    // Ignora qualquer rascunho de evolução para não puxar lixo de memória de outro leito.
     setNursingData({
-      dor: p.dor || "",
-      hemodialise: p.hemodialise || false,
-      precaucao: p.precaucao || "",
-      avpLocal: p.avpLocal || "",
-      avpData: p.avpData || "",
-      cvcLocal: p.cvcLocal || "",
-      cvcData: p.cvcData || "",
-      svd: p.svd || false,
-      svdData: p.svdData || "",
-      sneCm: p.sneCm || "",
-      sneData: p.sneData || "",
-      drenoTipo: p.drenoTipo || "",
-      lesaoLocal: p.lesaoLocal || "",
-      curativoTipo: p.curativoTipo || "",
-      curativoData: p.curativoData || "",
-      braden_percepcao: p.braden_percepcao ?? "",
-      braden_umidade: p.braden_umidade ?? "",
-      braden_atividade: p.braden_atividade ?? "",
-      braden_mobilidade: p.braden_mobilidade ?? "",
-      braden_nutricao: p.braden_nutricao ?? "",
-      braden_friccao: p.braden_friccao ?? "",
-      morse_historico: p.morse_historico ?? "",
-      morse_diagnostico: p.morse_diagnostico ?? "",
-      morse_auxilio: p.morse_auxilio ?? "",
-      morse_terapiaIV: p.morse_terapiaIV ?? "",
-      morse_marcha: p.morse_marcha ?? "",
-      morse_estadoMental: p.morse_estadoMental ?? "",
+      dor: "", hemodialise: false, precaucao: "",
+      avpLocal: "", avpData: "", cvcLocal: "", cvcData: "", cvcRetiradaData: "",
+      shileyLocal: "", shileyData: "", shileyRetiradaData: "",
+      svd: false, svdData: "", svdRetiradaData: "",
+      sneCm: "", sneData: "", drenoTipo: "",
+      lesaoLocal: "", curativoTipo: "", curativoData: "", lesoes: [],
+      braden_percepcao: "", braden_umidade: "", braden_atividade: "", braden_mobilidade: "", braden_nutricao: "", braden_friccao: "",
+      morse_historico: "", morse_diagnostico: "", morse_auxilio: "", morse_terapiaIV: "", morse_marcha: "", morse_estadoMental: ""
     });
+    
     setShowNursingModal(true);
   };
 
-  const handlePhysioAdmission = () => {
-    const p = patients[activeTab].physio || {};
-    setPhysioData({
-      estadoGeral: p.admissao_estadoGeral || "BEG/REG/MEG,\nLOTE, cooperativo, sem queixas sistêmicas no momento da avaliação.",
-      sistemaNervoso: p.admissao_sistemaNervoso || "Paciente sedado/sem sedação, sob protocolo de sedação contínua, em uso de xx em x ml/h e xx em x ml/h (BIC), RASS: xx/ escala de Coma de Glasgow: (AO: 4 – RV: 5 – RM:6) = 15T. Paciente consciente e orientado/ rebaixado. Pupilas: Isocóricas / anisocóricas, fotorreagentes / não fotorreagentes, simétricas ou assimétricas, reflexos preservados/ausentes.",
-      sistemaRespiratorio: p.admissao_sistemaRespiratorio || "Paciente em ventilação mecânica invasiva, TOT/TQT, N° x, rima x / oxigenoterapia / ar ambiente. Padrão respiratório eupneico/taquipneico/bradipneico. Apresenta expansibilidade torácica simétrica/assimétrica, com predomínio costal/abdominal/misto. Ausculta pulmonar: murmúrio vesicular presente/abolido/diminuído bilateralmente, com presença de estertores crepitantes/roncos/sibilos em bases/apex/hemitorax D ou E. Apresenta tosse eficaz/ineficaz/ausente, com presença/ausência de secreção traqueobrônquica, de aspecto fluido/espesso, coloração clara/amarelada/esverdeada/purulenta/sanguinolenta, em pequena/média/grande quantidade. Paciente com uso/não uso de musculatura acessória, sem sinais de desconforto respiratório/ com sinais de desconforto respiratório (batimento de asa de nariz, tiragem intercostal). SpO₂ mantida em torno de xx%, com suporte ventilatório adequado no momento.",
-      sistemaCardiovascular: p.admissao_sistemaCardiovascular || "Paciente sob monitorização cardíaca contínua, apresentando ritmo cardíaco regular/irregular. Estável/instável hemodinamicamente em uso/não uso de drogas vasoativas: xx em x ml/h (BIC) com FC em torno de x bpm,  PA: 95/76 mmHg, PAM: 98mmHg, Tº: 34.7°. Perfusão periférica adequada/reduzida, com extremidades aquecidas/frias, sem cianose, tempo de enchimento capilar </> 3 segundos. Presença/ausência de edema em membros inferiores/superiores (grau ___).",
-      sistemaDigestivo: p.admissao_sistemaDigestivo || "Paciente com abdômen plano/globoso/distendido/flácido/semigloboso, indolor/doloroso à palpação. Ruídos hidroaéreos presentes/diminuídos/ausentes. Em uso de dieta oral/enteral/parenteral, por via oral/sonda nasoenteral/nasogástrica/gastrostomia. Paciente com risco baixo/moderado/alto para broncoaspiração, anictérico.",
-      sistemaMusculoesqueletico: p.admissao_sistemaMusculoesqueletico || "Força muscular reduzida/preservada (avaliada quando possível). Tônus muscular normotônico/hipotônico/hipertônico. Amplitude de movimento preservada/reduzida em x. Presença de imobilidade no leito, com risco para fraqueza muscular adquirida na UTI. Sem/com sinais de retrações musculares. Independência prévia: x",
-      funcionalidade: p.admissao_funcionalidade || "Paciente dependente parcialmente/dependente/independente para mudanças de decúbito e atividades funcionais no leito. Não deambula. Apresenta limitações funcionais decorrentes do estado clínico atual/tempo de internação em UTI.",
-      mrcScore: p.mrcScore || "",
-      ims: p.icuMobilityScale || "",
-      gasoHora: "",
-      gaso_pH: "",
-      gaso_pCO2: "",
-      gaso_PaO2: "",
-      gaso_BE: "",
-      gaso_HCO3: "",
-      gaso_SatO2: "",
-      gaso_FiO2: "",
-      gaso_PF: "",
-      suporte: p.suporte || "",
-      parametro: p.parametro || "",
-      peep: p.peep || "",
-      fiO2: p.fiO2 || "",
-      volCorrente: p.volCorrente || "",
-      fr: p.fr || "",
-      tIns: p.tIns || "",
-      relIE: p.relIE || "",
-      filtroHMEF: p.filtroHMEF || false,
-      dataTrocaHMEF: p.dataTrocaHMEF || "",
-      sistemaFechado: p.sistemaFechado || false,
-      dataTrocaSistemaFechado: p.dataTrocaSistemaFechado || "",
-      cuff: p.cuff || "",
-      condutas: p.admissao_condutas || `CONDUTAS FISIOTERAPÊUTICAS:
-• Monitorização contínua de sinais vitais e vigilância respiratória;
-• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;
-• Avaliação de mecânica ventilatória e parâmetros do ventilador;
-• Ajuste e monitorização de parâmetros ventilatórios (desmame/correção assincronias/correção gasometria);
-• Higiene brônquica com vibração/compressão torácica/AFE/drenagem postural/estímulo de tosse/bag squeezing;
-• Aspiração de vias aéreas sistema aberto/fechado, com retirada de secreção [descrever];
-• Técnicas de reexpansão pulmonar com exercícios ventilatórios/EPAP/CPAP recrutamento;
-• Mobilização [passiva/ativo-assistida/ativa] de MMSS e MMII (3x10 repetições);
-• Sedestação no leito/à beira do leito/poltrona - ortostatismo/marcha assistida/deambulação;
 
-Paciente apresentou boa tolerância às manobras, sem intercorrências hemodinâmicas. Melhora discreta da expansibilidade torácica e redução de secreção espessa em vias aéreas. Mantida estabilidade dos sinais vitais durante todo atendimento.`,
-      dataIntubacao: p.dataIntubacao || "",
-      numeroTOT: p.totNumero || "",
-      rimaFixacao: p.totRima || "",
-      // --- PUXANDO OS DADOS DA SECREÇÃO BASAL SALVA ---
-      secrecao: p.secrecao || false,
-      secrecaoAspecto: p.secrecaoAspecto || "",
-      secrecaoColoracao: p.secrecaoColoracao || "",
-      secrecaoQtd: p.secrecaoQtd || ""
-    });
+  // --- INICIAR ADMISSÃO DA FISIOTERAPIA (Campo Estéril) ---
+  const handlePhysioAdmission = () => {
+    console.log("🟢 MOTOR: Injetando Template Estéril para NOVA Admissão");
+    // 1. Primeiro, injetamos o template (Limpando qualquer lixo anterior)
+    const templateLimpo = {
+      estadoGeral: "BEG/REG/MEG,\nLOTE, cooperativo, sem queixas sistêmicas no momento da avaliação.",
+      sistemaNervoso: "Paciente sedado/sem sedação, sob protocolo de sedação contínua, em uso de xx em x ml/h e xx em x ml/h (BIC), RASS: xx/ escala de Coma de Glasgow: (AO: 4 – RV: 5 – RM:6) = 15T. Paciente consciente e orientado/ rebaixado. Pupilas: Isocóricas / anisocóricas, fotorreagentes / não fotorreagentes, simétricas ou assimétricas, reflexos preservados/ausentes.",
+      sistemaRespiratorio: "Paciente em ventilação mecânica invasiva, TOT/TQT, N° x, rima x / oxigenoterapia / ar ambiente. Padrão respiratório eupneico/taquipneico/bradipneico. Apresenta expansibilidade torácica simétrica/assimétrica, com predomínio costal/abdominal/misto. Ausculta pulmonar: murmúrio vesicular presente/abolido/diminuído bilateralmente, com presença de estertores crepitantes/roncos/sibilos em bases/apex/hemitorax D ou E. Apresenta tosse eficaz/ineficaz/ausente, com presença/ausência de secreção traqueobrônquica, de aspecto fluido/espesso, coloração clara/amarelada/esverdeada/purulenta/sanguinolenta, em pequena/média/grande quantidade. Paciente com uso/não uso de musculatura acessória, sem sinais de desconforto respiratório/ com sinais de desconforto respiratório (batimento de asa de nariz, tiragem intercostal). SpO₂ mantida em torno de xx%, com suporte ventilatório adequado no momento.",
+      sistemaCardiovascular: "Paciente sob monitorização cardíaca contínua, apresentando ritmo cardíaco regular/irregular. Estável/instável hemodinamicamente em uso/não uso de drogas vasoativas: xx em x ml/h (BIC) com FC em torno de x bpm,  PA: 95/76 mmHg, PAM: 98mmHg, Tº: 34.7°. Perfusão periférica adequada/reduzida, com extremidades aquecidas/frias, sem cianose, tempo de enchimento capilar </> 3 segundos. Presença/ausência de edema em membros inferiores/superiores (grau ___).",
+      sistemaDigestivo: "Paciente com abdômen plano/globoso/distendido/flácido/semigloboso, indolor/doloroso à palpação. Ruídos hidroaéreos presentes/diminuídos/ausentes. Em uso de dieta oral/enteral/parenteral, por via oral/sonda nasoenteral/nasogástrica/gastrostomia. Paciente com risco baixo/moderado/alto para broncoaspiração, anictérico.",
+      sistemaMusculoesqueletico: "Força muscular reduzida/preservada (avaliada quando possível). Tônus muscular normotônico/hipotônico/hipertônico. Amplitude de movimento preservada/reduzida em x. Presença de imobilidade no leito, com risco para fraqueza muscular adquirida na UTI. Sem/com sinais de retrações musculares. Independência prévia: x",
+      funcionalidade: "Paciente dependente parcialmente/dependente/independente para mudanças de decúbito e atividades funcionais no leito. Não deambula. Apresenta limitações funcionais decorrentes do estado clínico atual/tempo de internação em UTI.",
+      mrcScore: "", ims: "", gasoHora: "", gaso_pH: "", gaso_pCO2: "", gaso_PaO2: "", gaso_BE: "", gaso_HCO3: "", gaso_SatO2: "", gaso_FiO2: "", gaso_PF: "",
+      suporte: "", parametro: "", peep: "", fiO2: "", volCorrente: "", pressaoControlada: "", pressaoSuporte: "", fr: "", tIns: "", relIE: "",
+      filtroHMEF: false, dataTrocaHMEF: "", sistemaFechado: false, dataTrocaSistemaFechado: "", cuff: "",
+      condutas: `CONDUTAS FISIOTERAPÊUTICAS:\n• Monitorização contínua de sinais vitais e vigilância respiratória;\n• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;\n• Avaliação de mecânica ventilatória e parâmetros do ventilador;\n• Ajuste e monitorização de parâmetros ventilatórios (desmame/correção assincronias/correção gasometria);\n• Higiene brônquica com vibração/compressão torácica/AFE/drenagem postural/estímulo de tosse/bag squeezing;\n• Aspiração de vias aéreas sistema aberto/fechado, com retirada de secreção [descrever];\n• Técnicas de reexpansão pulmonar com exercícios ventilatórios/EPAP/CPAP recrutamento;\n• Mobilização [passiva/ativo-assistida/ativa] de MMSS e MMII (3x10 repetições);\n• Sedestação no leito/à beira do leito/poltrona - ortostatismo/marcha assistida/deambulação;\n\nPaciente apresentou boa tolerância às manobras, sem intercorrências hemodinâmicas. Melhora discreta da expansibilidade torácica e redução de secreção espessa em vias aéreas. Mantida estabilidade dos sinais vitais durante todo atendimento.`,
+      dataIntubacao: "", numeroTOT: "", rimaFixacao: "", secrecao: false, secrecaoAspecto: "", secrecaoColoracao: "", secrecaoQtd: ""
+    };
+
+    setPhysioData(templateLimpo);
+    setShowPhysioModal(true);
+  };
+
+  // --- REABRIR/VER ADMISSÃO DE ENFERMAGEM ---
+  const handleViewNursingAdmission = () => {
+    // Procura na gaveta correta (priorizando o cofre imutável)
+    const cofre = currentPatient.admissaoEnfermagem || currentPatient.enfermagem || {};
+
+    // Injeta os dados salvos de volta no modal
+    setNursingData({ ...cofre });
+
+    setShowNursingModal(true);
+  };
+
+  // --- REABRIR/VER ADMISSÃO DE FISIOTERAPIA ---
+  const handleViewPhysioAdmission = () => {
+    console.log("🟡 MOTOR: Lendo admissão existente (Cofre)");
+    // Procura na gaveta correta (priorizando o cofre imutável)
+    const cofre = currentPatient.admissaoFisioterapia || currentPatient.physio || {};
+    console.log("🟡 MOTOR: Dados extraídos do cofre:", cofre);
+
+    // Injeta os dados salvos de volta no modal
+    setPhysioData({ ...cofre });
+
     setShowPhysioModal(true);
   };
 
   const handleFinalizePhysioAdmission = () => {
-    // 1. BLINDAGEM DE MEMÓRIA (Evita bugs do React com Cópia Profunda)
-    const up = [...patients];
-    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    // 1. O CLONE PROFUNDO DA MÉDICA (Rompe o vínculo de memória com outros leitos)
+    const pacienteBase = patients[activeTab];
+    const r = pacienteBase ? JSON.parse(JSON.stringify(pacienteBase)) : {};
 
     // ========================================================
-    // O COFRE DA FISIOTERAPIA (Congela a imagem da Admissão)
+    // 2. O COFRE DA FISIOTERAPIA (Congela a imagem inicial na raiz)
     // ========================================================
-    if (!p.admissaoFisioterapia) {
-      p.admissaoFisioterapia = { 
+    if (!r.admissaoFisioterapia) {
+      r.admissaoFisioterapia = {
         ...physioData,
         dataRegistroAdmissao: new Date().toISOString()
       };
     }
 
     // ========================================================
-    // ALIMENTANDO A LOUSA DE EVOLUÇÃO DIÁRIA
+    // 3. ABASTECENDO A LOUSA DE EVOLUÇÃO DIÁRIA
     // ========================================================
-    if (!p.physio) p.physio = {};
+    r.physio = {
+      ...(r.physio || {}),
+      admissao_estadoGeral: physioData.estadoGeral,
+      admissao_sistemaNervoso: physioData.sistemaNervoso,
+      admissao_sistemaRespiratorio: physioData.sistemaRespiratorio,
+      admissao_sistemaCardiovascular: physioData.sistemaCardiovascular,
+      admissao_sistemaDigestivo: physioData.sistemaDigestivo,
+      admissao_sistemaMusculoesqueletico: physioData.sistemaMusculoesqueletico,
+      admissao_funcionalidade: physioData.funcionalidade,
+      mrcScore: physioData.mrcScore,
+      icuMobilityScale: physioData.ims,
+      suporte: physioData.suporte,
+      parametro: physioData.parametro,
+      peep: physioData.peep,
+      fiO2: physioData.fiO2,
+      volCorrente: physioData.volCorrente,
+      pressaoControlada: physioData.pressaoControlada,
+      pressaoSuporte: physioData.pressaoSuporte,
+      fr: physioData.fr,
+      tIns: physioData.tIns,
+      relIE: physioData.relIE,
+      filtroHMEF: physioData.filtroHMEF,
+      dataHMEF: physioData.dataTrocaHMEF,
+      sistemaFechado: physioData.sistemaFechado,
+      dataSFA: physioData.dataTrocaSistemaFechado,
+      cuff: physioData.cuff,
+      admissao_condutas: physioData.condutas,
+      totNumero: physioData.numeroTOT,
+      totRima: physioData.rimaFixacao,
+      secrecao: physioData.secrecao,
+      secrecaoAspecto: physioData.secrecaoAspecto,
+      secrecaoColoracao: physioData.secrecaoColoracao,
+      secrecaoQtd: physioData.secrecaoQtd
+    };
 
-    p.physio.admissao_estadoGeral = physioData.estadoGeral;
-    p.physio.admissao_sistemaNervoso = physioData.sistemaNervoso;
-    p.physio.admissao_sistemaRespiratorio = physioData.sistemaRespiratorio;
-    p.physio.admissao_sistemaCardiovascular = physioData.sistemaCardiovascular;
-    p.physio.admissao_sistemaDigestivo = physioData.sistemaDigestivo;
-    p.physio.admissao_sistemaMusculoesqueletico = physioData.sistemaMusculoesqueletico;
-    p.physio.admissao_funcionalidade = physioData.funcionalidade;
-
-    // Salva o MRC e o IMS no painel principal da fisio também!
-    p.physio.mrcScore = physioData.mrcScore;
-    p.physio.icuMobilityScale = physioData.ims;
-    p.physio.suporte = physioData.suporte;
-    p.physio.parametro = physioData.parametro;
-    p.physio.peep = physioData.peep;
-    p.physio.fiO2 = physioData.fiO2;
-    p.physio.volCorrente = physioData.volCorrente;
-    p.physio.pressaoControlada = physioData.pressaoControlada;
-    p.physio.pressaoSuporte = physioData.pressaoSuporte;
-    p.physio.fr = physioData.fr;
-    p.physio.tIns = physioData.tIns;
-    p.physio.relIE = physioData.relIE;
-    p.physio.filtroHMEF = physioData.filtroHMEF;
-
-    p.physio.dataHMEF = physioData.dataHMEF;
-    p.physio.sistemaFechado = physioData.sistemaFechado;
-    p.physio.dataSFA = physioData.dataSFA;
-
-    p.physio.cuff = physioData.cuff;
-    p.physio.admissao_condutas = physioData.condutas;
-    p.dataIntubacao = physioData.dataIntubacao;
-
-    p.physio.totNumero = physioData.numeroTOT;
-    p.physio.totRima = physioData.rimaFixacao;
-
-    // Transferindo a avaliação por sistemas da Admissão para o Dia a Dia
-    p.physio.estadoGeral = physioData.estadoGeral;
-    p.physio.sistemaNervoso = physioData.sistemaNervoso;
-    p.physio.sistemaRespiratorio = physioData.sistemaRespiratorio;
-    p.physio.sistemaCardiovascular = physioData.sistemaCardiovascular;
-    p.physio.sistemaDigestivo = physioData.sistemaDigestivo;
-    p.physio.sistemaMusculoesqueletico = physioData.sistemaMusculoesqueletico;
-
-    // --- TRANSFERINDO OS DADOS DA SECREÇÃO BASAL ---
-    p.physio.secrecao = physioData.secrecao;
-    p.physio.secrecaoAspecto = physioData.secrecaoAspecto;
-    p.physio.secrecaoColoracao = physioData.secrecaoColoracao;
-    p.physio.secrecaoQtd = physioData.secrecaoQtd;
+    // Tratamento isolado para a data de intubação (raiz do paciente)
+    if (physioData.dataIntubacao) {
+      r.dataIntubacao = physioData.dataIntubacao;
+    }
 
     // --- MÁGICA DA GASOMETRIA AUTOMÁTICA ---
     if (physioData.gasoHora) {
-      if (!p.gasometriaHistory) p.gasometriaHistory = {};
-      if (!p.customGasometriaCols) p.customGasometriaCols = [];
+      if (!r.gasometriaHistory) r.gasometriaHistory = {};
+      if (!r.customGasometriaCols) r.customGasometriaCols = [];
 
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, '0');
       const mm = String(today.getMonth() + 1).padStart(2, '0');
       const colName = `${dd}/${mm} - ${physioData.gasoHora}`;
 
-      // Cria a coluna nova na tabela de Gasometria
-      if (!p.customGasometriaCols.includes(colName)) {
-        p.customGasometriaCols.unshift(colName);
+      if (!r.customGasometriaCols.includes(colName)) {
+        r.customGasometriaCols.unshift(colName);
       }
 
-      if (!p.gasometriaHistory[colName]) p.gasometriaHistory[colName] = {};
+      if (!r.gasometriaHistory[colName]) r.gasometriaHistory[colName] = {};
 
-      // Injeta os valores
-      if (physioData.gaso_pH) p.gasometriaHistory[colName]["pH"] = physioData.gaso_pH;
-      if (physioData.gaso_pCO2) p.gasometriaHistory[colName]["pCO2"] = physioData.gaso_pCO2;
-      if (physioData.gaso_PaO2) p.gasometriaHistory[colName]["PaO2"] = physioData.gaso_PaO2;
-      if (physioData.gaso_BE) p.gasometriaHistory[colName]["BE"] = physioData.gaso_BE;
-      if (physioData.gaso_HCO3) p.gasometriaHistory[colName]["HCO3"] = physioData.gaso_HCO3;
-      if (physioData.gaso_SatO2) p.gasometriaHistory[colName]["SatO2"] = physioData.gaso_SatO2;
-      if (physioData.gaso_FiO2) p.gasometriaHistory[colName]["FiO2"] = physioData.gaso_FiO2;
-      if (physioData.gaso_PF) p.gasometriaHistory[colName]["P/F"] = physioData.gaso_PF;
+      if (physioData.gaso_pH) r.gasometriaHistory[colName]["pH"] = physioData.gaso_pH;
+      if (physioData.gaso_pCO2) r.gasometriaHistory[colName]["pCO2"] = physioData.gaso_pCO2;
+      if (physioData.gaso_PaO2) r.gasometriaHistory[colName]["PaO2"] = physioData.gaso_PaO2;
+      if (physioData.gaso_BE) r.gasometriaHistory[colName]["BE"] = physioData.gaso_BE;
+      if (physioData.gaso_HCO3) r.gasometriaHistory[colName]["HCO3"] = physioData.gaso_HCO3;
+      if (physioData.gaso_SatO2) r.gasometriaHistory[colName]["SatO2"] = physioData.gaso_SatO2;
+      if (physioData.gaso_FiO2) r.gasometriaHistory[colName]["FiO2"] = physioData.gaso_FiO2;
+      if (physioData.gaso_PF) r.gasometriaHistory[colName]["P/F"] = physioData.gaso_PF;
     }
 
-    up[activeTab] = p;
+    // 4. ATUALIZAÇÃO IMEDIATA DA TELA
+    const up = [...patients];
+    up[activeTab] = r;
     setPatients(up);
 
-    // 2. A CAIXA PRETA: Carimba a admissão da fisio de uma vez só!
-    save(p, "Fisioterapia: Realizou a Admissão Completa (Avaliação Inicial, Parâmetros Ventilatórios e Escalas)");
+    // 5. A CAIXA PRETA: Carimba a admissão da fisio no Firebase
+    if (typeof save === "function") {
+      save(r, "Fisioterapia: Realizou a Admissão Completa (Avaliação Inicial, Parâmetros Ventilatórios e Escalas)");
+    }
 
-    // --- O RESTANTE DA FUNÇÃO (GERADOR DE TEXTO) CONTINUA INTACTO ---
+    // ========================================================
+    // 6. GERADOR DE TEXTO (Mantido exato)
+    // ========================================================
     const mrcText = physioData.mrcScore ? `\nESCORE MRC: ${physioData.mrcScore}` : "";
     const imsText = physioData.ims ? `\nICU MOBILITY SCALE (IMS): ${physioData.ims}` : "";
 
@@ -1436,14 +1433,14 @@ Paciente apresentou boa tolerância às manobras, sem intercorrências hemodinâ
     let itensAirway = [];
 
     if (physioData.suporte === "VM") {
-      if (physioData.dataIntubacao) itensAirway.push(`Intubação: ${physioData.dataIntubacao ? formatDateDDMM(physioData.dataIntubacao) : "-"}`);
+      if (physioData.dataIntubacao) itensAirway.push(`Intubação: ${physioData.dataIntubacao}`);
       if (physioData.numeroTOT) itensAirway.push(`TOT Nº: ${physioData.numeroTOT}`);
       if (physioData.rimaFixacao) itensAirway.push(`Rima: ${physioData.rimaFixacao}cm`);
     }
 
     if (physioData.cuff) itensAirway.push(`Cuff: ${physioData.cuff} cmH2O`);
-    if (physioData.filtroHMEF) itensAirway.push(`Filtro HMEF (Troca: ${physioData.dataHMEF ? formatDateDDMM(physioData.dataHMEF) : "Não informada"})`);
-    if (physioData.sistemaFechado) itensAirway.push(`Sist. Fechado de Aspiração (Troca: ${physioData.dataSFA ? formatDateDDMM(physioData.dataSFA) : "Não informada"})`);
+    if (physioData.filtroHMEF) itensAirway.push(`Filtro HMEF (Troca: ${physioData.dataHMEF || "Não informada"})`);
+    if (physioData.sistemaFechado) itensAirway.push(`Sist. Fechado de Aspiração (Troca: ${physioData.dataSFA || "Não informada"})`);
 
     if (itensAirway.length > 0) {
       airwayText = `\nVIA AÉREA E DISPOSITIVOS: ${itensAirway.join(" | ")}`;
@@ -1452,9 +1449,10 @@ Paciente apresentou boa tolerância às manobras, sem intercorrências hemodinâ
     const gasoText = physioData.gasoHora ? `\n\nGASOMETRIA DE ADMISSÃO (${physioData.gasoHora}):\npH: ${physioData.gaso_pH || "-"} | pCO2: ${physioData.gaso_pCO2 || "-"} | PaO2: ${physioData.gaso_PaO2 || "-"} | BE: ${physioData.gaso_BE || "-"} | HCO3: ${physioData.gaso_HCO3 || "-"} | SatO2: ${physioData.gaso_SatO2 || "-"} | FiO2: ${physioData.gaso_FiO2 || "-"} | P/F: ${physioData.gaso_PF || "-"}` : "";
 
     // --- BUSCANDO DADOS MÉDICOS DA ADMISSÃO ---
-    const historiaMedica = p.historia || "Não descrita no sistema.";
-    const diagAgudos = p.diagAgudos || "Não descritos no sistema.";
-    const diagCronicos = p.diagCronicos || "Não descritos no sistema.";
+    const adm = r.admissionData || r.admissoes || {};
+    const historiaMedica = adm.historia || "Não descrita no sistema.";
+    const diagAgudos = r.diagnostico || adm.diagAgudos || "Não descritos no sistema.";
+    const diagCronicos = r.comorbidades || adm.diagCronicos || "Não descritos no sistema.";
 
     const text = `ADMISSÃO FISIOTERAPÊUTICA
 
@@ -1468,31 +1466,34 @@ DIAGNÓSTICOS CRÔNICOS:
 ${diagCronicos}
 
 ESTADO GERAL:
-${physioData.estadoGeral}
+${physioData.estadoGeral || "Não avaliado"}
 
 SISTEMA NERVOSO:
-${physioData.sistemaNervoso}
+${physioData.sistemaNervoso || "Não avaliado"}
 
 SISTEMA RESPIRATÓRIO:
-${physioData.sistemaRespiratorio}
+${physioData.sistemaRespiratorio || "Não avaliado"}
 
 SISTEMA CARDIOVASCULAR:
-${physioData.sistemaCardiovascular}
+${physioData.sistemaCardiovascular || "Não avaliado"}
 
 SISTEMA DIGESTIVO:
-${physioData.sistemaDigestivo}
+${physioData.sistemaDigestivo || "Não avaliado"}
 
 SISTEMA MUSCULOESQUELÉTICO:
-${physioData.sistemaMusculoesqueletico}
+${physioData.sistemaMusculoesqueletico || "Não avaliado"}
 
 FUNCIONALIDADE:
-${physioData.funcionalidade}${mrcText}${imsText}${suporteText}${airwayText}${gasoText}
+${physioData.funcionalidade || "Não avaliado"}${mrcText}${imsText}${suporteText}${airwayText}${gasoText}
 
 CONDUTAS FISIOTERAPÊUTICAS:
-${physioData.condutas}`;
+${physioData.condutas || "Nenhuma conduta descrita."}`;
 
     setShowPhysioModal(false);
-    setGeneratedPhysioText(text);
+    
+    if(typeof setGeneratedPhysioText === 'function') {
+      setGeneratedPhysioText(text);
+    }
   };
 
   const copyToClipboardFallback = (text) => {
@@ -1936,41 +1937,79 @@ ${conduta}
     }
   };
 
-  // --- ABRIR ADMISSÃO NUTRICIONAL ---
-  const handleOpenNutriAdmission = () => {
-    const dadosAtuais = currentPatient?.nutri || {};
+  // --- 1. INICIAR ADMISSÃO DA NUTRIÇÃO (Campo Estéril) ---
+  const handleNutriAdmission = () => {
+    // CAMPO ESTÉRIL ABSOLUTO: Prancheta 100% vazia para não puxar lixo de memória
     setNutriAdmissionData({
-      peso: dadosAtuais.peso || "",
-      tipoMedicaoPeso: dadosAtuais.tipoMedicaoPeso || "",
-      metaCal: dadosAtuais.metaCal || "",
-      metaProt: dadosAtuais.metaProt || "",
-      risco_nutricional: dadosAtuais.risco_nutricional || "",
-      via: dadosAtuais.via || "",
-      caracteristicasDieta: dadosAtuais.caracteristicasDieta || []
+      peso: "",
+      tipoMedicaoPeso: "",
+      metaCalTotal: "",
+      metaCalDiaria: "",
+      metaProtTotal: "",
+      risco_nutricional: "",
+      via: "",
+      caracteristicasDieta: []
     });
+
     setShowNutriAdmissionModal(true);
   };
 
-  // --- FINALIZAR ADMISSÃO NUTRICIONAL ---
+  // --- 2. VER ADMISSÃO DA NUTRIÇÃO (Leitura do Cofre) ---
+  const handleViewNutriAdmission = () => {
+    const p = currentPatient;
+    if (!p) return;
+
+    // Procura na gaveta correta (priorizando o cofre imutável)
+    const cofre = p.admissaoNutricao || p.nutri || {};
+
+    setNutriAdmissionData({
+      peso: cofre.peso || "",
+      tipoMedicaoPeso: cofre.tipoMedicaoPeso || "",
+      metaCalTotal: cofre.metaCalTotal || "",
+      metaCalDiaria: cofre.metaCalDiaria || "",
+      metaProtTotal: cofre.metaProtTotal || "",
+      risco_nutricional: cofre.risco_nutricional || "",
+      via: cofre.via || "",
+      caracteristicasDieta: cofre.caracteristicasDieta || []
+    });
+
+    setShowNutriAdmissionModal(true);
+  };
+
+  // --- 3. FINALIZAR ADMISSÃO DA NUTRIÇÃO (O Cofre Blindado) ---
   const handleFinalizeNutriAdmission = () => {
-    if (!nutriAdmissionData.peso) {
-      return alert("O Peso Atual é obrigatório para realizar a admissão nutricional.");
+    // A TRAVA DE SEGURANÇA (Hard Stop)
+    if (!nutriAdmissionData.peso || String(nutriAdmissionData.peso).trim() === "") {
+      return alert("⚠️ O Peso Atual é OBRIGATÓRIO.\nSem esta informação, é impossível traçar as metas calóricas e proteicas do paciente na UTI.");
     }
 
+    // O CLONE PROFUNDO DA MÉDICA (Rompe o vínculo de memória)
+    const r = patients[activeTab] ? JSON.parse(JSON.stringify(patients[activeTab])) : {};
+
+    // 1. O COFRE DA NUTRIÇÃO (Congela a imagem inicial na raiz)
+    if (!r.admissaoNutricao) {
+      r.admissaoNutricao = {
+        ...nutriAdmissionData,
+        dataRegistroAdmissao: new Date().toISOString()
+      };
+    }
+
+    // 2. A LOUSA DO DIA A DIA (Abastece o painel de evolução diária)
+    r.nutri = {
+      ...(r.nutri || {}),
+      ...nutriAdmissionData,
+      admitido: true // 🔑 Libera o painel principal da nutrição
+    };
+
+    // ATUALIZAÇÃO IMEDIATA DA TELA
     const up = [...patients];
-    const p = JSON.parse(JSON.stringify(up[activeTab]));
-
-    if (!p.nutri) p.nutri = {};
-
-    // Injeta os dados no paciente e ativa a flag "admitido"
-    Object.keys(nutriAdmissionData).forEach(k => {
-      p.nutri[k] = nutriAdmissionData[k];
-    });
-    p.nutri.admitido = true; // 🔑 Libera o painel
-
-    up[activeTab] = p;
+    up[activeTab] = r;
     setPatients(up);
-    save(p, "Nutrição: Realizou a Admissão Nutricional (Peso, Metas e Via)");
+    
+    // O CARIMBADOR FIREBASE
+    if (typeof save === "function") {
+      save(r, `Nutrição: Admissão Finalizada (Peso: ${nutriAdmissionData.peso}kg | Risco: ${nutriAdmissionData.risco_nutricional || "N/A"})`);
+    }
 
     setShowNutriAdmissionModal(false);
   };
@@ -2446,7 +2485,7 @@ const handleFinalizeNursingAdmission = async () => {
       "morse_terapiaIV", "morse_marcha", "morse_estadoMental",
     ];
 
-    // 1. VALIDAÇÃO DE SEGURANÇA
+    // 1. VALIDAÇÃO DE SEGURANÇA (Hard Stop)
     for (let k of [...reqBraden, ...reqMorse]) {
       if (nursingData[k] === "" || nursingData[k] === null || nursingData[k] === undefined) {
         alert("O preenchimento de todos os fatores das Escalas de Braden e Morse é obrigatório.");
@@ -2461,18 +2500,22 @@ const handleFinalizeNursingAdmission = async () => {
     const morseTotal = reqMorse.reduce((acc, curr) => acc + (parseInt(nursingData[curr]) || 0), 0);
     let morseRisco = morseTotal >= 45 ? "Alto" : morseTotal >= 25 ? "Baixo" : "Sem Risco";
 
-    // 3. PROCESSAMENTO DE LESÕES E CURATIVOS
-    const lesoesLista = nursingData.lesoes || [];
+    // 3. RECUPERANDO DADOS MÉDICOS COM CLONE PROFUNDO (O Padrão Ouro)
+    // O clone profundo (JSON.parse/stringify) rompe o vínculo de memória do React,
+    // garantindo que os dados não vazem para o próximo paciente.
+    const pacienteBase = patients[activeTab];
+    const r = pacienteBase ? JSON.parse(JSON.stringify(pacienteBase)) : {};
+    
+    const adm = r.admissionData || r.admissoes || {};
+    const historia = adm.historia || "Sem registro prévio";
+
+    // 4. PROCESSAMENTO DE LESÕES (Blindagem contra apagamento)
+    const lesoesLista = nursingData.lesoes || r.enfermagem?.lesoes || r.admissaoEnfermagem?.lesoes || [];
     const textoLesoes = lesoesLista.length > 0 
       ? lesoesLista.map(l => `- [${l.origem === 'incidencia' ? 'ADQUIRIDA NA UTI' : 'PRÉVIA'}] ${l.localizacao}. Curativo: ${l.curativo || "Não especificado"}`).join('\n')
       : "Pele íntegra / Sem lesões por pressão.";
 
-    // 4. RECUPERANDO DADOS MÉDICOS E BÁSICOS
-    const p = JSON.parse(JSON.stringify(patients[activeTab]));
-    const adm = p.admissionData || p.admissoes || {};
-    const historia = adm.historia || "Sem registro prévio";
-
-    // 5. O NOVO CARIMBADOR (Texto Integrado)
+    // 5. O NOVO CARIMBADOR (Texto Integrado para Evolução)
     const text = `ADMISSÃO DE ENFERMAGEM COMPLETA
 
 --- HISTÓRIA CLÍNICA (ADMISSÃO MÉDICA) ---
@@ -2501,26 +2544,38 @@ ESCALAS DE RISCO:
 Documento gerado eletronicamente e registrado nos indicadores de performance da unidade.
 `;
 
-    // 6. ATUALIZAÇÃO DO OBJETO DO PACIENTE
-    if (!p.admissaoEnfermagem) {
-      p.admissaoEnfermagem = { 
-        ...nursingData, 
+    // =========================================================================
+    // 6. 🛡️ ATUALIZAÇÃO BLINDADA DO OBJETO DO PACIENTE (Filtro Anti-Rejeição)
+    // =========================================================================
+    
+    // O COFRE DA ENFERMAGEM: Se não existe, cria a admissão imutável
+    if (!r.admissaoEnfermagem) {
+      r.admissaoEnfermagem = JSON.parse(JSON.stringify({
+        ...nursingData,
         lesoes: lesoesLista,
         dataRegistroAdmissao: new Date().toISOString()
-      };
+      }));
     }
 
-    if (!p.enfermagem) p.enfermagem = {};
-    p.enfermagem = { ...p.enfermagem, ...nursingData, lesoes: lesoesLista };
+    // A LOUSA DIÁRIA: Abastece o painel de evolução diário
+    r.enfermagem = JSON.parse(JSON.stringify({ 
+      ...(r.enfermagem || {}), 
+      ...nursingData, 
+      lesoes: lesoesLista 
+    }));
     
+    // Atualiza a interface gráfica imediatamente
+    const up = [...patients];
+    up[activeTab] = r;
+    setPatients(up);
+
     if (typeof save === "function") {
-      save(p, "Enfermagem: Admissão e Indicadores Atualizados");
+      save(r, "Enfermagem: Admissão e Indicadores Atualizados");
     }
 
     // =========================================================================
-    // 🔥 TRADUÇÃO DOS DETALHES DAS ESCALAS PARA AUDITORIA (NOVO BLOCO)
+    // 7. TRADUÇÃO DOS DETALHES DAS ESCALAS PARA AUDITORIA (Mantido Intacto)
     // =========================================================================
-    // Usamos '==' em vez de '===' para ignorar diferenças entre String("1") e Number(1)
     const detalhesBraden = {
       percepcaoSensorial: BRADEN_OPTIONS.percepcao.find(opt => opt.value == nursingData.braden_percepcao)?.label || "N/D",
       umidade: BRADEN_OPTIONS.umidade.find(opt => opt.value == nursingData.braden_umidade)?.label || "N/D",
@@ -2539,21 +2594,19 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       estadoMental: MORSE_OPTIONS.estadoMental.find(opt => opt.value == nursingData.morse_estadoMental)?.label || "N/D",
     };
 
-    // 7. CARIMBADOR DE INDICADORES (Firebase)
+    // 8. CARIMBADOR DE INDICADORES (Firebase)
     try {
       const historicoRef = collection(db, "indicadores_performance");
       const baseData = {
-        cpf: p.cpf,
-        idInternacao: p.idInternacao,
+        cpf: r.cpf,
+        idInternacao: r.idInternacao,
         dataRegistro: serverTimestamp(),
-        nomePaciente: p.nome
+        nomePaciente: r.nome
       };
 
-      // 🔥 Adicionamos o campo 'respostas' no payload do Firebase
       await addDoc(historicoRef, { ...baseData, tipo: "BRADEN", valor: bradenTotal, risco: bradenRisco, respostas: detalhesBraden });
       await addDoc(historicoRef, { ...baseData, tipo: "MORSE", valor: morseTotal, risco: morseRisco, respostas: detalhesMorse });
 
-      // Registro de Dispositivos (Inícios e Retiradas)
       const dispositivos = [
         { nome: "SVD", ativo: nursingData.svd, inicio: nursingData.svdData, fim: nursingData.svdRetiradaData },
         { nome: "CVC", ativo: nursingData.cvcLocal, inicio: nursingData.cvcData, fim: nursingData.cvcRetiradaData },
@@ -2569,7 +2622,6 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         }
       }
 
-      // Registro de Lesões Adquiridas na UTI (Incidência)
       const incidencias = lesoesLista.filter(l => l.origem === "incidencia");
       for (let lpp of incidencias) {
         await addDoc(historicoRef, { ...baseData, tipo: "LPP_INCIDENCIA", local: lpp.localizacao });
@@ -2583,7 +2635,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     setShowNursingModal(false);
     setGeneratedAdmissionText(text);
     setViewMode("nursing"); 
-};
+  };
 
   // ========================================================================
   // MAPA DE VENTILAÇÃO MECÂNICA (FISIOTERAPIA)
@@ -2709,16 +2761,41 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
   // Atualiza um campo de uma lesão específica
   const updateLesaoData = (id, campo, valor) => {
     const lesoesAtuais = currentPatient.enfermagem?.lesoes || [];
+    
     const novasLesoes = lesoesAtuais.map(l => {
       if (l.id === id) {
-        // Se mudar para 'incidencia', dispara o evento adverso (apenas uma vez)
+        // Se mudar para 'incidencia' e não era antes, dispara o evento adverso
         if (campo === "origem" && valor === "incidencia" && l.origem !== "incidencia") {
-          registrarEventoAdverso("LPP Adquirida na UTI", `Nova lesão detectada em: ${l.localizacao || 'Local não informado'}`);
+          
+          // 1. Extrai iniciais e leito com segurança
+          const iniciais = currentPatient?.nome 
+            ? currentPatient.nome.split(" ").map(n => n[0]).join("").substring(0, 3).toUpperCase() 
+            : "SN";
+          const leito = currentPatient?.leito || currentPatient?.numeroLeito || "SN";
+
+          // 2. Prepara a armadura completa que o painel da Gestão exige
+          const dadosEventoAdverso = {
+            tipoEvento: "LPP (Adquirida na UTI)",
+            descricao: `Nova lesão detectada em: ${l.localizacao || 'Local não informado'}. Conduta inicial: ${l.curativo || 'Não informada'}.`,
+            dataHoraOcorrencia: new Date().toISOString(), // Grava o segundo exato
+            leitoOcorrencia: leito,
+            pacienteIniciais: iniciais,
+            statusAnalise: "Pendente NSP",
+            grauDano: "Moderado", // Padrão inicial para LPP, o RT audita depois
+            idPaciente: currentPatient?.id || "",
+            lesaoIdOriginal: id,
+            origemNotificacao: "NursingDashboard"
+          };
+
+          // 3. Dispara a notificação completa
+          registrarEventoAdverso(dadosEventoAdverso);
         }
+        
         return { ...l, [campo]: valor };
       }
       return l;
     });
+    
     updateNested("enfermagem", "lesoes", novasLesoes);
   };
 
@@ -3509,9 +3586,10 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       generateNursingAI_Evolution={generateNursingAI_Evolution}
                       isNursingRole={isNursingRole}
                       isGeneratingNursingAI={isGeneratingNursingAI}
+                      handleViewNursingAdmission={handleViewNursingAdmission}
                     />
                   )}
-                  {viewMode === "physio" && (
+                  {activeTab !== null && viewMode === "physio" && (
                     <PhysioDashboard
                       currentPatient={currentPatient}
                       isEditable={isEditable}
@@ -3520,9 +3598,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       activeTab={activeTab}
                       setPatients={setPatients}
                       save={save}
-
-                      // 👇 O botão de Admissão da Fisio (Ligado no modal!)
-                      handlePhysioAdmission={() => setShowPhysioModal(true)}
+                      handlePhysioAdmission={handlePhysioAdmission}
+                      handleViewPhysioAdmission={handleViewPhysioAdmission}
 
                       // 👇 As calculadoras e ferramentas que estavam faltando:
                       clearDate={clearDate}
@@ -3540,17 +3617,32 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       isOverviewEditable={isOverviewEditable}
                     />
                   )}
+
                   {viewMode === "nutri" && (
                     <NutriDashboard
                       currentPatient={currentPatient}
+                      patients={patients}
+                      activeTab={activeTab}
+                      setPatients={setPatients}
                       isEditable={isNutriRole}
                       updateNested={updateNested}
                       toggleArrayItem={toggleArrayItem}
                       handleBlurSave={handleBlurSave}
-                      abrirAdmissaoNutri={handleOpenNutriAdmission}
+                      handleNutriAdmission={handleNutriAdmission}
+                      handleViewNutriAdmission={handleViewNutriAdmission}
                     />
                   )}
-                  {viewMode === "speech" && <SpeechDashboard currentPatient={currentPatient} isEditable={isEditable} updateNested={updateNested} handleBlurSave={handleBlurSave} toggleArrayItem={toggleArrayItem} />}
+
+                  {viewMode === "speech" && 
+                    <SpeechDashboard 
+                      currentPatient={currentPatient} 
+                      isEditable={isEditable} 
+                      updateNested={updateNested} 
+                      handleBlurSave={handleBlurSave} 
+                      toggleArrayItem={toggleArrayItem} 
+                    />
+                  }
+
                   {viewMode === "tech" && (
                     <TechDashboard 
                       currentPatient={currentPatient} 
@@ -3640,16 +3732,18 @@ const userRole = userProfile?.role || userProfile?.perfil;
       />
 
       {/* MODAL: ADMISSÃO DE FISIOTERAPIA */}
-      <PhysioAdmissionModal
-        showPhysioModal={showPhysioModal}
-        setShowPhysioModal={setShowPhysioModal}
-        activeTab={activeTab}
-        physioData={physioData}
-        setPhysioData={setPhysioData}
-        handleBlurSave={handleBlurSave}
-        handleFinalizePhysioAdmission={handleFinalizePhysioAdmission}
-        isReadOnly={!!patients[activeTab]?.admissaoFisioterapia}
-      />
+      {showPhysioModal && (
+        <PhysioAdmissionModal
+          showPhysioModal={showPhysioModal}
+          setShowPhysioModal={setShowPhysioModal}
+          activeTab={activeTab}
+          physioData={physioData}
+          setPhysioData={setPhysioData}
+          handleBlurSave={handleBlurSave}
+          handleFinalizePhysioAdmission={handleFinalizePhysioAdmission}
+          isReadOnly={!!patients[activeTab]?.admissaoFisioterapia}
+        />
+      )}
 
       {/* MODAL: TEXTO GERADO PÓS-ADMISSÃO FISIO */}
       <GeneratedPhysioTextModal
@@ -3686,6 +3780,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
         nutriData={nutriAdmissionData}
         setNutriData={setNutriAdmissionData}
         handleFinalizeNutriAdmission={handleFinalizeNutriAdmission}
+        handleViewNutriAdmission={handleViewNutriAdmission}
+        isReadOnly={!!patients[activeTab]?.admissaoNutricao}
       />
 
       {/* MODAL: FILA DE ESPERA DA UTI */}

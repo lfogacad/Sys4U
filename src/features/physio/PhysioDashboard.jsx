@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import { 
   UserPlus, Calendar, X, Wind, Activity, Move, FileText, 
-  Shield, ClipboardCheck, Target, Printer, PlusCircle,
-  Lock, AlertTriangle
+  Shield, ClipboardCheck, ClipboardSignature, Target, Printer, PlusCircle,
+  Lock, AlertTriangle, Edit3
 } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
 import { formatDateDDMM } from '../../utils/core';
@@ -16,6 +16,7 @@ const PhysioDashboard = ({
   setPatients,
   save,
   handlePhysioAdmission,
+  handleViewPhysioAdmission,
   clearDate,
   updateP,
   updateNested,
@@ -213,12 +214,12 @@ const PhysioDashboard = ({
     <fieldset disabled={!isEditable} className="space-y-6 animate-fadeIn min-w-0 border-0 p-0 m-0">
       
       {/* === BOTÃO DE EDIÇÃO DA ADMISSÃO FISIO === */}
-      <div className="flex justify-end print:hidden">
+      <div className="flex justify-end mb-2 print:hidden">
         <button
-          onClick={(e) => { e.preventDefault(); handlePhysioAdmission(); }}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-cyan-200 text-cyan-700 hover:bg-cyan-50 rounded-lg text-sm font-bold shadow-sm transition-colors"
+          onClick={(e) => { e.preventDefault(); handleViewPhysioAdmission(); }}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold shadow-sm transition-colors print:hidden"
         >
-          <UserPlus size={16} /> Ver Admissão Fisioterapêutica
+          <ClipboardSignature size={16} /> Ver Admissão Fisioterapêutica
         </button>
       </div>
 
