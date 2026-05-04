@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, updateDoc, deleteDoc, arrayUnion, addDoc, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, doc, updateDoc, deleteDoc, writeBatch, arrayUnion, addDoc, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useNavigate } from 'react-router-dom';
 import { Users, Search, ShieldCheck, AlertCircle, ArrowLeft, Loader2, Plus, X, UserPlus, Save, 
@@ -63,6 +63,7 @@ const ModuloAdmin = ({ userProfile }) => {
     const cat = e.target.value;
     let conselhoPadrao = 'Outro';
     if (cat === 'Médico') conselhoPadrao = 'CRM';
+    if (cat === 'Nefrologista') conselhoPadrao = 'CRM';
     if (cat === 'Enfermeiro' || cat === 'Téc. Enfermagem') conselhoPadrao = 'COREN';
     if (cat === 'Fisioterapeuta') conselhoPadrao = 'CREFITO';
     if (cat === 'Nutricionista') conselhoPadrao = 'CRN';
@@ -137,13 +138,16 @@ const handleAtribuirVinculo = async (e) => {
     };
 
     try {
-      // 1. Atualiza a coleção 'profissionais' (Objeto complexo)
+      // 🛡️ Inicializa a transação atômica (Lote)
+      const batch = writeBatch(db);
+
+      // 1. Prepara a atualização na coleção 'profissionais'
       const profRef = doc(db, "profissionais", selectedUser.id); 
-      await updateDoc(profRef, {
+      batch.update(profRef, {
         vinculos: arrayUnion(novoVinculo)
       });
 
-      // 2. 🔍 PREPARAÇÃO DA BUSCA: Converte o conselho forçadamente para String (Texto)
+      // 2. 🔍 BUSCA CEGA PELO CONSELHO (A sua âncora de ouro)
       const conselhoString = String(selectedUser.numeroConselho);
       console.log("🔍 Procurando usuário na portaria com o Conselho:", conselhoString);
 
@@ -155,19 +159,24 @@ const handleAtribuirVinculo = async (e) => {
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
-        // ACHAOU O USUÁRIO NA PORTARIA!
+        // ACHOU O USUÁRIO NA PORTARIA!
         const userDoc = querySnapshot.docs[0];
         const userRef = doc(db, "usuarios", userDoc.id);
         
-        // 💉 SUTURA CRÍTICA: Grava apenas o nome da unidade no array 'vinculos' para o App.jsx
-        await updateDoc(userRef, {
+        // 3. 💉 SUTURA CRÍTICA: Prepara a atualização na coleção 'usuarios'
+        batch.update(userRef, {
           vinculos: arrayUnion(unidadeSelecionada.unidadeNome),
           perfil: cargoLocal
         });
         
+        // 4. Executa TODAS as gravações de uma vez só!
+        await batch.commit();
         alert(`Vínculo e Acesso liberados com sucesso para ${selectedUser.nome}!`);
+        
       } else {
-        console.error("❌ Erro de Ligação: Usuário não achado na coleção 'usuarios'.");
+        // Se não achou na portaria, comita APENAS o vínculo gerencial do profissional
+        await batch.commit();
+        console.warn("❌ Erro de Ligação: Usuário não achado na coleção 'usuarios'.");
         alert("O vínculo foi salvo no painel, mas não achamos o login dele para abrir a porta. Peça para ele fazer o cadastro inicial.");
       }
 
@@ -175,7 +184,7 @@ const handleAtribuirVinculo = async (e) => {
       
     } catch (error) {
       console.error("Erro ao atualizar vínculo:", error);
-      alert("Erro ao atribuir vínculo. Verifique o console.");
+      alert("Erro ao atribuir vínculo. Verifique sua conexão e o console.");
     } finally {
       setIsUpdating(false);
     }
@@ -315,13 +324,23 @@ const handleAtribuirVinculo = async (e) => {
                 value={novoProfissional.categoria} onChange={handleCategoriaChange}
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none cursor-pointer transition-colors"
               >
-                <option value="" disabled>Selecione...</option>
+                <option value="" disabled>Selecione a categoria...</option>
+                
+                {/* Equipe Médica */}
                 <option value="Médico">Médico</option>
+                <option value="Nefrologista">Nefrologista</option>
+                
+                {/* Equipe de Enfermagem */}
                 <option value="Enfermeiro">Enfermeiro</option>
                 <option value="Téc. Enfermagem">Téc. Enfermagem</option>
+                
+                {/* Equipe Multidisciplinar */}
                 <option value="Fisioterapeuta">Fisioterapeuta</option>
                 <option value="Nutricionista">Nutricionista</option>
                 <option value="Fonoaudiólogo">Fonoaudiólogo</option>
+                <option value="Psicóloga">Psicóloga</option>
+                
+                {/* Apoio */}
                 <option value="Administrativo">Administrativo</option>
               </select>
             </div>
@@ -394,7 +413,7 @@ const handleAtribuirVinculo = async (e) => {
                   <option value="Fisioterapeuta">Fisioterapeuta</option>
                   <option value="Fonoaudiólogo">Fonoaudiólogo</option>
                   <option value="Nutricionista">Nutricionista</option>
-                  <option value="Administrador">Administrador (Gestão)</option>
+                  <option value="Administrativo">Administrativo (Gestão)</option>
                 </select>
               </div>
 
@@ -408,7 +427,6 @@ const handleAtribuirVinculo = async (e) => {
                 >
                   <option value="Todas">Todas as Unidades</option>
                   <option value="uti_01">UTI Adulto (HMA)</option>
-                  <option value="uti_municipal">UTI Municipal de Ariquemes</option>
                 </select>
               </div>
 

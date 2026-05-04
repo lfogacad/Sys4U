@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { auth, db } from "./config/firebase";
+import { verificarCatraca } from './utils/validadorAcesso';
 import { UserPlus, Hash, Mail, Lock, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
 
 // Imports dos Componentes
@@ -90,82 +91,123 @@ const AppRouter = () => {
     return () => unsubscribe();
   }, []);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setAuthError(null);
-    try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-    } catch (err) {
-      setAuthError("Email ou senha incorretos.");
-      setIsLoading(false);
-    }
-  };
+// =========================================================================
+// 1. O LOGIN (A Catraca Eletrônica em Ação)
+// =========================================================================
+const handleLogin = async (e) => {
+  e.preventDefault();
+  setIsLoading(true);
+  setAuthError(null);
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    
-    // O Código Mestre já não é necessário, a nossa segurança agora é o Conselho!
-    if (!newConselho) return setAuthError("O número do Conselho é obrigatório.");
-    
-    setIsLoading(true);
-    setAuthError(""); // Limpa erros antigos
+  try {
+    // Passo 1: O Firebase Auth confere a senha (A chave da porta)
+    const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+    const user = userCredential.user;
 
-    try {
-      // 1. VERIFICAÇÃO DE SEGURANÇA: O profissional existe na base do Gestor?
-      const q = query(
-        collection(db, "profissionais"), 
-        where("numeroConselho", "==", newConselho)
-      );
-      const snapshot = await getDocs(q);
+    // Passo 2: Busca a identidade oficial na coleção 'usuarios'
+    const userDocRef = doc(db, 'usuarios', user.uid);
+    const userDocSnap = await getDoc(userDocRef);
 
-      if (snapshot.empty) {
-        setIsLoading(false);
-        return setAuthError("Profissional não autorizado. Peça à Coordenação para registar o seu CRM/COREN primeiro.");
-      }
-
-      // Se passou, extraímos os dados oficiais que o Gestor (você) cadastrou!
-      const dadosOficiais = snapshot.docs[0].data();
-
-      // 2. CRIA O ACESSO (E-mail e Senha) no Firebase Auth
-      const credencial = await createUserWithEmailAndPassword(auth, email, password);
-
-      // 3. GRAVA O UTILIZADOR NA COLEÇÃO DE ACESSOS (Usando os dados oficiais!)
-      await setDoc(doc(db, "usuarios", credencial.user.uid), {
-        nome: dadosOficiais.nome, // Usa o nome oficial que o gestor escreveu
-        perfil: dadosOficiais.categoria, // Ex: Médico, Enfermeiro
-        conselho: dadosOficiais.conselho,
-        numeroConselho: dadosOficiais.numeroConselho,
-        vinculo: dadosOficiais.vinculo || "PJ",
-        email: email, 
-        dataCriacao: new Date().toISOString(), 
-        isFirstLogin: true,
-        status: "Ativo"
-      });
-
-      // Desloga imediatamente para que ele tenha de entrar com as credenciais novas
+    if (!userDocSnap.exists()) {
+      // Se não achar o perfil, expulsa imediatamente
       await signOut(auth);
-      setIsRegistering(false);
-      alert(`✅ Conta ativada com sucesso, ${dadosOficiais.nome}! Faça login para continuar.`);
-      
-    } catch (err) {
-      console.error("Erro detalhado do Firebase:", err); 
-      
-      if (err.code === 'auth/email-already-in-use') {
-        setAuthError("Este e-mail já possui cadastro. Peça para redefinir a senha ou use outro e-mail.");
-      } else if (err.code === 'auth/weak-password') {
-        setAuthError("A senha escolhida é muito fraca. Utilize pelo menos 6 caracteres.");
-      } else if (err.code === 'auth/invalid-email') {
-        setAuthError("O formato do e-mail é inválido. Verifique se não há espaços ou erros de digitação.");
-      } else if (err.code === 'auth/network-request-failed') {
-        setAuthError("Sem conexão com a internet. Verifique a sua rede e tente novamente.");
-      } else {
-        setAuthError(`Falha no cadastro: ${err.message}`);
-      }
-    } finally {
+      setAuthError("Perfil não encontrado. Realize o cadastro com seu CRM/COREN primeiro.");
       setIsLoading(false);
+      return;
     }
-  };
+
+    const userProfile = userDocSnap.data();
+
+    // Passo 3: 🚨 A CATRACA (Cruza com a Escala e Exceções) 🚨
+    const analiseAcesso = await verificarCatraca(userProfile);
+
+    if (!analiseAcesso.liberado) {
+      // Acesso negado: Desloga silenciosamente por trás dos panos e exibe o motivo
+      await signOut(auth);
+      setAuthError(`⚠️ ${analiseAcesso.motivo}`);
+      setIsLoading(false);
+      return; // A execução morre aqui. Ele não entra.
+    }
+
+    // Passo 4: Se chegou aqui, a porta abriu!
+    // O sistema React normal vai detectar a mudança de Auth e carregar a UTI.
+
+  } catch (err) {
+    console.error("Erro no login:", err);
+    setAuthError("Email ou senha incorretos.");
+    // Como garantia, força o logoff se a rede cair no meio do processo
+    await signOut(auth).catch(()=>console.log("Sessão já limpa")); 
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+// =========================================================================
+// 2. O REGISTRO (Blindado pelo Gestor)
+// =========================================================================
+const handleRegister = async (e) => {
+  e.preventDefault();
+  
+  if (!newConselho) return setAuthError("O número do Conselho é obrigatório.");
+  
+  setIsLoading(true);
+  setAuthError(""); 
+
+  try {
+    // 1. VERIFICAÇÃO DE SEGURANÇA: O profissional existe na base do Gestor?
+    const q = query(
+      collection(db, "profissionais"), 
+      where("numeroConselho", "==", newConselho)
+    );
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      setIsLoading(false);
+      return setAuthError("Profissional não autorizado. Peça à Coordenação para registar o seu CRM/COREN primeiro.");
+    }
+
+    // 2. Extraímos os dados oficiais que o Gestor cadastrou!
+    const dadosOficiais = snapshot.docs[0].data();
+
+    // 3. CRIA O ACESSO (E-mail e Senha) no Firebase Auth
+    const credencial = await createUserWithEmailAndPassword(auth, email.trim(), password);
+
+    // 4. GRAVA O USUÁRIO (Herdando a nomenclatura perfeita do Gestor)
+    await setDoc(doc(db, "usuarios", credencial.user.uid), {
+      nome: dadosOficiais.nome, 
+      perfil: dadosOficiais.perfil || dadosOficiais.categoria, // Garante que a exceção (ex: "RT Médico") passe para cá
+      conselho: dadosOficiais.conselho,
+      numeroConselho: dadosOficiais.numeroConselho,
+      vinculo: dadosOficiais.vinculo || "PJ",
+      email: email.trim(), 
+      dataCriacao: new Date().toISOString(), 
+      isFirstLogin: true,
+      status: "Ativo"
+    });
+
+    // Desloga imediatamente para que ele passe pela Catraca no primeiro acesso
+    await signOut(auth);
+    setIsRegistering(false);
+    alert(`✅ Conta ativada com sucesso, ${dadosOficiais.nome}! Faça login para assumir seu plantão.`);
+    
+  } catch (err) {
+    console.error("Erro detalhado do Firebase:", err); 
+    
+    if (err.code === 'auth/email-already-in-use') {
+      setAuthError("Este e-mail já possui cadastro. Peça para redefinir a senha ou use outro e-mail.");
+    } else if (err.code === 'auth/weak-password') {
+      setAuthError("A senha escolhida é muito fraca. Utilize pelo menos 6 caracteres.");
+    } else if (err.code === 'auth/invalid-email') {
+      setAuthError("O formato do e-mail é inválido. Verifique se não há espaços.");
+    } else if (err.code === 'auth/network-request-failed') {
+      setAuthError("Sem conexão com a internet. Verifique a sua rede.");
+    } else {
+      setAuthError(`Falha no cadastro: ${err.message}`);
+    }
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleResetPassword = async (e) => {
     e.preventDefault();
