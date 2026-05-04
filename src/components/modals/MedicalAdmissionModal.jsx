@@ -163,26 +163,71 @@ const MedicalAdmissionModal = ({
               <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 mb-1 block">EXTREMIDADES</label><input disabled={isReadOnly} className="w-full p-2.5 border rounded-lg bg-white outline-none" value={admissionData.exameExtremidades || ""} onChange={(e) => setAdmissionData({ ...admissionData, exameExtremidades: e.target.value })} /></div>
               
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:col-span-2 p-3 bg-white border rounded-xl">
+  
                 <div className="sm:col-span-3">
                   <label className="text-[11px] font-bold text-indigo-500 mb-1 block">NEURO (Nível de Consciência Geral)</label>
-                  <input disabled={isReadOnly} className="w-full p-2 border rounded bg-indigo-50/30 outline-none" placeholder="Nível de consciência..." value={admissionData.exameNeuro || ""} onChange={(e) => setAdmissionData({ ...admissionData, exameNeuro: e.target.value })} />
+                  <input 
+                    disabled={isReadOnly} 
+                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none" 
+                    placeholder="Nível de consciência..." 
+                    value={admissionData.exameNeuro || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, exameNeuro: e.target.value })} 
+                  />
                 </div>
+
+                {/* GLASGOW - AO */}
                 <div>
                   <label className="text-[11px] font-bold text-indigo-500 mb-1 block">Glasgow AO</label>
-                  <select disabled={isReadOnly} className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" value={admissionData.ecg_ao || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_ao: e.target.value })}><option value="">AO...</option>{GLASGOW_AO.map((o) => <option key={o}>{o}</option>)}</select>
+                  <select 
+                    disabled={isReadOnly} 
+                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" 
+                    value={admissionData.ecg_ao || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, ecg_ao: e.target.value, rass: "" })}
+                  >
+                    <option value="">AO...</option>
+                    {GLASGOW_AO.map((o) => <option key={o}>{o}</option>)}
+                  </select>
                 </div>
+
+                {/* GLASGOW - RV */}
                 <div>
                   <label className="text-[11px] font-bold text-indigo-500 mb-1 block">Glasgow RV</label>
-                  <select disabled={isReadOnly} className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" value={admissionData.ecg_rv || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_rv: e.target.value })}><option value="">RV...</option>{GLASGOW_RV.map((o) => <option key={o}>{o}</option>)}</select>
+                  <select 
+                    disabled={isReadOnly} 
+                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" 
+                    value={admissionData.ecg_rv || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, ecg_rv: e.target.value, rass: "" })}
+                  >
+                    <option value="">RV...</option>
+                    {GLASGOW_RV.map((o) => <option key={o}>{o}</option>)}
+                  </select>
                 </div>
+
+                {/* GLASGOW - RM */}
                 <div>
                   <label className="text-[11px] font-bold text-indigo-500 mb-1 block">Glasgow RM</label>
-                  <select disabled={isReadOnly} className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" value={admissionData.ecg_rm || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_rm: e.target.value })}><option value="">RM...</option>{GLASGOW_RM.map((o) => <option key={o}>{o}</option>)}</select>
+                  <select 
+                    disabled={isReadOnly} 
+                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" 
+                    value={admissionData.ecg_rm || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, ecg_rm: e.target.value, rass: "" })}
+                  >
+                    <option value="">RM...</option>
+                    {GLASGOW_RM.map((o) => <option key={o}>{o}</option>)}
+                  </select>
                 </div>
 
                 <div className="sm:col-span-1">
                   <label className="text-[11px] font-bold text-indigo-500 mb-1 block">RASS</label>
-                  <select disabled={isReadOnly} className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" value={admissionData.rass || ""} onChange={(e) => setAdmissionData({ ...admissionData, rass: e.target.value })}><option value="">Se sedado...</option>{RASS_OPTS.map((r) => <option key={r}>{r}</option>)}</select>
+                  <select 
+                    disabled={isReadOnly} 
+                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" 
+                    value={admissionData.rass || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, rass: e.target.value, ecg_ao: "", ecg_rv: "", ecg_rm: "" })}
+                  >
+                    <option value="">Se sedado...</option>
+                    {RASS_OPTS.map((r) => <option key={r}>{r}</option>)}
+                  </select>
                   
                   {admissionData.rass && (
                     <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded-lg shadow-sm animate-fadeIn">
@@ -195,10 +240,18 @@ const MedicalAdmissionModal = ({
                     </div>
                   )}
                 </div>
+                
                 <div className="sm:col-span-2">
                   <label className="text-[11px] font-bold text-indigo-500 mb-1 block">PUPILAS</label>
-                  <input disabled={isReadOnly} className="w-full p-2 border rounded bg-indigo-50/30 outline-none" placeholder="Fotorreagentes, isocóricas..." value={admissionData.pupilas || ""} onChange={(e) => setAdmissionData({ ...admissionData, pupilas: e.target.value })} />
+                  <input 
+                    disabled={isReadOnly} 
+                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none" 
+                    placeholder="Fotorreagentes, isocóricas..." 
+                    value={admissionData.pupilas || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, pupilas: e.target.value })} 
+                  />
                 </div>
+
               </div>
             </div>
           </div>

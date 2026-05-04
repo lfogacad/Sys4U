@@ -31,6 +31,19 @@ const OverviewTab = ({
   if (viewMode && viewMode !== "overview") return null;
   if (!currentPatient) return null;
 
+  // Função minimalista: altera apenas a cor do texto da Hemoglobina
+  const getHbColorClass = (hbValue) => {
+    if (!hbValue || isNaN(parseFloat(hbValue))) return "text-slate-700"; // Normal
+    
+    const val = parseFloat(hbValue);
+    if (val < 7) {
+      return "text-red-600 font-black"; // Crítico (Vermelho escuro, bem forte)
+    } else if (val < 8) {
+      return "text-orange-500 font-bold"; // Atenção (Laranja, negrito normal)
+    }
+    return "text-slate-700"; // Normal
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn text-left">
       <div className="flex justify-between items-center">
@@ -299,58 +312,81 @@ const OverviewTab = ({
       </div>
 
       {/* LABORATÓRIO E ANOTAÇÕES */}
-      <div className="pt-4 border-t space-y-4">
-        <div className="flex justify-between items-center mb-2">
-          <h3 className="font-bold text-blue-800">Laboratório</h3>
-          <button onClick={() => setShowHistoryModal(true)} className="bg-gray-200 text-gray-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
-            <TableIcon size={14} /> Visualizar Histórico
-          </button>
-        </div>
-        
-        <fieldset 
-          disabled={!isOverviewEditable && !["Médico", "Desenvolvedor", "Admin"].includes(userProfile?.perfil)} 
-          className="min-w-0 border-0 p-0 m-0"
-        >
-          <div className="grid grid-cols-4 gap-2 text-center text-xs">
-            <div className="font-bold text-left pt-6">EXAME</div>
-            
-            <div className="bg-blue-100 p-1 rounded font-bold text-blue-600">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.today?.date) : "-"}</div>
-            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.yesterday?.date) : "-"}</div>
-            <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.dayBefore?.date) : "-"}</div>
-            
-            {/* 👇 Adicionamos "Hemoglobina" na lista abaixo */}
-            {["Hemoglobina", "Leucócitos", "Ureia", "Creatinina", "Na (Sódio)", "K (Potássio)"].map((ex) => {
-              // 👇 Definimos que Hemoglobina usa a key "hb"
-              const key = ex === "Hemoglobina" ? "hb" : ex === "Leucócitos" ? "leuco" : ex === "Ureia" ? "ureia" : ex === "Creatinina" ? "creat" : ex.includes("Na") ? "na" : "k";
-              
-              return (
-                <React.Fragment key={ex}>
-                  <div className="text-left py-2 font-medium">{ex}</div>
-                  
-                  <input 
-                    className="text-center border-2 border-blue-100 rounded focus:border-blue-500 outline-none w-full" 
-                    value={currentPatient.labs?.today?.[key] || ""} 
-                    onChange={(e) => {
-                      let dataReal = currentPatient.labs?.today?.date;
-                      if (!dataReal) {
-                        const hoje = new Date();
-                        const ano = hoje.getFullYear();
-                        const mes = String(hoje.getMonth() + 1).padStart(2, '0');
-                        const dia = String(hoje.getDate()).padStart(2, '0');
-                        dataReal = `${ano}-${mes}-${dia}`;
-                      }
-                      updateLab(dataReal, ex, e.target.value);
-                    }} 
-                    onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave(`Laboratório: Editou ${ex}`) : null}
-                  />
-                  
-                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.yesterday?.[key] || ""}</div>
-                  <div className="bg-slate-50 flex items-center justify-center border rounded">{currentPatient.labs?.dayBefore?.[key] || ""}</div>
-                </React.Fragment>
-              );
-            })}
+        <div className="pt-4 border-t space-y-4">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="font-bold text-blue-800">Laboratório</h3>
+            <button onClick={() => setShowHistoryModal(true)} className="bg-gray-200 text-gray-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
+              <TableIcon size={14} /> Visualizar Histórico
+            </button>
           </div>
-        </fieldset>
+          
+          <fieldset 
+            disabled={!isOverviewEditable && !["Médico", "Desenvolvedor", "Admin"].includes(userProfile?.perfil)} 
+            className="min-w-0 border-0 p-0 m-0"
+          >
+            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+              <div className="font-bold text-left pt-6">EXAME</div>
+              
+              <div className="bg-blue-100 p-1 rounded font-bold text-blue-600">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.today?.date) : "-"}</div>
+              <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.yesterday?.date) : "-"}</div>
+              <div className="bg-slate-100 p-1 rounded font-bold text-slate-500">{typeof formatDateDDMM === 'function' ? formatDateDDMM(currentPatient.labs?.dayBefore?.date) : "-"}</div>
+              
+              {/* Renderização dos Exames */}
+              {["Hemoglobina", "Leucócitos", "Ureia", "Creatinina", "Na (Sódio)", "K (Potássio)"].map((ex) => {
+                const key = ex === "Hemoglobina" ? "hb" : ex === "Leucócitos" ? "leuco" : ex === "Ureia" ? "ureia" : ex === "Creatinina" ? "creat" : ex.includes("Na") ? "na" : "k";
+                
+                // Variáveis para os valores de hoje e dias anteriores
+                const valToday = currentPatient.labs?.today?.[key] || "";
+                const valYesterday = currentPatient.labs?.yesterday?.[key] || "";
+                const valDayBefore = currentPatient.labs?.dayBefore?.[key] || "";
+
+                // Cor do dia atual
+                const todayTextColor = key === "hb" ? getHbColorClass(valToday) : "text-slate-700";
+                
+                // Cor dos dias anteriores
+                const getPastHbTextColor = (val) => {
+                  if (key !== "hb") return "text-slate-500";
+                  if (!val || isNaN(parseFloat(val))) return "text-slate-500";
+                  const pVal = parseFloat(val);
+                  if (pVal < 7) return "text-red-600 font-bold";
+                  if (pVal < 8) return "text-orange-500 font-bold";
+                  return "text-slate-500";
+                };
+
+                return (
+                  <React.Fragment key={ex}>
+                    <div className="text-left py-2 font-medium">{ex}</div>
+                    
+                    {/* INPUT (HOJE) - Fundo sempre branco, apenas texto muda de cor */}
+                    <input 
+                      className={`text-center border-2 border-blue-100 bg-white rounded focus:border-blue-500 outline-none w-full transition-colors ${todayTextColor}`}
+                      value={valToday} 
+                      onChange={(e) => {
+                        let dataReal = currentPatient.labs?.today?.date;
+                        if (!dataReal) {
+                          const hoje = new Date();
+                          const ano = hoje.getFullYear();
+                          const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+                          const dia = String(hoje.getDate()).padStart(2, '0');
+                          dataReal = `${ano}-${mes}-${dia}`;
+                        }
+                        updateLab(dataReal, ex, e.target.value);
+                      }} 
+                      onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave(`Laboratório: Editou ${ex}`) : null}
+                    />
+                    
+                    {/* CÉLULAS (ONTEM E ANTEONTEM) - Fundo sempre cinza claro, apenas texto muda de cor */}
+                    <div className={`flex items-center justify-center border border-slate-200 bg-slate-50 rounded transition-colors ${getPastHbTextColor(valYesterday)}`}>
+                      {valYesterday}
+                    </div>
+                    <div className={`flex items-center justify-center border border-slate-200 bg-slate-50 rounded transition-colors ${getPastHbTextColor(valDayBefore)}`}>
+                      {valDayBefore}
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </fieldset>
         
         <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
           <div className="flex justify-between mb-2">
