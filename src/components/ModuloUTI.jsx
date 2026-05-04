@@ -3994,7 +3994,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         Selecione o evento ocorrido. Esta notificação não é punitiva, serve exclusivamente para mapearmos riscos e melhorarmos processos.
                       </p>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
                         {[
                           { label: "Queda", icon: "🤕" },
                           { label: "Retirada Acidental SNE", icon: "👃" },
@@ -4003,7 +4003,14 @@ const userRole = userProfile?.role || userProfile?.perfil;
                           { label: "Extubação Acidental", icon: "🗣️" },
                           { label: "Erro de Medicação", icon: "💊" },
                           { label: "Obstrução de SNE", icon: "❌" },
-                          { label: "Flebite / Extravasamento", icon: "💉" }
+                          { label: "Flebite / Extravasamento", icon: "💉" },
+                          // --- NOVOS EVENTOS ADICIONADOS ---
+                          { label: "Broncoaspiração", icon: "🫁" },
+                          { label: "Falta de O2", icon: "💨" },
+                          { label: "Incidente na HD", icon: "🩸" },
+                          { label: "TEV", icon: "🦵" },
+                          { label: "Falha de Equipamento", icon: "⚙️" },
+                          { label: "Medicamento Vencido", icon: "📅" }
                         ].map((evento) => (
                           <button
                             key={evento.label}
