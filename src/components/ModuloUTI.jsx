@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, arrayUnion, 
+         onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
   Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
@@ -96,6 +97,33 @@ const mergePatientData = (base, incoming) => {
   };
 };
 
+  // --- MOTOR DE TEMPO DA UTI ---
+  
+  // 1. O "Hoje" da UTI vai das 07:00 de um dia até as 06:59 do dia seguinte.
+  const getLogicalDate = () => {
+    const now = new Date();
+    if (now.getHours() < 7) {
+      now.setDate(now.getDate() - 1); // Ex: Se for 05:00 do dia 05/05, ainda pertence ao plantão do dia 04/05
+    }
+    return now.toISOString().split('T')[0]; // Retorna 'YYYY-MM-DD'
+  };
+
+  // 2. Trava de Segurança das 08:00
+  // Adicionamos o 'unlockedDates' como parâmetro para verificar se o dia foi liberado na sessão
+const checkIsBHBlocked = (bhDateStr, unlockedDates = []) => {
+  if (!bhDateStr) return false;
+  if (unlockedDates.includes(bhDateStr)) return false; // 🛡️ A MÁGICA: Se estiver destravado, libera a edição
+  
+  const logicalToday = getLogicalDate();
+  if (bhDateStr === logicalToday) return false; 
+
+  const now = new Date();
+  const blockTime = new Date(bhDateStr + 'T08:00:00');
+  blockTime.setDate(blockTime.getDate() + 1); 
+
+  return now >= blockTime;
+};
+
 const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -145,6 +173,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [showNoraModal, setShowNoraModal] = useState(false);
   const [currentNoraHour, setCurrentNoraHour] = useState("");
   const [currentNoraRate, setCurrentNoraRate] = useState("");
+
+  const [selectedBHDate, setSelectedBHDate] = useState(getLogicalDate());
 
   // Para a Troca de Senha
   const [showForceChangePassword, setShowForceChangePassword] = useState(false);
@@ -198,6 +228,54 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     medidasPreventivas: '',
     statusAnalise: 'Em Análise'
   });
+
+  // State para guardar quais dias foram destravados nesta sessão
+  const [unlockedBHDates, setUnlockedBHDates] = useState([]);
+
+  // A Função do Auditor (Botão de Destravar)
+  const handleUnlockHistoricalBH = async (dateStr, reason) => {
+    // 1. Libera visualmente na tela instantaneamente
+    setUnlockedBHDates(prev => [...prev, dateStr]);
+
+    // 2. Registra na Caixa Preta (Firebase)
+    try {
+      let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
+      const apenasNumero = String(idBruto).replace(/bed_/g, "");
+      const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
+      const leitoRef = doc(db, "leitos_uti", docId);
+
+      // O "Documento Legal" da alteração
+      const auditLog = {
+        dataAcao: new Date().toISOString(),
+        dataBHAlterado: dateStr,
+        usuario: userProfile?.nome || user?.email || "Usuário",
+        perfil: userProfile?.perfil || "Desconhecido",
+        justificativa: reason,
+        tipo: "DESTRAVAMENTO_BH_RETROATIVO"
+      };
+
+      // Injeta o log dentro de um array específico de auditoria no paciente
+      await updateDoc(leitoRef, {
+        auditoria_seguranca: arrayUnion(auditLog)
+      });
+
+      // Também aciona o seu log de atividades normal
+      handleBlurSave(`AUDITORIA: ${userProfile?.nome} destravou o BH arquivado do dia ${dateStr}. Motivo: ${reason}`);
+    } catch (error) {
+      console.error("Erro ao registrar auditoria de destravamento:", error);
+    }
+  };
+
+  // Função para Trancar Manualmente
+  const handleLockHistoricalBH = () => {
+    setUnlockedBHDates(prev => prev.filter(date => date !== selectedBHDate));
+    handleBlurSave(`AUDITORIA: ${userProfile?.nome || "Usuário"} encerrou a edição retroativa do BH e trancou o prontuário.`);
+  };
+
+  // O Vigia Silencioso: Se mudar de data ou de paciente (activeTab), tranca tudo automaticamente
+  useEffect(() => {
+    setUnlockedBHDates([]);
+  }, [selectedBHDate, activeTab]);
 
   const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
     if (!dadosAtualizados.gasoHora) return; 
@@ -525,6 +603,69 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       carregarEventos();
     }
   }, [viewMode]);
+
+    // ==============================================================
+  // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" das 07h00)
+  // ==============================================================
+  useEffect(() => {
+    const automatizarFechamentoBH = async () => {
+      // Evita rodar se os dados ainda não carregaram
+      if (!db || !currentPatient || !currentPatient.bh || !currentPatient.bh.date) return;
+
+      const logicalToday = getLogicalDate();
+      const currentBHDate = currentPatient.bh.date;
+
+      // Comparação de Strings (Ex: "2026-05-03" < "2026-05-04")
+      // Se a data do BH atual for menor que o dia lógico de hoje, o plantão virou.
+      if (currentBHDate < logicalToday) {
+        console.log(`[SYS4U] Virada de plantão detectada. Arquivando BH do dia ${currentBHDate} para o Leito ${currentPatient.leito}`);
+
+        // 1. Resgata o histórico antigo para não perder nada
+        const historicoAntigo = currentPatient.historico_bh || [];
+
+        // 2. Calcula o saldo acumulado que será herdado para o novo dia
+        // Soma o acumulado prévio com o balanço de 24h do dia que está sendo fechado
+        const saldoAnterior = parseFloat(currentPatient.bh.accumulated) || 0;
+        // Nota: Se o senhor tiver o valor exato do balanço 24h salvo no Firebase, pode somar aqui. 
+        // Caso contrário, ele herda o que foi digitado no campo "BH Ant."
+
+        // 3. Cria a "Folha em Branco" para o plantão de hoje
+        const novoBHzero = {
+          date: logicalToday,
+          gains: {},
+          losses: {},
+          vitals: {},
+          irrigation: {},
+          customGains: currentPatient.bh.customGains || [], // Mantém os itens customizados criados pela equipe
+          customLosses: currentPatient.bh.customLosses || [],
+          accumulated: saldoAnterior, 
+          insensibleLoss: 0
+        };
+
+        // 4. Salva no Banco de Dados (Transação Blindada)
+        try {
+          let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
+          const apenasNumero = String(idBruto).replace(/bed_/g, "");
+          const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
+          const leitoRef = doc(db, "leitos_uti", docId);
+
+          await updateDoc(leitoRef, {
+            // Empurra o BH antigo para o cofre do histórico
+            historico_bh: [...historicoAntigo, currentPatient.bh],
+            // Substitui o BH atual pela folha em branco
+            bh: novoBHzero
+          });
+
+          console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso.`);
+        } catch (error) {
+          console.error("[SYS4U] Erro crítico ao automatizar fechamento do BH:", error);
+        }
+      }
+    };
+
+    // Roda a verificação toda vez que o paciente mudar ou o componente montar
+    automatizarFechamentoBH();
+  }, [currentPatient, db]); // Remova o getLogicalDate das dependências se ele estiver definido fora do componente ou use useCallback
 
   // Efeito para buscar a fila de espera da UTI em tempo real
   useEffect(() => {
@@ -2434,28 +2575,52 @@ const generateNursingAI_Evolution = async () => {
 
 // --- FERRAMENTAS DO BALANÇO HÍDRICO (TÉCNICO) ---
 
-    // 1. Função Vital: Atualizar células do BH
-    const updateBH = (hour, category, item, value) => {
-      setPatients(prev => {
-        const up = [...prev];
-        const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda
+// 1. Função Vital: Atualizar células do BH (Agora com Roteamento Histórico)
+  const updateBH = (hour, category, item, value) => {
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda para não ferir o estado
+
+      // A. O Roteador: Identifica se estamos editando o Hoje ou o Passado
+      const logicalToday = getLogicalDate();
+      const isHistorical = selectedBHDate !== (p.bh?.date || logicalToday);
+
+      let targetBH; // O ponteiro que vai guiar onde salvaremos o dado
+
+      if (isHistorical) {
+        // B. Rota do Histórico: Garante que o arquivo morto existe
+        if (!p.historico_bh) p.historico_bh = [];
         
-        // Garante que o BH atual existe
-        if (!p.bh) p.bh = { date: getManausDateStr(), gains: {}, losses: {}, vitals: {}, irrigation: {} };
-        if (!p.bh[category]) p.bh[category] = {};
+        // Localiza a gaveta exata do dia que foi destravado na Caixa Preta
+        let historyIndex = p.historico_bh.findIndex(h => h.date === selectedBHDate);
         
-        // Se for irrigação, não tem "item", é direto na hora
-        if (category === "irrigation") {
-          p.bh.irrigation[hour] = value;
-        } else {
-          if (!p.bh[category][hour]) p.bh[category][hour] = {};
-          p.bh[category][hour][item] = value;
+        // Failsafe de segurança: se a gaveta não existir, cria uma para a data
+        if (historyIndex === -1) {
+          p.historico_bh.push({ date: selectedBHDate, gains: {}, losses: {}, vitals: {}, irrigation: {} });
+          historyIndex = p.historico_bh.length - 1;
         }
         
-        up[activeTab] = p;
-        return up;
-      });
-    };
+        targetBH = p.historico_bh[historyIndex];
+      } else {
+        // C. Rota do Hoje: Edição do plantão ativo
+        if (!p.bh) p.bh = { date: logicalToday, gains: {}, losses: {}, vitals: {}, irrigation: {} };
+        targetBH = p.bh;
+      }
+
+      // D. A Injeção do Dado no local correto
+      if (!targetBH[category]) targetBH[category] = {};
+      
+      if (category === "irrigation") {
+        targetBH.irrigation[hour] = value;
+      } else {
+        if (!targetBH[category][hour]) targetBH[category][hour] = {};
+        targetBH[category][hour][item] = value;
+      }
+
+      up[activeTab] = p;
+      return up;
+    });
+  };
 
     // 2. Imprimir Balanço Hídrico
     const handlePrintBH = () => {
@@ -3164,7 +3329,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
       >
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
           
-{/* LADO ESQUERDO DO CABEÇALHO: Logo e Títulos RESTAURADOS */}
+          {/* LADO ESQUERDO DO CABEÇALHO: Logo e Títulos RESTAURADOS */}
           <div className="flex items-center gap-2 md:gap-4">
             
             {/* --- BOTÃO DE VOLTAR AO HUB (Livre para todos os perfis) --- */}
@@ -3643,32 +3808,51 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     />
                   }
 
-                  {viewMode === "tech" && (
-                    <TechDashboard 
-                      currentPatient={currentPatient} 
-                      patients={patients}
-                      activeTab={activeTab}
-                      setPatients={setPatients}
-                      save={save}
-                      isEditable={isEditable}
-                      viewingPreviousBH={viewingPreviousBH}
-                      setViewingPreviousBH={setViewingPreviousBH}
-                      displayedBH={displayedBH} 
-                      bhTotals={bhTotals} 
-                      isBHReadOnly={isBHReadOnly} 
-                      canCloseDay={canCloseDay}
-                      
-                      // As funções que criamos agora e faltavam:
-                      handleNextDayBH={handleNextDayBH} 
-                      handlePrintBH={handlePrintBH}
-                      updateBH={updateBH} 
-                      updateNested={updateNested}
-                      setCurrentNoraHour={setCurrentNoraHour} 
-                      setCurrentNoraRate={setCurrentNoraRate} 
-                      setShowNoraModal={setShowNoraModal} 
-                      handleBlurSave={handleBlurSave}
-                    />
-                  )}
+                  {viewMode === "tech" && (() => {
+                    // 1. Lógica de triagem: Qual Balanço Hídrico exibir?
+                    let currentDisplayedBH = currentPatient.bh; // Por padrão exibe o do plantão atual
+                    
+                    if (selectedBHDate !== currentPatient.bh?.date && currentPatient.historico_bh) {
+                        // Se a data selecionada for do passado, resgata o documento do arquivo morto (histórico)
+                        const historicalRecord = currentPatient.historico_bh.find(h => h.date === selectedBHDate);
+                        if (historicalRecord) {
+                          currentDisplayedBH = historicalRecord;
+                        }
+                    }
+
+                    // 2. Trava de Segurança das 08:00
+                    const isBHReadOnly = checkIsBHBlocked(selectedBHDate);
+
+                    return (
+                      <TechDashboard 
+                        currentPatient={currentPatient} 
+                        patients={patients}
+                        activeTab={activeTab}
+                        setPatients={setPatients}
+                        save={save}
+                        isEditable={isEditable}
+                        
+                        // NOVAS PROPS DA GESTÃO DE TEMPO
+                        selectedDate={selectedBHDate}
+                        setSelectedDate={setSelectedBHDate}
+                        displayedBH={currentDisplayedBH} 
+                        isBHReadOnly={checkIsBHBlocked(selectedBHDate, unlockedBHDates) || !isEditable} 
+                        bhTotals={calculateTotals(currentDisplayedBH, currentPatient.nutri?.peso)} 
+                        unlockedDates={unlockedBHDates}
+                        handleUnlockHistoricalBH={handleUnlockHistoricalBH}
+                        handleLockHistoricalBH={handleLockHistoricalBH}
+                        
+                        // Demais props mantidas
+                        handlePrintBH={handlePrintBH}
+                        updateBH={updateBH} 
+                        updateNested={updateNested}
+                        setCurrentNoraHour={setCurrentNoraHour} 
+                        setCurrentNoraRate={setCurrentNoraRate} 
+                        setShowNoraModal={setShowNoraModal} 
+                        handleBlurSave={handleBlurSave}
+                      />
+                    );
+                  })()}
                   {viewMode === "hemodialysis" && (
                     <HemoDashboard 
                       currentPatient={currentPatient} 

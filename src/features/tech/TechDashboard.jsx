@@ -1,5 +1,6 @@
-import React from 'react';
-import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, RotateCcw, Scale, X, PlusCircle, Activity, CheckCircle, Edit3 } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, 
+         Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -12,13 +13,14 @@ const TechDashboard = ({
   setPatients,
   save,
   isEditable,
-  viewingPreviousBH,
-  setViewingPreviousBH,
+  selectedDate,
+  setSelectedDate,
+  unlockedDates,
+  handleUnlockHistoricalBH,
+  handleLockHistoricalBH,  
   displayedBH,
   bhTotals,
   isBHReadOnly,
-  canCloseDay,
-  handleNextDayBH,
   handlePrintBH,
   handleAutoCalcInsensible,
   updateBH,
@@ -29,36 +31,17 @@ const TechDashboard = ({
   handleBlurSave
 }) => {
 
+  // ==============================================================
+  // 👇 2. OS USESTATES ENTRAM EXATAMENTE AQUI!
+  // ==============================================================
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [unlockReason, setUnlockReason] = useState("");
+
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
   const LIMITS = {
-    gains: {
-      "Dieta SNE": { min: 0, max: 120 },
-      "Água": { min: 0, max: 999 },
-      "Soro basal": { min: 0, max: 500 },
-      "Diluição EV": { min: 0, max: 500 },
-      "Volume": { min: 0, max: 1000 },
-      "Midazolan": { min: 0, max: 100 },
-      "Fentanil": { min: 0, max: 100 },
-      "Noradrenalina": { min: 0, max: 100 },
-      "Dobutamina": { min: 0, max: 100 },
-      "Hemocomponentes": { min: 0, max: 500 }
-    },
-    losses: {
-      "Diurese": { min: 0, max: 2000 },
-      "Drenos": { min: 0, max: 5000 },
-      "SNG/SNE": { min: 0, max: 999 },
-      "HD": { min: 0, max: 9999 }
-    },
-    vitals: {
-      "Temp (ºC)": { min: 20, max: 45 },
-      "FC (bpm)": { min: 0, max: 350 },
-      "FR (irpm)": { min: 0, max: 99 },
-      "PAS": { min: 0, max: 300 },
-      "PAD": { min: 0, max: 200 },
-      "PAM": { min: 0, max: 250 },
-      "SpO2 (%)": { min: 0, max: 100 },
-      "HGT (mg/dL)": { min: 0, max: 600 }
-    }
+    gains: { "Dieta SNE": { min: 0, max: 120 }, "Água": { min: 0, max: 999 }, "Soro basal": { min: 0, max: 500 }, "Diluição EV": { min: 0, max: 500 }, "Volume": { min: 0, max: 1000 }, "Midazolan": { min: 0, max: 100 }, "Fentanil": { min: 0, max: 100 }, "Noradrenalina": { min: 0, max: 100 }, "Dobutamina": { min: 0, max: 100 }, "Hemocomponentes": { min: 0, max: 500 } },
+    losses: { "Diurese": { min: 0, max: 2000 }, "Drenos": { min: 0, max: 5000 }, "SNG/SNE": { min: 0, max: 999 }, "HD": { min: 0, max: 9999 } },
+    vitals: { "Temp (ºC)": { min: 20, max: 45 }, "FC (bpm)": { min: 0, max: 350 }, "FR (irpm)": { min: 0, max: 99 }, "PAS": { min: 0, max: 300 }, "PAD": { min: 0, max: 200 }, "PAM": { min: 0, max: 250 }, "SpO2 (%)": { min: 0, max: 100 }, "HGT (mg/dL)": { min: 0, max: 600 } }
   };
 
   const getLimits = (category, item) => {
@@ -69,29 +52,19 @@ const TechDashboard = ({
 
   const handleValidatedChange = (hour, category, item, e) => {
     let val = e.target.value;
-    
-    if (val === "") {
-      updateBH(hour, category, item, val);
-      return;
-    }
-    
+    if (val === "") { updateBH(hour, category, item, val); return; }
     const limits = getLimits(category, item);
-
     if (limits) {
       if (!/^-?\d*[.,]?\d*$/.test(val)) return;
       const numVal = parseFloat(val.replace(',', '.'));
-      if (!isNaN(numVal) && numVal > limits.max) {
-        return; 
-      }
+      if (!isNaN(numVal) && numVal > limits.max) return; 
     }
     updateBH(hour, category, item, val);
   };
 
   const checkMinLimitOnBlur = (hour, category, item, e) => {
     let val = e.target.value;
-    
     handleBlurSave(`BH: Editou ${item} às ${hour}h (${category === 'gains' ? 'Ganho' : category === 'losses' ? 'Perda' : 'Sinal Vital'})`);
-
     if (val === "") return;
     const numVal = parseFloat(val.replace(',', '.'));
     if (!isNaN(numVal)) {
@@ -99,11 +72,26 @@ const TechDashboard = ({
       if (limits && numVal < limits.min) {
         alert(`ATENÇÃO de SEGURANÇA:\n\nO valor inserido em ${item} é inferior ao mínimo permitido (${limits.min}).\nO dado foi removido para evitar erros no Prontuário.`);
         updateBH(hour, category, item, ""); 
-        
         handleBlurSave(`Segurança BH: O sistema bloqueou um valor irreal (${val}) no campo ${item} às ${hour}h`);
       }
     }
   };
+
+  // ==============================================================
+  // EXTRAÇÃO DE DATAS DISPONÍVEIS DO PACIENTE
+  // ==============================================================
+  const allBHDates = [];
+  if (currentPatient.bh?.date) allBHDates.push(currentPatient.bh.date);
+  if (currentPatient.historico_bh && Array.isArray(currentPatient.historico_bh)) {
+    currentPatient.historico_bh.forEach(h => {
+      if (h.date && !allBHDates.includes(h.date)) allBHDates.push(h.date);
+    });
+  }
+  // Ordena as datas da mais recente para a mais antiga
+  allBHDates.sort((a, b) => new Date(b) - new Date(a));
+
+  const isCurrentDay = selectedDate === currentPatient.bh?.date;
+  const viewingPreviousBH = !isCurrentDay;
 
   // ==============================================================
   // GERADOR DE PDF DO BALANÇO HÍDRICO
@@ -233,64 +221,40 @@ const TechDashboard = ({
     }, 250);
   };
 
-  // ==============================================================
-  // VARIÁVEIS DE MAPEAMENTO DO TECLADO
-  // ==============================================================
-  const currentGains = [...BH_GAINS, ...(displayedBH.customGains || [])];
-  const currentLosses = [...BH_LOSSES, ...(displayedBH.customLosses || [])];
+  // VARIÁVEIS DE MAPEAMENTO
+  const currentGains = [...BH_GAINS, ...(displayedBH?.customGains || [])];
+  const currentLosses = [...BH_LOSSES, ...(displayedBH?.customLosses || [])];
   const currentVitals = ["Temp (ºC)", "FC (bpm)", "FR (irpm)", "PAS", "PAD", "PAM", "SpO2 (%)", "HGT (mg/dL)", "Insulina"];
   const numCols = BH_HOURS.length - 1;
 
-  // ==============================================================
-  // NAVEGAÇÃO POR TECLADO (COM PULO ENTRE AS SEÇÕES DO BH)
-  // ==============================================================
+  // NAVEGAÇÃO POR TECLADO
   const handleGridKeyDown = (e, gridId, rowIndex, colIndex, maxRow, maxCol) => {
     if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) return;
     e.preventDefault();
-
-    let nextRow = rowIndex;
-    let nextCol = colIndex;
-    let targetGrid = gridId;
+    let nextRow = rowIndex; let nextCol = colIndex; let targetGrid = gridId;
 
     if (e.key === "ArrowUp") {
-      if (rowIndex > 0) {
-        nextRow = rowIndex - 1;
-      } else {
-        // Pulando para cima no "abismo" entre as seções
-        if (gridId === "losses") {
-          targetGrid = "gains";
-          nextRow = currentGains.length - 1;
-        } else if (gridId === "irrig") {
-          targetGrid = "losses";
-          nextRow = currentLosses.length - 1;
-        }
+      if (rowIndex > 0) nextRow = rowIndex - 1;
+      else {
+        if (gridId === "losses") { targetGrid = "gains"; nextRow = currentGains.length - 1; } 
+        else if (gridId === "irrig") { targetGrid = "losses"; nextRow = currentLosses.length - 1; }
       }
     }
-
     if (e.key === "ArrowDown" || e.key === "Enter") {
-      if (rowIndex < maxRow) {
-        nextRow = rowIndex + 1;
-      } else {
-        // Pulando para baixo no "abismo" entre as seções
-        if (gridId === "gains") {
-          targetGrid = "losses";
-          nextRow = 0;
-        } else if (gridId === "losses") {
-          targetGrid = "irrig";
-          nextRow = 0;
-        }
+      if (rowIndex < maxRow) nextRow = rowIndex + 1;
+      else {
+        if (gridId === "gains") { targetGrid = "losses"; nextRow = 0; } 
+        else if (gridId === "losses") { targetGrid = "irrig"; nextRow = 0; }
       }
     }
-
     if (e.key === "ArrowLeft") nextCol = Math.max(0, colIndex - 1);
     if (e.key === "ArrowRight") nextCol = Math.min(maxCol, colIndex + 1);
 
     const nextInput = document.querySelector(`input[data-grid="${targetGrid}"][data-row="${nextRow}"][data-col="${nextCol}"]`);
-    if (nextInput) {
-      nextInput.focus();
-      setTimeout(() => nextInput.select(), 10);
-    }
+    if (nextInput) { nextInput.focus(); setTimeout(() => nextInput.select(), 10); }
   };
+
+  if (!displayedBH) return <div className="p-8 text-center text-slate-500 font-bold">Carregando Balanço Hídrico...</div>;
 
   return (
     <div className="space-y-8 animate-fadeIn print:space-y-0 print:m-0 print:p-0 bh-print-container">
@@ -301,116 +265,152 @@ const TechDashboard = ({
         <span className="w-24 text-right">DATA: {formatDateDDMM(displayedBH.date || getManausDateStr())}</span>
       </div>
 
-      {viewingPreviousBH && (
-        <div className="bg-orange-100 border border-orange-300 text-orange-800 p-3 rounded-xl mb-4 text-sm font-bold flex items-center justify-center gap-2 print:hidden">
-          <AlertCircle size={18} />
-          VOCÊ ESTÁ VISUALIZANDO O BALANÇO HÍDRICO DO DIA ANTERIOR (SOMENTE LEITURA).
+      {/* ============================================================ */}
+      {/* BANNERS DE ALERTA E DESTRAVAMENTO DE AUDITORIA               */}
+      {/* ============================================================ */}
+      
+      {/* 1. Aviso de Histórico Bloqueado (Com botão de destravar) */}
+      {isBHReadOnly && !isCurrentDay && !unlockedDates?.includes(selectedDate) && (
+        <div className="bg-slate-100 border border-slate-300 text-slate-700 p-3 rounded-xl mb-4 text-sm font-bold flex flex-col md:flex-row items-center justify-between gap-3 print:hidden shadow-inner">
+          <div className="flex items-center gap-3">
+            <Calendar size={20} className="text-slate-500 shrink-0" />
+            <span>VISUALIZANDO HISTÓRICO: O Balanço Hídrico de dias anteriores é apenas para leitura e auditoria.</span>
+          </div>
+          <button 
+            onClick={() => setShowUnlockModal(true)} 
+            className="bg-red-100 text-red-700 hover:bg-red-200 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap shadow-sm"
+          >
+            <Unlock size={16} /> Liberar Edição
+          </button>
+        </div>
+      )}
+      
+      {/* 2. Aviso de Histórico Destravado (Modo Auditoria) */}
+      {unlockedDates?.includes(selectedDate) && (
+        <div className="bg-red-50 border border-red-300 text-red-800 p-3 rounded-xl mb-4 text-sm font-bold flex flex-col md:flex-row items-center justify-between gap-3 print:hidden shadow-inner animate-pulse">
+          <div className="flex items-center gap-3">
+            <Unlock size={20} className="text-red-500 shrink-0" />
+            <span>MODO DE AUDITORIA ATIVADO: O bloqueio foi removido. Edições neste balanço histórico estão sendo registradas no log de segurança da UTI.</span>
+          </div>
+          <button 
+            onClick={handleLockHistoricalBH} 
+            className="bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap shadow-md"
+            title="Trancar prontuário novamente"
+          >
+            <Lock size={16} /> Encerrar Edição
+          </button>
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* CHECK DE IDENTIFICAÇÃO DO PACIENTE (ATRIBUIÇÃO DO TÉCNICO) */}
-      {/* ======================================================== */}
+      {/* 3. Aviso de Plantão Atual Bloqueado (Expirou as 08h) */}
+      {isBHReadOnly && isCurrentDay && (
+        <div className="bg-red-50 border border-red-300 text-red-800 p-3 rounded-xl mb-4 text-sm font-bold flex items-center gap-3 print:hidden shadow-inner">
+          <Clock size={20} className="text-red-500" />
+          EDIÇÃO BLOQUEADA: O prazo regulamentar para edição (08:00) deste balanço já expirou. Acesso apenas para leitura.
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL DE JUSTIFICATIVA (A CAIXA PRETA)                       */}
+      {/* ============================================================ */}
+      {showUnlockModal && (
+        <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border-t-8 border-red-600">
+            <h3 className="text-xl font-black text-red-700 mb-2 flex items-center gap-2">
+              <AlertTriangle size={24} /> Abertura de Prontuário Fechado
+            </h3>
+            <p className="text-sm text-slate-600 mb-4 font-medium">
+              Você está solicitando a edição de um Balanço Hídrico arquivado ({formatDateDDMM(selectedDate)}). Esta ação exige justificativa legal e ficará gravada no log permanente da UTI.
+            </p>
+            
+            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Justificativa da Edição Retrospectiva:</label>
+            <textarea
+              className="w-full border border-slate-300 rounded-xl p-3 h-28 outline-none focus:ring-2 focus:ring-red-500 text-sm bg-slate-50"
+              placeholder="Descreva o motivo detalhadamente. Ex: Correção de volume de diurese das 04h00 do plantão noturno..."
+              value={unlockReason}
+              onChange={e => setUnlockReason(e.target.value)}
+            />
+            
+            <div className="flex justify-end gap-3 mt-5">
+              <button 
+                onClick={() => { setShowUnlockModal(false); setUnlockReason(""); }} 
+                className="px-5 py-2.5 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if(unlockReason.trim().length < 10) return alert("A justificativa deve conter pelo menos 10 caracteres.");
+                  handleUnlockHistoricalBH(selectedDate, unlockReason);
+                  setShowUnlockModal(false);
+                  setUnlockReason("");
+                }}
+                className="px-5 py-2.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-md transition-colors flex items-center gap-2"
+              >
+                <Unlock size={18} /> Confirmar Abertura
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CHECK DE IDENTIFICAÇÃO DO PACIENTE */}
       <div className={`p-4 rounded-xl border transition-all duration-300 flex items-center justify-between shadow-sm print:hidden mb-6 ${
-          currentPatient.enfermagem?.identificacaoCorreta 
-            ? 'bg-emerald-50 border-emerald-200' 
-            : 'bg-white border-slate-200'
-        }`}
-      >
+          currentPatient.enfermagem?.identificacaoCorreta ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'
+        }`}>
         <div className="flex items-center gap-4">
-          <div className={`p-3 rounded-xl transition-colors hidden sm:flex ${
-            currentPatient.enfermagem?.identificacaoCorreta 
-              ? 'bg-emerald-100 text-emerald-600' 
-              : 'bg-slate-100 text-slate-500'
-          }`}>
+          <div className={`p-3 rounded-xl transition-colors hidden sm:flex ${currentPatient.enfermagem?.identificacaoCorreta ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
             <UserCheck size={24} />
           </div>
           <div>
-            <h4 className={`text-sm font-bold ${currentPatient.enfermagem?.identificacaoCorreta ? 'text-emerald-800' : 'text-slate-700'}`}>
-              Identificação Correta do Paciente
-            </h4>
-            <p className="text-xs text-slate-500 mt-1 pr-2">
-              Confirmo que o paciente possui pulseira e placa no leito com os dados corretos.
-            </p>
+            <h4 className={`text-sm font-bold ${currentPatient.enfermagem?.identificacaoCorreta ? 'text-emerald-800' : 'text-slate-700'}`}>Identificação Correta do Paciente</h4>
+            <p className="text-xs text-slate-500 mt-1 pr-2">Confirmo que o paciente possui pulseira e placa no leito com os dados corretos.</p>
           </div>
         </div>
         
         <label className="relative inline-flex items-center cursor-pointer shrink-0">
           <input 
-            type="checkbox" 
-            className="sr-only peer" 
-            checked={!!currentPatient.enfermagem?.identificacaoCorreta}
+            type="checkbox" className="sr-only peer" checked={!!currentPatient.enfermagem?.identificacaoCorreta} disabled={!isEditable}
             onChange={async (e) => {
               const novoValor = e.target.checked;
-              
-              // 1. Atualiza a tela instantaneamente (Visual macio para o usuário)
               updateNested("enfermagem", "identificacaoCorreta", novoValor);
-              
-              // 2. Salva DIRETO no Firebase com o ID Blindado
               try {
                 let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
                 const apenasNumero = String(idBruto).replace(/bed_/g, "");
-                let numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
-                const docId = `bed_${numeroFinal}`; // Garante que seja sempre bed_1, bed_2, etc.
-                
-                const leitoRef = doc(db, "leitos_uti", docId);
-                
-                await updateDoc(leitoRef, {
-                  // O uso das aspas com ponto atualiza APENAS este campo, sem apagar o resto do objeto
-                  "enfermagem.identificacaoCorreta": novoValor
-                });
-              } catch (error) {
-                console.error("Erro crítico ao salvar identificação:", error);
-              }
+                const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
+                await updateDoc(doc(db, "leitos_uti", docId), { "enfermagem.identificacaoCorreta": novoValor });
+              } catch (error) { console.error("Erro crítico ao salvar identificação:", error); }
             }}
-            disabled={!isEditable}
           />
           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 disabled:opacity-50"></div>
         </label>
       </div>
 
-      {viewingPreviousBH && (
-        <div className="bg-orange-100 border border-orange-300 text-orange-800 p-3 rounded-xl mb-4 text-sm font-bold flex items-center justify-center gap-2 print:hidden">
-          <AlertCircle size={18} />
-          VOCÊ ESTÁ VISUALIZANDO O BALANÇO HÍDRICO DO DIA ANTERIOR (SOMENTE LEITURA).
-        </div>
-      )}
-
-      <div className="flex flex-col md:flex-row md:justify-between items-start md:items-end gap-3 mb-2 print:hidden">
+      {/* CABEÇALHO COM SELETOR DE DATAS */}
+      <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center gap-4 mb-2 print:hidden bg-blue-50/50 p-4 rounded-xl border border-blue-100">
         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <Droplets className="text-blue-500" /> Balanço Hídrico {viewingPreviousBH ? "(DIA ANTERIOR)" : "24h"}
+          <Droplets className="text-blue-600" /> 
+          Controle Hídrico e Vital
         </h3>
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          <button
-            onClick={() => {
-              if (currentPatient.bh_previous) {
-                const isGoingToPrevious = !viewingPreviousBH;
-                setViewingPreviousBH(isGoingToPrevious);
-                handleBlurSave(`BH: Acessou visualização do Balanço ${isGoingToPrevious ? 'Anterior' : 'Atual'}`);
-              }
-            }}
-            disabled={!currentPatient.bh_previous}
-            className={`flex-1 md:flex-none px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors ${
-              !currentPatient.bh_previous ? "bg-gray-100 text-gray-400 cursor-not-allowed" : viewingPreviousBH ? "bg-orange-500 text-white hover:bg-orange-600" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
-            }`}
-            title={!currentPatient.bh_previous ? "Ainda não foi fechado nenhum dia para este leito." : "Ver balanço do dia anterior"}
+        
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          <label className="text-xs font-bold text-blue-800 uppercase bg-blue-100 px-2 py-1 rounded">Data do Plantão:</label>
+          <select
+            value={selectedDate || ""}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="p-2 border border-slate-300 rounded-lg text-sm font-bold bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm min-w-[140px]"
           >
-            <Clock size={14} /> {viewingPreviousBH ? "Voltar ao Atual" : "Dia Anterior"}
+            {allBHDates.length === 0 && <option value="">Sem registros</option>}
+            {allBHDates.map(date => (
+              <option key={date} value={date}>
+                {formatDateDDMM(date)} {date === currentPatient.bh?.date ? " (Plantão Atual)" : ""}
+              </option>
+            ))}
+          </select>
+          
+          <button onClick={handleCustomPrintBH} className="bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors ml-auto md:ml-0">
+            <Printer size={16} /> Imprimir Relatório
           </button>
-          <button onClick={handleCustomPrintBH} className="flex-1 md:flex-none bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1">
-          <Printer size={14} /> Imprimir
-          </button>
-          {!viewingPreviousBH && canCloseDay && (
-            <button
-              onClick={handleNextDayBH} 
-              disabled={!isEditable}
-              className={`w-full md:w-auto bg-blue-600 text-white px-3 py-2 md:py-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 mt-1 md:mt-0 ${
-                !isEditable ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"
-              }`}
-            >
-              <RotateCcw size={14} /> Fechar Dia
-            </button>
-          )}
         </div>
       </div>
 
