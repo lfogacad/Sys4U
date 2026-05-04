@@ -1,8 +1,9 @@
+import * as XLSX from 'xlsx';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
-  ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, 
+  ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown,  
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy
 } from 'lucide-react';
 import { 
@@ -11,6 +12,7 @@ import {
 } from 'recharts';
 import { collection, onSnapshot, getDocs, doc, setDoc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
+
 import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
 
@@ -1454,6 +1456,82 @@ const metricasQualidade = useMemo(() => {
       alert("Erro ao atualizar o evento no banco de dados.");
     }
   };
+
+  // CRIADOR DE ESCALA FINAL //
+  const exportarEscalaExecutada = async (mesRelatorio, anoRelatorio) => {
+  try {
+    alert("Iniciando auditoria da Escala Executada. Isso pode levar alguns segundos...");
+    
+    // 1. Busca TODOS os plantões confirmados do banco de dados
+    const escalasRef = collection(db, "escalas");
+    const querySnapshot = await getDocs(escalasRef); // Idealmente usar where() para filtrar o mês
+    
+    // 2. Objeto para organizar os dados: Categoria -> Nome do Profissional -> Dias
+    const gradeFechada = {};
+    
+    querySnapshot.forEach((doc) => {
+      const plantao = doc.data();
+      
+      // Filtra apenas o mês e ano que queremos exportar (ex: "2026-05")
+      const prefixoData = `${anoRelatorio}-${String(mesRelatorio).padStart(2, '0')}`;
+      
+      if (plantao.data && plantao.data.startsWith(prefixoData) && !plantao.nome.includes('[FALTOU]')) {
+        const categoria = plantao.categoria || "Geral";
+        const nome = plantao.nome.replace('[EXTRA]', '').trim();
+        const diaDoMes = parseInt(plantao.data.split('-')[2], 10);
+        
+        if (!gradeFechada[categoria]) gradeFechada[categoria] = {};
+        if (!gradeFechada[categoria][nome]) gradeFechada[categoria][nome] = {};
+        
+        // Salva a sigla no dia correto
+        gradeFechada[categoria][nome][diaDoMes] = plantao.sigla;
+      }
+    });
+
+    // 3. Criação do arquivo Excel (Workbook)
+    const wb = XLSX.utils.book_new();
+    
+    // Pega quantos dias tem o mês selecionado para montar o cabeçalho certinho
+    const diasNoMes = new Date(anoRelatorio, mesRelatorio, 0).getDate();
+    const cabecalhoDias = Array.from({ length: diasNoMes }, (_, i) => String(i + 1).padStart(2, '0'));
+    const cabecalhoCompleto = ["NOME DO SERVIDOR", ...cabecalhoDias];
+
+    // 4. Criação das Abas (Sheets) para cada Categoria
+    Object.keys(gradeFechada).forEach((categoria) => {
+      const dadosAba = [];
+      dadosAba.push(cabecalhoCompleto); // Linha 1: Cabeçalhos
+      
+      // Preenche os profissionais e seus plantões
+      Object.keys(gradeFechada[categoria]).forEach((nome) => {
+        const linhaProfissional = [nome];
+        
+        for (let dia = 1; dia <= diasNoMes; dia++) {
+          const sigla = gradeFechada[categoria][nome][dia] || "";
+          linhaProfissional.push(sigla);
+        }
+        
+        dadosAba.push(linhaProfissional);
+      });
+      
+      // Converte o array da aba para o formato do SheetJS
+      const ws = XLSX.utils.aoa_to_sheet(dadosAba);
+      
+      // Ajusta a largura das colunas (Nome mais largo, dias mais estreitos)
+      const wscols = [{ wch: 35 }, ...cabecalhoDias.map(() => ({ wch: 4 }))];
+      ws['!cols'] = wscols;
+      
+      // Adiciona a aba ao arquivo final
+      XLSX.utils.book_append_sheet(wb, ws, categoria.substring(0, 31)); // O Excel limita nomes de abas a 31 caracteres
+    });
+
+    // 5. Download automático do arquivo
+    XLSX.writeFile(wb, `Escala_Executada_UTI_${mesRelatorio}_${anoRelatorio}.xlsx`);
+    
+  } catch (error) {
+    console.error("Erro ao gerar Excel:", error);
+    alert("Erro ao exportar a escala fechada.");
+  }
+};
 
   // Função para gerar e copiar o Checklist de Profissionais
   const gerarTextoChecklist = () => {
@@ -3003,7 +3081,40 @@ const metricasQualidade = useMemo(() => {
                     })}
                   </div>
                 </div>
-                <ImportadorEscala categoria={categoriaAtiva} />
+                
+                {/* COLUNA DIREITA: Importador e Exportador */}
+                <div className="flex flex-col gap-6">
+                  <ImportadorEscala categoria={categoriaAtiva} />
+                  
+                  {/* ==========================================
+                      BOTÃO DE AUDITORIA: ESCALA EXECUTADA
+                      ========================================== */}
+                  <div className="bg-slate-800 p-6 rounded-2xl shadow-sm text-white flex flex-col justify-center border border-slate-700 relative overflow-hidden">
+                    {/* Elemento visual de fundo */}
+                    <div className="absolute -right-4 -top-4 opacity-10">
+                      <FileDown size={100} />
+                    </div>
+                    
+                    <h3 className="font-bold text-lg flex items-center gap-2 mb-2 relative z-10">
+                      <FileDown className="text-emerald-400" size={20} /> Fechamento de Escala
+                    </h3>
+                    <p className="text-xs text-slate-300 mb-5 relative z-10">
+                      Gere a planilha final de auditoria com os plantões reais executados, incluindo trocas e extras do mês.
+                    </p>
+                    
+                    <button 
+                      // Extrai o mês e ano da data selecionada no Radar (ex: "2026-05")
+                      onClick={() => exportarEscalaExecutada(
+                        dataSelecionada.split('-')[1], 
+                        dataSelecionada.split('-')[0]
+                      )}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-md flex justify-center items-center gap-2 relative z-10"
+                    >
+                      Baixar Escala Executada ({dataSelecionada.split('-')[1]}/{dataSelecionada.split('-')[0]})
+                    </button>
+                  </div>
+                </div>
+                
               </div>
             ) : (
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
