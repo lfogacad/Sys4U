@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, Check, X } from 'lucide-react';
+import { AlertCircle, Check } from 'lucide-react';
 
 const NoraModal = ({
   showNoraModal,
@@ -23,21 +23,24 @@ const NoraModal = ({
         </p>
         
         <div className="flex gap-5">
+          {/* BOTÃO ESQUERDA: PADRÃO (VERDE - SEGURO) */}
           <button
-            onClick={() => handleNoraModalResponse(true)}
+            onClick={() => handleNoraModalResponse(false)}
             className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-green-600 text-white px-5 py-4 rounded-xl font-bold hover:bg-green-700 transition-colors shadow-sm text-sm"
           >
             <Check size={20} />
-            SIM, DOBRADA
-            <span className="text-[10px] opacity-80">(8 amp/250mL)</span>
-          </button>
-          <button
-            onClick={() => handleNoraModalResponse(false)}
-            className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-slate-100 text-slate-700 px-5 py-4 rounded-xl font-bold hover:bg-slate-200 transition-colors text-sm"
-          >
-            <X size={20} />
             NÃO, PADRÃO
-            <span className="text-[10px] opacity-80">(4 amp/250mL)</span>
+            <span className="text-[10px] opacity-90 font-medium">(4 amp/250mL)</span>
+          </button>
+
+          {/* BOTÃO DIREITA: DOBRADA (VERMELHO - ALERTA) */}
+          <button
+            onClick={() => handleNoraModalResponse(true)}
+            className="w-1/2 flex flex-col items-center justify-center gap-1.5 bg-red-600 text-white px-5 py-4 rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm text-sm"
+          >
+            <AlertCircle size={20} />
+            SIM, DOBRADA
+            <span className="text-[10px] opacity-90 font-medium">(8 amp/250mL)</span>
           </button>
         </div>
       </div>
