@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, 
-  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter 
+  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -1455,6 +1455,92 @@ const metricasQualidade = useMemo(() => {
     }
   };
 
+  // Função para gerar e copiar o Checklist de Profissionais
+  const gerarTextoChecklist = () => {
+    let texto = `UTI MUNICIPAL\n${formatarDataBR(dataSelecionada)}\n\n`;
+
+    // Mapeamento das categorias para o título impresso e a chave no banco de dados
+    const mapaCategorias = [
+      { titulo: "MÉDICO VISITADOR", chave: "Médico Visitador" },
+      { titulo: "MÉDICO", chave: "Médico" },
+      { titulo: "ENFERMEIRO", chave: "Enfermeiro" },
+      { titulo: "TÉCNICO DE ENFERMAGEM", chave: "Téc. Enfermagem" },
+      { titulo: "TÉCNICO HEMODIÁLISE", chave: "Téc. Hemodiálise" },
+      { titulo: "FISIOTERAPEUTA", chave: "Fisioterapeuta" },
+      { titulo: "MOTORISTA", chave: "Motorista" },
+      { titulo: "NUTRICIONISTA", chave: "Nutricionista" },
+      { titulo: "PSICÓLOGA", chave: "Psicóloga" }
+    ];
+
+    mapaCategorias.forEach(cat => {
+      texto += `${cat.titulo}\n`;
+      const profissionaisRaw = consolidadoDia[cat.chave] || [];
+      let ativos = [];
+
+      // Aplicando o filtro de limpeza
+      profissionaisRaw.forEach(p => {
+        let strNome = p.nome || "";
+        let siglaBase = p.sigla || "";
+
+        if (strNome.includes('[EXTRA]')) {
+          ativos.push({ nome: strNome.replace('[EXTRA]', '').trim(), sigla: siglaBase });
+        } else if (strNome.includes(' / ')) {
+          let partes = strNome.split(' / ');
+          partes.forEach(parte => {
+            let match = parte.match(/(.+?)\s*\((D|N)\)/);
+            if (match) {
+              let nomeExt = match[1].trim();
+              let siglaExt = match[2];
+              if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]')) {
+                ativos.push({ nome: nomeExt, sigla: siglaExt });
+              }
+            }
+          });
+        } else if (strNome.includes('(Cobrindo:')) {
+          let match = strNome.match(/(.+?)\s*\(Cobrindo:/);
+          if (match) {
+            ativos.push({ nome: match[1].trim(), sigla: siglaBase });
+          }
+        } else if (!strNome.includes('[FALTOU]') && !strNome.includes('[ATESTADO]')) {
+          ativos.push({ nome: strNome.trim(), sigla: siglaBase });
+        }
+      });
+
+      // Imprime os nomes ou deixa o espaço em branco sob a categoria
+      if (ativos.length === 0) {
+        texto += "\n";
+      } else {
+        ativos.forEach(p => {
+          let turno = p.sigla ? ` - ${p.sigla}` : "";
+          
+          // A MÁGICA AQUI: Quebra o nome nos espaços e pega só a primeira palavra
+          let primeiroNome = p.nome.split(' ')[0]; 
+          
+          texto += `•\t${primeiroNome}${turno}\n`;
+        });
+        texto += "\n";
+      }
+    });
+
+    // ==========================================
+    // CÁLCULO INTELIGENTE DE LEITOS VAGOS
+    // ==========================================
+    let numeroLeitosVagos = 0;
+    
+    if (typeof leitosConfig !== 'undefined') {
+      numeroLeitosVagos = leitosConfig.filter(l => l.status === 'Livre' && !l.bloqueado).length;
+    } else if (typeof patients !== 'undefined') {
+      numeroLeitosVagos = patients.filter(p => !p.nome && (p.leito !== 11 || currentRolePerms?.canSeeLeito11)).length;
+    }
+
+    texto += `Leitos vagos - ${numeroLeitosVagos} LEITOS\n`;
+
+    // Copia para a área de transferência
+    navigator.clipboard.writeText(texto)
+      .then(() => alert("Checklist de profissionais copiado com sucesso!"))
+      .catch(err => console.error("Erro ao copiar: ", err));
+  };
+
   const formatarDataBR = (strData) => {
     if (!strData) return "";
     const [ano, mes, dia] = strData.split('-');
@@ -2738,10 +2824,15 @@ const metricasQualidade = useMemo(() => {
 
     if (subViewEquipe === 'escalas') {
       const categorias = [
-        { id: 'Médico', icon: <Activity size={16} /> }, { id: 'Enfermeiro', icon: <Users size={16} /> },
-        { id: 'Téc. Enfermagem', icon: <Users size={16} /> }, { id: 'Fisioterapeuta', icon: <Activity size={16} /> },
-        { id: 'Fonoaudiólogo', icon: <Activity size={16} /> }, { id: 'Nutricionista', icon: <Activity size={16} /> },
-        { id: 'Recepção', icon: <Users size={16} /> }, { id: 'Visão Geral', icon: <Shield size={16} /> },
+        { id: 'Visão Geral', icon: <Shield size={16} /> },
+        { id: 'Médico', icon: <Activity size={16} /> }, 
+        { id: 'Enfermeiro', icon: <Users size={16} /> },
+        { id: 'Téc. Enfermagem', icon: <Users size={16} /> }, 
+        { id: 'Téc. Hemodiálise', icon: <Activity size={16} /> }, 
+        { id: 'Fisioterapeuta', icon: <Activity size={16} /> },
+        { id: 'Fonoaudiólogo', icon: <Activity size={16} /> }, 
+        { id: 'Nutricionista', icon: <Activity size={16} /> },
+        { id: 'Recepção', icon: <Users size={16} /> }, 
       ];
 
       return (
@@ -2775,8 +2866,19 @@ const metricasQualidade = useMemo(() => {
           <div className="space-y-6">
             {categoriaAtiva === 'Visão Geral' ? (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                 <div className="bg-slate-800 p-4 text-white font-bold text-sm uppercase tracking-wider flex justify-between">
-                   <span>Plantão Consolidado</span><span className="text-blue-400">{formatarDataBR(dataSelecionada)}</span>
+                 {/* CABEÇALHO ATUALIZADO COM O BOTÃO DE COPIAR */}
+                 <div className="bg-slate-800 p-4 text-white font-bold text-sm uppercase tracking-wider flex justify-between items-center">
+                   <span>Plantão Consolidado</span>
+                   <div className="flex items-center gap-4">
+                     <span className="text-blue-400">{formatarDataBR(dataSelecionada)}</span>
+                     <button 
+                       onClick={gerarTextoChecklist} 
+                       className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs shadow-sm cursor-pointer"
+                       title="Copiar Checklist de Profissionais para o WhatsApp"
+                     >
+                       <ClipboardCopy size={16} /> Checklist de Profissionais
+                     </button>
+                   </div>
                  </div>
                  <div className="p-6 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {categorias.filter(c => c.id !== 'Visão Geral').map(cat => {
