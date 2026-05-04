@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, X, AlertTriangle, FileText, Lock } from 'lucide-react';
+import { UserPlus, X, AlertTriangle, FileText, Lock, ShieldAlert, Plus } from 'lucide-react';
 import { ESCALA_DOR, PRECAUCOES, BRADEN_OPTIONS, MORSE_OPTIONS } from '../../constants/clinicalLists';
 
 const NursingAdmissionModal = ({
@@ -94,19 +94,105 @@ const NursingAdmissionModal = ({
             </div>
           </div>
 
-          {/* PELE E CURATIVOS */}
-          <div className="p-4 border rounded-xl bg-orange-50/20 shadow-sm">
-            <h4 className="font-bold text-orange-800 mb-3">Pele e Curativos</h4>
-            <textarea placeholder="Lesões por pressão (Local / Estágio)..." className="w-full p-2 border rounded mb-3 h-16 outline-none focus:ring-2 focus:ring-orange-200" value={nursingData.lesaoLocal || ""} onChange={(e) => setNursingData({ ...nursingData, lesaoLocal: e.target.value })} disabled={isReadOnly}/>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <label className="text-xs font-bold text-gray-500 mb-1 block">Tipo de Curativo</label>
-                <input className="w-full p-2 border rounded" placeholder="Descritivo do curativo" value={nursingData.curativoTipo || ""} onChange={(e) => setNursingData({ ...nursingData, curativoTipo: e.target.value })} disabled={isReadOnly}/>
-              </div>
-              <div className="w-40">
-                <label className="text-xs font-bold text-gray-500 mb-1 block">Data Curativo</label>
-                <input type="date" className="w-full p-2 border rounded" value={nursingData.curativoData || ""} onChange={(e) => setNursingData({ ...nursingData, curativoData: e.target.value })} disabled={isReadOnly}/>
-              </div>
+          {/* ========================================================= */}
+          {/* PELE E CURATIVOS (ADMISSÃO - APENAS LESÕES PRÉVIAS)       */}
+          {/* ========================================================= */}
+          <div className="p-4 border rounded-xl bg-orange-50/20 shadow-sm mt-4">
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="font-bold text-orange-800 flex items-center gap-2">
+                <ShieldAlert size={16} /> Integridade Cutânea e Curativos (Admissão)
+              </h4>
+              
+              {!isReadOnly && (
+                <button 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    // Adiciona uma nova lesão no array, fixando a origem como 'prevalencia'
+                    const novasLesoes = [
+                      ...(nursingData.lesoes || []), 
+                      { id: Date.now().toString(), origem: 'prevalencia', localizacao: '', curativo: '' }
+                    ];
+                    setNursingData({ ...nursingData, lesoes: novasLesoes });
+                  }}
+                  className="flex items-center gap-1 bg-orange-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-orange-700 transition-colors"
+                >
+                  <Plus size={14} /> Adicionar Lesão Prévia
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              {(!nursingData.lesoes || nursingData.lesoes.length === 0) && (
+                <p className="text-sm text-slate-400 italic text-center py-2">Nenhuma lesão prévia registrada na admissão. Pele íntegra.</p>
+              )}
+
+              {nursingData.lesoes?.map((lesao) => (
+                <div key={lesao.id} className="bg-white border border-orange-100 p-4 rounded-xl shadow-sm relative animate-fadeIn">
+                  
+                  {!isReadOnly && (
+                    <button 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        // Filtra e remove a lesão específica
+                        const novasLesoes = nursingData.lesoes.filter(l => l.id !== lesao.id);
+                        setNursingData({ ...nursingData, lesoes: novasLesoes });
+                      }}
+                      className="absolute top-2 right-2 text-slate-300 hover:text-red-500 transition-colors"
+                      title="Remover lesão"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+
+                  <div className="grid md:grid-cols-4 gap-4">
+                    
+                    {/* Origem da Lesão (TRAVADA COMO PRÉVIA PARA BLINDAR O INDICADOR) */}
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Origem</label>
+                      <div className="w-full p-2 border border-slate-200 rounded text-sm font-bold text-slate-500 bg-slate-50 flex items-center h-[38px] cursor-not-allowed">
+                        Prévia (Admissão)
+                      </div>
+                    </div>
+
+                    {/* Localização e Estágio */}
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Localização / Estágio</label>
+                      <input 
+                        type="text"
+                        placeholder="Ex: Sacra - Estágio II"
+                        className="w-full p-2 border rounded text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                        value={lesao.localizacao || ""}
+                        onChange={(e) => {
+                          const novasLesoes = nursingData.lesoes.map(l => 
+                            l.id === lesao.id ? { ...l, localizacao: e.target.value } : l
+                          );
+                          setNursingData({ ...nursingData, lesoes: novasLesoes });
+                        }}
+                        disabled={isReadOnly}
+                      />
+                    </div>
+
+                    {/* Tipo de Curativo */}
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Curativo / Conduta Inicial</label>
+                      <input 
+                        type="text"
+                        placeholder="Ex: Placa de Hidrocoloide / AGE"
+                        className="w-full p-2 border border-orange-200 bg-orange-50/30 rounded text-sm outline-none focus:ring-2 focus:ring-orange-300"
+                        value={lesao.curativo || ""}
+                        onChange={(e) => {
+                          const novasLesoes = nursingData.lesoes.map(l => 
+                            l.id === lesao.id ? { ...l, curativo: e.target.value } : l
+                          );
+                          setNursingData({ ...nursingData, lesoes: novasLesoes });
+                        }}
+                        disabled={isReadOnly}
+                      />
+                    </div>
+
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
