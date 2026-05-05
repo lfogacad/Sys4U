@@ -349,9 +349,9 @@ const GestorDashboard = ({ userProfile }) => {
 
     return {
       eventosHoje: eventosDeHoje,
-      pendenciasRH: 0 
+      pendenciasRH: metricasEquipe.pendentes || 0 
     };
-  }, [listaEventosAdversos]);
+  }, [listaEventosAdversos, metricasEquipe.pendentes]);
 
   // ================================================================
   // 🔥 MOTOR OPERACIONAL E FLUXO (ÚLTIMOS 30 DIAS + FILTRO DE MORADOR)
