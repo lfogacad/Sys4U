@@ -3460,10 +3460,16 @@ const userRole = userProfile?.role || userProfile?.perfil;
           <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
             <div className="relative mb-6 md:mb-0 print:hidden">
 
+              {/* CONTAINER DO CARROSSEL AJUSTADO PARA WEBKIT/IOS + ERGONOMIA V2 */}
               <div
                 ref={navScrollRef}
-                // MUDANÇA: Aumentei o gap para 'gap-4' no mobile, facilita acertar o botão
-                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-4 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center px-[40vw] md:px-0`}
+                // SUTURA 1: Mantém a aceleração de hardware nativa de rolagem da Apple
+                style={{ WebkitOverflowScrolling: 'touch' }} 
+                // SUTURA 2: gap-4 adicionado conforme sua v2. Remoção do px-[40vw] e adição do touch-pan-x e pseudo-elementos
+                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-4 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center touch-pan-x
+                  before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden
+                  after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden
+                `}
               >
                 {allNavButtons.map((btn, index) => {
                   const isActive = viewMode === btn.id;
