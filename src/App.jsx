@@ -4502,12 +4502,17 @@ const navButtons = allNavButtons.filter((btn) => {
           <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
             <div className="relative mb-6 md:mb-0 print:hidden">
 
-              {/* CONTAINER DO CARROSSEL AJUSTADO */}
+              {/* CONTAINER DO CARROSSEL AJUSTADO PARA WEBKIT/IOS */}
               <div
                 ref={navScrollRef}
                 onScroll={handleNavScroll}
-                // SUTURA: px-[40vw] garante que mesmo com 1 ou 2 abas, você consiga "deslizar" ela para fora do centro
-                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center px-[40vw] md:px-0`}
+                // SUTURA: Ativa a aceleração de hardware nativa de rolagem da Apple
+                style={{ WebkitOverflowScrolling: 'touch' }} 
+                // CORREÇÃO: Remoção do px-[40vw]. Adição do touch-pan-x e pseudo-elementos
+                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center touch-pan-x
+                  before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden
+                  after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden
+                `}
               >
                 {visibleNavButtons.map((btn, index) => {
                   const isActive = viewMode === btn.id;
@@ -4524,7 +4529,6 @@ const navButtons = allNavButtons.filter((btn) => {
                     <div
                       key={btn.id}
                       id={`nav-${btn.id}`}
-                      // CORREÇÃO: Agora usa apenas a cascata natural. A aba ativa vai para trás se sair do centro!
                       style={{ zIndex: zIndexCascata }} 
                       className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out 
                         ${window.innerWidth < 768 ? '-ml-5 first:ml-0' : ''} 
@@ -4535,7 +4539,6 @@ const navButtons = allNavButtons.filter((btn) => {
                         onClick={() => {
                           const isMobile = window.innerWidth < 768;
                           if (isMobile) {
-                            // Se bater na aba no mobile, ela centraliza. Se já tiver no centro, ativa a ficha dela.
                             if (centerTab !== btn.id) {
                                const el = document.getElementById(`nav-${btn.id}`);
                                if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -4546,7 +4549,6 @@ const navButtons = allNavButtons.filter((btn) => {
                             setViewMode(btn.id);
                           }
                         }}
-                        // LÓGICA DE COR E TAMANHO
                         className={`flex items-center h-12 md:h-12 min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
                           ${
                             isActive
@@ -4565,7 +4567,7 @@ const navButtons = allNavButtons.filter((btn) => {
                           </div>
                         </div>
 
-                        {/* TEXTO (Aparece se for o centro no mobile ou hover no PC) */}
+                        {/* TEXTO */}
                         <div
                           className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
                             ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
