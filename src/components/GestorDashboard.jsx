@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown,  
-  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy
+  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -45,7 +45,19 @@ const GestorDashboard = ({ userProfile }) => {
   const [extraTurno, setExtraTurno] = useState('DN');
   const [extraNome, setExtraNome] = useState('');
 
+  // ==========================================
+  // ESTADOS DO DOSSIÊ DE AUDITORIA
+  // ==========================================
+  const [isModalRelatorioOpen, setIsModalRelatorioOpen] = useState(false);
+  const [relatorioMudancas, setRelatorioMudancas] = useState([]);
+  const [isLoadingRelatorio, setIsLoadingRelatorio] = useState(false);
+  
+  // NOVOS ESTADOS PARA OS FILTROS
+  const [filtroMesRelatorio, setFiltroMesRelatorio] = useState("");
+  const [filtroCategoriaRelatorio, setFiltroCategoriaRelatorio] = useState("Todas");
+
   const [listaMedicos, setListaMedicos] = useState([]);
+  const [listaProfissionais, setListaProfissionais] = useState([]);
 
   const [loadingGraficos, setLoadingGraficos] = useState(true);
 
@@ -262,6 +274,34 @@ const GestorDashboard = ({ userProfile }) => {
       buscarAuditoriaEscalas();
     }
   }, [abaRiscoAtiva, filtroDataInicio, filtroDataFim]);
+
+  // =========================================================
+  // BUSCA A EQUIPE MULTIPROFISSIONAL NO FIREBASE (GATILHO AUTOMÁTICO)
+  // =========================================================
+  useEffect(() => {
+    const buscarEquipeMultiprofissional = async () => {
+      try {
+        const profRef = collection(db, "profissionais");
+        const snapshot = await getDocs(profRef);
+        const equipe = [];
+
+        snapshot.forEach(doc => {
+          const dados = doc.data();
+          equipe.push({ id: doc.id, ...dados });
+        });
+
+        // Ordena por ordem alfabética para deixar o Select organizado
+        equipe.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+        setListaProfissionais(equipe);
+        
+      } catch (error) {
+        console.error("Erro ao carregar a equipe multiprofissional:", error);
+      }
+    };
+
+    // 🚨 AQUI ESTÁ O PASSO 3: O GATILHO QUE DISPARA A FUNÇÃO AO ABRIR O SISTEMA
+    buscarEquipeMultiprofissional();
+  }, []);
 
   // Função para organizar os dados e abrir o modal da escala específica
   const abrirAuditoriaEscala = (nomeEscala, nomePaciente, dadosEscala) => {
@@ -1041,6 +1081,55 @@ const metricasQualidade = useMemo(() => {
     }
   };
 
+  // Motor de Busca isolado (permite buscar novamente quando trocar o mês)
+  const buscarDadosRelatorio = async (mesAlvo) => {
+    setIsLoadingRelatorio(true);
+    try {
+      const escalasRef = collection(db, "escalas");
+      const snapshot = await getDocs(escalasRef); 
+      const mudancas = [];
+      
+      snapshot.forEach(doc => {
+        const plantao = doc.data();
+        
+        // Filtra pelo MÊS diretamente no motor de busca
+        if (plantao.data && plantao.data.startsWith(mesAlvo)) {
+          const nomeFinal = plantao.nome || "";
+          const alteracao = plantao.statusAlteracao || "";
+          const tipoPlantao = plantao.tipo || "";
+
+          const isFalta = nomeFinal.includes('[FALTOU]') || alteracao === 'Falta';
+          const isAtestado = nomeFinal.includes('[ATESTADO]') || alteracao === 'Atestado';
+          const isExtra = tipoPlantao === 'plantao_extra' || nomeFinal.includes('[EXTRA]') || alteracao === 'Extra';
+          const isTroca = alteracao === 'Normal'; 
+
+          if (isFalta || isExtra || isAtestado || isTroca) {
+             mudancas.push({ id: doc.id, ...plantao });
+          }
+        }
+      });
+
+      mudancas.sort((a, b) => a.data.localeCompare(b.data));
+      setRelatorioMudancas(mudancas);
+      
+    } catch (error) {
+      console.error("Erro ao buscar relatório de mudanças:", error);
+      alert("Erro ao compilar o relatório.");
+    } finally {
+      setIsLoadingRelatorio(false);
+    }
+  };
+
+  // Função apenas para abrir a interface e disparar a primeira busca
+  const abrirRelatorioMudancas = () => {
+    const mesAtual = dataSelecionada.substring(0, 7);
+    setFiltroMesRelatorio(mesAtual);
+    setFiltroCategoriaRelatorio("Todas"); // Reseta a categoria
+    setIsModalRelatorioOpen(true);
+    
+    buscarDadosRelatorio(mesAtual);
+  };
+
   useEffect(() => {
   const processarDadosParaGraficos = async () => {
     try {
@@ -1305,6 +1394,7 @@ const metricasQualidade = useMemo(() => {
 
   const salvarTrocaPlantao = async () => {
     // Validação da Troca Normal
+    console.log("RAIO-X DO PLANTAO:", plantaoEditado);
     if (statusPlantonista === 'Normal' && !novoPlantonista.trim()) {
       alert("Por favor, selecione o nome do novo plantonista.");
       return;
@@ -1359,6 +1449,8 @@ const metricasQualidade = useMemo(() => {
       const escalaRef = doc(db, "escalas", plantaoEditado.id); 
       await updateDoc(escalaRef, {
         nome: nomeFinal,
+        // 🚨 CORREÇÃO: Usando a chave exata que o Raio-X revelou
+        nomeOriginal: plantaoEditado.nomeAtual, 
         statusAlteracao: statusPlantonista, 
         modificadoEm: new Date().toISOString()
       });
@@ -1547,7 +1639,7 @@ const metricasQualidade = useMemo(() => {
       { titulo: "FISIOTERAPEUTA", chave: "Fisioterapeuta" },
       { titulo: "MOTORISTA", chave: "Motorista" },
       { titulo: "NUTRICIONISTA", chave: "Nutricionista" },
-      { titulo: "PSICÓLOGA", chave: "Psicóloga" }
+      { titulo: "PSICÓLOGO", chave: "Psicólogo" }
     ];
 
     mapaCategorias.forEach(cat => {
@@ -2910,6 +3002,7 @@ const metricasQualidade = useMemo(() => {
         { id: 'Fisioterapeuta', icon: <Activity size={16} /> },
         { id: 'Fonoaudiólogo', icon: <Activity size={16} /> }, 
         { id: 'Nutricionista', icon: <Activity size={16} /> },
+        { id: 'Psicólogo', icon: <Activity size={16} /> },
         { id: 'Recepção', icon: <Users size={16} /> }, 
       ];
 
@@ -3087,7 +3180,7 @@ const metricasQualidade = useMemo(() => {
                   <ImportadorEscala categoria={categoriaAtiva} />
                   
                   {/* ==========================================
-                      BOTÃO DE AUDITORIA: ESCALA EXECUTADA
+                      BOTÃO DE AUDITORIA: ESCALA EXECUTADA E RELATÓRIO
                       ========================================== */}
                   <div className="bg-slate-800 p-6 rounded-2xl shadow-sm text-white flex flex-col justify-center border border-slate-700 relative overflow-hidden">
                     {/* Elemento visual de fundo */}
@@ -3099,19 +3192,27 @@ const metricasQualidade = useMemo(() => {
                       <FileDown className="text-emerald-400" size={20} /> Fechamento de Escala
                     </h3>
                     <p className="text-xs text-slate-300 mb-5 relative z-10">
-                      Gere a planilha final de auditoria com os plantões reais executados, incluindo trocas e extras do mês.
+                      Gere a planilha final de auditoria com os plantões reais executados e veja o dossiê de alterações.
                     </p>
                     
-                    <button 
-                      // Extrai o mês e ano da data selecionada no Radar (ex: "2026-05")
-                      onClick={() => exportarEscalaExecutada(
-                        dataSelecionada.split('-')[1], 
-                        dataSelecionada.split('-')[0]
-                      )}
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-md flex justify-center items-center gap-2 relative z-10"
-                    >
-                      Baixar Escala Executada ({dataSelecionada.split('-')[1]}/{dataSelecionada.split('-')[0]})
-                    </button>
+                    <div className="flex flex-col gap-3 relative z-10">
+                      <button 
+                        onClick={() => exportarEscalaExecutada(
+                          dataSelecionada.split('-')[1], 
+                          dataSelecionada.split('-')[0]
+                        )}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-md flex justify-center items-center gap-2"
+                      >
+                        Baixar Escala Executada ({dataSelecionada.split('-')[1]}/{dataSelecionada.split('-')[0]})
+                      </button>
+
+                      <button 
+                        onClick={abrirRelatorioMudancas}
+                        className="w-full bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 font-bold py-2.5 px-4 rounded-xl transition-colors shadow-sm flex justify-center items-center gap-2 text-sm"
+                      >
+                        <ClipboardList size={16} /> Relatório de Mudanças e Faltas
+                      </button>
+                    </div>
                   </div>
                 </div>
                 
@@ -3205,19 +3306,31 @@ const metricasQualidade = useMemo(() => {
                     </div>
                   )}
 
-                  {/* SELETOR DE MÉDICO (SÓ APARECE NA TROCA NORMAL) */}
+                  {/* SELETOR DINÂMICO DE PROFISSIONAL (SÓ APARECE NA TROCA NORMAL) */}
                   {statusPlantonista === 'Normal' && (
                     <div className="pt-2 border-t border-slate-100 animate-fadeIn">
-                      <label className="block text-sm font-bold text-blue-600 mb-1">Novo Plantonista Assumindo:</label>
+                      <label className="block text-sm font-bold text-blue-600 mb-1">
+                        Novo Plantonista Assumindo:
+                      </label>
                       <select 
                         value={novoPlantonista} 
                         onChange={(e) => setNovoPlantonista(e.target.value)} 
                         className="w-full p-3 bg-blue-50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-bold"
                       >
-                        <option value="">Selecione o médico...</option>
-                        {listaMedicos.map((med) => (
-                          <option key={med.id} value={med.nome}>{med.nome}</option>
-                        ))}
+                        <option value="">Selecione o profissional...</option>
+                        
+                        {/* 
+                            LÓGICA DE FILTRAGEM:
+                            Presumindo que você tenha uma lista mestre chamada 'listaProfissionais' 
+                            (ou o nome da variável que guarda toda a sua equipe cadastrada).
+                            Filtramos para exibir apenas quem bate com a categoria ativa da tela.
+                        */}
+                        {listaProfissionais
+                          .filter(prof => prof.categoria === categoriaAtiva)
+                          .map((prof) => (
+                            <option key={prof.id} value={prof.nome}>{prof.nome}</option>
+                          ))
+                        }
                       </select>
                     </div>
                   )}
@@ -3413,6 +3526,7 @@ const metricasQualidade = useMemo(() => {
               </div>
             </div>
           </div>
+
         </div>
       );
     }
@@ -3429,6 +3543,153 @@ const metricasQualidade = useMemo(() => {
       {activeView === 'qualidade' && renderQualidade()}
       {activeView === 'auditoria' && renderGestaoRisco()} 
       {activeView === 'equipe' && renderEquipe()}
+
+      {/* ==========================================
+          MODAL GLOBAL: RELATÓRIO DE MUDANÇAS DE ESCALA
+          ========================================== */}
+      {isModalRelatorioOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 print:hidden">
+          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            
+            {/* Header do Modal */}
+            <div className="bg-slate-800 p-6 flex justify-between items-center flex-shrink-0">
+              <div>
+                <h3 className="text-xl font-black text-white flex items-center gap-2">
+                  <ClipboardList className="text-emerald-400" />
+                  Dossiê de Auditoria de RH
+                </h3>
+                <p className="text-slate-300 text-sm mt-1">
+                  Rastreabilidade de trocas, atestados e faltas da UTI
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsModalRelatorioOpen(false)}
+                className="text-slate-300 hover:text-white transition-colors p-2 bg-slate-700 hover:bg-slate-600 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 🚨 NOVA BARRA DE FILTROS */}
+            <div className="bg-slate-100 p-4 border-b border-slate-200 flex flex-col sm:flex-row gap-4 items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="flex flex-col w-full sm:w-auto">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Mês de Referência</label>
+                  <input 
+                    type="month" 
+                    value={filtroMesRelatorio} 
+                    onChange={(e) => {
+                      const novoMes = e.target.value;
+                      setFiltroMesRelatorio(novoMes);
+                      buscarDadosRelatorio(novoMes); // Busca no banco novamente ao trocar o mês
+                    }} 
+                    className="p-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500 bg-white"
+                  />
+                </div>
+
+                <div className="flex flex-col w-full sm:w-auto">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Classe Profissional</label>
+                  <select 
+                    value={filtroCategoriaRelatorio} 
+                    onChange={(e) => setFiltroCategoriaRelatorio(e.target.value)}
+                    className="p-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500 bg-white"
+                  >
+                    <option value="Todas">Todas as Classes</option>
+                    <option value="Médico">Médicos</option>
+                    <option value="Enfermeiro">Enfermeiros</option>
+                    <option value="Téc. Enfermagem">Técnicos de Enfermagem</option>
+                    <option value="Téc. Hemodiálise">Técnicos de Hemodiálise</option>
+                    <option value="Fisioterapeuta">Fisioterapeutas</option>
+                    <option value="Fonoaudiólogo">Fonoaudiólogos</option>
+                    <option value="Nutricionista">Nutricionistas</option>
+                    <option value="Recepção">Recepção</option>
+                    <option value="Psicólogo">Psicólogos</option>
+                  </select>
+                </div>
+              </div>
+              
+              {/* Contador dinâmico */}
+              <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-sm font-bold text-slate-600">
+                Total Registrado: <span className="text-blue-600">{
+                  relatorioMudancas.filter(item => filtroCategoriaRelatorio === "Todas" || item.categoria === filtroCategoriaRelatorio).length
+                }</span>
+              </div>
+            </div>
+
+            {/* Corpo do Modal (Lista) */}
+            <div className="p-6 overflow-y-auto bg-slate-50 flex-1">
+              {isLoadingRelatorio ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500 mb-4"></div>
+                  <p className="font-bold">A compilar registros de RH...</p>
+                </div>
+              ) : relatorioMudancas.filter(item => filtroCategoriaRelatorio === "Todas" || item.categoria === filtroCategoriaRelatorio).length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="bg-emerald-100 text-emerald-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <ClipboardList size={32} />
+                  </div>
+                  <h4 className="text-lg font-bold text-slate-700">Nenhuma alteração encontrada</h4>
+                  <p className="text-slate-500 text-sm mt-1">Nenhum registro bate com os filtros selecionados.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* 🚨 APLICA O FILTRO DE CATEGORIA AQUI NO MAP */}
+                  {relatorioMudancas
+                    .filter(item => filtroCategoriaRelatorio === "Todas" || item.categoria === filtroCategoriaRelatorio)
+                    .map((item, idx) => {
+                    let corBorda = "border-slate-200";
+                    let corTexto = "text-slate-700";
+                    let tag = "Alteração";
+
+                    const nomeFinal = item.nome || "";
+                    const alteracao = item.statusAlteracao || "";
+                    const tipoPlantao = item.tipo || ""; // 🚨 LÊ O TIPO PARA O VISUAL TAMBÉM
+
+                    if (alteracao === 'Falta' || nomeFinal.includes('[FALTOU]')) {
+                      corBorda = "border-red-200 bg-red-50"; corTexto = "text-red-700"; tag = "Falta Não Justificada";
+                    } else if (alteracao === 'Atestado' || nomeFinal.includes('[ATESTADO]')) {
+                      corBorda = "border-amber-200 bg-amber-50"; corTexto = "text-amber-700"; tag = "Atestado Médico";
+                    } else if (tipoPlantao === 'plantao_extra' || alteracao === 'Extra' || nomeFinal.includes('[EXTRA]')) { // 🚨 ATUALIZADO AQUI
+                      corBorda = "border-emerald-200 bg-emerald-50"; corTexto = "text-emerald-700"; tag = "Plantão Extra";
+                    } else {
+                      corBorda = "border-blue-200 bg-blue-50"; corTexto = "text-blue-700"; tag = "Troca de Plantão";
+                    }
+
+                    return (
+                      <div key={idx} className={`p-4 rounded-xl border ${corBorda} flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white shadow-sm hover:shadow-md transition-shadow`}>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${corBorda} ${corTexto}`}>
+                              {tag}
+                            </span>
+                            <span className="text-xs font-bold text-slate-500">{item.data.split('-').reverse().join('/')} - {item.turno}</span>
+                          </div>
+                          <p className="font-bold text-slate-800 uppercase">{item.nome.replace('[FALTOU]', '').replace('[EXTRA]', '')}</p>
+                          
+                          {item.statusAlteracao === 'Normal' && item.nomeOriginal && item.nomeOriginal !== item.nome && (
+                            <p className="text-[10px] font-bold text-blue-600/80 mt-0.5 flex items-center gap-1">
+                              ⮑ Substituiu: {item.nomeOriginal.replace(/\[FALTOU\]/g, '').replace(/\[ATESTADO\]/g, '')}
+                            </p>
+                          )}
+
+                          <p className="text-xs font-medium text-slate-500 mt-1">
+                            {item.categoria} • {item.horario}
+                          </p>
+                        </div>
+                        {item.observacao && (
+                          <div className="md:max-w-[40%] bg-slate-50 p-2.5 rounded border border-slate-100 text-xs text-slate-600 italic">
+                            "{item.observacao}"
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
