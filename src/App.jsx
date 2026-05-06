@@ -3894,6 +3894,39 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
   // IA DA ENFERMAGEM (PROMPT E API)
   // ==========================================
   const buildNursingAIPrompt = (p) => {
+
+    // =========================================================
+    // 1. MOTOR DE CÁLCULO DAS ESCALAS DE RISCO (Braden e Morse)
+    // =========================================================
+    const calcBraden = () => {
+      // Checa se pelo menos um campo existe para não somar zero em pacientes vazios
+      if (!p.enfermagem || p.enfermagem.braden_atividade === undefined || p.enfermagem.braden_atividade === "") return "NT";
+      
+      return (parseInt(p.enfermagem.braden_atividade) || 0) +
+             (parseInt(p.enfermagem.braden_friccao) || 0) +
+             (parseInt(p.enfermagem.braden_mobilidade) || 0) +
+             (parseInt(p.enfermagem.braden_nutricao) || 0) +
+             (parseInt(p.enfermagem.braden_percepcao) || 0) +
+             (parseInt(p.enfermagem.braden_umidade) || 0);
+    };
+
+    const calcMorse = () => {
+      if (!p.enfermagem || p.enfermagem.morse_historico === undefined || p.enfermagem.morse_historico === "") return "NT";
+      
+      return (parseInt(p.enfermagem.morse_auxilio) || 0) +
+             (parseInt(p.enfermagem.morse_diagnostico) || 0) +
+             (parseInt(p.enfermagem.morse_estadoMental) || 0) +
+             (parseInt(p.enfermagem.morse_historico) || 0) +
+             (parseInt(p.enfermagem.morse_marcha) || 0) +
+             (parseInt(p.enfermagem.morse_terapiaIV) || 0);
+    };
+
+    const totalBraden = calcBraden();
+    const totalMorse = calcMorse();
+
+    // =========================================================
+    // 2. EXTRAÇÃO DOS DADOS CLÍNICOS
+    // =========================================================
     const vitals = p.bh?.vitals && Object.values(p.bh.vitals).length > 0
         ? Object.values(p.bh.vitals).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
         : { "PAS": "NT", "PAD": "NT", "FC (bpm)": "NT", "FR (irpm)": "NT", "SpO2 (%)": "NT", "Temp (ºC)": "NT" };
@@ -3905,12 +3938,12 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
     const rass = p.neuro?.rass || "NT";
     const sedacao = p.neuro?.sedacao ? `SIM (${p.neuro?.drogasSedacao?.join(", ") || "N/A"})` : "NÃO";
     
-    // REGRA DO NEURO: Define se vai mandar RASS ou Glasgow
+    // REGRA DO NEURO
     const neuroInfo = p.neuro?.sedacao 
         ? `Sedação: ${sedacao}. RASS: ${rass}` 
         : `Sem sedação contínua. Glasgow Total: ${glasgowTotal}`;
 
-    // REGRA RESPIRATÓRIA: Foram removidos a FiO2 e PEEP da visualização da IA para evitar que ela descreva parâmetros
+    // REGRA RESPIRATÓRIA
     const suporteVM = p.physio?.suporte || "Ar Ambiente";
     const secrecao = p.physio?.secrecao ? `SIM (${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"})` : "NÃO";
     
@@ -3965,6 +3998,9 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       ...(p.enfermagem?.drenoTipo ? [`- Dreno ${p.enfermagem.drenoTipo}`] : []),
     ].filter(Boolean);
 
+    // =========================================================
+    // 3. MONTAGEM DO PROMPT PARA A IA
+    // =========================================================
     return `
 DADOS DO PACIENTE:
 - Nome: ${p.nome}
@@ -3990,6 +4026,7 @@ REGRAS CRÍTICAS ESTRITAS:
 
 FORMATO OBRIGATÓRIO:
 AVALIAÇÃO ENFERMAGEM:
+ESCALAS DE RISCO: Braden: ${totalBraden} | Morse: ${totalMorse}
 SISTEMA NEUROLÓGICO : [Texto]
 SISTEMA RESPIRATÓRIO: [Texto]
 SISTEMA CARDIOVASCULAR: [Texto]
