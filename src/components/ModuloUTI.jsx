@@ -2023,7 +2023,52 @@ ${examesComp}
 CONDUTA:
 ${conduta}
 `;
-            
+
+// =========================================================================
+            // 🚨 LOGICA DA CCIH: REGISTRO DE CULTURAS (CORREÇÃO DE ESTRUTURA)
+            // =========================================================================
+            try {
+              if (dadosDoTimeout?.culturaColetadaHoje && dadosDoTimeout?.culturasTipos?.length > 0) {
+                
+                let historicoCulturas = [];
+                // 1. Lê da gaveta correta ("lista")
+                if (currentPatient.culturas && Array.isArray(currentPatient.culturas.lista)) {
+                  historicoCulturas = [...currentPatient.culturas.lista];
+                }
+
+                const hojeISO = new Date().toISOString().split('T')[0];
+
+                // 2. Adiciona as novas
+                dadosDoTimeout.culturasTipos.forEach(tipo => {
+                  let nomeMaterial = tipo;
+                  if (tipo === "Outro" && dadosDoTimeout.culturaOutroDetalhe) {
+                    nomeMaterial = `Outro (${dadosDoTimeout.culturaOutroDetalhe})`;
+                  }
+
+                  const jaExisteNoMesmoDia = historicoCulturas.some(
+                    c => c.tipo === nomeMaterial && c.dataColeta === hojeISO
+                  );
+
+                  if (!jaExisteNoMesmoDia) {
+                    historicoCulturas.push({
+                      id: `cult_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                      tipo: nomeMaterial,
+                      dataColeta: hojeISO,
+                      status: "Pendente",
+                      germe: "",
+                      analiseIA: "",
+                      dataResultado: ""
+                    });
+                  }
+                });
+
+                // 3. Salva na gaveta nomeada "lista" (O Firebase vai amar isso)
+                updateNested("culturas", "lista", historicoCulturas);
+              }
+            } catch (ccihError) {
+              console.error("Erro ao registrar cultura:", ccihError);
+            }
+
             setAiEvolution(evolutionCompleta);
             success = true;
             break;
@@ -3604,6 +3649,15 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   <span className="bg-teal-600 text-white px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm">
                     {calculateAge(currentPatient.dataNascimento)} anos
                   </span>
+                )}
+                {/* ========================================================================= */}
+                {/* 🚨 ALERTA DE PRECAUÇÃO DE CONTATO (CCIH) - VEM DO MÓDULO DE CULTURAS (IA) */}
+                {/* ========================================================================= */}
+                {currentPatient.medical?.isolamentoContato && (
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-red-100 border border-red-300 text-red-700 rounded-full text-xs font-black uppercase shadow-sm animate-pulse">
+                    <ShieldAlert size={14} />
+                    Precaução de Contato ({currentPatient.medical?.motivoIsolamento})
+                  </div>
                 )}
               </div>
               

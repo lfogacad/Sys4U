@@ -1,6 +1,7 @@
 import React from 'react';
 import { Activity, ChevronDown, ChevronRight, Wind, Utensils, Brain, HeartPulse, Droplets, Clock, Table as TableIcon, Edit3 } from 'lucide-react';
-import { BH_HOURS } from '../../constants/clinicalLists'; 
+import { BH_HOURS } from '../../constants/clinicalLists';
+import ModuloCulturas from '../ModuloCulturas'; 
 
 const OverviewTab = ({
   viewMode,
@@ -23,6 +24,7 @@ const OverviewTab = ({
   setShowHistoryModal,
   formatDateDDMM,
   updateLab,
+  updateNested,
   handleBlurSave,
   userProfile,
   updateP
@@ -295,6 +297,15 @@ const OverviewTab = ({
           </div>
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* MONITORAMENTO DE CULTURAS (CCIH) - NOVO                   */}
+      {/* ========================================================= */}
+      <ModuloCulturas 
+        currentPatient={currentPatient} 
+        updateNested={updateNested} 
+        apiKey={import.meta.env.VITE_GEMINI_API_KEY_MED || window.apiKey} 
+      />
 
       {/* ANTIBIÓTICOS */}
       <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl">

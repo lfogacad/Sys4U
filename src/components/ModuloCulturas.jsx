@@ -1,0 +1,215 @@
+import React, { useState } from 'react';
+import { Microscope, UploadCloud, Bot, AlertTriangle, CheckCircle, X, Bug } from 'lucide-react';
+
+const ModuloCulturas = ({ currentPatient, updateNested, apiKey }) => {
+  const [loadingId, setLoadingId] = useState(null);
+  const [modalIA, setModalIA] = useState(null);
+
+  // 1. EXTRAÇÃO SEGURA
+  // Mantemos a lista original para a IA conseguir atualizar o banco depois
+  const culturas = currentPatient?.culturas?.lista || [];
+  
+  // 2. FILTRO VISUAL
+  // Criamos uma versão filtrada apenas para desenhar na tela (ignora fantasmas)
+  const culturasValidas = culturas.filter(c => c && c.tipo && c.tipo.trim() !== "");
+
+  // ==========================================
+  // MOTOR DA IA (GEMINI VISION)
+  // ==========================================
+  const analisarAntibiograma = async (e, culturaId) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setLoadingId(culturaId);
+
+    try {
+      const base64Data = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+        reader.readAsDataURL(file);
+      });
+
+      // 🚨 PROMPT ATUALIZADO COM LOGICA DE ISOLAMENTO
+      const promptCCIH = `
+Você é um Médico Infectologista e especialista em Antimicrobial Stewardship.
+Analise este antibiograma e retorne APENAS um JSON:
+{
+  "status": "Positivo ou Negativo",
+  "germe": "Nome do microrganismo",
+  "analise": "Sua análise terapêutica baseada no arsenal: [Ceftriaxona, Amoxicilina/Clavulanato, Cefepime, Oxacilina, Ampicilina, Tazocin, Meropenem, Clindamicina, Vancomicina, Fluconazol, Anfotericina B, Amicacina, Gentamicina, Cirpofloxacino, Levofloxacino, Metronidazol, SMT/TMP].",
+  "exigeIsolamento": true ou false
+}
+REGRA: Retorne "exigeIsolamento": true se o germe for multirresistente (KPC, MRSA, VRE, Acinetobacter MDR, Pseudomonas MDR, ESBL) ou Clostridium.
+`;
+
+      const currentKey = apiKey || window.apiKey;
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${currentKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [ { text: promptCCIH }, { inline_data: { mime_type: file.type, data: base64Data } } ] }]
+          }),
+        }
+      );
+
+      const data = await response.json();
+      const aiText = data.candidates[0].content.parts[0].text;
+      const jsonString = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const resultadoIA = JSON.parse(jsonString);
+
+      // 1. Atualiza a lista de culturas
+      const culturasAtualizadas = culturas.map(c => {
+        if (c.id === culturaId) {
+          return {
+            ...c,
+            status: resultadoIA.status,
+            germe: resultadoIA.germe || "",
+            analiseIA: resultadoIA.analise || "",
+            dataResultado: new Date().toISOString().split('T')[0]
+          };
+        }
+        return c;
+      });
+      updateNested("culturas", "lista", culturasAtualizadas);
+
+      // 🚨 2. GATILHO DE ISOLAMENTO GLOBAL (Salva na aba medical)
+      if (resultadoIA.exigeIsolamento) {
+        updateNested("medical", "isolamentoContato", true);
+        updateNested("medical", "motivoIsolamento", resultadoIA.germe);
+        updateNested("medical", "dataInicioIsolamento", new Date().toISOString().split('T')[0]);
+      }
+
+    } catch (error) {
+      console.error("Erro:", error);
+      alert("Erro ao analisar laudo.");
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  // Se não tem nenhuma cultura válida, esconde o módulo
+  if (culturasValidas.length === 0) return null;
+
+  return (
+    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-4">
+      <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4 border-b pb-2">
+        <Microscope className="text-indigo-600" size={18} /> Monitoramento de Culturas (CCIH)
+      </h3>
+
+    {/* BANNER DE ISOLAMENTO COM BOTÃO DE RETIRADA */}
+    {currentPatient.medical?.isolamentoContato && (
+    <div className="mb-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl flex flex-col md:flex-row justify-between items-center gap-3 animate-pulse">
+        <div className="flex items-center gap-3">
+        <div className="bg-red-600 p-2 rounded-lg text-white">
+            <ShieldAlert size={24} />
+        </div>
+        <div>
+            <h4 className="text-red-800 font-black text-sm uppercase">Precaução de Contato Ativa</h4>
+            <p className="text-red-700 text-xs font-bold">
+            Microrganismo: {currentPatient.medical.motivoIsolamento} | Início: {currentPatient.medical.dataInicioIsolamento?.split('-').reverse().join('/')}
+            </p>
+        </div>
+        </div>
+        
+        <button 
+        onClick={() => {
+            if(window.confirm("Deseja retirar a precaução de contato? Certifique-se de que os critérios da CCIH foram atingidos.")) {
+            updateNested("medical", "isolamentoContato", false);
+            updateNested("medical", "motivoIsolamento", "");
+            // Opcional: registrar quem retirou para auditoria
+            }
+        }}
+        className="px-4 py-2 bg-white border border-red-300 text-red-700 text-xs font-black rounded-lg hover:bg-red-100 transition-colors"
+        >
+        ENCERRAR PRECAUÇÃO
+        </button>
+    </div>
+    )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {culturasValidas.map((cultura) => (
+          <div key={cultura.id} className="p-3 border rounded-lg bg-slate-50 relative overflow-hidden">
+            <div className={`absolute left-0 top-0 bottom-0 w-1 ${cultura.status === 'Positivo' ? 'bg-red-500' : cultura.status === 'Negativo' ? 'bg-emerald-500' : 'bg-amber-400'}`}></div>
+            
+            <div className="pl-2">
+              <div className="flex justify-between items-start mb-1">
+                <span className="text-xs font-black text-slate-700 uppercase">{cultura.tipo}</span>
+                <span className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded border">
+                  {cultura.dataColeta ? cultura.dataColeta.split('-').reverse().join('/') : 'N/D'}
+                </span>
+              </div>
+
+              {cultura.status === "Pendente" && (
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-600 flex items-center gap-1">
+                    <AlertTriangle size={12}/> Aguardando Resultado
+                  </span>
+                  <label className="cursor-pointer bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-colors">
+                    {loadingId === cultura.id ? (
+                      <span className="animate-pulse">Analisando...</span>
+                    ) : (
+                      <> <UploadCloud size={14} /> Anexar Laudo </>
+                    )}
+                    <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => analisarAntibiograma(e, cultura.id)} disabled={loadingId === cultura.id} />
+                  </label>
+                </div>
+              )}
+
+              {cultura.status === "Negativo" && (
+                <div className="mt-2 text-xs font-bold text-emerald-600 flex items-center gap-1">
+                  <CheckCircle size={14}/> Negativo ({cultura.dataResultado ? cultura.dataResultado.split('-').reverse().join('/') : 'N/D'})
+                </div>
+              )}
+
+              {cultura.status === "Positivo" && (
+                <div className="mt-2 flex flex-col gap-2">
+                  <div className="text-xs font-bold text-red-600 flex items-center gap-1">
+                    <Bug size={14}/> {cultura.germe}
+                  </div>
+                  <button 
+                    onClick={() => setModalIA(cultura)}
+                    className="w-full text-[10px] bg-slate-800 hover:bg-slate-700 text-white font-bold py-1.5 rounded transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Bot size={12} className="text-amber-400" /> Ver Análise Terapêutica (IA)
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {modalIA && (
+        <div className="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-fadeIn">
+            <div className="bg-slate-800 p-4 flex justify-between items-center text-white">
+              <h3 className="font-bold flex items-center gap-2">
+                <Bot className="text-amber-400" size={18}/> 
+                Consultoria CCIH - IA
+              </h3>
+              <button onClick={() => setModalIA(null)} className="text-slate-400 hover:text-white transition-colors"><X size={20}/></button>
+            </div>
+            <div className="p-5">
+              <div className="mb-4 pb-4 border-b border-slate-100">
+                <p className="text-xs text-slate-500 font-bold uppercase mb-1">Isolado em {modalIA.tipo} ({modalIA.dataResultado ? modalIA.dataResultado.split('-').reverse().join('/') : 'N/D'})</p>
+                <p className="text-lg font-black text-red-600">{modalIA.germe}</p>
+              </div>
+              <div className="text-sm text-slate-700 whitespace-pre-wrap font-medium leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
+                {modalIA.analiseIA}
+              </div>
+              <div className="mt-5 flex justify-end">
+                <button onClick={() => setModalIA(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors text-sm">
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ModuloCulturas;
