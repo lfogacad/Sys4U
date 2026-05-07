@@ -2357,50 +2357,6 @@ const metricasQualidade = useMemo(() => {
         </div>
       </div>
 
-      {/* GRÁFICOS */}
-      <div className="grid md:grid-cols-2 gap-6">
-        
-        {/* GRÁFICO 1: EPIDEMIOLOGIA DOS EVENTOS */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-          <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-            <BarChart2 size={16} className="text-blue-500" /> Epidemiologia dos Eventos
-          </h3>
-          <div className="flex-1 w-full">
-            {dadosCategorias && dadosCategorias.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dadosCategorias.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="categoria" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#475569', fontWeight: 'bold' }} width={110} />
-                  <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
-                  <Bar dataKey="ocorrencias" name="Nº de Ocorrências" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-full text-sm text-slate-400 italic">Sem dados suficientes para o gráfico.</div>
-            )}
-          </div>
-        </div>
-
-        {/* GRÁFICO 2: CURVA DE OCORRÊNCIAS */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
-          <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-            <Activity size={16} className="text-red-500" /> Curva de Ocorrências
-          </h3>
-          <div className="flex-1 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dataTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="dia" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none' }} />
-                <Line type="monotone" dataKey="eventos" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444' }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        
-      </div>
     </div>
   );
 };
@@ -2409,8 +2365,43 @@ const metricasQualidade = useMemo(() => {
   // VISÃO DA GESTÃO DE RISCO E QUALIDADE (NSP)
   // ==========================================
   const renderGestaoRisco = () => {
-    // Calcula a epidemiologia real baseada no que veio do Firebase
+    // 1. CÁLCULOS QUE ALIMENTAM OS GRÁFICOS (Trazidos da Tela 1)
     
+    // Calcula a epidemiologia real (dadosCategorias)
+    const ocorrenciasPorTipo = listaEventos.reduce((acc, evento) => {
+      let nomeCategoria = evento.tipoEvento || evento.tipo;
+      if (!nomeCategoria) {
+        if (evento.origem === 'incidencia' || evento.lesao) {
+          nomeCategoria = "LPP (Adquirida na UTI)";
+        } else {
+          nomeCategoria = "Registro Incompleto"; 
+        }
+      }
+      acc[nomeCategoria] = (acc[nomeCategoria] || 0) + 1;
+      return acc;
+    }, {});
+    
+    const dadosCategorias = Object.keys(ocorrenciasPorTipo).map(tipo => ({
+      categoria: tipo,
+      ocorrencias: ocorrenciasPorTipo[tipo]
+    })).sort((a, b) => b.ocorrencias - a.ocorrencias);
+
+    // Calcula a linha do tempo (dataTimeline)
+    const eventosPorDia = listaEventos.reduce((acc, evento) => {
+      if (evento.dataHoraOcorrencia) {
+        const dia = new Date(evento.dataHoraOcorrencia).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+        acc[dia] = (acc[dia] || 0) + 1;
+      }
+      return acc;
+    }, {});
+
+    const dataTimeline = Object.keys(eventosPorDia).map(dia => ({
+      dia,
+      eventos: eventosPorDia[dia]
+    })).sort((a, b) => {
+      // Tenta ordenar pelas datas (mesmo convertidas para string de exibição)
+      return a.dia.localeCompare(b.dia);
+    });
 
     return (
       <div className="animate-fadeIn">
@@ -2449,8 +2440,8 @@ const metricasQualidade = useMemo(() => {
         {abaRiscoAtiva === 'eventos' && (
           <div className="space-y-4">
             
-            {/* KPIs SUPERIORES (Agora são reais, calculados pelo Firebase) */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {/* KPIs SUPERIORES */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Notificações</span>
                 <div className="text-3xl font-black text-slate-800 mt-1">{totalEventos}</div>
@@ -2473,8 +2464,51 @@ const metricasQualidade = useMemo(() => {
               </div>
             </div>
 
-            {/* LISTA DE NOTIFICAÇÕES (FEED REAL DO FIREBASE - LARGURA TOTAL) */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col overflow-hidden w-full">
+            {/* 🚨 NOVA SESSÃO DOS GRÁFICOS (MOVIDOS PARA CÁ) */}
+            <div className="grid md:grid-cols-2 gap-4 mb-4">
+              {/* GRÁFICO 1: EPIDEMIOLOGIA DOS EVENTOS */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
+                <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+                  <BarChart2 size={16} className="text-blue-500" /> Epidemiologia dos Eventos
+                </h3>
+                <div className="flex-1 w-full">
+                  {dadosCategorias && dadosCategorias.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={dadosCategorias.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
+                        <XAxis type="number" hide />
+                        <YAxis type="category" dataKey="categoria" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#475569', fontWeight: 'bold' }} width={110} />
+                        <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                        <Bar dataKey="ocorrencias" name="Nº de Ocorrências" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-sm text-slate-400 italic">Sem dados suficientes para o gráfico.</div>
+                  )}
+                </div>
+              </div>
+
+              {/* GRÁFICO 2: CURVA DE OCORRÊNCIAS */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
+                <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
+                  <Activity size={16} className="text-red-500" /> Curva de Ocorrências
+                </h3>
+                <div className="flex-1 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dataTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="dia" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                      <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                      <Line type="monotone" dataKey="eventos" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444' }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            {/* LISTA DE NOTIFICAÇÕES (FEED REAL DO FIREBASE) */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-[400px] flex flex-col overflow-hidden w-full">
               <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
                 <AlertTriangle size={16} className="text-amber-500" /> Feed de Notificações
               </h3>
