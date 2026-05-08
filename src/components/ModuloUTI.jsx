@@ -805,6 +805,12 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       pacienteAlvo[categoria][campo] = valor;
       
       novosPacientes[activeTab] = pacienteAlvo;
+      
+      // 🚨 A CURA DA AMNÉSIA: Dispara o salvamento direto na nuvem (Firebase)
+      if (typeof save === 'function') {
+        save(pacienteAlvo, `Atualização Automática: ${categoria} > ${campo}`);
+      }
+      
       return novosPacientes;
     });
   };
@@ -3731,6 +3737,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         setShowHistoryModal={setShowHistoryModal}
                         formatDateDDMM={formatDateDDMM}
                         updateLab={updateLab}
+                        updateNested={updateNested}
                         userProfile={userProfile}
                         isOverviewEditable={isOverviewEditable}
                       />

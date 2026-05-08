@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, 
+  BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown,  
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList
 } from 'lucide-react';
@@ -65,6 +65,8 @@ const GestorDashboard = ({ userProfile }) => {
   const [dadosDesfechos, setDadosDesfechos] = useState([]);
 
   const [listaCenso, setListaCenso] = useState([]);
+
+  const [abaIrasAtiva, setAbaIrasAtiva] = useState('geral');
 
   const [dataInicio, setDataInicio] = useState(
     new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
@@ -1810,11 +1812,11 @@ const metricasQualidade = useMemo(() => {
           <p className="text-slate-500 text-sm pr-8">Taxa de mortalidade, SMR, tempo de permanência, densidade de dispositivos e desfechos.</p>
         </button>
 
-        <button onClick={() => setActiveView('qualidade')} className="bg-white p-8 rounded-3xl shadow-sm border-2 border-transparent hover:border-red-500 hover:shadow-xl transition-all group text-left relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 group-hover:scale-110 transition-all"><ShieldAlert size={100} /></div>
-          <div className="bg-red-100 w-14 h-14 rounded-2xl flex items-center justify-center text-red-600 mb-6"><ShieldAlert size={28} /></div>
-          <h3 className="text-xl font-bold text-slate-800 mb-2">Qualidade e Segurança</h3>
-          <p className="text-slate-500 text-sm pr-8">Notificação de eventos adversos, incidência de LPP, extubações acidentais e quedas.</p>
+        <button onClick={() => { setActiveView('qualidade'); setAbaIrasAtiva('geral'); }} className="bg-white p-8 rounded-3xl shadow-sm border-2 border-transparent hover:border-purple-500 hover:shadow-xl transition-all group text-left relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 group-hover:scale-110 transition-all"><Microscope size={100} /></div>
+          <div className="bg-purple-100 w-14 h-14 rounded-2xl flex items-center justify-center text-purple-600 mb-6"><Microscope size={28} /></div>
+          <h3 className="text-xl font-bold text-slate-800 mb-2">Controle Microbiológico (IRAS)</h3>
+          <p className="text-slate-500 text-sm pr-8">Monitoramento de PAV, IPCSL, ITU-AC, culturas e perfil de resistência.</p>
         </button>
 
         <button onClick={() => setActiveView('auditoria')} className="bg-white p-8 rounded-3xl shadow-sm border-2 border-transparent hover:border-amber-500 hover:shadow-xl transition-all group text-left relative overflow-hidden">
@@ -2224,142 +2226,300 @@ const metricasQualidade = useMemo(() => {
   );
 };
 
- // ==========================================
-  // VISÃO 3: QUALIDADE E SEGURANÇA
+  // ==========================================
+  // VISÃO 3: CONTROLE MICROBIOLÓGICO E IRAS (CCIH)
   // ==========================================
   const renderQualidade = () => {
-    // --- 1. CÁLCULO DOS DENOMINADORES EPIDEMIOLÓGICOS ---
-    // Somamos o histórico do censo diário para ter os denominadores das taxas
-    const totalDiasPaciente = listaCenso.reduce((acc, c) => acc + (Number(c.totalLeitosOcupados) || 0), 0);
-    const totalDiasVM = listaCenso.reduce((acc, c) => acc + (Number(c.pacientesEmVM) || 0), 0);
+    return (
+      <div className="animate-fadeIn">
+        {/* CABEÇALHO */}
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => setActiveView('hub')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
+            <ArrowLeft size={20} className="text-slate-700" />
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+              <Microscope className="text-purple-600" /> Controle Microbiológico e IRAS
+            </h2>
+            <p className="text-slate-500 text-sm mt-1">Vigilância epidemiológica, culturas e prevenção de infecções relacionadas à assistência.</p>
+          </div>
+        </div>
 
-    // --- 2. PROCESSAMENTO PARA A LINHA DO TEMPO (ÚLTIMOS 10 DIAS BLINDADO) ---
-    const contagemPorDia = listaEventosAdversos.reduce((acc, curr) => {
-      // Busca a data nos campos mais prováveis do Firebase
-      const dataBruta = curr.dataHoraOcorrencia || curr.dataEvento;
-      let dataFormatada = "S/D"; // Sem Data
+        {/* NAVEGAÇÃO INTERNA (ABAS) */}
+        <div className="flex gap-2 border-b border-slate-200 mb-6 overflow-x-auto scrollbar-hide">
+          <button 
+            onClick={() => setAbaIrasAtiva('geral')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'geral' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            Visão Geral
+          </button>
+          <button 
+            onClick={() => setAbaIrasAtiva('pav')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'pav' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            PAV (Pneumonia)
+          </button>
+          <button 
+            onClick={() => setAbaIrasAtiva('ipcsl')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'ipcsl' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            IPCSL (Corrente Sanguínea)
+          </button>
+          <button 
+            onClick={() => setAbaIrasAtiva('itu')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'itu' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            ITU-AC (Trato Urinário)
+          </button>
+        </div>
 
-      if (dataBruta) {
-        if (dataBruta.toDate) {
-          // É um Timestamp nativo do Firebase
-          dataFormatada = dataBruta.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-        } else {
-          // É uma String (ex: 2026-05-03)
-          const dataObj = new Date(dataBruta);
-          if (!isNaN(dataObj.getTime())) {
-            dataFormatada = dataObj.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-          } else {
-            // Texto formatado de outra forma
-            dataFormatada = String(dataBruta).substring(0, 5);
-          }
-        }
-      }
+        {/* CONTEÚDO DAS ABAS (ESQUELETO PREPARADO) */}
+        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 min-h-[400px] flex items-center justify-center">
+          
+          {abaIrasAtiva === 'geral' && (
+            <div className="w-full animate-fadeIn space-y-6">
+              
+              {/* ============================================================== */}
+              {/* 1. GRÁFICOS EPIDEMIOLÓGICOS (DDD e Álcool) */}
+              {/* ============================================================== */}
+              <div className="grid md:grid-cols-2 gap-4">
+                
+                {/* GRÁFICO DDD */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col h-80">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
+                      <Activity size={16} className="text-purple-600" /> Densidade de Incidência (DDD)
+                    </h3>
+                    <select className="text-xs p-1 border rounded bg-slate-50 outline-none">
+                      <option value="Meropenem">Meropenem</option>
+                      <option value="Tazocin">Tazocin</option>
+                      <option value="Vancomicina">Vancomicina</option>
+                      <option value="Cefepime">Cefepime</option>
+                      <option value="Polimixina B">Polimixina B</option>
+                    </select>
+                  </div>
+                  <div className="flex-1 w-full">
+                    {/* DADOS SIMULADOS PARA DEMONSTRAÇÃO VISUAL */}
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={[
+                        { mes: 'Nov/25', ddd: 45 }, { mes: 'Dez/25', ddd: 52 }, { mes: 'Jan/26', ddd: 38 },
+                        { mes: 'Fev/26', ddd: 40 }, { mes: 'Mar/26', ddd: 65 }, { mes: 'Abr/26', ddd: 58 }
+                      ]} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
+                        <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '12px' }} />
+                        <Line type="monotone" dataKey="ddd" name="DDD/1000 dias" stroke="#9333ea" strokeWidth={3} dot={{ r: 4, fill: '#9333ea' }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
 
-      if (dataFormatada !== "S/D") {
-        acc[dataFormatada] = (acc[dataFormatada] || 0) + 1;
-      }
-      return acc;
-    }, {});
+                {/* GRÁFICO ÁLCOOL */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col h-80">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
+                      <AlertTriangle size={16} className="text-emerald-500" /> Consumo de Prep. Alcoólica
+                    </h3>
+                    <span className="text-xs font-bold text-slate-400">Últimos 6 Meses</span>
+                  </div>
+                  <div className="flex-1 w-full">
+                    {/* DADOS SIMULADOS PARA DEMONSTRAÇÃO VISUAL */}
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[
+                        { mes: 'Nov/25', ml: 1200 }, { mes: 'Dez/25', ml: 1500 }, { mes: 'Jan/26', ml: 1100 },
+                        { mes: 'Fev/26', ml: 1300 }, { mes: 'Mar/26', ml: 1800 }, { mes: 'Abr/26', ml: 2100 }
+                      ]} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
+                        <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '12px' }} />
+                        <Bar dataKey="ml" name="Consumo (mL/paciente-dia)" fill="#10b981" radius={[4, 4, 0, 0]} barSize={30} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
 
-    const dataTimeline = Object.keys(contagemPorDia).map(dia => ({
-      dia: dia,
-      eventos: contagemPorDia[dia]
-    })).slice(-10);
+              {/* ============================================================== */}
+              {/* 2. FORMULÁRIOS DE ALIMENTAÇÃO DE DADOS GLOBAIS */}
+              {/* ============================================================== */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">Lançar DDD Mensal</label>
+                  <div className="flex gap-2">
+                    <input type="month" className="p-2 border rounded text-xs outline-none" />
+                    <select className="p-2 border rounded text-xs outline-none flex-1">
+                      <option value="">Selecione o ATB...</option>
+                      {["Ceftriaxona", "Amoxicilina/Clavulanato", "Cefepime", "Oxacilina", "Ampicilina", "Tazocin", "Meropenem", "Clindamicina", "Vancomicina", "Fluconazol", "Anfotericina B", "Amicacina", "Gentamicina", "Ciprofloxacino", "Levofloxacino", "Metronidazol", "SMT/TMP"].map(atb => (
+                        <option key={atb} value={atb}>{atb}</option>
+                      ))}
+                    </select>
+                    <input type="number" placeholder="Valor DDD" className="p-2 border rounded text-xs outline-none w-24" />
+                    <button className="bg-purple-600 hover:bg-purple-700 text-white px-3 rounded font-bold transition-colors">Salvar</button>
+                  </div>
+                </div>
 
-    // --- 3. CÁLCULO DOS CARDS (INDICADORES DE PERFORMANCE) ---
-    
-    // Total Geral de Notificações
-    const totalNotificacoes = listaEventosAdversos.length;
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">Lançar Consumo de Álcool</label>
+                  <div className="flex gap-2">
+                    <input type="month" className="p-2 border rounded text-xs outline-none" />
+                    <input type="number" placeholder="Consumo Total (mL)" className="p-2 border rounded text-xs outline-none flex-1" />
+                    <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 rounded font-bold transition-colors">Salvar</button>
+                  </div>
+                </div>
+              </div>
 
-    // Incidência de LPP (% sobre Pacientes-Dia)
-    const totalLPP = listaEventosAdversos.filter(e => {
-      const tipoSeguro = String(e.tipo || e.tipoEvento || "").toUpperCase();
-      return tipoSeguro.includes("LPP") || tipoSeguro.includes("LESÃO");
-    }).length;
-    
-    const incidenciaLPP = totalDiasPaciente > 0 
-      ? ((totalLPP / totalDiasPaciente) * 100).toFixed(1) 
-      : 0;
+              {/* ============================================================== */}
+              {/* 3. TABELA GLOBAL DE CULTURAS E CLASSIFICAÇÃO IRAS */}
+              {/* ============================================================== */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 bg-slate-800 text-white flex justify-between items-center">
+                  <h3 className="font-bold flex items-center gap-2">
+                    <Microscope size={18} className="text-purple-400" />
+                    Painel de Culturas e Classificação Epidemiológica
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-300">Filtrar Mês:</span>
+                    <input type="month" defaultValue={new Date().toISOString().slice(0,7)} className="p-1.5 text-xs text-slate-800 rounded outline-none" />
+                  </div>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-600 text-[10px] uppercase font-black tracking-wider">
+                        <th className="p-3 border-b">Paciente / Leito</th>
+                        <th className="p-3 border-b">Material / Data</th>
+                        <th className="p-3 border-b">Status / Germe</th>
+                        <th className="p-3 border-b">Perfil de Resistência</th>
+                        <th className="p-3 border-b text-center">Classificação (ANVISA)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* LÓGICA DE EXTRAÇÃO DAS CULTURAS (Varrendo listaCenso) */}
+                      {(() => {
+                        let culturasExtraidas = [];
+                        
+                        // Garante que existe o array para pesquisar
+                        if (listaCenso && listaCenso.length > 0) {
+                          listaCenso.forEach(paciente => {
+                            if (paciente.culturas && paciente.culturas.lista) {
+                              paciente.culturas.lista.forEach(cultura => {
+                                // Aqui podemos filtrar pelo mês selecionado futuramente
+                                culturasExtraidas.push({
+                                  ...cultura,
+                                  pacienteId: paciente.id,
+                                  pacienteNome: paciente.nome || 'Desconhecido',
+                                  leito: paciente.leito || 'N/A'
+                                });
+                              });
+                            }
+                          });
+                        }
 
-    // Taxa de Extubação Acidental (por 1000 dias-VM)
-    const totalExtubacao = listaEventosAdversos.filter(e => {
-      const tipoSeguro = String(e.tipo || e.tipoEvento || "").toUpperCase();
-      return tipoSeguro.includes("EXTUBAÇÃO") || tipoSeguro.includes("EXTUBACAO");
-    }).length;
-    
-    const taxaExtubacao = totalDiasVM > 0 
-      ? ((totalExtubacao / totalDiasVM) * 1000).toFixed(1) 
-      : 0;
+                        // Ordena pelas mais recentes
+                        culturasExtraidas.sort((a, b) => new Date(b.dataColeta) - new Date(a.dataColeta));
 
-    // Dias Sem Quedas
-    const eventosQueda = listaEventosAdversos.filter(e => 
-      String(e.tipo || e.tipoEvento || "").toUpperCase().includes("QUEDA")
+                        if (culturasExtraidas.length === 0) {
+                          return <tr><td colSpan="5" className="p-6 text-center text-slate-400 text-sm italic">Nenhuma cultura registrada neste mês.</td></tr>;
+                        }
+
+                        return culturasExtraidas.map((cultura) => (
+                          <tr key={cultura.id} className="border-b hover:bg-slate-50 transition-colors">
+                            <td className="p-3">
+                              <div className="font-bold text-sm text-slate-800 truncate max-w-[150px]">{cultura.pacienteNome}</div>
+                              <div className="text-xs text-slate-500">Leito {cultura.leito}</div>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-xs text-slate-700">{cultura.tipo}</div>
+                              <div className="text-[10px] text-slate-500">{cultura.dataColeta ? cultura.dataColeta.split('-').reverse().join('/') : 'N/D'}</div>
+                            </td>
+                            <td className="p-3">
+                              {cultura.status === "Positivo" ? (
+                                <div>
+                                  <span className="text-[10px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded">POSITIVO</span>
+                                  <div className="text-xs font-bold text-slate-800 mt-1">{cultura.germe}</div>
+                                </div>
+                              ) : cultura.status === "Negativo" ? (
+                                <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">NEGATIVO</span>
+                              ) : (
+                                <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded">PENDENTE</span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              {cultura.status === "Positivo" && cultura.resistentes && cultura.resistentes.length > 0 ? (
+                                <div className="flex flex-wrap gap-1 max-w-[150px]">
+                                  {cultura.resistentes.map((atb, idx) => (
+                                    <span key={idx} className="bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold shadow-sm">{atb}</span>
+                                  ))}
+                                </div>
+                              ) : cultura.status === "Positivo" ? (
+                                <span className="text-xs text-slate-400 italic">Sem resistências.</span>
+                              ) : (
+                                <span className="text-xs text-slate-300">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              {cultura.status === "Positivo" ? (
+                                <select 
+                                  className={`p-1.5 text-xs font-bold border rounded outline-none transition-colors w-full ${cultura.irasAssociada ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-slate-300 text-slate-600'}`}
+                                  value={cultura.irasAssociada || ""}
+                                  onChange={(e) => {
+                                    // Aqui o senhor conectará com a sua função de salvar no Firebase futuramente
+                                    console.log(`Atualizar Cultura ${cultura.id} do paciente ${cultura.pacienteId} para IRAS: ${e.target.value}`);
+                                    alert("Em breve: Classificação salva com sucesso no prontuário do paciente!");
+                                  }}
+                                >
+                                  <option value="">Não classificado</option>
+                                  <option value="Colonizacao">Apenas Colonização (Não IRAS)</option>
+                                  <option value="PAV">PAV (Pneumonia)</option>
+                                  <option value="IPCSL">IPCSL (Corrente Sanguínea)</option>
+                                  <option value="ITU-AC">ITU-AC (Trato Urinário)</option>
+                                  <option value="Outra">Outra</option>
+                                </select>
+                              ) : (
+                                <span className="text-[10px] text-slate-300">Não se aplica</span>
+                              )}
+                            </td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          )}
+          
+          {abaIrasAtiva === 'pav' && (
+            <div className="text-center animate-fadeIn">
+              <Bug size={48} className="mx-auto text-slate-300 mb-4" />
+              <h3 className="text-lg font-bold text-slate-700">Pneumonia Associada à Ventilação (PAV)</h3>
+              <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">Módulo pronto para receber o cruzamento do alerta de Novo Infiltrado Pulmonar vs Dias de Ventilação Mecânica.</p>
+            </div>
+          )}
+
+          {abaIrasAtiva === 'ipcsl' && (
+            <div className="text-center animate-fadeIn">
+              <Bug size={48} className="mx-auto text-slate-300 mb-4" />
+              <h3 className="text-lg font-bold text-slate-700">Infecção Primária da Corrente Sanguínea (IPCSL)</h3>
+              <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">Área reservada para cruzar Hemoculturas Pareadas Positivas com os Dias de Cateter Venoso Central.</p>
+            </div>
+          )}
+
+          {abaIrasAtiva === 'itu' && (
+            <div className="text-center animate-fadeIn">
+              <Bug size={48} className="mx-auto text-slate-300 mb-4" />
+              <h3 className="text-lg font-bold text-slate-700">Infecção do Trato Urinário (ITU-AC)</h3>
+              <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">Área reservada para cruzar Uroculturas Positivas com os Dias de Sonda Vesical de Demora.</p>
+            </div>
+          )}
+        </div>
+      </div>
     );
-    
-    let diasSemQuedas = "0";
-    if (eventosQueda.length > 0) {
-      // Blindagem para ler a data da queda corretamente
-      const datasQuedas = eventosQueda.map(e => {
-        const db = e.dataHoraOcorrencia || e.dataEvento;
-        if (db && db.toDate) return db.toDate().getTime();
-        if (db) return new Date(db).getTime();
-        return 0;
-      }).filter(t => !isNaN(t) && t > 0);
-
-      if (datasQuedas.length > 0) {
-        const ultimaQueda = new Date(Math.max(...datasQuedas));
-        const hoje = new Date();
-        const diferencaMs = Math.abs(hoje.getTime() - ultimaQueda.getTime());
-        diasSemQuedas = Math.floor(diferencaMs / (1000 * 60 * 60 * 24));
-      }
-    } else {
-      // Se não há quedas, mostra os dias monitorados no censo
-      diasSemQuedas = listaCenso.length > 0 ? listaCenso.length : "∞";
-    }
-
-  return (
-    <div className="animate-fadeIn">
-      {/* CABEÇALHO */}
-      <div className="flex items-center gap-4 mb-8">
-        <button onClick={() => setActiveView('hub')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
-          <ArrowLeft size={20} className="text-slate-700" />
-        </button>
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <ShieldAlert className="text-red-600" /> Qualidade e Segurança
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">Monitoramento de eventos adversos baseado em censo real.</p>
-        </div>
-      </div>
-
-      {/* CARDS DINÂMICOS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Notificações</span>
-          <div className="text-3xl font-black text-slate-800 mt-1">{totalNotificacoes}</div>
-        </div>
-        
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Incidência de LPP</span>
-          <div className="text-3xl font-black text-red-600 mt-1">{incidenciaLPP}%</div>
-          <div className="text-[10px] text-slate-400 font-bold mt-1">{totalLPP} lesões adquiridas</div>
-        </div>
-        
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Extubação Acidental</span>
-          <div className="text-3xl font-black text-blue-600 mt-1">{taxaExtubacao}</div>
-          <div className="text-[10px] text-slate-400 font-bold mt-1">por 1000 dias-VM</div>
-        </div>
-        
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Dias Sem Quedas</span>
-          <div className="text-3xl font-black text-emerald-600 mt-1">{diasSemQuedas}</div>
-        </div>
-      </div>
-
-    </div>
-  );
-};
+  };
 
   // ==========================================
   // VISÃO DA GESTÃO DE RISCO E QUALIDADE (NSP)
