@@ -764,28 +764,41 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const save = async (updatedPatient, logMsg = "Alteração no Prontuário") => {
     if (!db || !updatedPatient) return;
 
-    // 👇 SUTURA DE SEGURANÇA: Esterilizando o payload
+    // SUTURA DE SEGURANÇA: Esterilizando o payload
     const pacienteSeguro = JSON.parse(JSON.stringify(updatedPatient));
 
     try {
-      // 🎯 AJUSTE CIRÚRGICO: Normalização do ID
-      // 1. Pegamos o ID (ou o número do leito como backup)
+      // Normalização do ID
       let idBruto = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
-      
-      // 2. Limpamos: se o ID for "bed_1" ou "bed_bed_1", extraímos apenas o "1"
-      // Se for apenas o número 0 ou 1, ele mantém o número.
       const apenasNumero = String(idBruto).replace(/bed_/g, "");
-      
-      // 3. Montamos o ID final garantindo que o Leito 1 (índice 0) seja salvo como bed_1
-      // Nota: Se o número for "0", transformamos em "1" para alinhar com a UTI física
       let numeroFinal = apenasNumero;
       if (numeroFinal === "0") numeroFinal = "1"; 
 
       const docId = `bed_${numeroFinal}`;
       
-      // 4. Grava no Firebase com o ID limpo e único
+      // Grava no Prontuário Físico (Leito Atual)
       await setDoc(doc(db, "leitos_uti", docId), pacienteSeguro, { merge: true });
       
+      // =========================================================
+      // 🚨 O PULO DO GATO: ESPELHAMENTO GLOBAL DE CULTURAS (CCIH)
+      // =========================================================
+      if (pacienteSeguro.culturas && Array.isArray(pacienteSeguro.culturas.lista)) {
+        pacienteSeguro.culturas.lista.forEach(async (cultura) => {
+           // Grava apenas culturas reais que possuam ID
+           if (cultura.id && cultura.tipo) {
+             const culturaGlobal = {
+               ...cultura,
+               pacienteId: pacienteSeguro.id || docId,
+               pacienteNome: pacienteSeguro.nome || "Desconhecido",
+               leito: numeroFinal
+             };
+             // Grava na coleção 'imortal' da CCIH (nunca apagada na alta)
+             await setDoc(doc(db, "culturas_globais", cultura.id), culturaGlobal, { merge: true });
+           }
+        });
+      }
+      // =========================================================
+
       console.log(`[AUDITORIA]: ${logMsg} no documento ${docId}`);
     } catch (err) { 
       console.error("Erro fatal ao salvar no Firebase:", err);

@@ -10,7 +10,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ReferenceLine, Label  
 } from 'recharts';
-import { collection, onSnapshot, getDocs, doc, setDoc, updateDoc, query, where } from "firebase/firestore";
+import { collection, onSnapshot, getDocs, doc, setDoc, orderBy, limit, updateDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
 
 import ModuloAdmin from './ModuloAdmin';
@@ -44,6 +44,23 @@ const GestorDashboard = ({ userProfile }) => {
   const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
   const [extraTurno, setExtraTurno] = useState('DN');
   const [extraNome, setExtraNome] = useState('');
+
+  // Variáveis para o Módulo de IRAS (CCIH)
+  const [formDDD, setFormDDD] = useState({ mes: new Date().toISOString().slice(0,7), atb: '', gramas: '' });
+  const [formAlcool, setFormAlcool] = useState({ mes: new Date().toISOString().slice(0,7), ml: '' });
+  const [atbGrafico, setAtbGrafico] = useState('Meropenem');
+  const [culturasGlobais, setCulturasGlobais] = useState([]);
+  const [mesFiltroCultura, setMesFiltroCultura] = useState(new Date().toISOString().slice(0,7));
+  const [historicoCCIH, setHistoricoCCIH] = useState([]);
+  
+  // Tabela Oficial OMS (DDD em Gramas para via Parenteral)
+  const DDD_OMS = {
+    "Ceftriaxona": 2, "Amoxicilina/Clavulanato": 3, "Cefepime": 4, "Oxacilina": 4, 
+    "Ampicilina": 2, "Tazocin": 14, "Meropenem": 3, "Clindamicina": 1.8, 
+    "Vancomicina": 2, "Fluconazol": 0.2, "Anfotericina B": 0.035, "Amicacina": 1, 
+    "Gentamicina": 0.24, "Ciprofloxacino": 0.8, "Levofloxacino": 0.5, 
+    "Metronidazol": 1.5, "SMT/TMP": 1.6
+  };
 
   // ==========================================
   // ESTADOS DO DOSSIÊ DE AUDITORIA
@@ -522,7 +539,7 @@ const GestorDashboard = ({ userProfile }) => {
       });
   }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput]);
 
-// ================================================================
+  // ================================================================
   // 🔥 MOTOR DO GRÁFICO: SMR DOS ÚLTIMOS 12 MESES (VIA FIREBASE)
   // ================================================================
   const dadosSMRAnual = useMemo(() => {
@@ -1131,6 +1148,122 @@ const metricasQualidade = useMemo(() => {
     
     buscarDadosRelatorio(mesAtual);
   };
+
+  // ========================================================
+  // MOTOR DE GRAVAÇÃO: INDICADORES GLOBAIS DA CCIH
+  // ========================================================
+  const salvarIndicadorGlobal = async (mesReferencia, tipoDado, payload) => {
+    // Verifica se o db do Firebase está conectado nesta tela
+    if (!db) {
+       console.error("Firebase 'db' não encontrado no GestorDashboard.");
+       return;
+    }
+
+    try {
+      const docId = `mes_${mesReferencia}`;
+      
+      const updateData = {};
+      updateData[tipoDado] = payload;
+
+      await setDoc(doc(db, "indicadores_ccih", docId), updateData, { merge: true });
+      
+      console.log(`[CCIH AUDITORIA]: Indicador ${tipoDado} salvo no mês ${mesReferencia}`);
+    } catch (err) { 
+      console.error("Erro fatal ao salvar indicador CCIH:", err);
+      alert("Aviso: Ocorreu um erro ao gravar o indicador global na nuvem.");
+    }
+  };
+
+  // ========================================================
+  // MOTOR DE GRAVAÇÃO: CLASSIFICAÇÃO IRAS NO PRONTUÁRIO
+  // ========================================================
+  const classificarCulturaIRAS = async (pacienteId, leito, culturaId, novaClassificacao) => {
+    if (!db) return;
+    try {
+      // 1. Atualiza na coleção IMORTAL da CCIH (Para nunca sumir após a alta)
+      await setDoc(doc(db, "culturas_globais", culturaId), { irasAssociada: novaClassificacao }, { merge: true });
+
+      // 2. Tenta atualizar no Prontuário da UTI (Se o paciente ainda estiver internado no momento)
+      const paciente = listaCenso.find(p => p.id === pacienteId || p.leito === leito);
+      if (paciente && paciente.culturas && paciente.culturas.lista) {
+        const culturasAtualizadas = paciente.culturas.lista.map(c => 
+          c.id === culturaId ? { ...c, irasAssociada: novaClassificacao } : c
+        );
+
+        const pacienteAtualizado = JSON.parse(JSON.stringify(paciente));
+        pacienteAtualizado.culturas.lista = culturasAtualizadas;
+
+        let idBruto = pacienteAtualizado.id !== undefined ? pacienteAtualizado.id : pacienteAtualizado.leito;
+        const apenasNumero = String(idBruto).replace(/bed_/g, "");
+        let numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
+        const docId = `bed_${numeroFinal}`;
+
+        // Salva a etiqueta no prontuário do médico ver na beira do leito
+        await setDoc(doc(db, "leitos_uti", docId), pacienteAtualizado, { merge: true });
+      }
+      
+      console.log(`[CCIH]: Cultura classificada como ${novaClassificacao} com sucesso.`);
+      carregarCulturasGlobais();
+    } catch (err) {
+      console.error("Erro ao salvar classificação IRAS:", err);
+      alert("Falha ao sincronizar com o banco de dados.");
+    }
+  };
+
+  const carregarDadosCCIH = async () => {
+    if (!db) return;
+    try {
+      // Puxa os dados simples, sem pedir para o Firebase organizar (burlar a exigência de índice)
+      const querySnapshot = await getDocs(collection(db, "indicadores_ccih"));
+      let dados = [];
+      
+      querySnapshot.forEach((doc) => {
+        const mesAno = doc.id.replace('mes_', '');
+        const [ano, mes] = mesAno.split('-');
+        const mesesNomes = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+        const labelFormatado = `${mesesNomes[parseInt(mes) - 1]}/${ano.slice(2)}`;
+        
+        dados.push({
+          id: doc.id,
+          mesLabel: labelFormatado,
+          ...doc.data()
+        });
+      });
+      
+      // Organiza do mês mais novo para o mais velho via Javascript
+      dados.sort((a, b) => b.id.localeCompare(a.id));
+      
+      // Pega apenas os últimos 6 meses e inverte para o gráfico desenhar da esquerda (passado) pra direita (presente)
+      setHistoricoCCIH(dados.slice(0, 6).reverse());
+      
+    } catch (err) {
+      console.error("Erro ao carregar indicadores:", err);
+    }
+  };
+
+  // Busca as culturas imortais no banco de dados
+  const carregarCulturasGlobais = async () => {
+    if (!db) return;
+    try {
+      const querySnapshot = await getDocs(collection(db, "culturas_globais"));
+      const lista = [];
+      querySnapshot.forEach((doc) => {
+        lista.push({ ...doc.data(), id: doc.id });
+      });
+      // Ordena da mais recente para a mais antiga
+      lista.sort((a, b) => new Date(b.dataColeta || b.dataResultado) - new Date(a.dataColeta || a.dataResultado));
+      setCulturasGlobais(lista);
+    } catch (err) {
+      console.error("Erro ao carregar culturas globais:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeView === 'qualidade' && abaIrasAtiva === 'geral') {
+      carregarDadosCCIH();
+      carregarCulturasGlobais();
+    }
+  }, [activeView, abaIrasAtiva]);
 
   useEffect(() => {
   const processarDadosParaGraficos = async () => {
@@ -2280,7 +2413,7 @@ const metricasQualidade = useMemo(() => {
             <div className="w-full animate-fadeIn space-y-6">
               
               {/* ============================================================== */}
-              {/* 1. GRÁFICOS EPIDEMIOLÓGICOS (DDD e Álcool) */}
+              {/* 1. GRÁFICOS EPIDEMIOLÓGICOS REAIS (Lendo do Firebase) */}
               {/* ============================================================== */}
               <div className="grid md:grid-cols-2 gap-4">
                 
@@ -2288,28 +2421,29 @@ const metricasQualidade = useMemo(() => {
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col h-80">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
-                      <Activity size={16} className="text-purple-600" /> Densidade de Incidência (DDD)
+                      <Activity size={16} className="text-purple-600" /> Densidade de Incidência
                     </h3>
-                    <select className="text-xs p-1 border rounded bg-slate-50 outline-none">
-                      <option value="Meropenem">Meropenem</option>
-                      <option value="Tazocin">Tazocin</option>
-                      <option value="Vancomicina">Vancomicina</option>
-                      <option value="Cefepime">Cefepime</option>
-                      <option value="Polimixina B">Polimixina B</option>
+                    <select 
+                      className="text-xs p-1 border rounded bg-slate-50 outline-none font-bold text-purple-700"
+                      value={atbGrafico || ''}
+                      onChange={(e) => setAtbGrafico(e.target.value)}
+                    >
+                      {Object.keys(DDD_OMS).map(atb => (
+                        <option key={atb} value={atb}>{atb}</option>
+                      ))}
                     </select>
                   </div>
                   <div className="flex-1 w-full">
-                    {/* DADOS SIMULADOS PARA DEMONSTRAÇÃO VISUAL */}
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={[
-                        { mes: 'Nov/25', ddd: 45 }, { mes: 'Dez/25', ddd: 52 }, { mes: 'Jan/26', ddd: 38 },
-                        { mes: 'Fev/26', ddd: 40 }, { mes: 'Mar/26', ddd: 65 }, { mes: 'Abr/26', ddd: 58 }
-                      ]} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <LineChart data={historicoCCIH.map(h => ({
+                        mes: h.mesLabel,
+                        ddd: h[`ddd_${atbGrafico?.replace(/[^a-zA-Z0-9]/g, '_')}`]?.resultadoDI || 0
+                      }))} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                         <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '12px' }} />
-                        <Line type="monotone" dataKey="ddd" name="DDD/1000 dias" stroke="#9333ea" strokeWidth={3} dot={{ r: 4, fill: '#9333ea' }} />
+                        <Line type="monotone" dataKey="ddd" name={`DDD/1000 (${atbGrafico})`} stroke="#9333ea" strokeWidth={3} dot={{ r: 4, fill: '#9333ea' }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -2319,22 +2453,21 @@ const metricasQualidade = useMemo(() => {
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col h-80">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
-                      <AlertTriangle size={16} className="text-emerald-500" /> Consumo de Prep. Alcoólica
+                      <AlertTriangle size={16} className="text-emerald-500" /> Consumo de Álcool Gel
                     </h3>
-                    <span className="text-xs font-bold text-slate-400">Últimos 6 Meses</span>
+                    <span className="text-xs font-bold text-slate-400">g/paciente-dia</span>
                   </div>
                   <div className="flex-1 w-full">
-                    {/* DADOS SIMULADOS PARA DEMONSTRAÇÃO VISUAL */}
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[
-                        { mes: 'Nov/25', ml: 1200 }, { mes: 'Dez/25', ml: 1500 }, { mes: 'Jan/26', ml: 1100 },
-                        { mes: 'Fev/26', ml: 1300 }, { mes: 'Mar/26', ml: 1800 }, { mes: 'Abr/26', ml: 2100 }
-                      ]} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                      <BarChart data={historicoCCIH.map(h => ({
+                        mes: h.mesLabel,
+                        consumo: h.alcool?.resultadoDensidade || 0
+                      }))} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
                         <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '12px' }} />
-                        <Bar dataKey="ml" name="Consumo (mL/paciente-dia)" fill="#10b981" radius={[4, 4, 0, 0]} barSize={30} />
+                        <Bar dataKey="consumo" name="Consumo (g/pac-dia)" fill="#10b981" radius={[4, 4, 0, 0]} barSize={30} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -2342,30 +2475,115 @@ const metricasQualidade = useMemo(() => {
               </div>
 
               {/* ============================================================== */}
-              {/* 2. FORMULÁRIOS DE ALIMENTAÇÃO DE DADOS GLOBAIS */}
+              {/* 2. FORMULÁRIOS INTELIGENTES (CALCULADORAS DA ANVISA) */}
               {/* ============================================================== */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">Lançar DDD Mensal</label>
-                  <div className="flex gap-2">
-                    <input type="month" className="p-2 border rounded text-xs outline-none" />
-                    <select className="p-2 border rounded text-xs outline-none flex-1">
-                      <option value="">Selecione o ATB...</option>
-                      {["Ceftriaxona", "Amoxicilina/Clavulanato", "Cefepime", "Oxacilina", "Ampicilina", "Tazocin", "Meropenem", "Clindamicina", "Vancomicina", "Fluconazol", "Anfotericina B", "Amicacina", "Gentamicina", "Ciprofloxacino", "Levofloxacino", "Metronidazol", "SMT/TMP"].map(atb => (
-                        <option key={atb} value={atb}>{atb}</option>
-                      ))}
-                    </select>
-                    <input type="number" placeholder="Valor DDD" className="p-2 border rounded text-xs outline-none w-24" />
-                    <button className="bg-purple-600 hover:bg-purple-700 text-white px-3 rounded font-bold transition-colors">Salvar</button>
-                  </div>
-                </div>
+              <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                <h3 className="text-sm font-black text-slate-700 uppercase mb-4 flex items-center gap-2">
+                  <Activity size={16}/> Lançamento Mensal de Indicadores
+                </h3>
+                
+                <div className="grid md:grid-cols-2 gap-6">
+                  
+                  {/* CALCULADORA DE DDD */}
+                  <div className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 bg-purple-500 h-full"></div>
+                    <label className="block text-xs font-bold text-slate-600 mb-3 uppercase">Calcular e Salvar DDD</label>
+                    <div className="flex flex-col gap-3">
+                      <div className="flex gap-2">
+                        <input type="month" value={formDDD.mes || ''} onChange={e => setFormDDD({...formDDD, mes: e.target.value})} className="p-2 border rounded text-xs outline-none bg-slate-50" title="Mês de Referência" />
+                        <select value={formDDD.atb || ''} onChange={e => setFormDDD({...formDDD, atb: e.target.value})} className="p-2 border rounded text-xs outline-none flex-1 bg-slate-50">
+                          <option value="">Selecione o Antimicrobiano...</option>
+                          {Object.keys(DDD_OMS).map(atb => (
+                            <option key={atb} value={atb}>{atb} (OMS: {DDD_OMS[atb]}g)</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="flex gap-2 items-center">
+                        <input type="number" value={formDDD.gramas || ''} onChange={e => setFormDDD({...formDDD, gramas: e.target.value})} placeholder="Total (Gramas)" className="p-2 border rounded text-xs outline-none w-32 bg-slate-50" />
+                        
+                        <button 
+                          onClick={async () => {
+                            if(!formDDD.atb || !formDDD.gramas) return alert("Preencha o ATB e as gramas.");
+                            
+                            const padraoOMS = DDD_OMS[formDDD.atb];
+                            
+                            // Calcula Pacientes-Dia blindado contra a vírgula do banco
+                            const pacientesDiaMes = listaCenso
+                              .filter(c => {
+                                const dataBruta = c.dataCenso || c.data || c.id || "";
+                                const dataLimpa = String(dataBruta).replace(',', ''); 
+                                return dataLimpa.startsWith(formDDD.mes);
+                              })
+                              .reduce((acc, c) => acc + (Number(c.totalLeitosOcupados) || 0), 0);
+                            
+                            if(pacientesDiaMes === 0) return alert(`Atenção: Não há registros de Censo Diário para o mês ${formDDD.mes}. O cálculo exige o denominador de pacientes-dia.`);
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">Lançar Consumo de Álcool</label>
-                  <div className="flex gap-2">
-                    <input type="month" className="p-2 border rounded text-xs outline-none" />
-                    <input type="number" placeholder="Consumo Total (mL)" className="p-2 border rounded text-xs outline-none flex-1" />
-                    <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 rounded font-bold transition-colors">Salvar</button>
+                            // Aplica a fórmula oficial da ANVISA
+                            const dddCalculada = ((Number(formDDD.gramas) / padraoOMS) / pacientesDiaMes) * 1000;
+                            
+                            // Salva no Firebase
+                            await salvarIndicadorGlobal(formDDD.mes, `ddd_${formDDD.atb.replace(/[^a-zA-Z0-9]/g, '_')}`, {
+                              gramas: Number(formDDD.gramas),
+                              pacientesDia: pacientesDiaMes,
+                              resultadoDI: dddCalculada,
+                              dataRegistro: new Date().toISOString()
+                            });
+
+                            alert(`Salvo com sucesso!\n\nResultado: ${dddCalculada.toFixed(2)} DDD / 1000 pacientes-dia.`);
+                            carregarDadosCCIH(); // Atualiza o gráfico instantaneamente
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded text-xs font-bold transition-colors flex-1"
+                        >
+                          Calcular e Salvar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CALCULADORA DE ÁLCOOL GEL (EM GRAMAS) */}
+                  <div className="bg-white p-4 rounded-lg border border-emerald-200 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 bg-emerald-500 h-full"></div>
+                    <label className="block text-xs font-bold text-slate-600 mb-3 uppercase">Consumo de Álcool Gel</label>
+                    <div className="flex flex-col gap-3">
+                      <div className="flex gap-2">
+                        <input type="month" value={formAlcool.mes || ''} onChange={e => setFormAlcool({...formAlcool, mes: e.target.value})} className="p-2 border rounded text-xs outline-none bg-slate-50" />
+                        <input type="number" value={formAlcool.gramas || ''} onChange={e => setFormAlcool({...formAlcool, gramas: e.target.value})} placeholder="Total Ponderado (Gramas)" className="p-2 border rounded text-xs outline-none flex-1 bg-slate-50" />
+                      </div>
+                      <button 
+                        onClick={async () => {
+                          if(!formAlcool.gramas) return alert("Preencha o consumo em gramas.");
+                          
+                          // Calcula Pacientes-Dia blindado contra a vírgula do banco
+                          const pacientesDiaMes = listaCenso
+                              .filter(c => {
+                                const dataBruta = c.dataCenso || c.data || c.id || "";
+                                const dataLimpa = String(dataBruta).replace(',', '');
+                                return dataLimpa.startsWith(formAlcool.mes);
+                              })
+                              .reduce((acc, c) => acc + (Number(c.totalLeitosOcupados) || 0), 0);
+                              
+                          if(pacientesDiaMes === 0) return alert(`Atenção: Não há Censo para o mês ${formAlcool.mes}.`);
+                          
+                          // Aplica a fórmula oficial da ANVISA
+                          const consumoDensidade = Number(formAlcool.gramas) / pacientesDiaMes;
+                          
+                          // Salva no Firebase
+                          await salvarIndicadorGlobal(formAlcool.mes, "alcool", {
+                            gramas: Number(formAlcool.gramas),
+                            pacientesDia: pacientesDiaMes,
+                            resultadoDensidade: consumoDensidade,
+                            dataRegistro: new Date().toISOString()
+                          });
+
+                          alert(`Consumo de álcool salvo!\n\nResultado: ${consumoDensidade.toFixed(1)} g/paciente-dia.`);
+                          carregarDadosCCIH(); // Atualiza o gráfico instantaneamente
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded text-xs font-bold transition-colors"
+                      >
+                        Calcular e Salvar
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2373,7 +2591,7 @@ const metricasQualidade = useMemo(() => {
               {/* ============================================================== */}
               {/* 3. TABELA GLOBAL DE CULTURAS E CLASSIFICAÇÃO IRAS */}
               {/* ============================================================== */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
                 <div className="p-4 bg-slate-800 text-white flex justify-between items-center">
                   <h3 className="font-bold flex items-center gap-2">
                     <Microscope size={18} className="text-purple-400" />
@@ -2381,7 +2599,12 @@ const metricasQualidade = useMemo(() => {
                   </h3>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-slate-300">Filtrar Mês:</span>
-                    <input type="month" defaultValue={new Date().toISOString().slice(0,7)} className="p-1.5 text-xs text-slate-800 rounded outline-none" />
+                    <input 
+                      type="month" 
+                      value={mesFiltroCultura || ''} 
+                      onChange={(e) => setMesFiltroCultura(e.target.value)} 
+                      className="p-1.5 text-xs text-slate-800 rounded outline-none" 
+                    />
                   </div>
                 </div>
                 
@@ -2397,43 +2620,26 @@ const metricasQualidade = useMemo(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      {/* LÓGICA DE EXTRAÇÃO DAS CULTURAS (Varrendo listaCenso) */}
                       {(() => {
-                        let culturasExtraidas = [];
-                        
-                        // Garante que existe o array para pesquisar
-                        if (listaCenso && listaCenso.length > 0) {
-                          listaCenso.forEach(paciente => {
-                            if (paciente.culturas && paciente.culturas.lista) {
-                              paciente.culturas.lista.forEach(cultura => {
-                                // Aqui podemos filtrar pelo mês selecionado futuramente
-                                culturasExtraidas.push({
-                                  ...cultura,
-                                  pacienteId: paciente.id,
-                                  pacienteNome: paciente.nome || 'Desconhecido',
-                                  leito: paciente.leito || 'N/A'
-                                });
-                              });
-                            }
-                          });
-                        }
+                        // Filtra a lista global usando o mês escolhido no calendário
+                        const culturasFiltradas = culturasGlobais.filter(c => {
+                          const dataRef = c.dataColeta || c.dataResultado || "";
+                          return dataRef.startsWith(mesFiltroCultura);
+                        });
 
-                        // Ordena pelas mais recentes
-                        culturasExtraidas.sort((a, b) => new Date(b.dataColeta) - new Date(a.dataColeta));
-
-                        if (culturasExtraidas.length === 0) {
+                        if (culturasFiltradas.length === 0) {
                           return <tr><td colSpan="5" className="p-6 text-center text-slate-400 text-sm italic">Nenhuma cultura registrada neste mês.</td></tr>;
                         }
 
-                        return culturasExtraidas.map((cultura) => (
+                        return culturasFiltradas.map((cultura) => (
                           <tr key={cultura.id} className="border-b hover:bg-slate-50 transition-colors">
                             <td className="p-3">
-                              <div className="font-bold text-sm text-slate-800 truncate max-w-[150px]">{cultura.pacienteNome}</div>
+                              <div className="font-bold text-sm text-slate-800 truncate max-w-[150px] uppercase">{cultura.pacienteNome}</div>
                               <div className="text-xs text-slate-500">Leito {cultura.leito}</div>
                             </td>
                             <td className="p-3">
-                              <div className="font-bold text-xs text-slate-700">{cultura.tipo}</div>
-                              <div className="text-[10px] text-slate-500">{cultura.dataColeta ? cultura.dataColeta.split('-').reverse().join('/') : 'N/D'}</div>
+                              <div className="font-bold text-xs text-slate-700 uppercase">{cultura.tipo}</div>
+                              <div className="text-[10px] text-slate-500">Coleta: {cultura.dataColeta ? cultura.dataColeta.split('-').reverse().join('/') : 'N/D'}</div>
                             </td>
                             <td className="p-3">
                               {cultura.status === "Positivo" ? (
@@ -2463,23 +2669,21 @@ const metricasQualidade = useMemo(() => {
                             <td className="p-3 text-center">
                               {cultura.status === "Positivo" ? (
                                 <select 
-                                  className={`p-1.5 text-xs font-bold border rounded outline-none transition-colors w-full ${cultura.irasAssociada ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-slate-300 text-slate-600'}`}
+                                  className={`p-1.5 text-xs font-bold border rounded outline-none transition-colors w-full cursor-pointer ${cultura.irasAssociada ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-slate-300 text-slate-600'}`}
                                   value={cultura.irasAssociada || ""}
                                   onChange={(e) => {
-                                    // Aqui o senhor conectará com a sua função de salvar no Firebase futuramente
-                                    console.log(`Atualizar Cultura ${cultura.id} do paciente ${cultura.pacienteId} para IRAS: ${e.target.value}`);
-                                    alert("Em breve: Classificação salva com sucesso no prontuário do paciente!");
+                                    classificarCulturaIRAS(cultura.pacienteId, cultura.leito, cultura.id, e.target.value);
                                   }}
                                 >
                                   <option value="">Não classificado</option>
-                                  <option value="Colonizacao">Apenas Colonização (Não IRAS)</option>
+                                  <option value="Colonizacao">Apenas Colonização</option>
                                   <option value="PAV">PAV (Pneumonia)</option>
                                   <option value="IPCSL">IPCSL (Corrente Sanguínea)</option>
                                   <option value="ITU-AC">ITU-AC (Trato Urinário)</option>
                                   <option value="Outra">Outra</option>
                                 </select>
                               ) : (
-                                <span className="text-[10px] text-slate-300">Não se aplica</span>
+                                <span className="text-[10px] text-slate-300">Não aplicável</span>
                               )}
                             </td>
                           </tr>
