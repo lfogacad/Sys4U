@@ -53,9 +53,17 @@ const GestorDashboard = ({ userProfile }) => {
   const [mesFiltroCultura, setMesFiltroCultura] = useState(new Date().toISOString().slice(0,7));
   const [historicoCCIH, setHistoricoCCIH] = useState([]);
 
-  // Controles do Rastreador Ativo de PAV
+  // ==========================================
+  // ÂNCORA DE TEMPO COMPARTILHADA PARA IRAS
+  // ==========================================
+  const [mesFiltroIrasCompartilhado, setMesFiltroIrasCompartilhado] = useState(new Date().toISOString().slice(0, 7)); // Padrão: Mês Atual (YYYY-MM)
+
+  // ==========================================
+  // CONTROLES DA AUDITORIA AUTOMATIZADA (PAV)
+  // ==========================================
+  const [auditoriasPAV, setAuditoriasPAV] = useState([]);
+  const [filtroStatusPAV, setFiltroStatusPAV] = useState('Suspeito'); // 'Suspeito', 'Confirmado' ou 'Descartado'
   const [modalAuditoriaPAV, setModalAuditoriaPAV] = useState(null);
-  const [suspeitosPAV, setSuspeitosPAV] = useState([]);
   
   // Tabela Oficial OMS (DDD em Gramas para via Parenteral)
   const DDD_OMS = {
@@ -1153,6 +1161,247 @@ const metricasQualidade = useMemo(() => {
     buscarDadosRelatorio(mesAtual);
   };
 
+  // 1. Função para carregar a coleção imortal
+  const carregarAuditoriasPAV = async () => {
+    if (!db) return;
+    try {
+      const querySnapshot = await getDocs(collection(db, "auditorias_pav"));
+      const lista = [];
+      querySnapshot.forEach((doc) => {
+        lista.push({ firebaseId: doc.id, ...doc.data() });
+      });
+      // Ordena do mais recente para o mais antigo
+      lista.sort((a, b) => new Date(b.dataSuspeita) - new Date(a.dataSuspeita));
+      setAuditoriasPAV(lista);
+    } catch (err) {
+      console.error("Erro ao carregar auditorias PAV:", err);
+    }
+  };
+
+  // 2. Função para o Gestor bater o martelo (Confirmar ou Descartar)
+  const atualizarStatusPAV = async (idDocumento, novoStatus) => {
+    if (!db) return;
+    try {
+      // Atualiza o documento no Firebase (Apenas o campo status)
+      await setDoc(doc(db, "auditorias_pav", idDocumento), { 
+        status: novoStatus,
+        dataAuditoria: new Date().toISOString()
+      }, { merge: true });
+      
+      // Atualiza a tela instantaneamente
+      setAuditoriasPAV(prev => prev.map(a => a.firebaseId === idDocumento ? { ...a, status: novoStatus } : a));
+      setModalAuditoriaPAV(null);
+      alert(`✅ Caso classificado como: ${novoStatus}`);
+    } catch (err) {
+      console.error("Erro ao atualizar PAV:", err);
+      alert("Falha ao salvar a decisão.");
+    }
+  };
+
+  // 3. Função para o Gestor rodar o robô manualmente com Regra ANVISA (DOE e Janela de Infecção)
+  const forcarVarreduraManualPAV = async () => {
+    if (!db) return alert("Banco de dados não conectado.");
+    
+    try {
+      console.log("🕵️ FORÇANDO VARREDURA MANUAL DE PAV COM JANELA DE INFECÇÃO E D.O.E...");
+      const snapshot = await getDocs(collection(db, "leitos_uti"));
+      const pacientesAtivos = [];
+      
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.nome && data.nome.trim() !== '') {
+          pacientesAtivos.push({ id: doc.id, leito: doc.id.replace('bed_', ''), ...data });
+        }
+      });
+
+      // ========================================================
+      // MOTOR DE TEMPO: JANELA DE INFECÇÃO (D0 a D-3)
+      // ========================================================
+      const hoje = new Date();
+      const tzOffset = hoje.getTimezoneOffset() * 60000;
+      const dataLocal = new Date(hoje.getTime() - tzOffset);
+
+      // Cria array com Hoje (D0) e os últimos 3 dias (D-1, D-2, D-3)
+      const datasJanela = [];
+      for (let i = 0; i <= 3; i++) {
+        const d = new Date(dataLocal.getTime() - i * 86400000);
+        datasJanela.push(d.toISOString().split('T')[0]); // Formato US: 2026-05-14
+      }
+      
+      const d0 = datasJanela[0];
+      const mesCorrente = d0.slice(0, 7);
+      
+      // Mapeamento para formatos brasileiros (Para achar na tabela de exames)
+      const datasBR = datasJanela.map(d => d.split('-').reverse().join('/')); // 14/05/2026
+      const datasBRCurtas = datasBR.map(d => d.substring(0, 5)); // 14/05
+
+      let novosCasos = 0;
+
+      for (const p of pacientesAtivos) {
+        if (!p.dataIntubacao) continue;
+        
+        let dataIntStr = p.dataIntubacao;
+        if (dataIntStr.includes('/')) dataIntStr = dataIntStr.split('/').reverse().join('-');
+        const dataInt = new Date(dataIntStr);
+
+        // O Infiltrado Novo é o nosso Gatilho de Avaliação de hoje (D0)
+        const radPositivo = p.medical?.novoInfiltrado === 'sim' || p.novoInfiltrado === 'sim';
+        if (!radPositivo) continue; 
+
+        let sisPositivo = false;
+        let sisEvidencias = [];
+        let respCount = 0;
+        let respEvidencias = [];
+        
+        // O array que vai guardar todas as datas em que a infecção deu as caras para acharmos a D.O.E.
+        let datasEventosEncontrados = [d0]; 
+
+        // ==================================
+        // 1. SINAIS SISTÊMICOS NA JANELA
+        // ==================================
+        if (p.examHistory) {
+          Object.keys(p.examHistory).forEach(dt => {
+            // Se a data do exame estiver na Janela de Infecção
+            if (datasJanela.includes(dt) || datasBR.includes(dt) || datasBRCurtas.includes(dt)) {
+              const leucoStr = p.examHistory[dt]?.["Leucócitos"];
+              if (leucoStr) {
+                const leuco = parseFloat(leucoStr.toString().replace(/\./g, '').replace(',', '.'));
+                if (leuco < 4000 || leuco > 12000) {
+                  sisPositivo = true;
+                  sisEvidencias.push(`Leucócitos (${leuco}) aferidos em ${dt}`);
+                  
+                  // Guarda a data para o cálculo de DOE
+                  let dtNorm = dt;
+                  if (dt.includes('/')) dtNorm = dt.split('/').reverse().join('-');
+                  if (dtNorm.length === 5) dtNorm = `${d0.split('-')[0]}-${dtNorm}`; // Adiciona o ano se faltar
+                  datasEventosEncontrados.push(dtNorm);
+                }
+              }
+            }
+          });
+        }
+
+        // A Temperatura é lida no balanço de D0
+        const strPaciente = JSON.stringify(p);
+        const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
+        let matchTemp;
+        while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
+          sisPositivo = true;
+          if (!sisEvidencias.includes(`Febre (${matchTemp[1]} ºC)`)) {
+            sisEvidencias.push(`Febre (${matchTemp[1]} ºC) registrada em ${datasBR[0]}`);
+            datasEventosEncontrados.push(d0);
+          }
+        }
+
+        // ==================================
+        // 2. SINAIS RESPIRATÓRIOS NA JANELA
+        // ==================================
+        const asp = p.physio?.secrecaoAspecto?.toLowerCase() || "";
+        const col = p.physio?.secrecaoColoracao?.toLowerCase() || "";
+        const qtd = p.physio?.secrecaoQtd?.toLowerCase() || "";
+        
+        if (asp.includes('espessa') || col.includes('purulenta') || col.includes('esverdeada') || qtd.includes('moderada') || qtd.includes('abundante')) {
+          respCount++;
+          respEvidencias.push(`Secreção anormal (${asp}/${col}/${qtd}) avaliada em ${datasBR[0]}`);
+          datasEventosEncontrados.push(d0);
+        }
+
+        if (p.gasometriaHistory) {
+          let menorPF = 999;
+          let dataMenorPF = "";
+          
+          Object.keys(p.gasometriaHistory).forEach(colGaso => {
+            const isRecente = datasJanela.some(d => colGaso.includes(d)) || 
+                              datasBR.some(d => colGaso.includes(d)) ||
+                              datasBRCurtas.some(d => colGaso.includes(d));
+            
+            if (isRecente) {
+              const pf = parseFloat(p.gasometriaHistory[colGaso]?.["P/F"]);
+              if (pf && pf <= 240 && pf < menorPF) {
+                menorPF = pf;
+                dataMenorPF = colGaso;
+              }
+            }
+          });
+          
+          if (menorPF <= 240) {
+            respCount++;
+            respEvidencias.push(`Relação P/F baixa (${menorPF}) colhida em ${dataMenorPF}`);
+            
+            // Extrai a data normalizada da gasometria para o cálculo de DOE
+            let dataGasoNorm = d0;
+            datasJanela.forEach(dj => { if (dataMenorPF.includes(dj)) dataGasoNorm = dj; });
+            datasBR.forEach(dbr => { if (dataMenorPF.includes(dbr)) dataGasoNorm = dbr.split('/').reverse().join('-'); });
+            datasEventosEncontrados.push(dataGasoNorm);
+          }
+        }
+
+        // ==================================
+        // 3. DETERMINAÇÃO DA DOE (Data of Event) E CRUZAMENTO COM VM
+        // ==================================
+        if (sisPositivo && respCount >= 2) {
+          
+          // Acha a Data do Evento (a data mais antiga em que os sintomas começaram na janela)
+          const timestamps = datasEventosEncontrados.map(d => new Date(d).getTime()).filter(n => !isNaN(n));
+          const dataEventoDOE = new Date(Math.min(...timestamps));
+          const dataEventoFormatada = dataEventoDOE.toISOString().split('T')[0];
+
+          // Verifica se, no dia da DOE, o paciente já estava no 3º dia-calendário (D3) de Ventilação (ou seja, diferença >= 2 dias)
+          const diffVMnaDOE = Math.floor((dataEventoDOE - dataInt) / (1000 * 60 * 60 * 24));
+          let atendeCriterioVM = diffVMnaDOE >= 2;
+
+          // Validação extra de extubação (Se extubou antes da DOE, a PAV não pertence ao tubo)
+          if (atendeCriterioVM && p.dataExtubacao) {
+            let dataExtStr = p.dataExtubacao;
+            if (dataExtStr.includes('/')) dataExtStr = dataExtStr.split('/').reverse().join('-');
+            const diffExtDOE = Math.floor((dataEventoDOE - new Date(dataExtStr)) / (1000 * 60 * 60 * 24));
+            if (diffExtDOE > 1) atendeCriterioVM = false; 
+          }
+
+          if (atendeCriterioVM) {
+            const idAuditoria = `${p.cpf || p.id}_pav_${mesCorrente}`;
+            const docAuditoriaRef = doc(db, "auditorias_pav", idAuditoria);
+            
+            const audDoc = await getDocs(query(collection(db, "auditorias_pav"), where("id", "==", idAuditoria)));
+            if (audDoc.empty) {
+              await setDoc(docAuditoriaRef, {
+                id: idAuditoria,
+                pacienteId: p.id,
+                cpf: p.cpf || "000.000.000-00",
+                nome: p.nome,
+                leito: p.leito,
+                mesReferencia: mesCorrente,
+                dataSuspeita: d0,
+                dataEventoDOE: dataEventoFormatada, // Registra a Data Oficial da Infecção!
+                status: "Suspeito",
+                evidencias: {
+                  radiologia: `Sim (Novo infiltrado / Progressão) mapeado em ${datasBR[0]}`,
+                  sistemicos: sisEvidencias,
+                  respiratorios: respEvidencias,
+                  justificativa: `D.O.E da Infecção: ${dataEventoFormatada.split('-').reverse().join('/')} (Paciente já estava no D${diffVMnaDOE + 1} de VM).`
+                },
+                timestampCriacao: new Date().toISOString()
+              });
+              novosCasos++;
+            }
+          }
+        }
+      }
+
+      if (novosCasos > 0) {
+        alert(`🚨 Varredura concluída! ${novosCasos} novos casos foram capturados usando a Janela de Infecção da ANVISA.`);
+      } else {
+        alert("Varredura concluída. Nenhum novo caso preencheu todos os critérios dentro da Janela de Infecção e da regra de D.O.E.");
+      }
+      
+      carregarAuditoriasPAV();
+
+    } catch (err) {
+      console.error("Erro ao forçar varredura:", err);
+      alert("Falha ao varrer os prontuários da UTI.");
+    }
+  };
+
   // ========================================================
   // MOTOR DE GRAVAÇÃO: INDICADORES GLOBAIS DA CCIH
   // ========================================================
@@ -1263,9 +1512,13 @@ const metricasQualidade = useMemo(() => {
   };
 
   useEffect(() => {
-    if (activeView === 'qualidade' && abaIrasAtiva === 'geral') {
-      carregarDadosCCIH();
-      carregarCulturasGlobais();
+    if (activeView === 'qualidade') {
+      if (abaIrasAtiva === 'geral') {
+        carregarDadosCCIH();
+        carregarCulturasGlobais();
+      } else if (abaIrasAtiva === 'pav') {
+        carregarAuditoriasPAV(); // <--- O robô lê as auditorias salvas
+      }
     }
   }, [activeView, abaIrasAtiva]);
 
@@ -2702,279 +2955,186 @@ const metricasQualidade = useMemo(() => {
           )}
           
           {abaIrasAtiva === 'pav' && (
-            <div className="animate-fadeIn space-y-6">
-              
-              <div className="bg-gradient-to-r from-red-600 to-rose-700 rounded-xl p-6 text-white shadow-lg flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-black flex items-center gap-2">
-                    <Activity size={24} className="animate-pulse text-red-200" />
-                    Rastreador Ativo de PAV
-                  </h3>
-                  <p className="text-red-100 text-sm mt-1 max-w-2xl">
-                    O sistema audita os prontuários em tempo real cruzando a Janela de VM (48h) com o Critério Radiológico, Clínico, Gasométrico e Microbiológico da ANVISA.
-                  </p>
-                </div>
-                <button 
-                  onClick={async () => {
-                    if (!db) return alert("Banco de dados não conectado.");
-                    
-                    console.log("=========================================");
-                    console.log("🕵️ INICIANDO VARREDURA DE PAV NO FIREBASE...");
-                    console.log("=========================================");
-
-                    try {
-                      // 1. A MÁGICA: O robô vai direto no Firebase na coleção 'leitos_uti' (A mesma do seu print!)
-                      const snapshot = await getDocs(collection(db, "leitos_uti"));
-                      const pacientesAtivos = [];
-                      
-                      snapshot.forEach((doc) => {
-                        const data = doc.data();
-                        // Filtra apenas os leitos que têm um paciente deitado (que têm nome)
-                        if (data.nome && data.nome.trim() !== '') {
-                          // Injeta o ID e o número do leito limpo para usar depois
-                          pacientesAtivos.push({ id: doc.id, leito: doc.id.replace('bed_', ''), ...data });
-                        }
-                      });
-
-                      console.log(`✅ ${pacientesAtivos.length} pacientes internados encontrados para auditoria.`);
-
-                      const suspeitosEncontrados = [];
-                      const hoje = new Date();
-
-                      pacientesAtivos.forEach(p => {
-                        console.log(`\n🔎 Analisando Leito ${p.leito} - ${p.nome}`);
-                        
-                        // 1. CHECAGEM DE VM
-                        if (!p.dataIntubacao) {
-                          console.log("❌ BLOQUEADO: Paciente não tem dataIntubacao registrada.");
-                          return;
-                        }
-                        
-                        let dataIntStr = p.dataIntubacao;
-                        if (dataIntStr.includes('/')) {
-                          const [d, m, y] = dataIntStr.split('/');
-                          dataIntStr = `${y}-${m}-${d}`;
-                        }
-                        
-                        const dataInt = new Date(dataIntStr);
-                        const diffIntubacao = Math.floor((hoje - dataInt) / (1000 * 60 * 60 * 24));
-                        console.log(`✅ Tubo: ${diffIntubacao} dias (Data base: ${dataIntStr})`);
-                        
-                        if (diffIntubacao < 2) {
-                          console.log("❌ BLOQUEADO: Menos de 48h de intubação.");
-                          return;
-                        }
-
-                        // 2. CRITÉRIO RADIOLÓGICO
-                        const infiltradoNoBanco = p.medical?.novoInfiltrado || p.evolucaoMedica?.novoInfiltrado || p.novoInfiltrado;
-                        console.log(`🩻 Info no Banco para Infiltrado:`, infiltradoNoBanco);
-                        
-                        if (infiltradoNoBanco !== 'sim') {
-                          console.log("❌ BLOQUEADO: Critério Radiológico não consta como 'sim' no Firebase.");
-                          return; 
-                        }
-
-                        // 3. SINAIS SISTÊMICOS
-                        let sisPositivo = false;
-                        let sisEvidencias = [];
-
-                        if (p.examHistory) {
-                          Object.keys(p.examHistory).forEach(dataExame => {
-                            const leucoStr = p.examHistory[dataExame]?.["Leucócitos"];
-                            if (leucoStr) {
-                              const leuco = parseFloat(leucoStr.toString().replace(/\./g, '').replace(',', '.'));
-                              if (leuco < 4000 || leuco > 12000) {
-                                sisPositivo = true;
-                                sisEvidencias.push(`Leucócitos alterados (${leuco})`);
-                              }
-                            }
-                          });
-                        }
-
-                        // A regex varre o documento inteiro buscando Temp >= 38.0
-                        const strPaciente = JSON.stringify(p);
-                        const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
-                        let matchTemp;
-                        while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
-                          sisPositivo = true;
-                          if (!sisEvidencias.includes(`Febre (${matchTemp[1]} ºC)`)) {
-                            sisEvidencias.push(`Febre (${matchTemp[1]} ºC)`);
-                          }
-                        }
-                        console.log(`🌡️ Sinais Sistêmicos (Febre/Leuco): ${sisPositivo ? 'SIM' : 'NÃO'}`, sisEvidencias);
-
-                        // 4. SINAIS RESPIRATÓRIOS
-                        let respCount = 0;
-                        let respEvidencias = [];
-
-                        const asp = p.physio?.secrecaoAspecto?.toLowerCase() || "";
-                        const col = p.physio?.secrecaoColoracao?.toLowerCase() || "";
-                        const qtd = p.physio?.secrecaoQtd?.toLowerCase() || "";
-                        
-                        if (asp.includes('espessa') || col.includes('purulenta') || col.includes('esverdeada') || qtd.includes('moderada') || qtd.includes('abundante')) {
-                          respCount++;
-                          respEvidencias.push(`Secreção anormal (${asp}/${col}/${qtd})`);
-                        }
-
-                        if (p.gasometriaHistory) {
-                          let menorPF = 999;
-                          Object.keys(p.gasometriaHistory).forEach(colGaso => {
-                            const pf = parseFloat(p.gasometriaHistory[colGaso]?.["P/F"]);
-                            if (pf && pf <= 240 && pf < menorPF) menorPF = pf;
-                          });
-                          if (menorPF <= 240) {
-                            respCount++;
-                            respEvidencias.push(`P/F baixa (${menorPF})`);
-                          }
-                        }
-                        console.log(`🫁 Sinais Respiratórios (Qtd): ${respCount}`, respEvidencias);
-
-                        // LÓGICA DE AUDITORIA ANVISA
-                        let pavDetectada = false;
-                        let justificativa = "";
-
-                        if (sisPositivo && respCount >= 2) {
-                          pavDetectada = true;
-                          justificativa = "Clínico Forte (Raio-X + 1 Sistêmico + 2 Respiratórios)";
-                        } else {
-                          console.log(`❌ BLOQUEADO: Faltaram critérios. (Sistêmico precisa ser true. Respiratório precisa ser >= 2. Atual: Sistêmico=${sisPositivo}, Respiratório=${respCount})`);
-                        }
-
-                        if (pavDetectada) {
-                          console.log("🚨🚨 PACIENTE CAPTURADO COMO SUSPEITO DE PAV! 🚨🚨");
-                          suspeitosEncontrados.push({
-                            paciente: p,
-                            id: p.id,
-                            leito: p.leito,
-                            nome: p.nome,
-                            evidencias: {
-                              radiologia: "Sim (Novo infiltrado)",
-                              sistemicos: sisEvidencias,
-                              respiratorios: respEvidencias,
-                              microbiologia: [],
-                              justificativa: justificativa
-                            }
-                          });
-                        }
-                      });
-
-                      setSuspeitosPAV(suspeitosEncontrados);
-                      console.log("=========================================");
-                      if (suspeitosEncontrados.length === 0) alert("Nenhum paciente preencheu os critérios de suspeita de PAV no momento.");
-                    
-                    } catch (error) {
-                      console.error("Erro fatal ao ler o Firebase:", error);
-                      alert("Falha na conexão com os prontuários ativos.");
-                    }
-                  }}
-                  className="bg-white text-red-700 hover:bg-red-50 px-6 py-3 rounded-lg font-black shadow transition-all flex items-center gap-2"
-                >
-                  <Search size={18} /> Varrer Prontuários Agora
-                </button>
+          <div className="animate-fadeIn space-y-6">
+            
+            {/* CABEÇALHO COM FILTRO DE MÊS COMPARTILHADO */}
+            <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-black flex items-center gap-2">
+                  <ShieldAlert size={24} className="text-red-400" />
+                  Central de Vigilância: PAV
+                </h3>
+                <p className="text-slate-300 text-sm mt-1 max-w-xl">
+                  Os prontuários são auditados automaticamente na nuvem todos os dias às 23:59h. 
+                  Aqui você gerencia os alertas gerados pelo sistema.
+                </p>
               </div>
-
-              {/* LISTA DE SUSPEITOS */}
-              {suspeitosPAV.length > 0 && (
-                <div className="grid md:grid-cols-3 gap-4 mt-6">
-                  {suspeitosPAV.map((suspeito, idx) => (
-                    <div key={idx} className="bg-white border-2 border-red-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
-                      <div className="absolute top-0 left-0 w-2 h-full bg-red-500"></div>
-                      <div className="pl-3">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Alerta PAV</span>
-                          <span className="text-xs font-bold text-slate-400">Leito {suspeito.leito}</span>
-                        </div>
-                        <h4 className="font-bold text-slate-800 text-sm truncate">{suspeito.nome}</h4>
-                        <p className="text-[10px] text-slate-500 mt-1 mb-4 italic">{suspeito.evidencias.justificativa}</p>
-                        
-                        <button 
-                          onClick={() => setModalAuditoriaPAV(suspeito)}
-                          className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded transition-colors flex items-center justify-center gap-2"
-                        >
-                          <ShieldAlert size={14} className="text-amber-400"/> Auditar Caso
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+              
+              <div className="flex flex-wrap items-center gap-3">
+                {/* SELETOR ANCORADO: MÊS EPIDEMIOLÓGICO */}
+                <div className="flex items-center gap-2 bg-slate-700/50 p-2 rounded-lg border border-slate-600">
+                  <span className="text-xs font-bold text-slate-300">Mês de Análise:</span>
+                  <input 
+                    type="month" 
+                    value={mesFiltroIrasCompartilhado || ''} 
+                    onChange={(e) => {
+                      setMesFiltroIrasCompartilhado(e.target.value);
+                      setTimeout(() => carregarAuditoriasPAV(), 50);
+                    }} 
+                    className="p-1.5 text-xs text-slate-800 rounded font-bold outline-none bg-white cursor-pointer" 
+                  />
                 </div>
-              )}
 
-              {/* MODAL DE AUDITORIA DO PACIENTE */}
-              {modalAuditoriaPAV && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-                  <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-slideUp">
-                    <div className="p-4 bg-slate-800 text-white flex justify-between items-center">
-                      <h2 className="font-black flex items-center gap-2">
-                        <ShieldAlert size={20} className="text-red-400" />
-                        Auditoria Epidemiológica - Leito {modalAuditoriaPAV.leito}
-                      </h2>
-                      <button onClick={() => setModalAuditoriaPAV(null)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
-                    </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={forcarVarreduraManualPAV}
+                    className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded-lg text-sm font-bold shadow transition-all flex items-center gap-2"
+                  >
+                    <Search size={16} /> Forçar Varredura
+                  </button>
+                </div>
+              </div>
+            </div>
 
-                    <div className="p-6">
-                      <h3 className="font-bold text-lg text-slate-800 mb-4">{modalAuditoriaPAV.nome}</h3>
-                      
-                      <div className="space-y-4">
-                        <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                          <h4 className="text-xs font-black text-blue-800 uppercase mb-2">Evidência Radiológica</h4>
-                          <p className="text-sm text-blue-900 font-medium">✓ {modalAuditoriaPAV.evidencias.radiologia}</p>
-                        </div>
+            {/* NAVEGAÇÃO INTERNA (Suspeitos | Confirmados | Descartados) */}
+            <div className="flex gap-2 border-b border-slate-200 pb-2">
+              {[
+                { id: 'Suspeito', label: 'Alerta de Suspeita', color: 'bg-amber-100 text-amber-700' },
+                { id: 'Confirmado', label: 'PAV Confirmada', color: 'bg-red-100 text-red-700' },
+                { id: 'Descartado', label: 'Descartados', color: 'bg-emerald-100 text-emerald-700' }
+              ].map(tab => {
+                // Conta os casos respeitando o status E o mês selecionado
+                const count = auditoriasPAV.filter(a => a.status === tab.id && a.mesReferencia === mesFiltroIrasCompartilhado).length;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setFiltroStatusPAV(tab.id)}
+                    className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors flex items-center gap-2 ${filtroStatusPAV === tab.id ? 'bg-white border-t-2 border-l border-r border-slate-200 text-slate-800 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative translate-y-[1px]' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border-b border-transparent'}`}
+                  >
+                    {tab.label}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${tab.color}`}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg">
-                            <h4 className="text-xs font-black text-rose-800 uppercase mb-2 flex items-center gap-1"><Activity size={12}/> Sinais Sistêmicos</h4>
-                            {modalAuditoriaPAV.evidencias.sistemicos.length > 0 ? (
-                              <ul className="text-xs text-rose-900 font-medium space-y-1 list-disc pl-4">
-                                {modalAuditoriaPAV.evidencias.sistemicos.map((e, i) => <li key={i}>{e}</li>)}
-                              </ul>
-                            ) : <span className="text-xs text-slate-400 italic">Nenhum sinal sistêmico mapeado.</span>}
-                          </div>
-
-                          <div className="p-3 bg-cyan-50 border border-cyan-100 rounded-lg">
-                            <h4 className="text-xs font-black text-cyan-800 uppercase mb-2 flex items-center gap-1"><Wind size={12}/> Sinais Respiratórios</h4>
-                            {modalAuditoriaPAV.evidencias.respiratorios.length > 0 ? (
-                              <ul className="text-xs text-cyan-900 font-medium space-y-1 list-disc pl-4">
-                                {modalAuditoriaPAV.evidencias.respiratorios.map((e, i) => <li key={i}>{e}</li>)}
-                              </ul>
-                            ) : <span className="text-xs text-slate-400 italic">Nenhum sinal respiratório extra mapeado.</span>}
-                          </div>
-                        </div>
-
-                        {modalAuditoriaPAV.evidencias.microbiologia.length > 0 && (
-                          <div className="p-3 bg-purple-50 border border-purple-100 rounded-lg">
-                            <h4 className="text-xs font-black text-purple-800 uppercase mb-2 flex items-center gap-1"><Bug size={12}/> Evidência Microbiológica Quantitativa</h4>
-                            <ul className="text-xs text-purple-900 font-medium space-y-1 list-disc pl-4">
-                              {modalAuditoriaPAV.evidencias.microbiologia.map((e, i) => <li key={i}>{e}</li>)}
-                            </ul>
-                          </div>
-                        )}
+            {/* LISTA DE CASOS */}
+            <div className="grid md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-b-xl border border-t-0 border-slate-200 min-h-[300px]">
+              {auditoriasPAV.filter(a => a.status === filtroStatusPAV && a.mesReferencia === mesFiltroIrasCompartilhado).length === 0 ? (
+                <div className="col-span-3 flex flex-col items-center justify-center text-slate-400 py-10">
+                  <CheckCircle size={48} className="text-slate-300 mb-3 opacity-50"/>
+                  <p className="font-bold">Nenhum caso {filtroStatusPAV.toLowerCase()} neste mês.</p>
+                </div>
+              ) : (
+                auditoriasPAV.filter(a => a.status === filtroStatusPAV && a.mesReferencia === mesFiltroIrasCompartilhado).map((caso) => (
+                  <div key={caso.firebaseId} className={`bg-white border-2 rounded-xl p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md ${filtroStatusPAV === 'Suspeito' ? 'border-amber-200' : filtroStatusPAV === 'Confirmado' ? 'border-red-200' : 'border-emerald-200'}`}>
+                    <div className={`absolute top-0 left-0 w-2 h-full ${filtroStatusPAV === 'Suspeito' ? 'bg-amber-500' : filtroStatusPAV === 'Confirmado' ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
+                    <div className="pl-3 flex flex-col h-full">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-black text-slate-400 uppercase">Data: {caso.dataSuspeita ? caso.dataSuspeita.split('-').reverse().join('/') : 'N/D'}</span>
+                        <span className="text-xs font-bold text-slate-800">Leito {caso.leito}</span>
                       </div>
-
-                      <div className="mt-8 flex gap-4">
+                      <h4 className="font-bold text-slate-800 text-sm truncate uppercase">{caso.nome}</h4>
+                      <p className="text-[10px] text-slate-500 mt-2 mb-4 italic line-clamp-2">{caso.evidencias?.justificativa}</p>
+                      
+                      <div className="mt-auto pt-4 border-t border-slate-50">
                         <button 
-                          onClick={() => {
-                            alert("Veredito Salvo! O paciente foi classificado clinicamente com PAV.");
-                            setModalAuditoriaPAV(null);
-                            // Aqui depois podemos engatar a função de salvar no prontuário que já criamos
-                          }} 
-                          className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                          onClick={() => setModalAuditoriaPAV(caso)}
+                          className={`w-full text-white text-xs font-bold py-2 rounded transition-colors flex items-center justify-center gap-2 ${filtroStatusPAV === 'Suspeito' ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
                         >
-                          <CheckCircle size={18} /> Confirmar PAV
-                        </button>
-                        <button 
-                          onClick={() => setModalAuditoriaPAV(null)} 
-                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors"
-                        >
-                          Descartar Suspeita
+                          <Search size={14} /> {filtroStatusPAV === 'Suspeito' ? 'Auditar Caso' : 'Ver Detalhes'}
                         </button>
                       </div>
                     </div>
                   </div>
-                </div>
+                ))
               )}
-
             </div>
-          )}
+
+            {/* MODAL DE AUDITORIA / DETALHES */}
+            {modalAuditoriaPAV && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-slideUp">
+                  <div className={`p-4 text-white flex justify-between items-center ${modalAuditoriaPAV.status === 'Suspeito' ? 'bg-slate-800' : modalAuditoriaPAV.status === 'Confirmado' ? 'bg-red-700' : 'bg-emerald-700'}`}>
+                    <h2 className="font-black flex items-center gap-2">
+                      <ShieldAlert size={20} className="opacity-80" />
+                      Prontuário de Auditoria - Leito {modalAuditoriaPAV.leito}
+                    </h2>
+                    <button onClick={() => setModalAuditoriaPAV(null)} className="text-white/70 hover:text-white transition-colors"><X size={24} /></button>
+                  </div>
+
+                  <div className="p-6">
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <h3 className="font-black text-xl text-slate-800 uppercase">{modalAuditoriaPAV.nome}</h3>
+                        <span className="text-xs text-slate-500 font-bold">Data do Alarme: {modalAuditoriaPAV.dataSuspeita?.split('-').reverse().join('/')}</span>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${modalAuditoriaPAV.status === 'Suspeito' ? 'bg-amber-100 text-amber-700' : modalAuditoriaPAV.status === 'Confirmado' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {modalAuditoriaPAV.status}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                        <h4 className="text-xs font-black text-blue-800 uppercase mb-2">Evidência Radiológica</h4>
+                        <p className="text-sm text-blue-900 font-medium">✓ {modalAuditoriaPAV.evidencias?.radiologia || 'N/D'}</p>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg">
+                          <h4 className="text-xs font-black text-rose-800 uppercase mb-2 flex items-center gap-1"><Activity size={12}/> Sinais Sistêmicos</h4>
+                          {modalAuditoriaPAV.evidencias?.sistemicos?.length > 0 ? (
+                            <ul className="text-xs text-rose-900 font-medium space-y-1 list-disc pl-4">
+                              {modalAuditoriaPAV.evidencias.sistemicos.map((e, i) => <li key={i}>{e}</li>)}
+                            </ul>
+                          ) : <span className="text-xs text-slate-400 italic">Nenhum sinal sistêmico mapeado.</span>}
+                        </div>
+
+                        <div className="p-3 bg-cyan-50 border border-cyan-100 rounded-lg">
+                          <h4 className="text-xs font-black text-cyan-800 uppercase mb-2 flex items-center gap-1"><Wind size={12}/> Sinais Respiratórios</h4>
+                          {modalAuditoriaPAV.evidencias?.respiratorios?.length > 0 ? (
+                            <ul className="text-xs text-cyan-900 font-medium space-y-1 list-disc pl-4">
+                              {modalAuditoriaPAV.evidencias.respiratorios.map((e, i) => <li key={i}>{e}</li>)}
+                            </ul>
+                          ) : <span className="text-xs text-slate-400 italic">Nenhum sinal respiratório extra mapeado.</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BOTÕES DE AÇÃO */}
+                    {modalAuditoriaPAV.status === 'Suspeito' && (
+                      <div className="mt-8 flex gap-4 pt-4 border-t border-slate-100">
+                        <button 
+                          onClick={() => atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Confirmado')} 
+                          className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                        >
+                          <CheckCircle size={18} /> Confirmar PAV
+                        </button>
+                        <button 
+                          onClick={() => atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Descartado')} 
+                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
+                        >
+                          Descartar Suspeita
+                        </button>
+                      </div>
+                    )}
+                    {modalAuditoriaPAV.status !== 'Suspeito' && (
+                      <div className="mt-6 text-center">
+                        <button 
+                          onClick={() => atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Suspeito')}
+                          className="text-xs font-bold text-slate-400 hover:text-slate-600 underline transition-colors"
+                        >
+                          Desfazer auditoria e retornar para Suspeitos
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
 
           {abaIrasAtiva === 'ipcsl' && (
             <div className="text-center animate-fadeIn">
