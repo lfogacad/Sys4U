@@ -9,9 +9,9 @@ const db = admin.firestore();
 exports.gerarCensoUTI = onSchedule({
   schedule: "59 23 * * *",
   timeZone: "America/Porto_Velho", 
-  memory: "256MiB"
+  memory: "512MiB" // Aumentei um pouco a memória pois agora temos duas redes neurais rodando
 }, async () => {
-  console.log("Iniciando varredura do Censo Diário, Qualidade e Rastreio de PAV (Regra ANVISA)...");
+  console.log("Iniciando varredura do Censo Diário, Qualidade, PAV e IPCS-C...");
 
   try {
     const leitosSnapshot = await db.collection("leitos_uti").get();
@@ -21,19 +21,17 @@ exports.gerarCensoUTI = onSchedule({
     agora.setHours(agora.getHours() - 4);
     
     // ========================================================
-    // MOTOR DE TEMPO: JANELA DE INFECÇÃO (D0 a D-3)
+    // MOTOR DE TEMPO GERAL (PAV)
     // ========================================================
-    const datasJanela = [];
+    const datasJanelaPAV = [];
     for (let i = 0; i <= 3; i++) {
       const d = new Date(agora.getTime() - i * 86400000);
-      datasJanela.push(d.toISOString().split('T')[0]); // Formato YYYY-MM-DD
+      datasJanelaPAV.push(d.toISOString().split('T')[0]); 
     }
-    
-    const d0 = datasJanela[0]; // Hoje
+    const d0 = datasJanelaPAV[0]; 
     const mesCorrente = d0.slice(0, 7);
-    
-    const datasBR = datasJanela.map(d => d.split('-').reverse().join('/'));
-    const datasBRCurtas = datasBR.map(d => d.substring(0, 5));
+    const datasBR_PAV = datasJanelaPAV.map(d => d.split('-').reverse().join('/'));
+    const datasBRCurtas_PAV = datasBR_PAV.map(d => d.substring(0, 5));
 
     let contadores = {
       data: d0,
@@ -46,8 +44,9 @@ exports.gerarCensoUTI = onSchedule({
       timestampProcessamento: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    const promessasPAV = [];
+    const promessasAuditoria = [];
     let novosCasosPAV = 0;
+    let novosCasosIPCSC = 0;
 
     leitosSnapshot.forEach((doc) => {
       const p = doc.data();
@@ -55,9 +54,10 @@ exports.gerarCensoUTI = onSchedule({
       const leitoNumero = leitoId.replace('bed_', '');
       
       if (p.nome && p.status !== "Livre") {
+        // ====================================================================
+        // 1. INDICADORES ASSISTENCIAIS E CENSO
+        // ====================================================================
         contadores.totalLeitosOcupados++;
-
-        // Indicadores Assistenciais (Qualidade)
         if (p.enfermagem?.identificacaoCorreta === true) contadores.pacientesIdentificados++;
         if (p.fisioterapia?.ventilacao?.suporte === "VM" || p.fisioterapia?.suporte === "VM") contadores.pacientesEmVM++;
         if (p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData) contadores.pacientesComCVC++;
@@ -65,36 +65,27 @@ exports.gerarCensoUTI = onSchedule({
         if (p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData) contadores.pacientesComShiley++;
 
         // ====================================================================
-        // 🚨 SNIFFER DE SUSPEITA DE PAV (JANELA + D.O.E)
+        // 2. SNIFFER DE SUSPEITA DE PAV
         // ====================================================================
         if (p.dataIntubacao) {
           let dataIntStr = p.dataIntubacao;
           if (dataIntStr.includes('/')) dataIntStr = dataIntStr.split('/').reverse().join('-');
           const dataInt = new Date(dataIntStr);
 
-          // O Raio-X Novo no dia atual é obrigatório
           const radPositivo = p.medical?.novoInfiltrado === 'sim' || p.novoInfiltrado === 'sim';
 
           if (radPositivo) {
-            let sisPositivo = false;
-            let sisEvidencias = [];
-            let respCount = 0;
-            let respEvidencias = [];
-            let datasEventosEncontrados = [d0];
+            let sisPositivo = false, sisEvidencias = [], respCount = 0, respEvidencias = [], datasEventosEncontrados = [d0];
 
-            // 1. SINAIS SISTÊMICOS (LEUCÓCITOS NA JANELA)
             if (p.examHistory) {
               Object.keys(p.examHistory).forEach(dt => {
-                if (datasJanela.includes(dt) || datasBR.includes(dt) || datasBRCurtas.includes(dt)) {
+                if (datasJanelaPAV.includes(dt) || datasBR_PAV.includes(dt) || datasBRCurtas_PAV.includes(dt)) {
                   const leucoStr = p.examHistory[dt]?.["Leucócitos"];
                   if (leucoStr) {
                     const leuco = parseFloat(leucoStr.toString().replace(/\./g, '').replace(',', '.'));
                     if (leuco < 4000 || leuco > 12000) {
-                      sisPositivo = true;
-                      sisEvidencias.push(`Leucócitos (${leuco}) aferidos em ${dt}`);
-                      
-                      let dtNorm = dt;
-                      if (dt.includes('/')) dtNorm = dt.split('/').reverse().join('-');
+                      sisPositivo = true; sisEvidencias.push(`Leucócitos (${leuco}) em ${dt}`);
+                      let dtNorm = dt.includes('/') ? dt.split('/').reverse().join('-') : dt;
                       if (dtNorm.length === 5) dtNorm = `${d0.split('-')[0]}-${dtNorm}`;
                       datasEventosEncontrados.push(dtNorm);
                     }
@@ -103,119 +94,197 @@ exports.gerarCensoUTI = onSchedule({
               });
             }
 
-            // 1B. SINAIS SISTÊMICOS (FEBRE DE HOJE)
             const strPaciente = JSON.stringify(p);
             const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
             let matchTemp;
             while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
               sisPositivo = true;
               if (!sisEvidencias.includes(`Febre (${matchTemp[1]} ºC)`)) {
-                sisEvidencias.push(`Febre (${matchTemp[1]} ºC) registrada em ${datasBR[0]}`);
+                sisEvidencias.push(`Febre (${matchTemp[1]} ºC) em ${datasBR_PAV[0]}`);
                 datasEventosEncontrados.push(d0);
               }
             }
 
-            // 2. SINAIS RESPIRATÓRIOS (SECREÇÃO)
             const asp = p.physio?.secrecaoAspecto?.toLowerCase() || "";
             const col = p.physio?.secrecaoColoracao?.toLowerCase() || "";
             const qtd = p.physio?.secrecaoQtd?.toLowerCase() || "";
-            
             if (asp.includes('espessa') || col.includes('purulenta') || col.includes('esverdeada') || qtd.includes('moderada') || qtd.includes('abundante')) {
-              respCount++;
-              respEvidencias.push(`Secreção anormal (${asp}/${col}/${qtd}) avaliada em ${datasBR[0]}`);
+              respCount++; respEvidencias.push(`Secreção anormal (${asp}/${col}/${qtd}) em ${datasBR_PAV[0]}`);
               datasEventosEncontrados.push(d0);
             }
 
-            // 2B. SINAIS RESPIRATÓRIOS (GASOMETRIA NA JANELA)
             if (p.gasometriaHistory) {
-              let menorPF = 999;
-              let dataMenorPF = "";
-              
+              let menorPF = 999; let dataMenorPF = "";
               Object.keys(p.gasometriaHistory).forEach(colGaso => {
-                const isRecente = datasJanela.some(d => colGaso.includes(d)) || 
-                                  datasBR.some(d => colGaso.includes(d)) ||
-                                  datasBRCurtas.some(d => colGaso.includes(d));
-                
-                if (isRecente) {
+                if (datasJanelaPAV.some(d => colGaso.includes(d)) || datasBR_PAV.some(d => colGaso.includes(d)) || datasBRCurtas_PAV.some(d => colGaso.includes(d))) {
                   const pf = parseFloat(p.gasometriaHistory[colGaso]?.["P/F"]);
-                  if (pf && pf <= 240 && pf < menorPF) {
-                    menorPF = pf;
-                    dataMenorPF = colGaso;
-                  }
+                  if (pf && pf <= 240 && pf < menorPF) { menorPF = pf; dataMenorPF = colGaso; }
                 }
               });
-              
               if (menorPF <= 240) {
-                respCount++;
-                respEvidencias.push(`Relação P/F baixa (${menorPF}) colhida em ${dataMenorPF}`);
-                
+                respCount++; respEvidencias.push(`P/F baixa (${menorPF}) em ${dataMenorPF}`);
                 let dataGasoNorm = d0;
-                datasJanela.forEach(dj => { if (dataMenorPF.includes(dj)) dataGasoNorm = dj; });
-                datasBR.forEach(dbr => { if (dataMenorPF.includes(dbr)) dataGasoNorm = dbr.split('/').reverse().join('-'); });
+                datasJanelaPAV.forEach(dj => { if (dataMenorPF.includes(dj)) dataGasoNorm = dj; });
+                datasBR_PAV.forEach(dbr => { if (dataMenorPF.includes(dbr)) dataGasoNorm = dbr.split('/').reverse().join('-'); });
                 datasEventosEncontrados.push(dataGasoNorm);
               }
             }
 
-            // 3. DETERMINAÇÃO DA D.O.E. E COMPROVAÇÃO DA VM
             if (sisPositivo && respCount >= 2) {
               const timestamps = datasEventosEncontrados.map(d => new Date(d).getTime()).filter(n => !isNaN(n));
               const dataEventoDOE = new Date(Math.min(...timestamps));
               const dataEventoFormatada = dataEventoDOE.toISOString().split('T')[0];
-
               const diffVMnaDOE = Math.floor((dataEventoDOE - dataInt) / (1000 * 60 * 60 * 24));
               let atendeCriterioVM = diffVMnaDOE >= 2;
 
               if (atendeCriterioVM && p.dataExtubacao) {
-                let dataExtStr = p.dataExtubacao;
-                if (dataExtStr.includes('/')) dataExtStr = dataExtStr.split('/').reverse().join('-');
-                const diffExtDOE = Math.floor((dataEventoDOE - new Date(dataExtStr)) / (1000 * 60 * 60 * 24));
-                if (diffExtDOE > 1) atendeCriterioVM = false; 
+                let dataExtStr = p.dataExtubacao.includes('/') ? p.dataExtubacao.split('/').reverse().join('-') : p.dataExtubacao;
+                if (Math.floor((dataEventoDOE - new Date(dataExtStr)) / (1000 * 60 * 60 * 24)) > 1) atendeCriterioVM = false; 
               }
 
               if (atendeCriterioVM) {
                 const idAuditoria = `${p.cpf || leitoId}_pav_${mesCorrente}`;
                 const docAuditoriaRef = db.collection("auditorias_pav").doc(idAuditoria);
-                
-                const promessa = docAuditoriaRef.get().then(async (audDoc) => {
+                const promessaPAV = docAuditoriaRef.get().then(async (audDoc) => {
                   if (!audDoc.exists) {
                     await docAuditoriaRef.set({
-                      id: idAuditoria,
-                      pacienteId: leitoId,
-                      cpf: p.cpf || "000.000.000-00",
-                      nome: p.nome,
-                      leito: leitoNumero,
-                      mesReferencia: mesCorrente,
-                      dataSuspeita: d0,
-                      dataEventoDOE: dataEventoFormatada,
+                      id: idAuditoria, pacienteId: leitoId, cpf: p.cpf || "000.000.000-00", nome: p.nome,
+                      leito: leitoNumero, mesReferencia: mesCorrente, dataSuspeita: d0, dataEventoDOE: dataEventoFormatada,
                       status: "Suspeito",
                       evidencias: {
-                        radiologia: `Sim (Novo infiltrado / Progressão) mapeado em ${datasBR[0]}`,
-                        sistemicos: sisEvidencias,
-                        respiratorios: respEvidencias,
-                        justificativa: `D.O.E da Infecção: ${dataEventoFormatada.split('-').reverse().join('/')} (Paciente já estava no D${diffVMnaDOE + 1} de VM).`
+                        radiologia: `Sim (Novo infiltrado / Progressão) em ${datasBR_PAV[0]}`,
+                        sistemicos: sisEvidencias, respiratorios: respEvidencias,
+                        justificativa: `D.O.E da Infecção: ${dataEventoFormatada.split('-').reverse().join('/')} (D${diffVMnaDOE + 1} de VM).`
                       },
                       timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
                     });
                     novosCasosPAV++;
-                    console.log(`🚨 [VIGILÂNCIA]: Suspeita de PAV gerada para ${p.nome} (DOE: ${dataEventoFormatada})`);
+                    console.log(`🚨 [PAV]: Suspeita gerada para ${p.nome}`);
                   }
                 });
-                promessasPAV.push(promessa);
+                promessasAuditoria.push(promessaPAV);
               }
+            }
+          }
+        }
+
+        // ====================================================================
+        // 3. SNIFFER DE SUSPEITA DE IPCS-C
+        // ====================================================================
+        if (p.culturas && p.culturas.lista) {
+          const hemoculturasPositivas = p.culturas.lista.filter(c => c.tipo?.toLowerCase().includes('hemocultura') && c.status === 'Positivo');
+          const listaComensais = ['staphylococcus coagulase negativo', 'epidermidis', 'hominis', 'haemolyticus', 'saprophyticus', 'corynebacterium', 'bacillus', 'micrococcus', 'propionibacterium', 'cutibacterium'];
+
+          for (const hemo of hemoculturasPositivas) {
+            if (!hemo.dataColeta) continue;
+            
+            let dColetaStr = hemo.dataColeta.includes('/') ? hemo.dataColeta.split('/').reverse().join('-') : hemo.dataColeta;
+            // Dica de servidor: Ao adicionar T12:00:00 garantimos que o fuso horário não jogue a data para o dia anterior
+            const dataColetaObj = new Date(`${dColetaStr}T12:00:00`); 
+            const mesCorrenteHemo = dColetaStr.slice(0,7);
+            
+            // Janela de 7 Dias: D-3 a D+3 da Coleta
+            const datasJanelaIPCSC = [];
+            for (let i = -3; i <= 3; i++) {
+              const d = new Date(dataColetaObj.getTime() + i * 86400000);
+              datasJanelaIPCSC.push(d.toISOString().split('T')[0]);
+            }
+
+            const nomeGerme = hemo.germe?.toLowerCase() || "";
+            const isComensal = listaComensais.some(c => nomeGerme.includes(c));
+            
+            let criterioMicroAprovado = false;
+            let evidenciasSistemicasIPCS = [];
+
+            if (!isComensal) {
+              criterioMicroAprovado = true; // Patógeno real passa direto
+            } else {
+              // Comensal exige amostras múltiplas E sinal clínico na janela 7D
+              if (hemo.amostrasPositivas !== 'multiplas') continue; 
+              
+              let temSinalSistemico = false;
+              const strPaciente = JSON.stringify(p);
+              
+              datasJanelaIPCSC.forEach(dj => {
+                // Caçando Febre
+                const regexFebre = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
+                let matchTemp;
+                while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
+                  temSinalSistemico = true;
+                  if (!evidenciasSistemicasIPCS.includes(`Febre (${matchTemp[1]} ºC)`)) evidenciasSistemicasIPCS.push(`Febre (${matchTemp[1]} ºC) detectada`);
+                }
+                // Caçando Hipotensão (PAS < 90)
+                const regexPAS = /"PAS":\s*"?([1-8]\d)"?/g; 
+                let matchPAS;
+                while ((matchPAS = regexPAS.exec(strPaciente)) !== null) {
+                  temSinalSistemico = true;
+                  if (!evidenciasSistemicasIPCS.includes(`PAS Baixa (${matchPAS[1]})`)) evidenciasSistemicasIPCS.push(`PAS Baixa (${matchPAS[1]}) detectada`);
+                }
+                // Caçando DVA
+                const regexNora = /"Noradrenalina":\s*"?([1-9]\d*(?:[.,]\d+)?|0[.,][1-9]\d*)"?/g;
+                let matchNora;
+                while ((matchNora = regexNora.exec(strPaciente)) !== null) {
+                  temSinalSistemico = true;
+                  if (!evidenciasSistemicasIPCS.includes(`Uso de DVA (Noradrenalina: ${matchNora[1]})`)) evidenciasSistemicasIPCS.push(`Uso de DVA (Noradrenalina: ${matchNora[1]}) detectado`);
+                }
+              });
+
+              if (temSinalSistemico) criterioMicroAprovado = true;
+            }
+
+            if (!criterioMicroAprovado) continue;
+
+            // Associação ao CVC
+            if (!p.enfermagem?.cvcData) continue;
+            let dCvcStr = p.enfermagem.cvcData.includes('/') ? p.enfermagem.cvcData.split('/').reverse().join('-') : p.enfermagem.cvcData;
+            const dataCvcObj = new Date(`${dCvcStr}T12:00:00`);
+            
+            const diffCvcColeta = Math.floor((dataColetaObj - dataCvcObj) / (1000 * 60 * 60 * 24));
+            let associadoCVC = diffCvcColeta >= 2;
+
+            if (associadoCVC && p.enfermagem.cvcRetiradaData) {
+              let dCvcRetStr = p.enfermagem.cvcRetiradaData.includes('/') ? p.enfermagem.cvcRetiradaData.split('/').reverse().join('-') : p.enfermagem.cvcRetiradaData;
+              const diffRetColeta = Math.floor((dataColetaObj - new Date(`${dCvcRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24));
+              if (diffRetColeta > 1) associadoCVC = false; 
+            }
+
+            if (associadoCVC) {
+              const idAuditoria = `${p.cpf || leitoId}_ipcsc_${hemo.id || dColetaStr}`;
+              const docRefIPCSC = db.collection("auditorias_ipcsc").doc(idAuditoria);
+              
+              const promessaIPCSC = docRefIPCSC.get().then(async (audDoc) => {
+                if (!audDoc.exists) {
+                  await docRefIPCSC.set({
+                    id: idAuditoria, pacienteId: leitoId, cpf: p.cpf || "000.000.000-00",
+                    nome: p.nome, leito: leitoNumero, mesReferencia: mesCorrenteHemo,
+                    dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
+                    evidencias: {
+                      microbiologia: `${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
+                      sistemicos: evidenciasSistemicasIPCS.length > 0 ? evidenciasSistemicasIPCS : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
+                      dispositivo: `CVC inserido em ${dCvcStr.split('-').reverse().join('/')} (D${diffCvcColeta + 1} no dia da coleta)`,
+                      justificativa: "Cruzamento automatizado: Hemocultura + Janela 7D + CVC."
+                    },
+                    timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
+                  });
+                  novosCasosIPCSC++;
+                  console.log(`🚨 [IPCS-C]: Suspeita gerada para ${p.nome}`);
+                }
+              });
+              promessasAuditoria.push(promessaIPCSC);
             }
           }
         }
       }
     });
 
-    // Executa todos os salvamentos pendentes
-    await Promise.all(promessasPAV);
+    // Aguarda TODAS as gravações (PAV e IPCS-C) terminarem
+    await Promise.all(promessasAuditoria);
 
     // Salva o censo diário global
     await db.collection("censo_diario").add(contadores);
-    console.log(`✅ Censo Diário salvo. Foram detectados ${novosCasosPAV} novos alertas de PAV nesta madrugada!`);
+    console.log(`✅ Fechamento concluído. Capturados: ${novosCasosPAV} PAVs e ${novosCasosIPCSC} IPCS-Cs.`);
     
   } catch (error) {
-    console.error("❌ Erro ao rodar o fechamento do censo e rastreio de PAV:", error);
+    console.error("❌ Erro fatal no fechamento do servidor:", error);
   }
 });

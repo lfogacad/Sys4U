@@ -83,6 +83,7 @@ REGRA DE ISOLAMENTO: Retorne true se o germe for multirresistente (KPC, MRSA, VR
             status: resultadoIA.status,
             germe: resultadoIA.germe || "",
             contagemUFC: Number(resultadoIA.contagemUFC) || 0,
+            amostrasPositivas: resultadoIA.amostrasPositivas || "unica",
             testados: resultadoIA.antibioticosTestados || [],
             resistentes: resultadoIA.antibioticosResistentes || [],
             analiseIA: resultadoIA.analise || "",
