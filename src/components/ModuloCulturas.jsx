@@ -37,6 +37,7 @@ Analise este antibiograma e retorne APENAS um JSON válido. Não inclua textos e
 {
   "status": "Positivo ou Negativo",
   "germe": "Nome do microrganismo (se negativo, deixe vazio)",
+  "contagemUFC": "Número de colônias (ex: 1000000). Se não houver quantificação, retorne 0",
   "antibioticosTestados": ["Lista de TODOS os antibióticos testados"],
   "antibioticosResistentes": ["Lista APENAS dos antibióticos com Resistência (R) ou Intermediário (I). Se for tudo sensível, retorne um array vazio []"],
   "analise": "Sua análise terapêutica baseada no arsenal: [Ceftriaxona, Amoxicilina/Clavulanato, Cefepime, Oxacilina, Ampicilina, Tazocin, Meropenem, Clindamicina, Vancomicina, Fluconazol, Anfotericina B, Amicacina, Gentamicina, Cirpofloxacino, Levofloxacino, Metronidazol, SMT/TMP].",
@@ -80,6 +81,7 @@ REGRA DE ISOLAMENTO: Retorne true se o germe for multirresistente (KPC, MRSA, VR
             ...c,
             status: resultadoIA.status,
             germe: resultadoIA.germe || "",
+            contagemUFC: Number(resultadoIA.contagemUFC) || 0,
             testados: resultadoIA.antibioticosTestados || [],
             resistentes: resultadoIA.antibioticosResistentes || [],
             analiseIA: resultadoIA.analise || "",

@@ -72,20 +72,30 @@ const ChecklistEvoModal = ({
       return;
     }
 
-    // Preparamos o pacote de dados para enviar direto para a evolução
+    // ====================================================================
+    // 🚨 A MÁGICA ACONTECE AQUI: GRAVANDO NO BANCO PARA O ROBÔ DA PAV LER
+    // ====================================================================
+    updateNested("medical", "imagemPulmonar", imagemPulmonar);
+    updateNested("medical", "novoInfiltrado", imagemPulmonar === 'sim' ? novoInfiltrado : "nao");
+
+    // Preparamos o pacote de dados para enviar direto para a evolução da IA
     const dadosEnvio = {
-      estadoGeral: med.estadoGeral || "REG",
-      atbs: med.antibioticosTextoIA || "",
+      // Como não temos a variável 'med' inteira no escopo da função, usamos o currentPatient para evitar erros
+      estadoGeral: currentPatient?.medical?.estadoGeral || "REG",
+      atbs: currentPatient?.medical?.antibioticosTextoIA || "",
       // Dados da CCIH
       culturaColetadaHoje: culturaHoje === 'sim',
       culturasTipos: culturasTipos,
-      culturaOutroDetalhe: culturaOutro
+      culturaOutroDetalhe: culturaOutro,
+      // Incluímos no pacote caso a IA queira citar a imagem na evolução escrita
+      imagemPulmonar: imagemPulmonar,
+      novoInfiltrado: novoInfiltrado
     };
 
     setErroValidacao("");
     setShowChecklistEvo(false);
 
-    // 🚨 O SEGREDO: Passamos o pacote direto para a função
+    // Passamos o pacote direto para a função generateAIEvolution
     setTimeout(() => {
       confirmarEGerar(dadosEnvio);
     }, 300);

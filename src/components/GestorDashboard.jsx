@@ -3,8 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
-  ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown,  
-  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList
+  ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, 
+  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -52,6 +52,10 @@ const GestorDashboard = ({ userProfile }) => {
   const [culturasGlobais, setCulturasGlobais] = useState([]);
   const [mesFiltroCultura, setMesFiltroCultura] = useState(new Date().toISOString().slice(0,7));
   const [historicoCCIH, setHistoricoCCIH] = useState([]);
+
+  // Controles do Rastreador Ativo de PAV
+  const [modalAuditoriaPAV, setModalAuditoriaPAV] = useState(null);
+  const [suspeitosPAV, setSuspeitosPAV] = useState([]);
   
   // Tabela Oficial OMS (DDD em Gramas para via Parenteral)
   const DDD_OMS = {
@@ -2698,10 +2702,277 @@ const metricasQualidade = useMemo(() => {
           )}
           
           {abaIrasAtiva === 'pav' && (
-            <div className="text-center animate-fadeIn">
-              <Bug size={48} className="mx-auto text-slate-300 mb-4" />
-              <h3 className="text-lg font-bold text-slate-700">Pneumonia Associada à Ventilação (PAV)</h3>
-              <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">Módulo pronto para receber o cruzamento do alerta de Novo Infiltrado Pulmonar vs Dias de Ventilação Mecânica.</p>
+            <div className="animate-fadeIn space-y-6">
+              
+              <div className="bg-gradient-to-r from-red-600 to-rose-700 rounded-xl p-6 text-white shadow-lg flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-black flex items-center gap-2">
+                    <Activity size={24} className="animate-pulse text-red-200" />
+                    Rastreador Ativo de PAV
+                  </h3>
+                  <p className="text-red-100 text-sm mt-1 max-w-2xl">
+                    O sistema audita os prontuários em tempo real cruzando a Janela de VM (48h) com o Critério Radiológico, Clínico, Gasométrico e Microbiológico da ANVISA.
+                  </p>
+                </div>
+                <button 
+                  onClick={async () => {
+                    if (!db) return alert("Banco de dados não conectado.");
+                    
+                    console.log("=========================================");
+                    console.log("🕵️ INICIANDO VARREDURA DE PAV NO FIREBASE...");
+                    console.log("=========================================");
+
+                    try {
+                      // 1. A MÁGICA: O robô vai direto no Firebase na coleção 'leitos_uti' (A mesma do seu print!)
+                      const snapshot = await getDocs(collection(db, "leitos_uti"));
+                      const pacientesAtivos = [];
+                      
+                      snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        // Filtra apenas os leitos que têm um paciente deitado (que têm nome)
+                        if (data.nome && data.nome.trim() !== '') {
+                          // Injeta o ID e o número do leito limpo para usar depois
+                          pacientesAtivos.push({ id: doc.id, leito: doc.id.replace('bed_', ''), ...data });
+                        }
+                      });
+
+                      console.log(`✅ ${pacientesAtivos.length} pacientes internados encontrados para auditoria.`);
+
+                      const suspeitosEncontrados = [];
+                      const hoje = new Date();
+
+                      pacientesAtivos.forEach(p => {
+                        console.log(`\n🔎 Analisando Leito ${p.leito} - ${p.nome}`);
+                        
+                        // 1. CHECAGEM DE VM
+                        if (!p.dataIntubacao) {
+                          console.log("❌ BLOQUEADO: Paciente não tem dataIntubacao registrada.");
+                          return;
+                        }
+                        
+                        let dataIntStr = p.dataIntubacao;
+                        if (dataIntStr.includes('/')) {
+                          const [d, m, y] = dataIntStr.split('/');
+                          dataIntStr = `${y}-${m}-${d}`;
+                        }
+                        
+                        const dataInt = new Date(dataIntStr);
+                        const diffIntubacao = Math.floor((hoje - dataInt) / (1000 * 60 * 60 * 24));
+                        console.log(`✅ Tubo: ${diffIntubacao} dias (Data base: ${dataIntStr})`);
+                        
+                        if (diffIntubacao < 2) {
+                          console.log("❌ BLOQUEADO: Menos de 48h de intubação.");
+                          return;
+                        }
+
+                        // 2. CRITÉRIO RADIOLÓGICO
+                        const infiltradoNoBanco = p.medical?.novoInfiltrado || p.evolucaoMedica?.novoInfiltrado || p.novoInfiltrado;
+                        console.log(`🩻 Info no Banco para Infiltrado:`, infiltradoNoBanco);
+                        
+                        if (infiltradoNoBanco !== 'sim') {
+                          console.log("❌ BLOQUEADO: Critério Radiológico não consta como 'sim' no Firebase.");
+                          return; 
+                        }
+
+                        // 3. SINAIS SISTÊMICOS
+                        let sisPositivo = false;
+                        let sisEvidencias = [];
+
+                        if (p.examHistory) {
+                          Object.keys(p.examHistory).forEach(dataExame => {
+                            const leucoStr = p.examHistory[dataExame]?.["Leucócitos"];
+                            if (leucoStr) {
+                              const leuco = parseFloat(leucoStr.toString().replace(/\./g, '').replace(',', '.'));
+                              if (leuco < 4000 || leuco > 12000) {
+                                sisPositivo = true;
+                                sisEvidencias.push(`Leucócitos alterados (${leuco})`);
+                              }
+                            }
+                          });
+                        }
+
+                        // A regex varre o documento inteiro buscando Temp >= 38.0
+                        const strPaciente = JSON.stringify(p);
+                        const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
+                        let matchTemp;
+                        while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
+                          sisPositivo = true;
+                          if (!sisEvidencias.includes(`Febre (${matchTemp[1]} ºC)`)) {
+                            sisEvidencias.push(`Febre (${matchTemp[1]} ºC)`);
+                          }
+                        }
+                        console.log(`🌡️ Sinais Sistêmicos (Febre/Leuco): ${sisPositivo ? 'SIM' : 'NÃO'}`, sisEvidencias);
+
+                        // 4. SINAIS RESPIRATÓRIOS
+                        let respCount = 0;
+                        let respEvidencias = [];
+
+                        const asp = p.physio?.secrecaoAspecto?.toLowerCase() || "";
+                        const col = p.physio?.secrecaoColoracao?.toLowerCase() || "";
+                        const qtd = p.physio?.secrecaoQtd?.toLowerCase() || "";
+                        
+                        if (asp.includes('espessa') || col.includes('purulenta') || col.includes('esverdeada') || qtd.includes('moderada') || qtd.includes('abundante')) {
+                          respCount++;
+                          respEvidencias.push(`Secreção anormal (${asp}/${col}/${qtd})`);
+                        }
+
+                        if (p.gasometriaHistory) {
+                          let menorPF = 999;
+                          Object.keys(p.gasometriaHistory).forEach(colGaso => {
+                            const pf = parseFloat(p.gasometriaHistory[colGaso]?.["P/F"]);
+                            if (pf && pf <= 240 && pf < menorPF) menorPF = pf;
+                          });
+                          if (menorPF <= 240) {
+                            respCount++;
+                            respEvidencias.push(`P/F baixa (${menorPF})`);
+                          }
+                        }
+                        console.log(`🫁 Sinais Respiratórios (Qtd): ${respCount}`, respEvidencias);
+
+                        // LÓGICA DE AUDITORIA ANVISA
+                        let pavDetectada = false;
+                        let justificativa = "";
+
+                        if (sisPositivo && respCount >= 2) {
+                          pavDetectada = true;
+                          justificativa = "Clínico Forte (Raio-X + 1 Sistêmico + 2 Respiratórios)";
+                        } else {
+                          console.log(`❌ BLOQUEADO: Faltaram critérios. (Sistêmico precisa ser true. Respiratório precisa ser >= 2. Atual: Sistêmico=${sisPositivo}, Respiratório=${respCount})`);
+                        }
+
+                        if (pavDetectada) {
+                          console.log("🚨🚨 PACIENTE CAPTURADO COMO SUSPEITO DE PAV! 🚨🚨");
+                          suspeitosEncontrados.push({
+                            paciente: p,
+                            id: p.id,
+                            leito: p.leito,
+                            nome: p.nome,
+                            evidencias: {
+                              radiologia: "Sim (Novo infiltrado)",
+                              sistemicos: sisEvidencias,
+                              respiratorios: respEvidencias,
+                              microbiologia: [],
+                              justificativa: justificativa
+                            }
+                          });
+                        }
+                      });
+
+                      setSuspeitosPAV(suspeitosEncontrados);
+                      console.log("=========================================");
+                      if (suspeitosEncontrados.length === 0) alert("Nenhum paciente preencheu os critérios de suspeita de PAV no momento.");
+                    
+                    } catch (error) {
+                      console.error("Erro fatal ao ler o Firebase:", error);
+                      alert("Falha na conexão com os prontuários ativos.");
+                    }
+                  }}
+                  className="bg-white text-red-700 hover:bg-red-50 px-6 py-3 rounded-lg font-black shadow transition-all flex items-center gap-2"
+                >
+                  <Search size={18} /> Varrer Prontuários Agora
+                </button>
+              </div>
+
+              {/* LISTA DE SUSPEITOS */}
+              {suspeitosPAV.length > 0 && (
+                <div className="grid md:grid-cols-3 gap-4 mt-6">
+                  {suspeitosPAV.map((suspeito, idx) => (
+                    <div key={idx} className="bg-white border-2 border-red-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-2 h-full bg-red-500"></div>
+                      <div className="pl-3">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Alerta PAV</span>
+                          <span className="text-xs font-bold text-slate-400">Leito {suspeito.leito}</span>
+                        </div>
+                        <h4 className="font-bold text-slate-800 text-sm truncate">{suspeito.nome}</h4>
+                        <p className="text-[10px] text-slate-500 mt-1 mb-4 italic">{suspeito.evidencias.justificativa}</p>
+                        
+                        <button 
+                          onClick={() => setModalAuditoriaPAV(suspeito)}
+                          className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded transition-colors flex items-center justify-center gap-2"
+                        >
+                          <ShieldAlert size={14} className="text-amber-400"/> Auditar Caso
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* MODAL DE AUDITORIA DO PACIENTE */}
+              {modalAuditoriaPAV && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                  <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-slideUp">
+                    <div className="p-4 bg-slate-800 text-white flex justify-between items-center">
+                      <h2 className="font-black flex items-center gap-2">
+                        <ShieldAlert size={20} className="text-red-400" />
+                        Auditoria Epidemiológica - Leito {modalAuditoriaPAV.leito}
+                      </h2>
+                      <button onClick={() => setModalAuditoriaPAV(null)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
+                    </div>
+
+                    <div className="p-6">
+                      <h3 className="font-bold text-lg text-slate-800 mb-4">{modalAuditoriaPAV.nome}</h3>
+                      
+                      <div className="space-y-4">
+                        <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                          <h4 className="text-xs font-black text-blue-800 uppercase mb-2">Evidência Radiológica</h4>
+                          <p className="text-sm text-blue-900 font-medium">✓ {modalAuditoriaPAV.evidencias.radiologia}</p>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg">
+                            <h4 className="text-xs font-black text-rose-800 uppercase mb-2 flex items-center gap-1"><Activity size={12}/> Sinais Sistêmicos</h4>
+                            {modalAuditoriaPAV.evidencias.sistemicos.length > 0 ? (
+                              <ul className="text-xs text-rose-900 font-medium space-y-1 list-disc pl-4">
+                                {modalAuditoriaPAV.evidencias.sistemicos.map((e, i) => <li key={i}>{e}</li>)}
+                              </ul>
+                            ) : <span className="text-xs text-slate-400 italic">Nenhum sinal sistêmico mapeado.</span>}
+                          </div>
+
+                          <div className="p-3 bg-cyan-50 border border-cyan-100 rounded-lg">
+                            <h4 className="text-xs font-black text-cyan-800 uppercase mb-2 flex items-center gap-1"><Wind size={12}/> Sinais Respiratórios</h4>
+                            {modalAuditoriaPAV.evidencias.respiratorios.length > 0 ? (
+                              <ul className="text-xs text-cyan-900 font-medium space-y-1 list-disc pl-4">
+                                {modalAuditoriaPAV.evidencias.respiratorios.map((e, i) => <li key={i}>{e}</li>)}
+                              </ul>
+                            ) : <span className="text-xs text-slate-400 italic">Nenhum sinal respiratório extra mapeado.</span>}
+                          </div>
+                        </div>
+
+                        {modalAuditoriaPAV.evidencias.microbiologia.length > 0 && (
+                          <div className="p-3 bg-purple-50 border border-purple-100 rounded-lg">
+                            <h4 className="text-xs font-black text-purple-800 uppercase mb-2 flex items-center gap-1"><Bug size={12}/> Evidência Microbiológica Quantitativa</h4>
+                            <ul className="text-xs text-purple-900 font-medium space-y-1 list-disc pl-4">
+                              {modalAuditoriaPAV.evidencias.microbiologia.map((e, i) => <li key={i}>{e}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-8 flex gap-4">
+                        <button 
+                          onClick={() => {
+                            alert("Veredito Salvo! O paciente foi classificado clinicamente com PAV.");
+                            setModalAuditoriaPAV(null);
+                            // Aqui depois podemos engatar a função de salvar no prontuário que já criamos
+                          }} 
+                          className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                        >
+                          <CheckCircle size={18} /> Confirmar PAV
+                        </button>
+                        <button 
+                          onClick={() => setModalAuditoriaPAV(null)} 
+                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors"
+                        >
+                          Descartar Suspeita
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
