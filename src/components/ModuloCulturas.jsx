@@ -36,12 +36,13 @@ Analise este antibiograma e retorne APENAS um JSON válido. Não inclua textos e
 
 {
   "status": "Positivo ou Negativo",
-  "germe": "Nome do microrganismo (se negativo, deixe vazio)",
-  "contagemUFC": "Número de colônias. Se não houver quantificação, retorne 0",
+  "germe": "Nome do(s) microrganismo(s) (se negativo, deixe vazio)",
+  "qtdEspecies": "Número inteiro de quantas espécies diferentes cresceram (ex: 1 ou 2). Se o laudo citar 'flora mista' ou 3 ou mais espécies, retorne 3",
+  "contagemUFC": "Número de colônias (ex: 100000). Se não houver quantificação numérica, retorne 0",
   "amostrasPositivas": "Responda 'multiplas' se o laudo citar 'dois lados', 'duas amostras', 'par', ou positividade em 'garrafa aeróbia e anaeróbia'. Caso contrário, responda 'unica'",
   "antibioticosTestados": ["Lista de TODOS os antibióticos testados"],
   "antibioticosResistentes": ["Lista APENAS dos antibióticos com Resistência (R) ou Intermediário (I). Se tudo sensível, retorne []"],
-  "analise": "Sua análise terapêutica baseada no arsenal: [Ceftriaxona, Amoxicilina/Clavulanato, Cefepime, Oxacilina, Ampicilina, Tazocin, Meropenem, Clindamicina, Vancomicina, Fluconazol, Anfotericina B, Amicacina, Gentamicina, Cirpofloxacino, Levofloxacino, Metronidazol, SMT/TMP].",
+  "analise": "Sua análise terapêutica baseada no arsenal do hospital.",
   "exigeIsolamento": true ou false
 }
 REGRA DE ISOLAMENTO: Retorne true se o germe for multirresistente (KPC, MRSA, VRE, Acinetobacter MDR, Pseudomonas MDR, ESBL) ou Clostridium.
@@ -77,23 +78,26 @@ REGRA DE ISOLAMENTO: Retorne true se o germe for multirresistente (KPC, MRSA, VR
 
       // 1. Atualiza a lista de culturas com os novos arrays
       const culturasAtualizadas = culturas.map(c => {
-        if (c.id === culturaId) {
-          return {
-            ...c,
-            status: resultadoIA.status,
-            germe: resultadoIA.germe || "",
-            contagemUFC: Number(resultadoIA.contagemUFC) || 0,
-            amostrasPositivas: resultadoIA.amostrasPositivas || "unica",
-            testados: resultadoIA.antibioticosTestados || [],
-            resistentes: resultadoIA.antibioticosResistentes || [],
-            analiseIA: resultadoIA.analise || "",
-            dataResultado: new Date().toISOString().split('T')[0],
-            irasAssociada: "" 
-          };
-        }
-        return c;
-      });
-      updateNested("culturas", "lista", culturasAtualizadas);
+      if (c.id === culturaId) {
+        return {
+          ...c,
+          status: resultadoIA.status,
+          germe: resultadoIA.germe || "",
+          qtdEspecies: Number(resultadoIA.qtdEspecies) || 1,
+          contagemUFC: Number(resultadoIA.contagemUFC) || 0,
+          amostrasPositivas: resultadoIA.amostrasPositivas || "unica",
+          testados: resultadoIA.antibioticosTestados || [],
+          resistentes: resultadoIA.antibioticosResistentes || [],
+          mecanismoResistencia: resultadoIA.mecanismoResistencia || "Não identificado", 
+          // ----------------------------------
+          analiseIA: resultadoIA.analise || "",
+          dataResultado: new Date().toISOString().split('T')[0],
+          irasAssociada: "" 
+        };
+      }
+      return c;
+    });
+    updateNested("culturas", "lista", culturasAtualizadas);
 
       // 2. GATILHO DE ISOLAMENTO GLOBAL
       if (resultadoIA.exigeIsolamento) {
@@ -228,6 +232,28 @@ REGRA DE ISOLAMENTO: Retorne true se o germe for multirresistente (KPC, MRSA, VR
                   Isolado em {modalIA.tipo} ({modalIA.dataResultado ? modalIA.dataResultado.split('-').reverse().join('/') : 'N/D'})
                 </p>
                 <p className="text-xl font-black text-red-600">{modalIA.germe}</p>
+                <div className="mt-3">
+                  <label className="text-[10px] font-black text-slate-500 uppercase">Mecanismo de Resistência:</label>
+                  <select 
+                    value={modalIA.mecanismoResistencia || "Não identificado"}
+                    onChange={(e) => {
+                      // Esta função atualiza o objeto na tela e salva direto no Firebase
+                      const valor = e.target.value;
+                      const novasCulturas = culturas.map(c => c.id === modalIA.id ? {...c, mecanismoResistencia: valor} : c);
+                      updateNested("culturas", "lista", novasCulturas);
+                    }}
+                    className="w-full mt-1 p-2 border border-slate-300 rounded text-xs font-bold bg-white"
+                  >
+                    <option value="Não identificado">Não identificado</option>
+                    <option value="KPC">KPC</option>
+                    <option value="NDM">NDM</option>
+                    <option value="OXA-48">OXA-48</option>
+                    <option value="VRE">VRE</option>
+                    <option value="MRSA">MRSA</option>
+                    <option value="ESBL">ESBL</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </div>
                 {modalIA.irasAssociada && (
                   <span className="inline-block mt-2 bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs font-bold border border-indigo-200">
                     Classificação: {modalIA.irasAssociada}

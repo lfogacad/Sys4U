@@ -9,9 +9,9 @@ const db = admin.firestore();
 exports.gerarCensoUTI = onSchedule({
   schedule: "59 23 * * *",
   timeZone: "America/Porto_Velho", 
-  memory: "512MiB" // Aumentei um pouco a memória pois agora temos duas redes neurais rodando
+  memory: "512MiB" 
 }, async () => {
-  console.log("Iniciando varredura do Censo Diário, Qualidade, PAV e IPCS-C...");
+  console.log("Iniciando varredura do Censo Diário, Qualidade e Rastreio de IRAS (PAV, IPCS-C e ITU-AC)...");
 
   try {
     const leitosSnapshot = await db.collection("leitos_uti").get();
@@ -21,14 +21,14 @@ exports.gerarCensoUTI = onSchedule({
     agora.setHours(agora.getHours() - 4);
     
     // ========================================================
-    // MOTOR DE TEMPO GERAL (PAV)
+    // MOTOR DE TEMPO GERAL (D0 de análise da Madrugada)
     // ========================================================
     const datasJanelaPAV = [];
     for (let i = 0; i <= 3; i++) {
       const d = new Date(agora.getTime() - i * 86400000);
       datasJanelaPAV.push(d.toISOString().split('T')[0]); 
     }
-    const d0 = datasJanelaPAV[0]; 
+    const d0 = datasJanelaPAV[0]; // Hoje
     const mesCorrente = d0.slice(0, 7);
     const datasBR_PAV = datasJanelaPAV.map(d => d.split('-').reverse().join('/'));
     const datasBRCurtas_PAV = datasBR_PAV.map(d => d.substring(0, 5));
@@ -47,6 +47,7 @@ exports.gerarCensoUTI = onSchedule({
     const promessasAuditoria = [];
     let novosCasosPAV = 0;
     let novosCasosIPCSC = 0;
+    let novosCasosITU = 0;
 
     leitosSnapshot.forEach((doc) => {
       const p = doc.data();
@@ -55,22 +56,26 @@ exports.gerarCensoUTI = onSchedule({
       
       if (p.nome && p.status !== "Livre") {
         // ====================================================================
-        // 1. INDICADORES ASSISTENCIAIS E CENSO
+        // 1. DADOS ASSISTENCIAIS DO CENSO DIÁRIO
         // ====================================================================
         contadores.totalLeitosOcupados++;
         if (p.enfermagem?.identificacaoCorreta === true) contadores.pacientesIdentificados++;
-        if (p.fisioterapia?.ventilacao?.suporte === "VM" || p.fisioterapia?.suporte === "VM") contadores.pacientesEmVM++;
+        
+        if (p.physio?.suporte === "VM" || p.fisioterapia?.suporte === "VM" || (p.dataIntubacao && !p.dataExtubacao)) {
+            contadores.pacientesEmVM++;
+        }
+
         if (p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData) contadores.pacientesComCVC++;
         if (p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData) contadores.pacientesComSVD++;
         if (p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData) contadores.pacientesComShiley++;
 
         // ====================================================================
-        // 2. SNIFFER DE SUSPEITA DE PAV
+        // 2. SNIFFER DE SUSPEITA DE PAV (ANVISA)
         // ====================================================================
-        if (p.dataIntubacao) {
-          let dataIntStr = p.dataIntubacao;
+        let dataIntStr = p.dataIntubacao || p.dataTraqueostomia;
+        if (dataIntStr) {
           if (dataIntStr.includes('/')) dataIntStr = dataIntStr.split('/').reverse().join('-');
-          const dataInt = new Date(dataIntStr);
+          const dataInt = new Date(`${dataIntStr}T12:00:00`);
 
           const radPositivo = p.medical?.novoInfiltrado === 'sim' || p.novoInfiltrado === 'sim';
 
@@ -94,16 +99,30 @@ exports.gerarCensoUTI = onSchedule({
               });
             }
 
-            const strPaciente = JSON.stringify(p);
-            const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
-            let matchTemp;
-            while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
-              sisPositivo = true;
-              if (!sisEvidencias.includes(`Febre (${matchTemp[1]} ºC)`)) {
-                sisEvidencias.push(`Febre (${matchTemp[1]} ºC) em ${datasBR_PAV[0]}`);
-                datasEventosEncontrados.push(d0);
+            const varrerFebrePAV = (blocoBh) => {
+              if (!blocoBh || !blocoBh.date || !blocoBh.vitals) return;
+              const dataRefUS = blocoBh.date;
+              if (datasJanelaPAV.includes(dataRefUS)) {
+                const dataRefBR = dataRefUS.split('-').reverse().join('/');
+                Object.keys(blocoBh.vitals).forEach(hora => {
+                  const tempValue = blocoBh.vitals[hora]["Temp (ºC)"];
+                  if (tempValue) {
+                    const tempNum = Number(String(tempValue).replace(',', '.'));
+                    if (tempNum >= 38.0 || tempNum <= 36.0) {
+                      sisPositivo = true;
+                      const msg = `Temp (${tempNum} ºC) registrada em ${dataRefBR} às ${hora}`;
+                      if (!sisEvidencias.includes(msg)) {
+                        sisEvidencias.push(msg);
+                        datasEventosEncontrados.push(dataRefUS);
+                      }
+                    }
+                  }
+                });
               }
-            }
+            };
+
+            if (p.bh) varrerFebrePAV(p.bh);
+            if (p.historico_bh && Array.isArray(p.historico_bh)) p.historico_bh.forEach(varrerFebrePAV);
 
             const asp = p.physio?.secrecaoAspecto?.toLowerCase() || "";
             const col = p.physio?.secrecaoColoracao?.toLowerCase() || "";
@@ -131,7 +150,7 @@ exports.gerarCensoUTI = onSchedule({
             }
 
             if (sisPositivo && respCount >= 2) {
-              const timestamps = datasEventosEncontrados.map(d => new Date(d).getTime()).filter(n => !isNaN(n));
+              const timestamps = datasEventosEncontrados.map(d => new Date(`${d}T12:00:00`).getTime()).filter(n => !isNaN(n));
               const dataEventoDOE = new Date(Math.min(...timestamps));
               const dataEventoFormatada = dataEventoDOE.toISOString().split('T')[0];
               const diffVMnaDOE = Math.floor((dataEventoDOE - dataInt) / (1000 * 60 * 60 * 24));
@@ -139,7 +158,7 @@ exports.gerarCensoUTI = onSchedule({
 
               if (atendeCriterioVM && p.dataExtubacao) {
                 let dataExtStr = p.dataExtubacao.includes('/') ? p.dataExtubacao.split('/').reverse().join('-') : p.dataExtubacao;
-                if (Math.floor((dataEventoDOE - new Date(dataExtStr)) / (1000 * 60 * 60 * 24)) > 1) atendeCriterioVM = false; 
+                if (Math.floor((dataEventoDOE - new Date(`${dataExtStr}T12:00:00`)) / (1000 * 60 * 60 * 24)) > 1) atendeCriterioVM = false; 
               }
 
               if (atendeCriterioVM) {
@@ -152,14 +171,13 @@ exports.gerarCensoUTI = onSchedule({
                       leito: leitoNumero, mesReferencia: mesCorrente, dataSuspeita: d0, dataEventoDOE: dataEventoFormatada,
                       status: "Suspeito",
                       evidencias: {
-                        radiologia: `Sim (Novo infiltrado / Progressão) em ${datasBR_PAV[0]}`,
+                        radiologia: `Sim (Novo infiltrado) avaliado em ${datasBR_PAV[0]}`,
                         sistemicos: sisEvidencias, respiratorios: respEvidencias,
-                        justificativa: `D.O.E da Infecção: ${dataEventoFormatada.split('-').reverse().join('/')} (D${diffVMnaDOE + 1} de VM).`
+                        justificativa: `D.O.E da Infecção: ${dataEventoFormatada.split('-').reverse().join('/')} (D${diffVMnaDOE >= 0 ? diffVMnaDOE + 1 : '?'} de VM).`
                       },
                       timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
                     });
                     novosCasosPAV++;
-                    console.log(`🚨 [PAV]: Suspeita gerada para ${p.nome}`);
                   }
                 });
                 promessasAuditoria.push(promessaPAV);
@@ -169,7 +187,7 @@ exports.gerarCensoUTI = onSchedule({
         }
 
         // ====================================================================
-        // 3. SNIFFER DE SUSPEITA DE IPCS-C
+        // 3. SNIFFER DE SUSPEITA DE IPCS-C (CVC ou Shiley)
         // ====================================================================
         if (p.culturas && p.culturas.lista) {
           const hemoculturasPositivas = p.culturas.lista.filter(c => c.tipo?.toLowerCase().includes('hemocultura') && c.status === 'Positivo');
@@ -179,11 +197,10 @@ exports.gerarCensoUTI = onSchedule({
             if (!hemo.dataColeta) continue;
             
             let dColetaStr = hemo.dataColeta.includes('/') ? hemo.dataColeta.split('/').reverse().join('-') : hemo.dataColeta;
-            // Dica de servidor: Ao adicionar T12:00:00 garantimos que o fuso horário não jogue a data para o dia anterior
-            const dataColetaObj = new Date(`${dColetaStr}T12:00:00`); 
+            const dataColetaObj = new Date(`${dColetaStr}T12:00:00`);
             const mesCorrenteHemo = dColetaStr.slice(0,7);
             
-            // Janela de 7 Dias: D-3 a D+3 da Coleta
+            // Janela de 7 Dias
             const datasJanelaIPCSC = [];
             for (let i = -3; i <= 3; i++) {
               const d = new Date(dataColetaObj.getTime() + i * 86400000);
@@ -197,61 +214,71 @@ exports.gerarCensoUTI = onSchedule({
             let evidenciasSistemicasIPCS = [];
 
             if (!isComensal) {
-              criterioMicroAprovado = true; // Patógeno real passa direto
+              criterioMicroAprovado = true;
             } else {
-              // Comensal exige amostras múltiplas E sinal clínico na janela 7D
               if (hemo.amostrasPositivas !== 'multiplas') continue; 
               
-              let temSinalSistemico = false;
-              const strPaciente = JSON.stringify(p);
-              
-              datasJanelaIPCSC.forEach(dj => {
-                // Caçando Febre
-                const regexFebre = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
-                let matchTemp;
-                while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
-                  temSinalSistemico = true;
-                  if (!evidenciasSistemicasIPCS.includes(`Febre (${matchTemp[1]} ºC)`)) evidenciasSistemicasIPCS.push(`Febre (${matchTemp[1]} ºC) detectada`);
-                }
-                // Caçando Hipotensão (PAS < 90)
-                const regexPAS = /"PAS":\s*"?([1-8]\d)"?/g; 
-                let matchPAS;
-                while ((matchPAS = regexPAS.exec(strPaciente)) !== null) {
-                  temSinalSistemico = true;
-                  if (!evidenciasSistemicasIPCS.includes(`PAS Baixa (${matchPAS[1]})`)) evidenciasSistemicasIPCS.push(`PAS Baixa (${matchPAS[1]}) detectada`);
-                }
-                // Caçando DVA
-                const regexNora = /"Noradrenalina":\s*"?([1-9]\d*(?:[.,]\d+)?|0[.,][1-9]\d*)"?/g;
-                let matchNora;
-                while ((matchNora = regexNora.exec(strPaciente)) !== null) {
-                  temSinalSistemico = true;
-                  if (!evidenciasSistemicasIPCS.includes(`Uso de DVA (Noradrenalina: ${matchNora[1]})`)) evidenciasSistemicasIPCS.push(`Uso de DVA (Noradrenalina: ${matchNora[1]}) detectado`);
-                }
-              });
+              const varrerSistemicosIPCSC = (blocoBh) => {
+                if (!blocoBh || !blocoBh.date) return;
+                const dataRefUS = blocoBh.date;
+                if (datasJanelaIPCSC.includes(dataRefUS)) {
+                  const dataRef = dataRefUS.split('-').reverse().join('/');
+                  const strBloco = JSON.stringify(blocoBh);
 
-              if (temSinalSistemico) criterioMicroAprovado = true;
+                  const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
+                  let matchTemp;
+                  while ((matchTemp = regexTemp.exec(strBloco)) !== null) {
+                    criterioMicroAprovado = true;
+                    const msg = `Febre (${matchTemp[1]} ºC) detectada no registro de ${dataRef}`;
+                    if (!evidenciasSistemicasIPCS.includes(msg)) evidenciasSistemicasIPCS.push(msg);
+                  }
+
+                  const regexPAS = /"PAS":\s*"?([1-8]\d)"?/g;
+                  let matchPAS;
+                  while ((matchPAS = regexPAS.exec(strBloco)) !== null) {
+                    criterioMicroAprovado = true;
+                    const msg = `PAS Baixa (${matchPAS[1]} mmHg) detectada no registro de ${dataRef}`;
+                    if (!evidenciasSistemicasIPCS.includes(msg)) evidenciasSistemicasIPCS.push(msg);
+                  }
+
+                  const regexNora = /"Noradrenalina":\s*"?([1-9]\d*(?:[.,]\d+)?|0[.,][1-9]\d*)"?/g;
+                  let matchNora;
+                  while ((matchNora = regexNora.exec(strBloco)) !== null) {
+                    criterioMicroAprovado = true;
+                    const msg = `Uso de DVA (Nora: ${matchNora[1]}) detectado no registro de ${dataRef}`;
+                    if (!evidenciasSistemicasIPCS.includes(msg)) evidenciasSistemicasIPCS.push(msg);
+                  }
+                }
+              };
+
+              if (p.bh) varrerSistemicosIPCSC(p.bh);
+              if (p.historico_bh && Array.isArray(p.historico_bh)) p.historico_bh.forEach(varrerSistemicosIPCSC);
             }
 
             if (!criterioMicroAprovado) continue;
 
-            // Associação ao CVC
-            if (!p.enfermagem?.cvcData) continue;
-            let dCvcStr = p.enfermagem.cvcData.includes('/') ? p.enfermagem.cvcData.split('/').reverse().join('-') : p.enfermagem.cvcData;
-            const dataCvcObj = new Date(`${dCvcStr}T12:00:00`);
-            
-            const diffCvcColeta = Math.floor((dataColetaObj - dataCvcObj) / (1000 * 60 * 60 * 24));
-            let associadoCVC = diffCvcColeta >= 2;
-
-            if (associadoCVC && p.enfermagem.cvcRetiradaData) {
-              let dCvcRetStr = p.enfermagem.cvcRetiradaData.includes('/') ? p.enfermagem.cvcRetiradaData.split('/').reverse().join('-') : p.enfermagem.cvcRetiradaData;
-              const diffRetColeta = Math.floor((dataColetaObj - new Date(`${dCvcRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24));
-              if (diffRetColeta > 1) associadoCVC = false; 
+            let dDispStr = null, dRetiradaStr = null;
+            if (p.enfermagem?.cvcData) {
+              dDispStr = p.enfermagem.cvcData; dRetiradaStr = p.enfermagem.cvcRetiradaData || null;
+            } else if (p.enfermagem?.shileyData) {
+              dDispStr = p.enfermagem.shileyData; dRetiradaStr = p.enfermagem.shileyRetiradaData || null;
             }
 
-            if (associadoCVC) {
+            if (!dDispStr) continue;
+
+            let dDispStrNorm = dDispStr.includes('/') ? dDispStr.split('/').reverse().join('-') : dDispStr;
+            const dataDispObj = new Date(`${dDispStrNorm}T12:00:00`);
+            const diffDispColeta = Math.floor((dataColetaObj - dataDispObj) / (1000 * 60 * 60 * 24));
+            let associadoDispositivo = diffDispColeta >= 2;
+
+            if (associadoDispositivo && dRetiradaStr) {
+              let dRetStrNorm = dRetiradaStr.includes('/') ? dRetiradaStr.split('/').reverse().join('-') : dRetiradaStr;
+              if (Math.floor((dataColetaObj - new Date(`${dRetStrNorm}T12:00:00`)) / (1000 * 60 * 60 * 24)) > 1) associadoDispositivo = false;
+            }
+
+            if (associadoDispositivo) {
               const idAuditoria = `${p.cpf || leitoId}_ipcsc_${hemo.id || dColetaStr}`;
               const docRefIPCSC = db.collection("auditorias_ipcsc").doc(idAuditoria);
-              
               const promessaIPCSC = docRefIPCSC.get().then(async (audDoc) => {
                 if (!audDoc.exists) {
                   await docRefIPCSC.set({
@@ -259,30 +286,110 @@ exports.gerarCensoUTI = onSchedule({
                     nome: p.nome, leito: leitoNumero, mesReferencia: mesCorrenteHemo,
                     dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
                     evidencias: {
-                      microbiologia: `${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
+                      microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
                       sistemicos: evidenciasSistemicasIPCS.length > 0 ? evidenciasSistemicasIPCS : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
-                      dispositivo: `CVC inserido em ${dCvcStr.split('-').reverse().join('/')} (D${diffCvcColeta + 1} no dia da coleta)`,
-                      justificativa: "Cruzamento automatizado: Hemocultura + Janela 7D + CVC."
+                      dispositivo: `Dispositivo (CVC/Shiley) inserido em ${dDispStrNorm.split('-').reverse().join('/')} (D${diffDispColeta >= 0 ? diffDispColeta + 1 : '?'} no dia da coleta)`,
+                      justificativa: "Cruzamento automatizado: Hemocultura + Janela 7D + Dispositivo Central."
                     },
                     timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
                   });
                   novosCasosIPCSC++;
-                  console.log(`🚨 [IPCS-C]: Suspeita gerada para ${p.nome}`);
                 }
               });
               promessasAuditoria.push(promessaIPCSC);
             }
           }
         }
+
+        // ====================================================================
+        // 4. SNIFFER DE SUSPEITA DE ITU-AC (ANVISA)
+        // ====================================================================
+        if (p.culturas && p.culturas.lista) {
+          const uroculturasPositivas = p.culturas.lista.filter(c => (c.tipo?.toLowerCase().includes('urocultura') || c.tipo?.toLowerCase().includes('urina')) && c.status === 'Positivo');
+
+          for (const uro of uroculturasPositivas) {
+            if (!uro.dataColeta) continue;
+
+            const ufc = Number(uro.contagemUFC) || 0;
+            const qtdEsp = Number(uro.qtdEspecies) || 1;
+            if (ufc < 100000 || qtdEsp > 2) continue;
+
+            let dColetaStr = uro.dataColeta.includes('/') ? uro.dataColeta.split('/').reverse().join('-') : uro.dataColeta;
+            const dataColetaObj = new Date(`${dColetaStr}T12:00:00`);
+            const mesCorrenteUro = dColetaStr.slice(0, 7);
+
+            // Janela 7D
+            const datasJanelaITU = [];
+            for (let i = -3; i <= 3; i++) {
+              const d = new Date(dataColetaObj.getTime() + i * 86400000);
+              datasJanelaITU.push(d.toISOString().split('T')[0]);
+            }
+
+            // SVD Obrigatória
+            if (!p.enfermagem?.svdData) continue;
+            let dSvdStr = p.enfermagem.svdData.includes('/') ? p.enfermagem.svdData.split('/').reverse().join('-') : p.enfermagem.svdData;
+            const dataSvdObj = new Date(`${dSvdStr}T12:00:00`);
+
+            const diffSvdColeta = Math.floor((dataColetaObj - dataSvdObj) / (1000 * 60 * 60 * 24));
+            let associadoSVD = diffSvdColeta >= 2;
+
+            if (associadoSVD && p.enfermagem.svdRetiradaData) {
+              let dSvdRetStr = p.enfermagem.svdRetiradaData.includes('/') ? p.enfermagem.svdRetiradaData.split('/').reverse().join('-') : p.enfermagem.svdRetiradaData;
+              if (Math.floor((dataColetaObj - new Date(`${dSvdRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24)) > 1) associadoSVD = false; 
+            }
+
+            if (!associadoSVD) continue;
+
+            let evidenciasSistemicasITU = [];
+            const varrerFebreITU = (blocoBh) => {
+              if (!blocoBh || !blocoBh.date || !blocoBh.vitals) return;
+              const dataRefUS = blocoBh.date;
+              if (datasJanelaITU.includes(dataRefUS)) {
+                const dataRefBR = dataRefUS.split('-').reverse().join('/');
+                Object.keys(blocoBh.vitals).forEach(hora => {
+                  const tempValue = blocoBh.vitals[hora]["Temp (ºC)"];
+                  if (tempValue) {
+                    const tempNum = Number(String(tempValue).replace(',', '.'));
+                    if (tempNum >= 38.0) {
+                      const msg = `Febre (${tempNum} ºC) registrada em ${dataRefBR} às ${hora}`;
+                      if (!evidenciasSistemicasITU.includes(msg)) evidenciasSistemicasITU.push(msg);
+                    }
+                  }
+                });
+              }
+            };
+
+            if (p.bh) varrerFebreITU(p.bh);
+            if (p.historico_bh && Array.isArray(p.historico_bh)) p.historico_bh.forEach(varrerFebreITU);
+
+            const idAuditoria = `${p.cpf || leitoId}_itu_${uro.id || dColetaStr}`;
+            const docRefITU = db.collection("auditorias_itu").doc(idAuditoria);
+
+            const promessaITU = docRefITU.get().then(async (audDoc) => {
+              if (!audDoc.exists) {
+                await docRefITU.set({
+                  id: idAuditoria, pacienteId: leitoId, nome: p.nome, leito: leitoNumero, mesReferencia: mesCorrenteUro,
+                  dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
+                  evidencias: {
+                    microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${uro.germe} (UFC: ${ufc})`,
+                    sistemicos: evidenciasSistemicasITU.length > 0 ? evidenciasSistemicasITU : ["Nenhuma febre >38ºC detectada na janela de 7 dias"],
+                    dispositivo: `SVD inserida em ${dSvdStr.split('-').reverse().join('/')} (D${diffSvdColeta >= 0 ? diffSvdColeta + 1 : '?'} no dia da coleta)`,
+                    justificativa: "Cruzamento automatizado: Urocultura (UFC≥10⁵, max 2 esp) associada a tempo de SVD compatível com ITU-AC."
+                  },
+                  timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
+                });
+                novosCasosITU++;
+              }
+            });
+            promessasAuditoria.push(promessaITU);
+          }
+        }
       }
     });
 
-    // Aguarda TODAS as gravações (PAV e IPCS-C) terminarem
     await Promise.all(promessasAuditoria);
-
-    // Salva o censo diário global
     await db.collection("censo_diario").add(contadores);
-    console.log(`✅ Fechamento concluído. Capturados: ${novosCasosPAV} PAVs e ${novosCasosIPCSC} IPCS-Cs.`);
+    console.log(`✅ Fechamento concluído com sucesso. Casos capturados nesta madrugada: PAV=${novosCasosPAV}, IPCS-C=${novosCasosIPCSC}, ITU-AC=${novosCasosITU}.`);
     
   } catch (error) {
     console.error("❌ Erro fatal no fechamento do servidor:", error);

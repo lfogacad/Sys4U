@@ -3,8 +3,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
-  ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, 
-  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind
+  ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
+  Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
+  FileText
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -15,6 +16,7 @@ import { db } from "../config/firebase";
 
 import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
+import RelatorioANVISA from './relatorios/RelatorioANVISA';
 
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
@@ -65,10 +67,63 @@ const GestorDashboard = ({ userProfile }) => {
   const [filtroStatusPAV, setFiltroStatusPAV] = useState('Suspeito'); // 'Suspeito', 'Confirmado' ou 'Descartado'
   const [modalAuditoriaPAV, setModalAuditoriaPAV] = useState(null);
 
+  // ==========================================
+  // CONTROLES DE INSERÇÃO MANUAL (PAV)
+  // ==========================================
+  const [isModalManualPAVOpen, setIsModalManualPAVOpen] = useState(false);
+  const [formManualPAV, setFormManualPAV] = useState({
+    pacienteId: '', nome: '', leito: '',
+    dataRadiologia: '',
+    sysFebre: false, dataFebre: '',
+    sysLeuco: false, dataLeuco: '',
+    sysSensorio: false, dataSensorio: '',
+    respSecrecao: false, detSecrecao: '', dataSecrecao: '',
+    respTosse: false, dataTosse: '',
+    respAusculta: false, dataAusculta: '',
+    respTroca: false, detTroca: '', dataTroca: '',
+    microCultura: false, germeCultura: '', dataCultura: ''
+  });
+
   // CONTROLES DA AUDITORIA AUTOMATIZADA (IPCS-C)
   const [auditoriasIPCSC, setAuditoriasIPCSC] = useState([]);
   const [filtroStatusIPCSC, setFiltroStatusIPCSC] = useState('Suspeito');
   const [modalAuditoriaIPCSC, setModalAuditoriaIPCSC] = useState(null);
+
+  // ==========================================
+  // CONTROLES DE INSERÇÃO MANUAL (IPCS-C)
+  // ==========================================
+  const [isModalManualIPCSCOpen, setIsModalManualIPCSCOpen] = useState(false);
+  const [formManualIPCSC, setFormManualIPCSC] = useState({
+    pacienteId: '', nome: '', leito: '',
+    dataColeta: '', germe: '',
+    tipoGerme: 'patogeno', // 'patogeno' ou 'comensal'
+    multiplasAmostras: false,
+    sysFebre: false, dataFebre: '',
+    sysCalafrios: false, dataCalafrios: '',
+    sysHipotensao: false, dataHipotensao: ''
+  });
+
+  // CONTROLES DA AUDITORIA AUTOMATIZADA (ITU-AC)
+  const [auditoriasITU, setAuditoriasITU] = useState([]);
+  const [filtroStatusITU, setFiltroStatusITU] = useState('Suspeito');
+  const [modalAuditoriaITU, setModalAuditoriaITU] = useState(null);
+
+  // ==========================================
+  // CONTROLES DE INSERÇÃO MANUAL (ITU-AC)
+  // ==========================================
+  const [isModalManualITUOpen, setIsModalManualITUOpen] = useState(false);
+  const [formManualITU, setFormManualITU] = useState({
+    pacienteId: '', nome: '', leito: '',
+    dataColeta: '', germe: '', ufc: '', qtdEspecies: 1,
+    sysFebre: false, dataFebre: '',
+    sysDisuria: false, dataDisuria: '',
+    sysDorSupra: false, dataDorSupra: '', // <--- ADICIONADO AQUI
+    sysGiordano: false, dataGiordano: ''
+  });
+
+  const [mesRelatorioSelecao, setMesRelatorioSelecao] = useState(mesFiltroIrasCompartilhado || new Date().toISOString().slice(0, 7));
+
+  const [modalRelatorioAberto, setModalRelatorioAberto] = useState(false);
   
   // Tabela Oficial OMS (DDD em Gramas para via Parenteral)
   const DDD_OMS = {
@@ -1166,6 +1221,300 @@ const metricasQualidade = useMemo(() => {
     buscarDadosRelatorio(mesAtual);
   };
 
+  const salvarPAVManual = async () => {
+    if (!formManualPAV.pacienteId) return alert("Selecione um paciente.");
+    if (!formManualPAV.dataRadiologia) return alert("O critério radiológico (data) é obrigatório.");
+
+    // Busca o paciente no estado atual
+    const p = leitosConfig.find(l => l.id === formManualPAV.pacienteId);
+    if (!p) return alert("Erro: Dados do paciente não encontrados.");
+
+    // --- 🚨 BLOQUEIO DE SEGURANÇA: DATA DE INTUBAÇÃO ---
+    if (!p.dataIntubacao || p.dataIntubacao.trim() === '') {
+      return alert("❌ Bloqueado: Este paciente não possui data de intubação registrada. Não é possível calcular o tempo de VM.");
+    }
+
+    // Contagem de Sinais
+    let sysCount = 0; let respCount = 0;
+    let evidenciasSys = []; let evidenciasResp = []; let datas = [formManualPAV.dataRadiologia];
+
+    if (formManualPAV.sysFebre && formManualPAV.dataFebre) { sysCount++; evidenciasSys.push(`Febre em ${formManualPAV.dataFebre.split('-').reverse().join('/')}`); datas.push(formManualPAV.dataFebre); }
+    if (formManualPAV.sysLeuco && formManualPAV.dataLeuco) { sysCount++; evidenciasSys.push(`Alt. Leucócitos em ${formManualPAV.dataLeuco.split('-').reverse().join('/')}`); datas.push(formManualPAV.dataLeuco); }
+    if (formManualPAV.sysSensorio && formManualPAV.dataSensorio) { sysCount++; evidenciasSys.push(`Alt. Sensório (≥70 anos) em ${formManualPAV.dataSensorio.split('-').reverse().join('/')}`); datas.push(formManualPAV.dataSensorio); }
+
+    if (formManualPAV.respSecrecao && formManualPAV.detSecrecao && formManualPAV.dataSecrecao) { respCount++; evidenciasResp.push(`Alt. Secreção (${formManualPAV.detSecrecao}) em ${formManualPAV.dataSecrecao.split('-').reverse().join('/')}`); datas.push(formManualPAV.dataSecrecao); }
+    if (formManualPAV.respTosse && formManualPAV.dataTosse) { respCount++; evidenciasResp.push(`Tosse/Dispneia/Taquipneia em ${formManualPAV.dataTosse.split('-').reverse().join('/')}`); datas.push(formManualPAV.dataTosse); }
+    if (formManualPAV.respAusculta && formManualPAV.dataAusculta) { respCount++; evidenciasResp.push(`Novos Estertores em ${formManualPAV.dataAusculta.split('-').reverse().join('/')}`); datas.push(formManualPAV.dataAusculta); }
+    if (formManualPAV.respTroca && formManualPAV.detTroca && formManualPAV.dataTroca) { respCount++; evidenciasResp.push(`Piora Troca Gasosa (${formManualPAV.detTroca}) em ${formManualPAV.dataTroca.split('-').reverse().join('/')}`); datas.push(formManualPAV.dataTroca); }
+
+    const isMicro = formManualPAV.microCultura && formManualPAV.germeCultura && formManualPAV.dataCultura;
+    if (isMicro) datas.push(formManualPAV.dataCultura);
+
+    // Validação de Regra (Microbiológica vs Clínica)
+    let aprovado = false;
+    let justificativa = "";
+
+    if (isMicro) {
+      if (sysCount >= 1 || respCount >= 1) {
+        aprovado = true;
+        justificativa = "Critério Microbiológico Atendido: Cultura Positiva + 1 Sinal Clínico.";
+      } else {
+        return alert("Mesmo com cultura positiva, é exigido pelo menos 1 sinal clínico (sistêmico ou respiratório).");
+      }
+    } else {
+      if (sysCount >= 1 && respCount >= 2) {
+        aprovado = true;
+        justificativa = "Critério Clínico Atendido: 1 Sinal Sistêmico + 2 Sinais Respiratórios.";
+      } else {
+        return alert("Para PAV Clínica (sem cultura), são exigidos: 1 Sinal Sistêmico E 2 Sinais Respiratórios.");
+      }
+    }
+
+    // Calcula DOE (Data mais antiga preenchida)
+    const timestamps = datas.filter(d => d).map(d => new Date(`${d}T12:00:00`).getTime());
+    const dataEventoDOE = new Date(Math.min(...timestamps)).toISOString().split('T')[0];
+
+    // Lógica de Bloqueio VM
+    let dataIntStr = p.dataIntubacao.includes('/') ? p.dataIntubacao.split('/').reverse().join('-') : p.dataIntubacao;
+    const dataInt = new Date(`${dataIntStr}T12:00:00`);
+    const dataEvento = new Date(`${dataEventoDOE}T12:00:00`);
+    const diffVM = Math.floor((dataEvento - dataInt) / (1000 * 60 * 60 * 24));
+    
+    // Verifica se a data de intubação é válida
+    if (isNaN(dataInt.getTime())) return alert("❌ Erro: A data de intubação do paciente está em formato inválido.");
+
+    if (diffVM < 2) {
+      return alert(`❌ Bloqueado: O paciente foi intubado há apenas ${diffVM} dia(s). A definição de PAV exige que o paciente esteja em VM há pelo menos 2 dias (D3).`);
+    }
+
+    if (aprovado) {
+      try {
+        const mesRef = dataEventoDOE.slice(0, 7);
+        const idAuditoria = `manual_pav_${Date.now()}`;
+        
+        await setDoc(doc(db, "auditorias_pav", idAuditoria), {
+          id: idAuditoria, pacienteId: formManualPAV.pacienteId,
+          nome: formManualPAV.nome, leito: formManualPAV.leito,
+          mesReferencia: mesRef, dataSuspeita: dataEventoDOE, dataEventoDOE: dataEventoDOE,
+          status: "Confirmado", 
+          evidencias: {
+            radiologia: `Sim (Manual) em ${formManualPAV.dataRadiologia.split('-').reverse().join('/')}`,
+            sistemicos: evidenciasSys,
+            respiratorios: evidenciasResp,
+            microbiologia: isMicro ? `${formManualPAV.germeCultura} (Aspirado Traqueal > 10^6)` : "Não aplicado",
+            justificativa: `INSERÇÃO MANUAL: ${justificativa}`
+          },
+          timestampCriacao: new Date().toISOString(),
+          inseridoManualmente: true
+        });
+
+        alert("PAV registrada com sucesso!");
+        setIsModalManualPAVOpen(false);
+        carregarAuditoriasPAV();
+      } catch (err) { console.error("Erro ao salvar:", err); alert("Erro ao salvar no banco."); }
+    }
+  };
+
+  const salvarIPCSCManual = async () => {
+    if (!formManualIPCSC.pacienteId) return alert("Selecione um paciente.");
+    if (!formManualIPCSC.dataColeta) return alert("A data da coleta (D.O.E) é obrigatória.");
+    if (!formManualIPCSC.germe) return alert("Preencha o microrganismo isolado.");
+
+    // 1. Recupera o objeto do paciente completo para acessar as datas dos dispositivos
+    const p = leitosConfig.find(l => l.id === formManualIPCSC.pacienteId);
+    if (!p) return alert("Erro: Dados do paciente não encontrados.");
+
+    let sysCount = 0;
+    let evidenciasSys = [];
+
+    if (formManualIPCSC.sysFebre && formManualIPCSC.dataFebre) { sysCount++; evidenciasSys.push(`Febre em ${formManualIPCSC.dataFebre.split('-').reverse().join('/')}`); }
+    if (formManualIPCSC.sysCalafrios && formManualIPCSC.dataCalafrios) { sysCount++; evidenciasSys.push(`Calafrios em ${formManualIPCSC.dataCalafrios.split('-').reverse().join('/')}`); }
+    if (formManualIPCSC.sysHipotensao && formManualIPCSC.dataHipotensao) { sysCount++; evidenciasSys.push(`Hipotensão / DVA em ${formManualIPCSC.dataHipotensao.split('-').reverse().join('/')}`); }
+
+    // VALIDAÇÃO DA REGRA ANVISA
+    let aprovado = false;
+    let justificativa = "";
+
+    if (formManualIPCSC.tipoGerme === 'patogeno') {
+      aprovado = true;
+      justificativa = "Critério 1: Patógeno reconhecido isolado em hemocultura.";
+    } else {
+      if (!formManualIPCSC.multiplasAmostras) return alert("Para comensais de pele, são exigidas múltiplas amostras positivas na mesma ocasião.");
+      if (sysCount === 0) return alert("Para comensais de pele, é obrigatório preencher pelo menos 1 sinal clínico sistêmico (Febre, Calafrios ou Hipotensão).");
+      aprovado = true;
+      justificativa = "Critério 2/3: Comensal em múltiplas amostras + Sinal Clínico Sistêmico associado.";
+    }
+
+    if (aprovado) {
+      // 2. Lógica de Bloqueio de Dispositivo (CVC ou Shiley) - ANVISA D-2
+      const dataColeta = new Date(`${formManualIPCSC.dataColeta}T12:00:00`);
+      
+      const calcularDias = (dataStr, dataRetiradaStr) => {
+        if (!dataStr) return -99;
+        const d = new Date(`${dataStr.split('/').reverse().join('-')}T12:00:00`);
+        const diff = Math.floor((dataColeta - d) / (1000 * 60 * 60 * 24));
+        
+        // Verifica se foi retirado no dia anterior (ou se não foi retirado ainda)
+        if (dataRetiradaStr) {
+          const dRet = new Date(`${dataRetiradaStr.split('/').reverse().join('-')}T12:00:00`);
+          const diffRet = Math.floor((dataColeta - dRet) / (1000 * 60 * 60 * 24));
+          if (diffRet > 1) return -99; // Retirado antes de ontem, bloqueia
+        }
+        return diff;
+      };
+
+      const diffCVC = calcularDias(p.enfermagem?.cvcData, p.enfermagem?.cvcRetiradaData);
+      const diffShiley = calcularDias(p.enfermagem?.shileyData, p.enfermagem?.shileyRetiradaData);
+
+      const associadoDispositivo = (diffCVC >= 2) || (diffShiley >= 2);
+
+      if (!associadoDispositivo) {
+        return alert("❌ Bloqueado: O paciente não possui CVC ou Shiley implantado há pelo menos 2 dias antes da coleta (ou foi retirado precocemente).");
+      }
+
+      try {
+        const dataEventoDOE = formManualIPCSC.dataColeta;
+        const mesRef = dataEventoDOE.slice(0, 7);
+        const idAuditoria = `manual_ipcsc_${Date.now()}`;
+        
+        await setDoc(doc(db, "auditorias_ipcsc", idAuditoria), {
+          id: idAuditoria, pacienteId: formManualIPCSC.pacienteId,
+          nome: formManualIPCSC.nome, leito: formManualIPCSC.leito,
+          mesReferencia: mesRef, dataSuspeita: dataEventoDOE, dataEventoDOE: dataEventoDOE,
+          status: "Confirmado", 
+          evidencias: {
+            microbiologia: `${formManualIPCSC.germe} (${formManualIPCSC.tipoGerme === 'patogeno' ? 'Patógeno Reconhecido' : 'Comensal em amostras múltiplas'})`,
+            sistemicos: evidenciasSys.length > 0 ? evidenciasSys : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
+            dispositivo: `CVC/Shiley: Associação confirmada (D${Math.max(diffCVC, diffShiley) + 1} no momento da coleta)`,
+            justificativa: `INSERÇÃO MANUAL: ${justificativa}`
+          },
+          timestampCriacao: new Date().toISOString(),
+          inseridoManualmente: true
+        });
+
+        alert("IPCS-C registrada com sucesso!");
+        setIsModalManualIPCSCOpen(false);
+        carregarAuditoriasIPCSC();
+      } catch (err) { console.error("Erro ao salvar:", err); alert("Erro ao salvar no banco."); }
+    }
+  };
+
+  const salvarITUManual = async () => {
+    if (!formManualITU.pacienteId) return alert("Selecione um paciente.");
+    if (!formManualITU.dataColeta) return alert("A data da coleta é obrigatória.");
+    if (!formManualITU.germe) return alert("Preencha o microrganismo.");
+    
+    // Validação Microbiológica ANVISA
+    if (Number(formManualITU.ufc) < 100000) return alert("ITU exige Contagem ≥ 10⁵ UFC/mL.");
+    if (Number(formManualITU.qtdEspecies) > 2) return alert("ITU não admite mais de 2 espécies (contaminação).");
+    
+    // Validação Clínica ANVISA (Pelo menos 1 sinal é obrigatório)
+    let sysCount = 0;
+    let evidenciasSys = [];
+
+    if (formManualITU.sysFebre && formManualITU.dataFebre) { sysCount++; evidenciasSys.push(`Febre/Calafrios em ${formManualITU.dataFebre.split('-').reverse().join('/')}`); }
+    if (formManualITU.sysDisuria && formManualITU.dataDisuria) { sysCount++; evidenciasSys.push(`Disúria ou Urgência em ${formManualITU.dataDisuria.split('-').reverse().join('/')}`); }
+    if (formManualITU.sysDorSupra && formManualITU.dataDorSupra) { sysCount++; evidenciasSys.push(`Dor Suprapúbica em ${formManualITU.dataDorSupra.split('-').reverse().join('/')}`); }
+    if (formManualITU.sysGiordano && formManualITU.dataGiordano) { sysCount++; evidenciasSys.push(`Giordano Positivo (Dor Lombar) em ${formManualITU.dataGiordano.split('-').reverse().join('/')}`); }
+
+    if (sysCount === 0) return alert("É obrigatório preencher pelo menos 1 sinal clínico sistêmico (Febre, Disúria, Dor Suprapúbica ou Giordano).");
+
+    const p = leitosConfig.find(l => l.id === formManualITU.pacienteId);
+    if (!p) return alert("Erro: Dados do paciente não encontrados.");
+
+    // Lógica de Bloqueio (SVD > 2 dias)
+    if (!p.enfermagem?.svdData) return alert("❌ Bloqueado: Não há registro de SVD para este paciente.");
+    
+    const dataColeta = new Date(`${formManualITU.dataColeta}T12:00:00`);
+    let dSvdStr = p.enfermagem.svdData.includes('/') ? p.enfermagem.svdData.split('/').reverse().join('-') : p.enfermagem.svdData;
+    const dSvd = new Date(`${dSvdStr}T12:00:00`);
+    const diffSVD = Math.floor((dataColeta - dSvd) / (1000 * 60 * 60 * 24));
+    
+    if (diffSVD < 2) return alert(`❌ Bloqueado: SVD inserida há apenas ${diffSVD} dia(s). ITU-AC exige > 2 dias.`);
+
+    try {
+      const mesRef = formManualITU.dataColeta.slice(0, 7);
+      const idAuditoria = `manual_itu_${Date.now()}`;
+      
+      await setDoc(doc(db, "auditorias_itu", idAuditoria), {
+        id: idAuditoria, pacienteId: formManualITU.pacienteId,
+        nome: formManualITU.nome, leito: formManualITU.leito,
+        mesReferencia: mesRef, dataSuspeita: formManualITU.dataColeta, dataEventoDOE: formManualITU.dataColeta,
+        status: "Confirmado",
+        evidencias: {
+          microbiologia: `${formManualITU.germe} (${formManualITU.ufc} UFC/mL)`,
+          sistemicos: evidenciasSys,
+          dispositivo: `SVD inserida em ${p.enfermagem.svdData} (D${diffSVD + 1} no dia da coleta)`,
+          justificativa: "INSERÇÃO MANUAL: Critério ANVISA atendido."
+        },
+        timestampCriacao: new Date().toISOString(),
+        inseridoManualmente: true
+      });
+
+      alert("ITU-AC registrada com sucesso!");
+      setIsModalManualITUOpen(false);
+      carregarAuditoriasITU();
+    } catch (err) { console.error("Erro:", err); alert("Erro ao salvar no banco."); }
+  };
+
+  const gerarDadosRelatorioMensal = async (mesAno) => {
+  // Ex: mesAno = "2026-05"
+  try {
+    const [ano, mes] = mesAno.split('-');
+    
+    // 1. Pega os Denominadores (Censo)
+    const censoRef = collection(db, "censo_diario");
+    const qCenso = query(censoRef, where("data", ">=", `${mesAno}-01`), where("data", "<=", `${mesAno}-31`));
+    const snapCenso = await getDocs(qCenso);
+    
+    let totais = { vm: 0, cvc: 0, svd: 0, pacientesDia: 0 };
+    snapCenso.forEach(d => {
+        const c = d.data();
+        totais.vm += (c.pacientesEmVM || 0);
+        totais.cvc += (c.pacientesComCVC || 0);
+        totais.svd += (c.pacientesComSVD || 0);
+        totais.pacientesDia += (c.totalLeitosOcupados || 0);
+    });
+
+    // 2. Pega as Infecções Confirmadas
+    const auditorias = ["auditorias_pav", "auditorias_ipcsc", "auditorias_itu"];
+    let casos = { pav: 0, ipcsc: 0, itu: 0 };
+    let perfilMicrobiologico = []; // Aqui guardaremos a resistência
+
+    for (const colecao of auditorias) {
+        const qAud = query(collection(db, colecao), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado"));
+        const snap = await getDocs(qAud);
+        
+        snap.forEach(d => {
+            const docData = d.data();
+            if (colecao === "auditorias_pav") casos.pav++;
+            if (colecao === "auditorias_ipcsc") casos.ipcsc++;
+            if (colecao === "auditorias_itu") casos.itu++;
+            
+            // Extrai dados para o perfil microbiológico (Perfil de Resistência)
+            if (docData.evidencias?.microbiologia) {
+                perfilMicrobiologico.push({
+                    origem: colecao,
+                    detalhe: docData.evidencias.microbiologia
+                });
+            }
+        });
+    }
+
+    return {
+        totais,
+        taxas: {
+            pav: totais.vm > 0 ? (casos.pav / totais.vm) * 1000 : 0,
+            ipcsc: totais.cvc > 0 ? (casos.ipcsc / totais.cvc) * 1000 : 0,
+            itu: totais.svd > 0 ? (casos.itu / totais.svd) * 1000 : 0
+        },
+        perfilMicrobiologico
+    };
+  } catch (err) {
+    console.error("Erro ao processar relatório:", err);
+  }
+};
+
   // 1. Função para carregar a coleção imortal
   const carregarAuditoriasPAV = async () => {
     if (!db) return;
@@ -1226,30 +1575,29 @@ const metricasQualidade = useMemo(() => {
       const tzOffset = hoje.getTimezoneOffset() * 60000;
       const dataLocal = new Date(hoje.getTime() - tzOffset);
 
-      // Cria array com Hoje (D0) e os últimos 3 dias (D-1, D-2, D-3)
       const datasJanela = [];
       for (let i = 0; i <= 3; i++) {
         const d = new Date(dataLocal.getTime() - i * 86400000);
-        datasJanela.push(d.toISOString().split('T')[0]); // Formato US: 2026-05-14
+        datasJanela.push(d.toISOString().split('T')[0]); // Ex: 2026-05-14
       }
       
       const d0 = datasJanela[0];
       const mesCorrente = d0.slice(0, 7);
       
-      // Mapeamento para formatos brasileiros (Para achar na tabela de exames)
-      const datasBR = datasJanela.map(d => d.split('-').reverse().join('/')); // 14/05/2026
-      const datasBRCurtas = datasBR.map(d => d.substring(0, 5)); // 14/05
+      const datasBR = datasJanela.map(d => d.split('-').reverse().join('/'));
+      const datasBRCurtas = datasBR.map(d => d.substring(0, 5));
 
       let novosCasos = 0;
 
       for (const p of pacientesAtivos) {
-        if (!p.dataIntubacao) continue;
+        // Agora aceita tanto a data da Intubação quanto de uma TQT direta
+        let dataIntStr = p.dataIntubacao || p.dataTraqueostomia; 
+        if (!dataIntStr) continue;
         
-        let dataIntStr = p.dataIntubacao;
         if (dataIntStr.includes('/')) dataIntStr = dataIntStr.split('/').reverse().join('-');
-        const dataInt = new Date(dataIntStr);
+        const dataInt = new Date(`${dataIntStr}T12:00:00`);
 
-        // O Infiltrado Novo é o nosso Gatilho de Avaliação de hoje (D0)
+        // GATILHO RADIOLÓGICO: Infiltrado Novo no D0
         const radPositivo = p.medical?.novoInfiltrado === 'sim' || p.novoInfiltrado === 'sim';
         if (!radPositivo) continue; 
 
@@ -1258,15 +1606,13 @@ const metricasQualidade = useMemo(() => {
         let respCount = 0;
         let respEvidencias = [];
         
-        // O array que vai guardar todas as datas em que a infecção deu as caras para acharmos a D.O.E.
         let datasEventosEncontrados = [d0]; 
 
         // ==================================
-        // 1. SINAIS SISTÊMICOS NA JANELA
+        // 1. SINAIS SISTÊMICOS NA JANELA (Leucócitos e Febre)
         // ==================================
         if (p.examHistory) {
           Object.keys(p.examHistory).forEach(dt => {
-            // Se a data do exame estiver na Janela de Infecção
             if (datasJanela.includes(dt) || datasBR.includes(dt) || datasBRCurtas.includes(dt)) {
               const leucoStr = p.examHistory[dt]?.["Leucócitos"];
               if (leucoStr) {
@@ -1275,10 +1621,9 @@ const metricasQualidade = useMemo(() => {
                   sisPositivo = true;
                   sisEvidencias.push(`Leucócitos (${leuco}) aferidos em ${dt}`);
                   
-                  // Guarda a data para o cálculo de DOE
                   let dtNorm = dt;
                   if (dt.includes('/')) dtNorm = dt.split('/').reverse().join('-');
-                  if (dtNorm.length === 5) dtNorm = `${d0.split('-')[0]}-${dtNorm}`; // Adiciona o ano se faltar
+                  if (dtNorm.length === 5) dtNorm = `${d0.split('-')[0]}-${dtNorm}`;
                   datasEventosEncontrados.push(dtNorm);
                 }
               }
@@ -1286,17 +1631,34 @@ const metricasQualidade = useMemo(() => {
           });
         }
 
-        // A Temperatura é lida no balanço de D0
-        const strPaciente = JSON.stringify(p);
-        const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
-        let matchTemp;
-        while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
-          sisPositivo = true;
-          if (!sisEvidencias.includes(`Febre (${matchTemp[1]} ºC)`)) {
-            sisEvidencias.push(`Febre (${matchTemp[1]} ºC) registrada em ${datasBR[0]}`);
-            datasEventosEncontrados.push(d0);
-          }
-        }
+        // --- NOVA VARREDURA DE FEBRE ESTRUTURADA E COM DATA ---
+        const varrerFebreBH = (blocoBh) => {
+            if (!blocoBh || !blocoBh.date || !blocoBh.vitals) return;
+            const dataRefUS = blocoBh.date;
+            const dataRefBR = dataRefUS.split('-').reverse().join('/');
+            
+            // Só computa se a febre ocorreu dentro da Janela de 4 dias
+            if (datasJanela.includes(dataRefUS)) {
+                Object.keys(blocoBh.vitals).forEach(hora => {
+                    const tempValue = blocoBh.vitals[hora]["Temp (ºC)"];
+                    if (tempValue) {
+                        const tempNum = Number(String(tempValue).replace(',', '.'));
+                        if (tempNum >= 38.0 || tempNum <= 36.0) { // Febre ou Hipotermia
+                            sisPositivo = true;
+                            const msg = `Temperatura (${tempNum} ºC) registrada em ${dataRefBR} às ${hora}`;
+                            if (!sisEvidencias.includes(msg)) {
+                                sisEvidencias.push(msg);
+                                datasEventosEncontrados.push(dataRefUS);
+                            }
+                        }
+                    }
+                });
+            }
+        };
+
+        if (p.bh) varrerFebreBH(p.bh);
+        if (p.historico_bh && Array.isArray(p.historico_bh)) p.historico_bh.forEach(varrerFebreBH);
+        // ------------------------------------------------------
 
         // ==================================
         // 2. SINAIS RESPIRATÓRIOS NA JANELA
@@ -1316,9 +1678,7 @@ const metricasQualidade = useMemo(() => {
           let dataMenorPF = "";
           
           Object.keys(p.gasometriaHistory).forEach(colGaso => {
-            const isRecente = datasJanela.some(d => colGaso.includes(d)) || 
-                              datasBR.some(d => colGaso.includes(d)) ||
-                              datasBRCurtas.some(d => colGaso.includes(d));
+            const isRecente = datasJanela.some(d => colGaso.includes(d)) || datasBR.some(d => colGaso.includes(d)) || datasBRCurtas.some(d => colGaso.includes(d));
             
             if (isRecente) {
               const pf = parseFloat(p.gasometriaHistory[colGaso]?.["P/F"]);
@@ -1332,8 +1692,6 @@ const metricasQualidade = useMemo(() => {
           if (menorPF <= 240) {
             respCount++;
             respEvidencias.push(`Relação P/F baixa (${menorPF}) colhida em ${dataMenorPF}`);
-            
-            // Extrai a data normalizada da gasometria para o cálculo de DOE
             let dataGasoNorm = d0;
             datasJanela.forEach(dj => { if (dataMenorPF.includes(dj)) dataGasoNorm = dj; });
             datasBR.forEach(dbr => { if (dataMenorPF.includes(dbr)) dataGasoNorm = dbr.split('/').reverse().join('-'); });
@@ -1342,32 +1700,30 @@ const metricasQualidade = useMemo(() => {
         }
 
         // ==================================
-        // 3. DETERMINAÇÃO DA DOE (Data of Event) E CRUZAMENTO COM VM
+        // 3. DETERMINAÇÃO DA D.O.E. E CRUZAMENTO COM TEMPO DE VM
         // ==================================
         if (sisPositivo && respCount >= 2) {
           
-          // Acha a Data do Evento (a data mais antiga em que os sintomas começaram na janela)
-          const timestamps = datasEventosEncontrados.map(d => new Date(d).getTime()).filter(n => !isNaN(n));
+          const timestamps = datasEventosEncontrados.map(d => new Date(`${d}T12:00:00`).getTime()).filter(n => !isNaN(n));
           const dataEventoDOE = new Date(Math.min(...timestamps));
           const dataEventoFormatada = dataEventoDOE.toISOString().split('T')[0];
 
-          // Verifica se, no dia da DOE, o paciente já estava no 3º dia-calendário (D3) de Ventilação (ou seja, diferença >= 2 dias)
+          // Subtração de datas (Dia do Evento - Dia da Intubação)
           const diffVMnaDOE = Math.floor((dataEventoDOE - dataInt) / (1000 * 60 * 60 * 24));
           let atendeCriterioVM = diffVMnaDOE >= 2;
 
-          // Validação extra de extubação (Se extubou antes da DOE, a PAV não pertence ao tubo)
           if (atendeCriterioVM && p.dataExtubacao) {
             let dataExtStr = p.dataExtubacao;
             if (dataExtStr.includes('/')) dataExtStr = dataExtStr.split('/').reverse().join('-');
-            const diffExtDOE = Math.floor((dataEventoDOE - new Date(dataExtStr)) / (1000 * 60 * 60 * 24));
+            const diffExtDOE = Math.floor((dataEventoDOE - new Date(`${dataExtStr}T12:00:00`)) / (1000 * 60 * 60 * 24));
             if (diffExtDOE > 1) atendeCriterioVM = false; 
           }
 
           if (atendeCriterioVM) {
             const idAuditoria = `${p.cpf || p.id}_pav_${mesCorrente}`;
             const docAuditoriaRef = doc(db, "auditorias_pav", idAuditoria);
-            
             const audDoc = await getDocs(query(collection(db, "auditorias_pav"), where("id", "==", idAuditoria)));
+            
             if (audDoc.empty) {
               await setDoc(docAuditoriaRef, {
                 id: idAuditoria,
@@ -1377,13 +1733,13 @@ const metricasQualidade = useMemo(() => {
                 leito: p.leito,
                 mesReferencia: mesCorrente,
                 dataSuspeita: d0,
-                dataEventoDOE: dataEventoFormatada, // Registra a Data Oficial da Infecção!
+                dataEventoDOE: dataEventoFormatada,
                 status: "Suspeito",
                 evidencias: {
-                  radiologia: `Sim (Novo infiltrado / Progressão) mapeado em ${datasBR[0]}`,
+                  radiologia: `Sim (Novo infiltrado / Progressão) avaliado em ${datasBR[0]}`,
                   sistemicos: sisEvidencias,
                   respiratorios: respEvidencias,
-                  justificativa: `D.O.E da Infecção: ${dataEventoFormatada.split('-').reverse().join('/')} (Paciente já estava no D${diffVMnaDOE + 1} de VM).`
+                  justificativa: `D.O.E da Infecção: ${dataEventoFormatada.split('-').reverse().join('/')} (Paciente já estava no D${diffVMnaDOE >= 0 ? diffVMnaDOE + 1 : '?'} de VM).`
                 },
                 timestampCriacao: new Date().toISOString()
               });
@@ -1394,9 +1750,9 @@ const metricasQualidade = useMemo(() => {
       }
 
       if (novosCasos > 0) {
-        alert(`🚨 Varredura concluída! ${novosCasos} novos casos foram capturados usando a Janela de Infecção da ANVISA.`);
+        alert(`🚨 Varredura concluída! ${novosCasos} novos casos suspeitos de PAV capturados com sucesso.`);
       } else {
-        alert("Varredura concluída. Nenhum novo caso preencheu todos os critérios dentro da Janela de Infecção e da regra de D.O.E.");
+        alert("Varredura concluída. Nenhum novo caso preencheu todos os critérios simultâneos (Rx + Sis + Resp) na janela de 4 dias.");
       }
       
       carregarAuditoriasPAV();
@@ -1537,6 +1893,27 @@ const metricasQualidade = useMemo(() => {
     }
   };
 
+  const carregarAuditoriasITU = async () => {
+    if (!db) return;
+    try {
+      const querySnapshot = await getDocs(collection(db, "auditorias_itu"));
+      const lista = [];
+      querySnapshot.forEach((doc) => lista.push({ firebaseId: doc.id, ...doc.data() }));
+      lista.sort((a, b) => new Date(b.dataSuspeita) - new Date(a.dataSuspeita));
+      setAuditoriasITU(lista);
+    } catch (err) { console.error("Erro ao carregar ITU:", err); }
+  };
+
+  const atualizarStatusITU = async (idDocumento, novoStatus) => {
+    if (!db) return;
+    try {
+      await setDoc(doc(db, "auditorias_itu", idDocumento), { status: novoStatus, dataAuditoria: new Date().toISOString() }, { merge: true });
+      setAuditoriasITU(prev => prev.map(a => a.firebaseId === idDocumento ? { ...a, status: novoStatus } : a));
+      setModalAuditoriaITU(null);
+      alert(`✅ Caso ITU-AC classificado como: ${novoStatus}`);
+    } catch (err) { alert("Falha ao salvar a decisão."); }
+  };
+
   useEffect(() => {
     if (activeView === 'qualidade') {
       if (abaIrasAtiva === 'geral') {
@@ -1546,6 +1923,8 @@ const metricasQualidade = useMemo(() => {
         carregarAuditoriasPAV();
       } else if (abaIrasAtiva === 'ipcsc') {
         carregarAuditoriasIPCSC();
+      } else if (abaIrasAtiva === 'itu') {
+        carregarAuditoriasITU();
       }
     }
   }, [activeView, abaIrasAtiva, mesFiltroIrasCompartilhado]);
@@ -2664,31 +3043,52 @@ const metricasQualidade = useMemo(() => {
         </div>
 
         {/* NAVEGAÇÃO INTERNA (ABAS) */}
-        <div className="flex gap-2 border-b border-slate-200 mb-6 overflow-x-auto scrollbar-hide">
-          <button 
-            onClick={() => setAbaIrasAtiva('geral')}
-            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'geral' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            Visão Geral
-          </button>
-          <button 
-            onClick={() => setAbaIrasAtiva('pav')}
-            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'pav' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            PAV (Pneumonia)
-          </button>
-          <button 
-            onClick={() => setAbaIrasAtiva('ipcsc')}
-            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'ipcsc' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            IPCS-C (Corrente Sanguínea)
-          </button>
-          <button 
-            onClick={() => setAbaIrasAtiva('itu')}
-            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'itu' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            ITU-AC (Trato Urinário)
-          </button>
+        <div className="flex flex-wrap justify-between items-end border-b border-slate-200 mb-6 gap-4">
+          
+          {/* Container das Abas (à esquerda) */}
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            <button 
+              onClick={() => setAbaIrasAtiva('geral')}
+              className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'geral' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+              Visão Geral
+            </button>
+            <button 
+              onClick={() => setAbaIrasAtiva('pav')}
+              className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'pav' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+              PAV (Pneumonia)
+            </button>
+            <button 
+              onClick={() => setAbaIrasAtiva('ipcsc')}
+              className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'ipcsc' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+              IPCS-C (Corrente Sanguínea)
+            </button>
+            <button 
+              onClick={() => setAbaIrasAtiva('itu')}
+              className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'itu' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+              ITU-AC (Trato Urinário)
+            </button>
+          </div>
+
+          {/* Botão e Seletor de Mês Gerar Relatório (à direita) */}
+          <div className="mb-2 flex items-center gap-2 bg-slate-100 border border-slate-200 p-1 rounded-xl shadow-sm">
+            <input 
+              type="month" 
+              value={mesRelatorioSelecao} 
+              onChange={(e) => setMesRelatorioSelecao(e.target.value)} 
+              className="p-2 border border-slate-300 rounded-lg text-xs font-black outline-none bg-white text-slate-700 cursor-pointer"
+              title="Escolha o mês do relatório"
+            />
+            <button 
+              onClick={() => setModalRelatorioAberto(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold shadow-md transition-all whitespace-nowrap h-full"
+            >
+              <FileText size={14} /> Gerar Relatório ANVISA
+            </button>
+          </div>
         </div>
 
         {/* CONTEÚDO DAS ABAS */}
@@ -3005,25 +3405,33 @@ const metricasQualidade = useMemo(() => {
                 </div>
               </div>
 
-              {/* NAVEGAÇÃO INTERNA PAV */}
-              <div className="flex gap-2 border-b border-slate-200 pb-2">
-                {[
-                  { id: 'Suspeito', label: 'Alerta de Suspeita', color: 'bg-amber-100 text-amber-700' },
-                  { id: 'Confirmado', label: 'PAV Confirmada', color: 'bg-red-100 text-red-700' },
-                  { id: 'Descartado', label: 'Descartados', color: 'bg-emerald-100 text-emerald-700' }
-                ].map(tab => {
-                  const count = auditoriasPAV.filter(a => a.status === tab.id && a.mesReferencia === mesFiltroIrasCompartilhado).length;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setFiltroStatusPAV(tab.id)}
-                      className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors flex items-center gap-2 ${filtroStatusPAV === tab.id ? 'bg-white border-t-2 border-l border-r border-slate-200 text-slate-800 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative translate-y-[1px]' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border-b border-transparent'}`}
-                    >
-                      {tab.label}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${tab.color}`}>{count}</span>
-                    </button>
-                  );
-                })}
+              {/* NAVEGAÇÃO INTERNA PAV + BOTAO MANUAL */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-2 gap-4">
+                <div className="flex gap-2">
+                  {[
+                    { id: 'Suspeito', label: 'Alerta de Suspeita', color: 'bg-amber-100 text-amber-700' },
+                    { id: 'Confirmado', label: 'PAV Confirmada', color: 'bg-red-100 text-red-700' },
+                    { id: 'Descartado', label: 'Descartados', color: 'bg-emerald-100 text-emerald-700' }
+                  ].map(tab => {
+                    const count = auditoriasPAV.filter(a => a.status === tab.id && a.mesReferencia === mesFiltroIrasCompartilhado).length;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setFiltroStatusPAV(tab.id)}
+                        className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors flex items-center gap-2 ${filtroStatusPAV === tab.id ? 'bg-white border-t-2 border-l border-r border-slate-200 text-slate-800 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative translate-y-[1px]' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border-b border-transparent'}`}
+                      >
+                        {tab.label}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${tab.color}`}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button 
+                  onClick={() => setIsModalManualPAVOpen(true)}
+                  className="bg-white border-2 border-red-500 text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-2"
+                >
+                  <PlusCircle size={16} /> Lançar PAV Manual
+                </button>
               </div>
 
               {/* LISTA DE CASOS PAV */}
@@ -3059,7 +3467,7 @@ const metricasQualidade = useMemo(() => {
                 )}
               </div>
 
-              {/* MODAL DE AUDITORIA PAV */}
+              {/* MODAL DE AUDITORIA PAV (VISUALIZAÇÃO) */}
               {modalAuditoriaPAV && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
                   <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-slideUp">
@@ -3107,6 +3515,14 @@ const metricasQualidade = useMemo(() => {
                             ) : <span className="text-xs text-slate-400 italic">Nenhum sinal respiratório extra mapeado.</span>}
                           </div>
                         </div>
+
+                        {/* EXIBIÇÃO DA CULTURA SE HOUVER */}
+                        {modalAuditoriaPAV.evidencias?.microbiologia && modalAuditoriaPAV.evidencias.microbiologia !== "Não aplicado" && (
+                          <div className="p-3 bg-purple-50 border border-purple-100 rounded-lg mt-4">
+                            <h4 className="text-xs font-black text-purple-800 uppercase mb-2">Evidência Microbiológica</h4>
+                            <p className="text-sm text-purple-900 font-medium">✓ {modalAuditoriaPAV.evidencias.microbiologia}</p>
+                          </div>
+                        )}
                       </div>
 
                       {modalAuditoriaPAV.status === 'Suspeito' && (
@@ -3139,6 +3555,132 @@ const metricasQualidade = useMemo(() => {
                   </div>
                 </div>
               )}
+
+              {/* MODAL GIGANTE DE INSERÇÃO MANUAL DE PAV */}
+              {isModalManualPAVOpen && (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                  <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-slideUp">
+                    
+                    <div className="bg-red-600 p-5 flex justify-between items-center text-white shrink-0">
+                      <div>
+                        <h2 className="font-black text-xl flex items-center gap-2"><PlusCircle size={24} /> Lançamento Manual de PAV</h2>
+                        <p className="text-red-100 text-xs mt-1">Preencha os critérios da ANVISA. O sistema fará a validação final (D.O.E).</p>
+                      </div>
+                      <button onClick={() => setIsModalManualPAVOpen(false)} className="text-red-200 hover:text-white"><X size={28} /></button>
+                    </div>
+
+                    <div className="p-6 overflow-y-auto flex-1 bg-slate-50 space-y-6">
+                      
+                      {/* PACIENTE */}
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <label className="block text-xs font-black text-slate-500 uppercase mb-2">1. Selecione o Paciente</label>
+                        <select 
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 uppercase"
+                          value={formManualPAV.pacienteId}
+                          onChange={(e) => {
+                            const p = leitosConfig.find(l => l.id === e.target.value);
+                            if (p) setFormManualPAV({...formManualPAV, pacienteId: p.id, nome: p.nome, leito: p.nome.replace(/\D/g, '')});
+                          }}
+                        >
+                          <option value="">-- Selecione o Paciente Internado --</option>
+                          {leitosConfig.filter(l => l.nome).map(l => (
+                            <option key={l.id} value={l.id}>{l.nome} (Leito {l.nome.replace(/\D/g, '')})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* RADIOLOGIA */}
+                      <div className="bg-white p-4 rounded-xl border-l-4 border-l-blue-500 border-y border-r border-slate-200 shadow-sm">
+                        <label className="block text-xs font-black text-blue-600 uppercase mb-2">2. Critério Radiológico (Obrigatório)</label>
+                        <div className="flex gap-4 items-center">
+                          <span className="text-sm font-bold text-slate-700">Novo Infiltrado ou Progressão de infiltrado existente</span>
+                          <input type="date" value={formManualPAV.dataRadiologia} onChange={e => setFormManualPAV({...formManualPAV, dataRadiologia: e.target.value})} className="p-2 border border-slate-200 rounded text-sm outline-none focus:border-blue-500 ml-auto" />
+                        </div>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-6">
+                        {/* SINAIS SISTÊMICOS */}
+                        <div className="bg-white p-4 rounded-xl border-t-4 border-t-rose-500 border-x border-b border-slate-200 shadow-sm space-y-4">
+                          <label className="block text-xs font-black text-rose-600 uppercase">3. Sinais Sistêmicos</label>
+                          <div className="flex flex-col gap-3">
+                            <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                              <div className="flex items-center gap-2"><input type="checkbox" checked={formManualPAV.sysFebre} onChange={e => setFormManualPAV({...formManualPAV, sysFebre: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" /><span className="text-sm font-bold text-slate-700">Febre (&gt; 38ºC)</span></div>
+                              {formManualPAV.sysFebre && <input type="date" value={formManualPAV.dataFebre} onChange={e => setFormManualPAV({...formManualPAV, dataFebre: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
+                            </label>
+                            <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                              <div className="flex items-center gap-2"><input type="checkbox" checked={formManualPAV.sysLeuco} onChange={e => setFormManualPAV({...formManualPAV, sysLeuco: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" /><span className="text-sm font-bold text-slate-700">Leucopenia (&lt;4k) ou Leucocitose (&gt;12k)</span></div>
+                              {formManualPAV.sysLeuco && <input type="date" value={formManualPAV.dataLeuco} onChange={e => setFormManualPAV({...formManualPAV, dataLeuco: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
+                            </label>
+                            <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                              <div className="flex items-center gap-2"><input type="checkbox" checked={formManualPAV.sysSensorio} onChange={e => setFormManualPAV({...formManualPAV, sysSensorio: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" /><span className="text-sm font-bold text-slate-700">Alt. Sensório (Pacientes &ge; 70 anos)</span></div>
+                              {formManualPAV.sysSensorio && <input type="date" value={formManualPAV.dataSensorio} onChange={e => setFormManualPAV({...formManualPAV, dataSensorio: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* SINAIS RESPIRATÓRIOS */}
+                        <div className="bg-white p-4 rounded-xl border-t-4 border-t-cyan-500 border-x border-b border-slate-200 shadow-sm space-y-4">
+                          <label className="block text-xs font-black text-cyan-600 uppercase">4. Sinais Respiratórios</label>
+                          <div className="flex flex-col gap-3">
+                            <div className="p-2 border border-slate-100 rounded bg-slate-50/50">
+                              <label className="flex items-center justify-between cursor-pointer mb-2">
+                                <div className="flex items-center gap-2"><input type="checkbox" checked={formManualPAV.respSecrecao} onChange={e => setFormManualPAV({...formManualPAV, respSecrecao: e.target.checked})} className="w-4 h-4 text-cyan-600 rounded" /><span className="text-sm font-bold text-slate-700">Alt. na Secreção Traqueal</span></div>
+                                {formManualPAV.respSecrecao && <input type="date" value={formManualPAV.dataSecrecao} onChange={e => setFormManualPAV({...formManualPAV, dataSecrecao: e.target.value})} className="p-1 border rounded text-xs" />}
+                              </label>
+                              {formManualPAV.respSecrecao && <input type="text" placeholder="Especifique: Purulenta, aumento de volume..." value={formManualPAV.detSecrecao} onChange={e => setFormManualPAV({...formManualPAV, detSecrecao: e.target.value})} className="w-full p-2 text-xs border rounded outline-none" />}
+                            </div>
+                            
+                            <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                              <div className="flex items-center gap-2"><input type="checkbox" checked={formManualPAV.respTosse} onChange={e => setFormManualPAV({...formManualPAV, respTosse: e.target.checked})} className="w-4 h-4 text-cyan-600 rounded" /><span className="text-sm font-bold text-slate-700">Tosse, Dispneia ou Taquipneia</span></div>
+                              {formManualPAV.respTosse && <input type="date" value={formManualPAV.dataTosse} onChange={e => setFormManualPAV({...formManualPAV, dataTosse: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
+                            </label>
+
+                            <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                              <div className="flex items-center gap-2"><input type="checkbox" checked={formManualPAV.respAusculta} onChange={e => setFormManualPAV({...formManualPAV, respAusculta: e.target.checked})} className="w-4 h-4 text-cyan-600 rounded" /><span className="text-sm font-bold text-slate-700">Novos estertores na ausculta</span></div>
+                              {formManualPAV.respAusculta && <input type="date" value={formManualPAV.dataAusculta} onChange={e => setFormManualPAV({...formManualPAV, dataAusculta: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
+                            </label>
+
+                            <div className="p-2 border border-slate-100 rounded bg-slate-50/50">
+                              <label className="flex items-center justify-between cursor-pointer mb-2">
+                                <div className="flex items-center gap-2"><input type="checkbox" checked={formManualPAV.respTroca} onChange={e => setFormManualPAV({...formManualPAV, respTroca: e.target.checked})} className="w-4 h-4 text-cyan-600 rounded" /><span className="text-sm font-bold text-slate-700">Piora da Troca Gasosa</span></div>
+                                {formManualPAV.respTroca && <input type="date" value={formManualPAV.dataTroca} onChange={e => setFormManualPAV({...formManualPAV, dataTroca: e.target.value})} className="p-1 border rounded text-xs" />}
+                              </label>
+                              {formManualPAV.respTroca && <input type="text" placeholder="Especifique: Queda na P/F, aumento de FiO2, PEEP..." value={formManualPAV.detTroca} onChange={e => setFormManualPAV({...formManualPAV, detTroca: e.target.value})} className="w-full p-2 text-xs border rounded outline-none" />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* MICROBIOLÓGICO */}
+                      <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 shadow-sm">
+                        <label className="flex items-center justify-between cursor-pointer mb-2">
+                          <div className="flex items-center gap-2">
+                            <input type="checkbox" checked={formManualPAV.microCultura} onChange={e => setFormManualPAV({...formManualPAV, microCultura: e.target.checked})} className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500" />
+                            <span className="text-sm font-black text-purple-800 uppercase">5. Critério Microbiológico (Opcional)</span>
+                          </div>
+                          {formManualPAV.microCultura && <input type="date" value={formManualPAV.dataCultura} onChange={e => setFormManualPAV({...formManualPAV, dataCultura: e.target.value})} className="p-2 border border-purple-300 rounded text-xs font-bold text-purple-900 bg-white outline-none" />}
+                        </label>
+                        {formManualPAV.microCultura && (
+                          <div className="mt-3 flex flex-col gap-2 pl-7 animate-fadeIn">
+                            <span className="text-xs font-bold text-purple-700">Cultura de Aspirado Traqueal &ge; 10⁶ UFC/mL</span>
+                            <input type="text" placeholder="Especifique o microrganismo isolado..." value={formManualPAV.germeCultura} onChange={e => setFormManualPAV({...formManualPAV, germeCultura: e.target.value})} className="w-full p-3 bg-white border border-purple-200 rounded-lg outline-none focus:border-purple-500 text-sm font-bold text-slate-700" />
+                            <p className="text-[10px] text-purple-600 font-bold mt-1 italic">* Ao preencher este campo, o sistema exigirá apenas 1 sinal clínico (sistêmico ou respiratório) para fechar a PAV.</p>
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+
+                    <div className="bg-slate-100 border-t border-slate-200 p-5 flex justify-end gap-3 shrink-0">
+                      <button onClick={() => setIsModalManualPAVOpen(false)} className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancelar</button>
+                      <button onClick={salvarPAVManual} className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors flex items-center gap-2">
+                        <CheckCircle size={18} /> Processar e Salvar PAV
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
@@ -3196,18 +3738,11 @@ const metricasQualidade = useMemo(() => {
                             for (const hemo of hemoculturasPositivas) {
                               if (!hemo.dataColeta) continue;
                               
-                              // 1. DATA DA COLETA (O NOVO D0)
+                              // 1. DATA DA COLETA (O NOVO D0) com trava de fuso horário T12
                               let dColetaStr = hemo.dataColeta.includes('/') ? hemo.dataColeta.split('/').reverse().join('-') : hemo.dataColeta;
-                              const dataColetaObj = new Date(dColetaStr);
+                              const dataColetaObj = new Date(`${dColetaStr}T12:00:00`);
                               const mesCorrenteHemo = dColetaStr.slice(0,7);
                               
-                              // Cria Janela de 7 Dias: D-3 a D+3
-                              const datasJanela = [];
-                              for (let i = -3; i <= 3; i++) {
-                                const d = new Date(dataColetaObj.getTime() + i * 86400000);
-                                datasJanela.push(d.toISOString().split('T')[0]);
-                              }
-
                               // 2. É COMENSAL OU PATÓGENO RECONHECIDO?
                               const nomeGerme = hemo.germe?.toLowerCase() || "";
                               const isComensal = listaComensais.some(c => nomeGerme.includes(c));
@@ -3216,36 +3751,56 @@ const metricasQualidade = useMemo(() => {
                               let evidenciasSistemicas = [];
 
                               if (!isComensal) {
-                                criterioMicrobiologicoAprovado = true; // Patógeno verdadeiro
+                                criterioMicrobiologicoAprovado = true; // Patógeno verdadeiro (Ex: S. aureus, Klebsiella) -> Notifica direto
                               } else {
-                                // Se for comensal, precisa de amostras multiplas + Sinal Sistêmico na Janela
+                                // Se for comensal, exige estritamente amostras múltiplas
                                 if (hemo.amostrasPositivas !== 'multiplas') continue; 
                                 
                                 let temSinalSistemico = false;
-                                const strPaciente = JSON.stringify(p);
-                                
-                                datasJanela.forEach(dj => {
-                                  const regexFebre = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
-                                  let matchTemp;
-                                  while ((matchTemp = regexTemp.exec(strPaciente)) !== null) {
-                                    temSinalSistemico = true;
-                                    if (!evidenciasSistemicas.includes(`Febre (${matchTemp[1]} ºC)`)) evidenciasSistemicas.push(`Febre (${matchTemp[1]} ºC) detectada`);
-                                  }
 
-                                  const regexPAS = /"PAS":\s*"?([1-8]\d)"?/g;
-                                  let matchPAS;
-                                  while ((matchPAS = regexPAS.exec(strPaciente)) !== null) {
-                                    temSinalSistemico = true;
-                                    if (!evidenciasSistemicas.includes(`PAS Baixa (${matchPAS[1]})`)) evidenciasSistemicas.push(`PAS Baixa (${matchPAS[1]}) detectada`);
-                                  }
+                                // FUNÇÃO DE VARREDURA ESTRUTURADA NO BH (Evita repetições e captura a Data)
+                                const varrerSinaisSistemicosBH = (blocoBh) => {
+                                  if (!blocoBh || !blocoBh.date) return;
+                                  
+                                  const dataRefUS = blocoBh.date;
+                                  
+                                  // A TRAVA DA JANELA: Só executa se a data do balanço estiver na janela de 7 dias
+                                  if (datasJanela.includes(dataRefUS)) {
+                                    const dataRef = dataRefUS.split('-').reverse().join('/');
+                                    const strBloco = JSON.stringify(blocoBh);
 
-                                  const regexNora = /"Noradrenalina":\s*"?([1-9]\d*(?:[.,]\d+)?|0[.,][1-9]\d*)"?/g;
-                                  let matchNora;
-                                  while ((matchNora = regexNora.exec(strPaciente)) !== null) {
-                                    temSinalSistemico = true;
-                                    if (!evidenciasSistemicas.includes(`Uso de DVA (Nora: ${matchNora[1]})`)) evidenciasSistemicas.push(`Uso de DVA (Nora: ${matchNora[1]}) detectado`);
+                                    // A) Captura de Febre (>= 38ºC)
+                                    const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
+                                    let matchTemp;
+                                    while ((matchTemp = regexTemp.exec(strBloco)) !== null) {
+                                      temSinalSistemico = true;
+                                      const msg = `Febre (${matchTemp[1]} ºC) detectada no registro de ${dataRef}`;
+                                      if (!evidenciasSistemicas.includes(msg)) evidenciasSistemicas.push(msg);
+                                    }
+
+                                    // B) Captura de PAS Baixa (10 a 89 mmHg)
+                                    const regexPAS = /"PAS":\s*"?([1-8]\d)"?/g;
+                                    let matchPAS;
+                                    while ((matchPAS = regexPAS.exec(strBloco)) !== null) {
+                                      temSinalSistemico = true;
+                                      const msg = `PAS Baixa (${matchPAS[1]} mmHg) detectada no registro de ${dataRef}`;
+                                      if (!evidenciasSistemicas.includes(msg)) evidenciasSistemicas.push(msg);
+                                    }
+
+                                    // C) Captura de Uso de DVA (Noradrenalina)
+                                    const regexNora = /"Noradrenalina":\s*"?([1-9]\d*(?:[.,]\d+)?|0[.,][1-9]\d*)"?/g;
+                                    let matchNora;
+                                    while ((matchNora = regexNora.exec(strBloco)) !== null) {
+                                      temSinalSistemico = true;
+                                      const msg = `Uso de DVA (Nora: ${matchNora[1]}) detectado no registro de ${dataRef}`;
+                                      if (!evidenciasSistemicas.includes(msg)) evidenciasSistemicas.push(msg);
+                                    }
                                   }
-                                });
+                                };
+
+                                // Executa a varredura focada no BH atual e no histórico
+                                if (p.bh) varrerSinaisSistemicosBH(p.bh);
+                                if (p.historico_bh && Array.isArray(p.historico_bh)) p.historico_bh.forEach(varrerSinaisSistemicosBH);
 
                                 if (temSinalSistemico) {
                                   criterioMicrobiologicoAprovado = true;
@@ -3254,18 +3809,18 @@ const metricasQualidade = useMemo(() => {
 
                               if (!criterioMicrobiologicoAprovado) continue;
 
-                              // 3. ASSOCIAÇÃO AO DISPOSITIVO
+                              // 3. ASSOCIAÇÃO AO DISPOSITIVO (CVC) - TRAVA OBRIGATÓRIA
                               if (!p.enfermagem?.cvcData) continue;
                               
                               let dCvcStr = p.enfermagem.cvcData.includes('/') ? p.enfermagem.cvcData.split('/').reverse().join('-') : p.enfermagem.cvcData;
-                              const dataCvcObj = new Date(dCvcStr);
+                              const dataCvcObj = new Date(`${dCvcStr}T12:00:00`);
                               
                               const diffCvcColeta = Math.floor((dataColetaObj - dataCvcObj) / (1000 * 60 * 60 * 24));
                               let associadoCVC = diffCvcColeta >= 2;
 
                               if (associadoCVC && p.enfermagem.cvcRetiradaData) {
                                 let dCvcRetStr = p.enfermagem.cvcRetiradaData.includes('/') ? p.enfermagem.cvcRetiradaData.split('/').reverse().join('-') : p.enfermagem.cvcRetiradaData;
-                                const diffRetColeta = Math.floor((dataColetaObj - new Date(dCvcRetStr)) / (1000 * 60 * 60 * 24));
+                                const diffRetColeta = Math.floor((dataColetaObj - new Date(`${dCvcRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24));
                                 if (diffRetColeta > 1) associadoCVC = false;
                               }
 
@@ -3276,19 +3831,13 @@ const metricasQualidade = useMemo(() => {
                                 
                                 if (audDoc.empty) {
                                   await setDoc(docRef, {
-                                    id: idAuditoria,
-                                    pacienteId: p.id,
-                                    nome: p.nome,
-                                    leito: p.leito,
-                                    mesReferencia: mesCorrenteHemo,
-                                    dataSuspeita: dColetaStr,
-                                    dataEventoDOE: dColetaStr,
-                                    status: "Suspeito",
+                                    id: idAuditoria, pacienteId: p.id, nome: p.nome, leito: p.leito, mesReferencia: mesCorrenteHemo,
+                                    dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
                                     evidencias: {
-                                      microbiologia: `${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
-                                      sistemicos: evidenciasSistemicas.length > 0 ? evidenciasSistemicas : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
+                                      microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
+                                      sistemicos: evidenciasSistemicas.length > 0 ? evidenciasSistemicas : ['Critério Clínico dispensado (Patógeno Reconhecido para ANVISA)'],
                                       dispositivo: `CVC inserido em ${dCvcStr.split('-').reverse().join('/')} (D${diffCvcColeta + 1} no dia da coleta)`,
-                                      justificativa: "Cruzamento automatizado: Hemocultura + Janela 7D + CVC."
+                                      justificativa: "Cruzamento automatizado: Hemocultura Positiva + Critérios ANVISA + Linha de Tempo de CVC."
                                     },
                                     timestampCriacao: new Date().toISOString()
                                   });
@@ -3297,8 +3846,8 @@ const metricasQualidade = useMemo(() => {
                               }
                             }
                           }
-                          if (novosCasos > 0) alert(`🚨 ${novosCasos} novos casos de IPCS-C capturados!`);
-                          else alert("Nenhum caso novo de IPCS-C preencheu os critérios.");
+                          if (novosCasos > 0) alert(`🚨 ${novosCasos} novos casos suspeitos de IPCS-C capturados!`);
+                          else alert("Nenhum novo caso de IPCS-C preencheu os critérios de elegibilidade.");
                           carregarAuditoriasIPCSC();
                         } catch (err) { alert("Falha na varredura."); console.error(err); }
                       }}
@@ -3310,25 +3859,35 @@ const metricasQualidade = useMemo(() => {
                 </div>
               </div>
 
-              {/* NAVEGAÇÃO INTERNA IPCS-C */}
-              <div className="flex gap-2 border-b border-slate-200 pb-2">
-                {[
-                  { id: 'Suspeito', label: 'Alerta de Suspeita', color: 'bg-amber-100 text-amber-700' },
-                  { id: 'Confirmado', label: 'IPCS-C Confirmada', color: 'bg-red-100 text-red-700' },
-                  { id: 'Descartado', label: 'Descartados', color: 'bg-emerald-100 text-emerald-700' }
-                ].map(tab => {
-                  const count = auditoriasIPCSC.filter(a => a.status === tab.id && a.mesReferencia === mesFiltroIrasCompartilhado).length;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setFiltroStatusIPCSC(tab.id)}
-                      className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors flex items-center gap-2 ${filtroStatusIPCSC === tab.id ? 'bg-white border-t-2 border-l border-r border-slate-200 text-slate-800 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative translate-y-[1px]' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border-b border-transparent'}`}
-                    >
-                      {tab.label}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${tab.color}`}>{count}</span>
-                    </button>
-                  );
-                })}
+              {/* NAVEGAÇÃO INTERNA IPCS-C + BOTAO MANUAL */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-2 gap-4">
+                <div className="flex gap-2">
+                  {[
+                    { id: 'Suspeito', label: 'Alerta de Suspeita', color: 'bg-amber-100 text-amber-700' },
+                    { id: 'Confirmado', label: 'IPCS-C Confirmada', color: 'bg-red-100 text-red-700' },
+                    { id: 'Descartado', label: 'Descartados', color: 'bg-emerald-100 text-emerald-700' }
+                  ].map(tab => {
+                    const count = auditoriasIPCSC.filter(a => a.status === tab.id && a.mesReferencia === mesFiltroIrasCompartilhado).length;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setFiltroStatusIPCSC(tab.id)}
+                        className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors flex items-center gap-2 ${filtroStatusIPCSC === tab.id ? 'bg-white border-t-2 border-l border-r border-slate-200 text-slate-800 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative translate-y-[1px]' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border-b border-transparent'}`}
+                      >
+                        {tab.label}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${tab.color}`}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* BOTÃO DE LANÇAMENTO MANUAL IPCS-C */}
+                <button 
+                  onClick={() => setIsModalManualIPCSCOpen(true)}
+                  className="bg-white border-2 border-indigo-500 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-2"
+                >
+                  <PlusCircle size={16} /> Lançar IPCS-C Manual
+                </button>
               </div>
 
               {/* LISTA DE CASOS IPCS-C */}
@@ -3438,17 +3997,529 @@ const metricasQualidade = useMemo(() => {
                   </div>
                 </div>
               )}
+              {/* MODAL GIGANTE DE INSERÇÃO MANUAL DE IPCS-C */}
+              {isModalManualIPCSCOpen && (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                  <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-slideUp">
+                    
+                    <div className="bg-indigo-700 p-5 flex justify-between items-center text-white shrink-0">
+                      <div>
+                        <h2 className="font-black text-xl flex items-center gap-2"><PlusCircle size={24} /> Lançamento Manual de IPCS-C</h2>
+                        <p className="text-indigo-200 text-xs mt-1">Preencha os dados da Hemocultura Positiva e sintomas. O sistema valida os Critérios da ANVISA.</p>
+                      </div>
+                      <button onClick={() => setIsModalManualIPCSCOpen(false)} className="text-indigo-200 hover:text-white"><X size={28} /></button>
+                    </div>
+
+                    <div className="p-6 overflow-y-auto flex-1 bg-slate-50 space-y-6">
+                      
+                      {/* PACIENTE */}
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <label className="block text-xs font-black text-slate-500 uppercase mb-2">1. Selecione o Paciente</label>
+                        <select 
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 uppercase"
+                          value={formManualIPCSC.pacienteId}
+                          onChange={(e) => {
+                            const p = leitosConfig.find(l => l.id === e.target.value);
+                            if (p) setFormManualIPCSC({...formManualIPCSC, pacienteId: p.id, nome: p.nome, leito: p.nome.replace(/\D/g, '')});
+                          }}
+                        >
+                          <option value="">-- Selecione o Paciente Internado --</option>
+                          {leitosConfig.filter(l => l.nome).map(l => (
+                            <option key={l.id} value={l.id}>{l.nome} (Leito {l.nome.replace(/\D/g, '')})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* DADOS DA HEMOCULTURA */}
+                      <div className="bg-white p-4 rounded-xl border-l-4 border-l-purple-500 border-y border-r border-slate-200 shadow-sm space-y-4">
+                        <h3 className="text-xs font-black text-purple-600 uppercase">2. Dados Microbiológicos (Hemocultura)</h3>
+                        
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Microrganismo Isolado</label>
+                            <input type="text" placeholder="Ex: Klebsiella pneumoniae" value={formManualIPCSC.germe} onChange={e => setFormManualIPCSC({...formManualIPCSC, germe: e.target.value})} className="w-full p-2 border border-slate-200 rounded text-sm outline-none focus:border-purple-500 font-bold" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Data da Coleta (D.O.E)</label>
+                            <input type="date" value={formManualIPCSC.dataColeta} onChange={e => setFormManualIPCSC({...formManualIPCSC, dataColeta: e.target.value})} className="w-full p-2 border border-slate-200 rounded text-sm outline-none focus:border-purple-500 font-bold text-slate-700" />
+                          </div>
+                        </div>
+
+                        <div className="pt-2">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Classificação do Patógeno (Regra ANVISA)</label>
+                          <div className="flex flex-col gap-3">
+                            <label className={`p-3 rounded-lg border-2 cursor-pointer transition-all flex items-center gap-3 ${formManualIPCSC.tipoGerme === 'patogeno' ? 'border-purple-500 bg-purple-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                              <input type="radio" value="patogeno" checked={formManualIPCSC.tipoGerme === 'patogeno'} onChange={e => setFormManualIPCSC({...formManualIPCSC, tipoGerme: e.target.value})} className="w-4 h-4 text-purple-600 focus:ring-purple-500" />
+                              <div>
+                                <div className="font-bold text-sm text-slate-800">Patógeno Reconhecido</div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">S. aureus, Enterococcus, Gram-negativos, Candida... (Não exige sinais clínicos).</div>
+                              </div>
+                            </label>
+                            
+                            <label className={`p-3 rounded-lg border-2 cursor-pointer transition-all flex flex-col gap-3 ${formManualIPCSC.tipoGerme === 'comensal' ? 'border-amber-500 bg-amber-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                              <div className="flex items-center gap-3">
+                                <input type="radio" value="comensal" checked={formManualIPCSC.tipoGerme === 'comensal'} onChange={e => setFormManualIPCSC({...formManualIPCSC, tipoGerme: e.target.value})} className="w-4 h-4 text-amber-600 focus:ring-amber-500" />
+                                <div>
+                                  <div className="font-bold text-sm text-slate-800">Comensal de Pele</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">Coagulase-negativo, Corynebacterium, Bacillus... (Exige múltiplas amostras + Sinais).</div>
+                                </div>
+                              </div>
+                              {formManualIPCSC.tipoGerme === 'comensal' && (
+                                <div className="pl-7 animate-fadeIn">
+                                  <label className="flex items-center gap-2 cursor-pointer p-2 bg-white rounded border border-amber-200">
+                                    <input type="checkbox" checked={formManualIPCSC.multiplasAmostras} onChange={e => setFormManualIPCSC({...formManualIPCSC, multiplasAmostras: e.target.checked})} className="w-4 h-4 text-amber-600 rounded" />
+                                    <span className="text-sm font-bold text-amber-900">Confirmo que isolou em DUAS ou mais amostras de sangue na mesma ocasião.</span>
+                                  </label>
+                                </div>
+                              )}
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* SINAIS SISTÊMICOS */}
+                      <div className={`bg-white p-4 rounded-xl border-t-4 border-x border-b border-slate-200 shadow-sm space-y-4 transition-all ${formManualIPCSC.tipoGerme === 'patogeno' ? 'opacity-50 border-t-slate-300' : 'border-t-rose-500'}`}>
+                        <div className="flex justify-between items-center">
+                          <label className={`text-xs font-black uppercase ${formManualIPCSC.tipoGerme === 'patogeno' ? 'text-slate-400' : 'text-rose-600'}`}>3. Sinais Sistêmicos (Janela de 7 Dias)</label>
+                          {formManualIPCSC.tipoGerme === 'patogeno' && <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded font-bold">Dispensado para Patógenos</span>}
+                          {formManualIPCSC.tipoGerme === 'comensal' && <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold">Obrigatório preencher ao menos 1</span>}
+                        </div>
+                        
+                        <div className="flex flex-col gap-3">
+                          <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                            <div className="flex items-center gap-2"><input type="checkbox" checked={formManualIPCSC.sysFebre} onChange={e => setFormManualIPCSC({...formManualIPCSC, sysFebre: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" /><span className="text-sm font-bold text-slate-700">Febre (&gt; 38ºC)</span></div>
+                            {formManualIPCSC.sysFebre && <input type="date" value={formManualIPCSC.dataFebre} onChange={e => setFormManualIPCSC({...formManualIPCSC, dataFebre: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
+                          </label>
+                          <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                            <div className="flex items-center gap-2"><input type="checkbox" checked={formManualIPCSC.sysCalafrios} onChange={e => setFormManualIPCSC({...formManualIPCSC, sysCalafrios: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" /><span className="text-sm font-bold text-slate-700">Calafrios</span></div>
+                            {formManualIPCSC.sysCalafrios && <input type="date" value={formManualIPCSC.dataCalafrios} onChange={e => setFormManualIPCSC({...formManualIPCSC, dataCalafrios: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
+                          </label>
+                          <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                            <div className="flex items-center gap-2"><input type="checkbox" checked={formManualIPCSC.sysHipotensao} onChange={e => setFormManualIPCSC({...formManualIPCSC, sysHipotensao: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" /><span className="text-sm font-bold text-slate-700">Hipotensão (PAS &lt; 90) ou Uso de DVA</span></div>
+                            {formManualIPCSC.sysHipotensao && <input type="date" value={formManualIPCSC.dataHipotensao} onChange={e => setFormManualIPCSC({...formManualIPCSC, dataHipotensao: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
+                          </label>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    <div className="bg-slate-100 border-t border-slate-200 p-5 flex justify-end gap-3 shrink-0">
+                      <button onClick={() => setIsModalManualIPCSCOpen(false)} className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancelar</button>
+                      <button onClick={salvarIPCSCManual} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors flex items-center gap-2">
+                        <CheckCircle size={18} /> Processar e Salvar IPCS-C
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* ========================================= */}
-          {/* ABA ITU */}
+          {/* ABA ITU-AC */}
           {/* ========================================= */}
           {abaIrasAtiva === 'itu' && (
-            <div className="w-full text-center animate-fadeIn py-10">
-              <Bug size={48} className="mx-auto text-slate-300 mb-4" />
-              <h3 className="text-lg font-bold text-slate-700">Infecção do Trato Urinário (ITU-AC)</h3>
-              <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">Área reservada para cruzar Uroculturas Positivas com os Dias de Sonda Vesical de Demora.</p>
+            <div className="w-full animate-fadeIn space-y-6">
+              
+              {/* CABEÇALHO ITU-AC */}
+              <div className="bg-gradient-to-r from-sky-800 to-sky-900 rounded-xl p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-black flex items-center gap-2">
+                    <Bug size={24} className="text-sky-400" />
+                    Central de Vigilância: ITU-AC
+                  </h3>
+                  <p className="text-sky-200 text-sm mt-1 max-w-xl">
+                    Rastreio baseado na Urocultura Positiva (D0). Cruza UFC &ge; 10⁵ (Máx 2 espécies), 
+                    sinais sistêmicos (Janela 7D) e uso de Sonda Vesical de Demora (&gt; 2 dias).
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 bg-sky-700/50 p-2 rounded-lg border border-sky-600">
+                    <span className="text-xs font-bold text-sky-200">Mês de Análise:</span>
+                    <input 
+                      type="month" 
+                      value={mesFiltroIrasCompartilhado || ''} 
+                      onChange={(e) => {
+                        setMesFiltroIrasCompartilhado(e.target.value);
+                        setTimeout(() => carregarAuditoriasITU(), 50);
+                      }} 
+                      className="p-1.5 text-xs text-sky-900 rounded font-bold outline-none bg-white cursor-pointer" 
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={async () => {
+                        if (!db) return alert("Banco não conectado.");
+                        try {
+                          console.log("🕵️ INICIANDO VARREDURA AMPLA DE ITU-AC...");
+                          const snapshot = await getDocs(collection(db, "leitos_uti"));
+                          const pacientesAtivos = [];
+                          snapshot.forEach(doc => { if (doc.data().nome) pacientesAtivos.push({ id: doc.id, leito: doc.id.replace('bed_',''), ...doc.data() }); });
+
+                          let novosCasos = 0;
+
+                          for (const p of pacientesAtivos) {
+                            if (!p.culturas || !p.culturas.lista) continue;
+                            
+                            const uroculturasPositivas = p.culturas.lista.filter(c => (c.tipo?.toLowerCase().includes('urocultura') || c.tipo?.toLowerCase().includes('urina')) && c.status === 'Positivo');
+                            
+                            for (const uro of uroculturasPositivas) {
+                              if (!uro.dataColeta) continue;
+
+                              let dColetaStr = uro.dataColeta.includes('/') ? uro.dataColeta.split('/').reverse().join('-') : uro.dataColeta;
+                              const dataColetaObj = new Date(`${dColetaStr}T12:00:00`);
+                              const mesCorrenteUro = dColetaStr.slice(0,7);
+                              
+                              const ufc = Number(uro.contagemUFC) || 0;
+                              const qtdEsp = Number(uro.qtdEspecies) || 1;
+
+                              // --- CRIAÇÃO DA JANELA DE 7 DIAS (D-3 a D+3) ---
+                              const datasJanela = [];
+                              for (let i = -3; i <= 3; i++) {
+                                const d = new Date(dataColetaObj.getTime() + i * 86400000);
+                                datasJanela.push(d.toISOString().split('T')[0]);
+                              }
+
+                              // --- 1. TRAVA: VERIFICAÇÃO DE SVD (Obrigatório) ---
+                              let associadoSVD = false;
+                              let infoSVD = "SVD não registrada ou sem data de inserção clara.";
+                              let diffSvdColeta = 0;
+
+                              if (p.enfermagem?.svdData) {
+                                let dSvdStr = p.enfermagem.svdData.includes('/') ? p.enfermagem.svdData.split('/').reverse().join('-') : p.enfermagem.svdData;
+                                const dataSvdObj = new Date(`${dSvdStr}T12:00:00`);
+                                diffSvdColeta = Math.floor((dataColetaObj - dataSvdObj) / (1000 * 60 * 60 * 24));
+                                
+                                associadoSVD = diffSvdColeta >= 2;
+
+                                if (associadoSVD && p.enfermagem.svdRetiradaData) {
+                                  let dSvdRetStr = p.enfermagem.svdRetiradaData.includes('/') ? p.enfermagem.svdRetiradaData.split('/').reverse().join('-') : p.enfermagem.svdRetiradaData;
+                                  const diffRetColeta = Math.floor((dataColetaObj - new Date(`${dSvdRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24));
+                                  if (diffRetColeta > 1) associadoSVD = false;
+                                }
+                                infoSVD = `SVD inserida em ${dSvdStr.split('-').reverse().join('/')} (D${diffSvdColeta >= 0 ? diffSvdColeta + 1 : '?' } no dia da coleta)`;
+                              }
+
+                              if (!associadoSVD) continue; 
+
+                              // --- 2. EXTRAÇÃO DE FEBRE (TRAVADA NA JANELA DE 7 DIAS) ---
+                              let evidenciasSistemicas = [];
+                              
+                              const varrerFebreBH = (blocoBh) => {
+                                if (!blocoBh || !blocoBh.date || !blocoBh.vitals) return;
+                                const dataRefUS = blocoBh.date;
+                                
+                                // A MÁGICA ACONTECE AQUI: Só lê a febre se o dia estiver na janela de infecção!
+                                if (datasJanela.includes(dataRefUS)) {
+                                  const dataRefBR = dataRefUS.split('-').reverse().join('/');
+                                  Object.keys(blocoBh.vitals).forEach(hora => {
+                                    const tempValue = blocoBh.vitals[hora]["Temp (ºC)"];
+                                    if (tempValue) {
+                                      const tempNum = Number(String(tempValue).replace(',', '.'));
+                                      if (tempNum >= 38.0) {
+                                        const msgFebre = `Febre (${tempNum} ºC) registrada em ${dataRefBR} às ${hora}`;
+                                        if (!evidenciasSistemicas.includes(msgFebre)) evidenciasSistemicas.push(msgFebre);
+                                      }
+                                    }
+                                  });
+                                }
+                              };
+
+                              if (p.bh) varrerFebreBH(p.bh);
+                              if (p.historico_bh && Array.isArray(p.historico_bh)) p.historico_bh.forEach(varrerFebreBH);
+
+                              // --- 3. CRIAÇÃO DO CASO SUSPEITO ---
+                              const idAuditoria = `${p.cpf || p.id}_itu_${uro.id || dColetaStr}`;
+                              const docRef = doc(db, "auditorias_itu", idAuditoria);
+                              const audDoc = await getDocs(query(collection(db, "auditorias_itu"), where("id", "==", idAuditoria)));
+                              
+                              if (audDoc.empty) {
+                                await setDoc(docRef, {
+                                  id: idAuditoria, pacienteId: p.id, nome: p.nome, leito: p.leito, mesReferencia: mesCorrenteUro,
+                                  dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
+                                  evidencias: {
+                                    microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${uro.germe} (UFC: ${ufc || 'Não inf'} | Espécies: ${qtdEsp})`,
+                                    sistemicos: evidenciasSistemicas.length > 0 ? evidenciasSistemicas : ["Nenhuma febre >38ºC detectada na janela de 7 dias"],
+                                    dispositivo: infoSVD,
+                                    justificativa: "Cruzamento automatizado: Urocultura POSITIVA associada a tempo de SVD compatível com ITU-AC."
+                                  },
+                                  timestampCriacao: new Date().toISOString()
+                                });
+                                novosCasos++;
+                              }
+                            }
+                          }
+                          if (novosCasos > 0) alert(`🚨 ${novosCasos} novos casos suspeitos de ITU-AC capturados!`);
+                          else alert("Nenhuma nova suspeita que cumpra os critérios de SVD foi encontrada.");
+                          carregarAuditoriasITU();
+                        } catch (err) { alert("Falha na varredura."); console.error(err); }
+                      }}
+                      className="bg-sky-600 hover:bg-sky-500 px-4 py-2 rounded-lg text-sm font-bold shadow transition-all flex items-center gap-2"
+                    >
+                      <Search size={16} /> Forçar Varredura
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* NAVEGAÇÃO INTERNA ITU-AC + BOTÃO MANUAL */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-2 gap-4">
+                <div className="flex gap-2">
+                  {[
+                    { id: 'Suspeito', label: 'Alerta de Suspeita', color: 'bg-amber-100 text-amber-700' },
+                    { id: 'Confirmado', label: 'ITU-AC Confirmada', color: 'bg-red-100 text-red-700' },
+                    { id: 'Descartado', label: 'Descartados', color: 'bg-emerald-100 text-emerald-700' }
+                  ].map(tab => {
+                    const count = auditoriasITU.filter(a => a.status === tab.id && a.mesReferencia === mesFiltroIrasCompartilhado).length;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setFiltroStatusITU(tab.id)}
+                        className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors flex items-center gap-2 ${filtroStatusITU === tab.id ? 'bg-white border-t-2 border-l border-r border-slate-200 text-slate-800 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative translate-y-[1px]' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border-b border-transparent'}`}
+                      >
+                        {tab.label}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${tab.color}`}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* BOTÃO DE LANÇAMENTO MANUAL ITU-AC */}
+                <button 
+                  onClick={() => setIsModalManualITUOpen(true)}
+                  className="bg-white border-2 border-sky-500 text-sky-600 hover:bg-sky-50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-2"
+                >
+                  <PlusCircle size={16} /> Lançar ITU Manual
+                </button>
+              </div>
+
+              {/* LISTA DE CASOS ITU-AC */}
+              <div className="grid md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-b-xl border border-t-0 border-slate-200 min-h-[300px]">
+                {auditoriasITU.filter(a => a.status === filtroStatusITU && a.mesReferencia === mesFiltroIrasCompartilhado).length === 0 ? (
+                  <div className="col-span-3 flex flex-col items-center justify-center text-slate-400 py-10">
+                    <CheckCircle size={48} className="text-slate-300 mb-3 opacity-50"/>
+                    <p className="font-bold">Nenhum caso {filtroStatusITU.toLowerCase()} neste mês.</p>
+                  </div>
+                ) : (
+                  auditoriasITU.filter(a => a.status === filtroStatusITU && a.mesReferencia === mesFiltroIrasCompartilhado).map((caso) => (
+                    <div key={caso.firebaseId} className={`bg-white border-2 rounded-xl p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md ${filtroStatusITU === 'Suspeito' ? 'border-amber-200' : filtroStatusITU === 'Confirmado' ? 'border-red-200' : 'border-emerald-200'}`}>
+                      <div className={`absolute top-0 left-0 w-2 h-full ${filtroStatusITU === 'Suspeito' ? 'bg-amber-500' : filtroStatusITU === 'Confirmado' ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
+                      <div className="pl-3 flex flex-col h-full">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-[10px] font-black text-sky-500 uppercase">Coleta: {caso.dataSuspeita?.split('-').reverse().join('/')}</span>
+                          <span className="text-xs font-bold text-slate-800">Leito {caso.leito}</span>
+                        </div>
+                        <h4 className="font-bold text-slate-800 text-sm truncate uppercase">{caso.nome}</h4>
+                        <p className="text-[10px] text-slate-500 mt-2 mb-4 italic line-clamp-2">{caso.evidencias?.microbiologia}</p>
+                        
+                        <div className="mt-auto pt-4 border-t border-slate-50">
+                          <button 
+                            onClick={() => setModalAuditoriaITU(caso)}
+                            className={`w-full text-white text-xs font-bold py-2 rounded transition-colors flex items-center justify-center gap-2 ${filtroStatusITU === 'Suspeito' ? 'bg-sky-800 hover:bg-sky-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
+                          >
+                            <Search size={14} /> {filtroStatusITU === 'Suspeito' ? 'Auditar Caso' : 'Ver Detalhes'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* MODAL DE AUDITORIA ITU-AC */}
+              {modalAuditoriaITU && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                  <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-slideUp">
+                    <div className={`p-4 text-white flex justify-between items-center ${modalAuditoriaITU.status === 'Suspeito' ? 'bg-sky-800' : modalAuditoriaITU.status === 'Confirmado' ? 'bg-red-700' : 'bg-emerald-700'}`}>
+                      <h2 className="font-black flex items-center gap-2">
+                        <Bug size={20} className="opacity-80" />
+                        Auditoria do Trato Urinário - Leito {modalAuditoriaITU.leito}
+                      </h2>
+                      <button onClick={() => setModalAuditoriaITU(null)} className="text-white/70 hover:text-white transition-colors"><X size={24} /></button>
+                    </div>
+
+                    <div className="p-6">
+                      <div className="flex justify-between items-start mb-6">
+                        <div>
+                          <h3 className="font-black text-xl text-slate-800 uppercase">{modalAuditoriaITU.nome}</h3>
+                          <span className="text-xs text-slate-500 font-bold">Data da Coleta (D.O.E): {modalAuditoriaITU.dataSuspeita?.split('-').reverse().join('/')}</span>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${modalAuditoriaITU.status === 'Suspeito' ? 'bg-amber-100 text-amber-700' : modalAuditoriaITU.status === 'Confirmado' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {modalAuditoriaITU.status}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg">
+                          <h4 className="text-xs font-black text-sky-800 uppercase mb-2">Microbiologia (Urocultura)</h4>
+                          <p className="text-sm text-sky-900 font-bold">✓ {modalAuditoriaITU.evidencias?.microbiologia}</p>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg">
+                            <h4 className="text-xs font-black text-rose-800 uppercase mb-2 flex items-center gap-1"><Activity size={12}/> Sinais Clínicos (Janela 7D)</h4>
+                            <ul className="text-xs text-rose-900 font-medium space-y-1 list-disc pl-4">
+                              {modalAuditoriaITU.evidencias?.sistemicos.map((e, i) => <li key={i}>{e}</li>)}
+                            </ul>
+                          </div>
+
+                          <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+                            <h4 className="text-xs font-black text-indigo-800 uppercase mb-2 flex items-center gap-1"><Bug size={12}/> Associação ao Dispositivo</h4>
+                            <p className="text-xs text-indigo-900 font-medium">{modalAuditoriaITU.evidencias?.dispositivo}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {modalAuditoriaITU.status === 'Suspeito' && (
+                        <div className="mt-8 flex gap-4 pt-4 border-t border-slate-100">
+                          <button 
+                            onClick={() => atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Confirmado')} 
+                            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                          >
+                            <CheckCircle size={18} /> Confirmar ITU-AC
+                          </button>
+                          <button 
+                            onClick={() => atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Descartado')} 
+                            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
+                          >
+                            Descartar Suspeita
+                          </button>
+                        </div>
+                      )}
+                      {modalAuditoriaITU.status !== 'Suspeito' && (
+                        <div className="mt-6 text-center">
+                          <button 
+                            onClick={() => atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Suspeito')}
+                            className="text-xs font-bold text-slate-400 hover:text-slate-600 underline transition-colors"
+                          >
+                            Desfazer auditoria e retornar para Suspeitos
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL GIGANTE DE INSERÇÃO MANUAL DE ITU-AC */}
+              {isModalManualITUOpen && (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                  <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-slideUp">
+                    
+                    <div className="bg-sky-600 p-5 flex justify-between items-center text-white shrink-0">
+                      <div>
+                        <h2 className="font-black text-xl flex items-center gap-2"><PlusCircle size={24} /> Lançamento Manual de ITU-AC</h2>
+                        <p className="text-sky-100 text-xs mt-1">Insira os dados da Urocultura. O sistema exige a presença de SVD (&gt;2 dias) e Sinais Sistêmicos.</p>
+                      </div>
+                      <button onClick={() => setIsModalManualITUOpen(false)} className="text-sky-200 hover:text-white"><X size={28} /></button>
+                    </div>
+
+                    <div className="p-6 overflow-y-auto flex-1 bg-slate-50 space-y-6">
+                      
+                      {/* PACIENTE */}
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <label className="block text-xs font-black text-slate-500 uppercase mb-2">1. Selecione o Paciente</label>
+                        <select 
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 uppercase"
+                          value={formManualITU.pacienteId}
+                          onChange={(e) => {
+                            const p = leitosConfig.find(l => l.id === e.target.value);
+                            if (p) setFormManualITU({...formManualITU, pacienteId: p.id, nome: p.nome, leito: p.nome.replace(/\D/g, '')});
+                          }}
+                        >
+                          <option value="">-- Selecione o Paciente Internado --</option>
+                          {leitosConfig.filter(l => l.nome).map(l => (
+                            <option key={l.id} value={l.id}>{l.nome} (Leito {l.nome.replace(/\D/g, '')})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* DADOS MICROBIOLÓGICOS */}
+                      <div className="bg-white p-4 rounded-xl border-l-4 border-l-sky-500 border-y border-r border-slate-200 shadow-sm space-y-4">
+                        <h3 className="text-xs font-black text-sky-600 uppercase">2. Dados Microbiológicos (Urocultura)</h3>
+                        
+                        <div className="grid md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Microrganismo Isolado</label>
+                            <input type="text" placeholder="Ex: E. coli" value={formManualITU.germe} onChange={e => setFormManualITU({...formManualITU, germe: e.target.value})} className="w-full p-2 border border-slate-200 rounded text-sm outline-none focus:border-sky-500 font-bold" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Contagem (UFC/mL)</label>
+                            <input type="number" placeholder="Ex: 100000" value={formManualITU.ufc} onChange={e => setFormManualITU({...formManualITU, ufc: e.target.value})} className="w-full p-2 border border-slate-200 rounded text-sm outline-none focus:border-sky-500 font-bold text-slate-700" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nº de Espécies</label>
+                            <select value={formManualITU.qtdEspecies} onChange={e => setFormManualITU({...formManualITU, qtdEspecies: Number(e.target.value)})} className="w-full p-2 border border-slate-200 rounded text-sm outline-none focus:border-sky-500 font-bold text-slate-700">
+                              <option value={1}>1 espécie isolada</option>
+                              <option value={2}>2 espécies isoladas</option>
+                              <option value={3}>3 ou mais (Flora Mista)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Data da Coleta (D.O.E)</label>
+                          <input type="date" value={formManualITU.dataColeta} onChange={e => setFormManualITU({...formManualITU, dataColeta: e.target.value})} className="w-full md:w-1/3 p-2 border border-slate-200 rounded text-sm outline-none focus:border-sky-500 font-bold text-slate-700" />
+                        </div>
+                      </div>
+
+                      {/* SINAIS SISTÊMICOS */}
+                      <div className="bg-white p-4 rounded-xl border-t-4 border-t-rose-500 border-x border-b border-slate-200 shadow-sm space-y-4">
+                        <div className="flex justify-between items-center">
+                          <label className="text-xs font-black uppercase text-rose-600">3. Sinais Clínicos (Janela de 7 Dias)</label>
+                          <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold">Obrigatório preencher ao menos 1</span>
+                        </div>
+                        
+                        <div className="flex flex-col gap-3">
+                          <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <input type="checkbox" checked={formManualITU.sysFebre} onChange={e => setFormManualITU({...formManualITU, sysFebre: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" />
+                              <span className="text-sm font-bold text-slate-700">Febre (&gt; 38ºC) ou Calafrios</span>
+                            </div>
+                            {formManualITU.sysFebre && <input type="date" value={formManualITU.dataFebre} onChange={e => setFormManualITU({...formManualITU, dataFebre: e.target.value})} className="p-1 border border-slate-300 rounded text-xs ml-2 outline-none" />}
+                          </label>
+
+                          <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <input type="checkbox" checked={formManualITU.sysDisuria} onChange={e => setFormManualITU({...formManualITU, sysDisuria: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" />
+                              <span className="text-sm font-bold text-slate-700">Disúria ou Urgência Miccional</span>
+                            </div>
+                            {formManualITU.sysDisuria && <input type="date" value={formManualITU.dataDisuria} onChange={e => setFormManualITU({...formManualITU, dataDisuria: e.target.value})} className="p-1 border border-slate-300 rounded text-xs ml-2 outline-none" />}
+                          </label>
+
+                          <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <input type="checkbox" checked={formManualITU.sysDorSupra} onChange={e => setFormManualITU({...formManualITU, sysDorSupra: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" />
+                              <span className="text-sm font-bold text-slate-700">Dor Suprapúbica</span>
+                            </div>
+                            {formManualITU.sysDorSupra && <input type="date" value={formManualITU.dataDorSupra} onChange={e => setFormManualITU({...formManualITU, dataDorSupra: e.target.value})} className="p-1 border border-slate-300 rounded text-xs ml-2 outline-none" />}
+                          </label>
+
+                          <label className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <input type="checkbox" checked={formManualITU.sysGiordano} onChange={e => setFormManualITU({...formManualITU, sysGiordano: e.target.checked})} className="w-4 h-4 text-rose-600 rounded focus:ring-rose-500" />
+                              <span className="text-sm font-bold text-slate-700">Sinal de Giordano Positivo (Dor lombar)</span>
+                            </div>
+                            {formManualITU.sysGiordano && <input type="date" value={formManualITU.dataGiordano} onChange={e => setFormManualITU({...formManualITU, dataGiordano: e.target.value})} className="p-1 border border-slate-300 rounded text-xs ml-2 outline-none" />}
+                          </label>
+                        </div>
+                        <p className="text-[10px] text-slate-400 italic">* Para pacientes sedados ou intubados na UTI, a avaliação da dor costuma ser limitada, tornando a Febre o gatilho principal.</p>
+                      </div>
+
+                    </div>
+
+                    <div className="bg-slate-100 border-t border-slate-200 p-5 flex justify-end gap-3 shrink-0">
+                      <button onClick={() => setIsModalManualITUOpen(false)} className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancelar</button>
+                      <button onClick={salvarITUManual} className="px-8 py-3 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors flex items-center gap-2">
+                        <CheckCircle size={18} /> Processar e Salvar ITU-AC
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
@@ -4820,6 +5891,30 @@ const metricasQualidade = useMemo(() => {
           </div>
         </div>
       )}
+
+              {/* Modal de Relatório */}
+              {modalRelatorioAberto && (
+                <div className="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-white w-full max-w-4xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-slideUp">
+                    <div className="p-4 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                      <h2 className="font-bold flex items-center gap-2"><FileText size={20}/> Pré-visualização do Relatório ANVISA</h2>
+                      <div className="flex gap-2">
+                        <button onClick={() => window.print()} className="bg-emerald-600 px-4 py-2 rounded text-sm font-bold">Imprimir / Salvar PDF</button>
+                        <button onClick={() => setModalRelatorioAberto(false)} className="bg-red-600 px-4 py-2 rounded text-sm font-bold">Fechar</button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-auto bg-slate-100 p-8">
+                      <RelatorioANVISA 
+                          db={db} 
+                          mesAno={mesRelatorioSelecao} 
+                          leitosConfig={leitosConfig} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
     </div>
   );
 };
