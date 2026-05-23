@@ -5,7 +5,7 @@ import {
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
-  FileText
+  FileText, Edit3
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -1229,6 +1229,9 @@ const metricasQualidade = useMemo(() => {
     const p = leitosConfig.find(l => l.id === formManualPAV.pacienteId);
     if (!p) return alert("Erro: Dados do paciente não encontrados.");
 
+    // 💡 A MÁGICA ESTÁ AQUI: Extrai o leito limpíssimo (apenas o número/texto)
+    const leitoLimpo = p.id.replace('bed_', '');
+
     // --- 🚨 BLOQUEIO DE SEGURANÇA: DATA DE INTUBAÇÃO ---
     if (!p.dataIntubacao || p.dataIntubacao.trim() === '') {
       return alert("❌ Bloqueado: Este paciente não possui data de intubação registrada. Não é possível calcular o tempo de VM.");
@@ -1294,7 +1297,7 @@ const metricasQualidade = useMemo(() => {
         
         await setDoc(doc(db, "auditorias_pav", idAuditoria), {
           id: idAuditoria, pacienteId: formManualPAV.pacienteId,
-          nome: formManualPAV.nome, leito: formManualPAV.leito,
+          nome: p.nome, leito: leitoLimpo, // Puxando nome do estado e o leito limpo
           mesReferencia: mesRef, dataSuspeita: dataEventoDOE, dataEventoDOE: dataEventoDOE,
           status: "Confirmado", 
           evidencias: {
@@ -1320,9 +1323,12 @@ const metricasQualidade = useMemo(() => {
     if (!formManualIPCSC.dataColeta) return alert("A data da coleta (D.O.E) é obrigatória.");
     if (!formManualIPCSC.germe) return alert("Preencha o microrganismo isolado.");
 
-    // 1. Recupera o objeto do paciente completo para acessar as datas dos dispositivos
+    // 1. Recupera o objeto do paciente completo
     const p = leitosConfig.find(l => l.id === formManualIPCSC.pacienteId);
     if (!p) return alert("Erro: Dados do paciente não encontrados.");
+
+    // 💡 Extrai o leito limpíssimo
+    const leitoLimpo = p.id.replace('bed_', '');
 
     let sysCount = 0;
     let evidenciasSys = [];
@@ -1354,7 +1360,6 @@ const metricasQualidade = useMemo(() => {
         const d = new Date(`${dataStr.split('/').reverse().join('-')}T12:00:00`);
         const diff = Math.floor((dataColeta - d) / (1000 * 60 * 60 * 24));
         
-        // Verifica se foi retirado no dia anterior (ou se não foi retirado ainda)
         if (dataRetiradaStr) {
           const dRet = new Date(`${dataRetiradaStr.split('/').reverse().join('-')}T12:00:00`);
           const diffRet = Math.floor((dataColeta - dRet) / (1000 * 60 * 60 * 24));
@@ -1379,7 +1384,7 @@ const metricasQualidade = useMemo(() => {
         
         await setDoc(doc(db, "auditorias_ipcsc", idAuditoria), {
           id: idAuditoria, pacienteId: formManualIPCSC.pacienteId,
-          nome: formManualIPCSC.nome, leito: formManualIPCSC.leito,
+          nome: p.nome, leito: leitoLimpo, // Puxando nome do estado e o leito limpo
           mesReferencia: mesRef, dataSuspeita: dataEventoDOE, dataEventoDOE: dataEventoDOE,
           status: "Confirmado", 
           evidencias: {
@@ -1404,11 +1409,9 @@ const metricasQualidade = useMemo(() => {
     if (!formManualITU.dataColeta) return alert("A data da coleta é obrigatória.");
     if (!formManualITU.germe) return alert("Preencha o microrganismo.");
     
-    // Validação Microbiológica ANVISA
     if (Number(formManualITU.ufc) < 100000) return alert("ITU exige Contagem ≥ 10⁵ UFC/mL.");
     if (Number(formManualITU.qtdEspecies) > 2) return alert("ITU não admite mais de 2 espécies (contaminação).");
     
-    // Validação Clínica ANVISA (Pelo menos 1 sinal é obrigatório)
     let sysCount = 0;
     let evidenciasSys = [];
 
@@ -1422,7 +1425,9 @@ const metricasQualidade = useMemo(() => {
     const p = leitosConfig.find(l => l.id === formManualITU.pacienteId);
     if (!p) return alert("Erro: Dados do paciente não encontrados.");
 
-    // Lógica de Bloqueio (SVD > 2 dias)
+    // 💡 Extrai o leito limpíssimo
+    const leitoLimpo = p.id.replace('bed_', '');
+
     if (!p.enfermagem?.svdData) return alert("❌ Bloqueado: Não há registro de SVD para este paciente.");
     
     const dataColeta = new Date(`${formManualITU.dataColeta}T12:00:00`);
@@ -1438,7 +1443,7 @@ const metricasQualidade = useMemo(() => {
       
       await setDoc(doc(db, "auditorias_itu", idAuditoria), {
         id: idAuditoria, pacienteId: formManualITU.pacienteId,
-        nome: formManualITU.nome, leito: formManualITU.leito,
+        nome: p.nome, leito: leitoLimpo, // Puxando nome do estado e o leito limpo
         mesReferencia: mesRef, dataSuspeita: formManualITU.dataColeta, dataEventoDOE: formManualITU.dataColeta,
         status: "Confirmado",
         evidencias: {
@@ -1928,6 +1933,17 @@ const metricasQualidade = useMemo(() => {
       }
     }
   }, [activeView, abaIrasAtiva, mesFiltroIrasCompartilhado]);
+
+  const salvarNotaCCIH = async (firebaseId, colecao, textoNota) => {
+    if (!db || !firebaseId) return;
+    try {
+      const docRef = doc(db, colecao, firebaseId);
+      await updateDoc(docRef, { notaCCIH: textoNota });
+      console.log(`Nota salva com sucesso na coleção ${colecao}`);
+    } catch (error) {
+      console.error("Erro ao salvar nota da CCIH:", error);
+    }
+  };
 
   useEffect(() => {
   const processarDadosParaGraficos = async () => {
@@ -2800,7 +2816,7 @@ const metricasQualidade = useMemo(() => {
           {/* GRÁFICO 1: DIAS-DISPOSITIVO */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col">
             <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase flex items-center gap-2">
-              <Activity size={16} className="text-blue-500" /> Total de Dias-Dispositivo
+              <Activity size={16} className="text-blue-500" /> Total de Dias-Dispositivo (Mês atual)
             </h3>
             <div className="flex-1 w-full">
               {dadosDispositivos.length === 0 || dadosDispositivos.every(d => d.dias === 0) ? (
@@ -3467,7 +3483,7 @@ const metricasQualidade = useMemo(() => {
                 )}
               </div>
 
-              {/* MODAL DE AUDITORIA PAV (VISUALIZAÇÃO) */}
+              {/* MODAL DE AUDITORIA PAV (VISUALIZAÇÃO COM ANOTAÇÕES) */}
               {modalAuditoriaPAV && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
                   <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-slideUp">
@@ -3525,16 +3541,37 @@ const metricasQualidade = useMemo(() => {
                         )}
                       </div>
 
+                      {/* NOVO CAMPO DE ANOTAÇÕES DA CCIH */}
+                      <div className="mt-6 bg-slate-50 border border-slate-200 p-3 rounded-lg shadow-sm">
+                        <label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1 mb-2">
+                          <Edit3 size={14} /> Parecer / Justificativa da CCIH:
+                        </label>
+                        <textarea
+                          className="w-full p-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white transition-all resize-none"
+                          rows="3"
+                          placeholder="Descreva os motivos clínicos para confirmar ou descartar este caso (Ex: Paciente já apresentava infiltrado prévio à intubação)..."
+                          defaultValue={modalAuditoriaPAV.notaCCIH || ""}
+                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaPAV.firebaseId, "auditorias_pav", e.target.value)}
+                        ></textarea>
+                        <p className="text-[10px] text-slate-400 mt-1 italic text-right">* A nota é salva automaticamente ao sair do campo.</p>
+                      </div>
+
                       {modalAuditoriaPAV.status === 'Suspeito' && (
-                        <div className="mt-8 flex gap-4 pt-4 border-t border-slate-100">
+                        <div className="mt-6 flex gap-4 pt-4 border-t border-slate-100">
                           <button 
-                            onClick={() => atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Confirmado')} 
+                            onClick={() => {
+                              atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Confirmado');
+                              setModalAuditoriaPAV(null);
+                            }} 
                             className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
                           >
                             <CheckCircle size={18} /> Confirmar PAV
                           </button>
                           <button 
-                            onClick={() => atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Descartado')} 
+                            onClick={() => {
+                              atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Descartado');
+                              setModalAuditoriaPAV(null);
+                            }} 
                             className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
                           >
                             Descartar Suspeita
@@ -3544,7 +3581,10 @@ const metricasQualidade = useMemo(() => {
                       {modalAuditoriaPAV.status !== 'Suspeito' && (
                         <div className="mt-6 text-center">
                           <button 
-                            onClick={() => atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Suspeito')}
+                            onClick={() => {
+                              atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Suspeito');
+                              setModalAuditoriaPAV(null);
+                            }}
                             className="text-xs font-bold text-slate-400 hover:text-slate-600 underline transition-colors"
                           >
                             Desfazer auditoria e retornar para Suspeitos
@@ -3579,13 +3619,19 @@ const metricasQualidade = useMemo(() => {
                           value={formManualPAV.pacienteId}
                           onChange={(e) => {
                             const p = leitosConfig.find(l => l.id === e.target.value);
-                            if (p) setFormManualPAV({...formManualPAV, pacienteId: p.id, nome: p.nome, leito: p.nome.replace(/\D/g, '')});
+                            if (p) {
+                              const leitoCorreto = p.leito || p.id.replace('bed_', '');
+                              setFormManualPAV({...formManualPAV, pacienteId: p.id, nome: p.nome, leito: leitoCorreto});
+                            }
                           }}
                         >
                           <option value="">-- Selecione o Paciente Internado --</option>
-                          {leitosConfig.filter(l => l.nome).map(l => (
-                            <option key={l.id} value={l.id}>{l.nome} (Leito {l.nome.replace(/\D/g, '')})</option>
-                          ))}
+                          {leitosConfig.filter(l => l.nome).map(l => {
+                            const leitoCorreto = l.leito || l.id.replace('bed_', '');
+                            return (
+                              <option key={l.id} value={l.id}>{l.nome} (LEITO {leitoCorreto})</option>
+                            );
+                          })}
                         </select>
                       </div>
 
@@ -3967,16 +4013,37 @@ const metricasQualidade = useMemo(() => {
                         </div>
                       </div>
 
+                      {/* NOVO CAMPO DE ANOTAÇÕES DA CCIH (IPCS-C) */}
+                      <div className="mt-6 bg-slate-50 border border-slate-200 p-3 rounded-lg shadow-sm">
+                        <label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1 mb-2">
+                          <Edit3 size={14} /> Parecer / Justificativa da CCIH:
+                        </label>
+                        <textarea
+                          className="w-full p-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white transition-all resize-none"
+                          rows="3"
+                          placeholder="Ex: Confirmo infecção por patógeno verdadeiro. / Descarto pois é apenas uma amostra de comensal..."
+                          defaultValue={modalAuditoriaIPCSC.notaCCIH || ""}
+                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaIPCSC.firebaseId, "auditorias_ipcsc", e.target.value)}
+                        ></textarea>
+                        <p className="text-[10px] text-slate-400 mt-1 italic text-right">* A nota é salva automaticamente ao sair do campo.</p>
+                      </div>
+
                       {modalAuditoriaIPCSC.status === 'Suspeito' && (
-                        <div className="mt-8 flex gap-4 pt-4 border-t border-slate-100">
+                        <div className="mt-6 flex gap-4 pt-4 border-t border-slate-100">
                           <button 
-                            onClick={() => atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Confirmado')} 
+                            onClick={() => {
+                              atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Confirmado');
+                              setModalAuditoriaIPCSC(null);
+                            }} 
                             className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
                           >
                             <CheckCircle size={18} /> Confirmar IPCS-C
                           </button>
                           <button 
-                            onClick={() => atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Descartado')} 
+                            onClick={() => {
+                              atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Descartado');
+                              setModalAuditoriaIPCSC(null);
+                            }} 
                             className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
                           >
                             Descartar Suspeita
@@ -3986,7 +4053,10 @@ const metricasQualidade = useMemo(() => {
                       {modalAuditoriaIPCSC.status !== 'Suspeito' && (
                         <div className="mt-6 text-center">
                           <button 
-                            onClick={() => atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Suspeito')}
+                            onClick={() => {
+                              atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Suspeito');
+                              setModalAuditoriaIPCSC(null);
+                            }}
                             className="text-xs font-bold text-slate-400 hover:text-slate-600 underline transition-colors"
                           >
                             Desfazer auditoria e retornar para Suspeitos
@@ -3997,6 +4067,7 @@ const metricasQualidade = useMemo(() => {
                   </div>
                 </div>
               )}
+
               {/* MODAL GIGANTE DE INSERÇÃO MANUAL DE IPCS-C */}
               {isModalManualIPCSCOpen && (
                 <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
@@ -4020,13 +4091,19 @@ const metricasQualidade = useMemo(() => {
                           value={formManualIPCSC.pacienteId}
                           onChange={(e) => {
                             const p = leitosConfig.find(l => l.id === e.target.value);
-                            if (p) setFormManualIPCSC({...formManualIPCSC, pacienteId: p.id, nome: p.nome, leito: p.nome.replace(/\D/g, '')});
+                            if (p) {
+                              const leitoCorreto = p.leito || p.id.replace('bed_', '');
+                              setFormManualIPCSC({...formManualIPCSC, pacienteId: p.id, nome: p.nome, leito: leitoCorreto});
+                            }
                           }}
                         >
                           <option value="">-- Selecione o Paciente Internado --</option>
-                          {leitosConfig.filter(l => l.nome).map(l => (
-                            <option key={l.id} value={l.id}>{l.nome} (Leito {l.nome.replace(/\D/g, '')})</option>
-                          ))}
+                          {leitosConfig.filter(l => l.nome).map(l => {
+                            const leitoCorreto = l.leito || l.id.replace('bed_', '');
+                            return (
+                              <option key={l.id} value={l.id}>{l.nome} (LEITO {leitoCorreto})</option>
+                            );
+                          })}
                         </select>
                       </div>
 
@@ -4372,16 +4449,37 @@ const metricasQualidade = useMemo(() => {
                         </div>
                       </div>
 
+                      {/* NOVO CAMPO DE ANOTAÇÕES DA CCIH (ITU-AC) */}
+                      <div className="mt-6 bg-slate-50 border border-slate-200 p-3 rounded-lg shadow-sm">
+                        <label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1 mb-2">
+                          <Edit3 size={14} /> Parecer / Justificativa da CCIH:
+                        </label>
+                        <textarea
+                          className="w-full p-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 bg-white transition-all resize-none"
+                          rows="3"
+                          placeholder="Ex: Confirmo infecção por presença de febre associada. / Descarto pois paciente está assintomático (apenas colonização)..."
+                          defaultValue={modalAuditoriaITU.notaCCIH || ""}
+                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaITU.firebaseId, "auditorias_itu", e.target.value)}
+                        ></textarea>
+                        <p className="text-[10px] text-slate-400 mt-1 italic text-right">* A nota é salva automaticamente ao sair do campo.</p>
+                      </div>
+
                       {modalAuditoriaITU.status === 'Suspeito' && (
-                        <div className="mt-8 flex gap-4 pt-4 border-t border-slate-100">
+                        <div className="mt-6 flex gap-4 pt-4 border-t border-slate-100">
                           <button 
-                            onClick={() => atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Confirmado')} 
+                            onClick={() => {
+                              atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Confirmado');
+                              setModalAuditoriaITU(null);
+                            }} 
                             className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
                           >
                             <CheckCircle size={18} /> Confirmar ITU-AC
                           </button>
                           <button 
-                            onClick={() => atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Descartado')} 
+                            onClick={() => {
+                              atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Descartado');
+                              setModalAuditoriaITU(null);
+                            }} 
                             className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
                           >
                             Descartar Suspeita
@@ -4391,7 +4489,10 @@ const metricasQualidade = useMemo(() => {
                       {modalAuditoriaITU.status !== 'Suspeito' && (
                         <div className="mt-6 text-center">
                           <button 
-                            onClick={() => atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Suspeito')}
+                            onClick={() => {
+                              atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Suspeito');
+                              setModalAuditoriaITU(null);
+                            }}
                             className="text-xs font-bold text-slate-400 hover:text-slate-600 underline transition-colors"
                           >
                             Desfazer auditoria e retornar para Suspeitos
@@ -4426,13 +4527,19 @@ const metricasQualidade = useMemo(() => {
                           value={formManualITU.pacienteId}
                           onChange={(e) => {
                             const p = leitosConfig.find(l => l.id === e.target.value);
-                            if (p) setFormManualITU({...formManualITU, pacienteId: p.id, nome: p.nome, leito: p.nome.replace(/\D/g, '')});
+                            if (p) {
+                              const leitoCorreto = p.leito || p.id.replace('bed_', '');
+                              setFormManualITU({...formManualITU, pacienteId: p.id, nome: p.nome, leito: leitoCorreto});
+                            }
                           }}
                         >
                           <option value="">-- Selecione o Paciente Internado --</option>
-                          {leitosConfig.filter(l => l.nome).map(l => (
-                            <option key={l.id} value={l.id}>{l.nome} (Leito {l.nome.replace(/\D/g, '')})</option>
-                          ))}
+                          {leitosConfig.filter(l => l.nome).map(l => {
+                            const leitoCorreto = l.leito || l.id.replace('bed_', '');
+                            return (
+                              <option key={l.id} value={l.id}>{l.nome} (LEITO {leitoCorreto})</option>
+                            );
+                          })}
                         </select>
                       </div>
 
