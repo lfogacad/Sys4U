@@ -277,11 +277,23 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     setUnlockedBHDates([]);
   }, [selectedBHDate, activeTab]);
 
-  const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
-    if (!dadosAtualizados.gasoHora) return; 
+ const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
+    // 1. Verifica se há algum valor clínico de gasometria digitado
+    const chavesGaso = ["gaso_pH", "gaso_pCO2", "gaso_PaO2", "gaso_BE", "gaso_HCO3", "gaso_SatO2", "gaso_FiO2", "gaso_PF"];
+    const temDadoPreenchido = chavesGaso.some(chave => dadosAtualizados[chave] && dadosAtualizados[chave].trim() !== "");
+
+    // 2. A REGRA DE OURO: Se tem dado preenchido, a hora é obrigatória!
+    if (temDadoPreenchido && !dadosAtualizados.gasoHora) {
+      alert("⚠️ Atenção Fisio: O Horário da Gasometria é OBRIGATÓRIO para que os valores sejam salvos na tabela.");
+      return; // Bloqueia a sincronização e não salva nada pela metade
+    }
+
+    // Se a aba estiver completamente em branco (sem dados e sem hora), apenas ignoramos silenciosamente
+    if (!temDadoPreenchido && !dadosAtualizados.gasoHora) return;
 
     const nomeColuna = `Admissão ${dadosAtualizados.gasoHora}`;
-    
+    let pacienteAtualizado = null;
+
     setPatients(prev => {
       const up = [...prev];
       const p = JSON.parse(JSON.stringify(up[activeTab])); 
@@ -289,14 +301,19 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       if (!p.gasometriaHistory) p.gasometriaHistory = {};
       if (!p.customGasometriaCols) p.customGasometriaCols = [];
 
+      // Limpa colunas de admissão antigas (caso ele corrija o horário depois)
       const colunasAntigas = p.customGasometriaCols.filter(c => c.startsWith("Admissão"));
       colunasAntigas.forEach(antiga => {
         if (antiga !== nomeColuna) {
+          if (p.gasometriaHistory[antiga]) {
+            p.gasometriaHistory[nomeColuna] = { ...p.gasometriaHistory[antiga] };
+          }
           delete p.gasometriaHistory[antiga];
         }
       });
       p.customGasometriaCols = p.customGasometriaCols.filter(c => !c.startsWith("Admissão"));
       
+      // Adiciona a coluna com a hora correta
       p.customGasometriaCols.push(nomeColuna);
       if (!p.gasometriaHistory[nomeColuna]) p.gasometriaHistory[nomeColuna] = {};
 
@@ -308,15 +325,22 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       ];
 
       mapaParametros.forEach(param => {
-        p.gasometriaHistory[nomeColuna][param.label] = dadosAtualizados[param.id] || "";
+        if (dadosAtualizados[param.id] !== undefined) {
+          p.gasometriaHistory[nomeColuna][param.label] = dadosAtualizados[param.id];
+        }
       });
 
       up[activeTab] = p;
+      pacienteAtualizado = p; 
       return up;
     });
 
-    if (typeof handleBlurSave === 'function') {
-      handleBlurSave(`Fisioterapia: Sincronizou Gasometria de Admissão`);
+    if (typeof save === 'function' && pacienteAtualizado) {
+      save(pacienteAtualizado, `Fisioterapia: Sincronizou Gasometria de ${nomeColuna}`);
+    } else if (typeof handleBlurSave === 'function') {
+      setTimeout(() => {
+        handleBlurSave(`Fisioterapia: Sincronizou Gasometria de ${nomeColuna}`);
+      }, 300);
     }
   };
 
@@ -1470,6 +1494,17 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
   };
 
   const handleFinalizePhysioAdmission = () => {
+    // ========================================================
+    // 🚧 O LEÃO DE CHÁCARA: Bloqueia a finalização se faltar a hora da gaso
+    // ========================================================
+    const chavesGaso = ["gaso_pH", "gaso_pCO2", "gaso_PaO2", "gaso_BE", "gaso_HCO3", "gaso_SatO2", "gaso_FiO2", "gaso_PF"];
+    const temDadoGaso = chavesGaso.some(chave => physioData[chave] && String(physioData[chave]).trim() !== "");
+
+    if (temDadoGaso && !physioData.gasoHora) {
+      alert("⚠️ Atenção Fisio: O Horário da Gasometria é OBRIGATÓRIO para finalizar a admissão.");
+      return; // 🛑 Função morre aqui! Não salva nada e não fecha o modal.
+    }
+
     // 1. O CLONE PROFUNDO DA MÉDICA (Rompe o vínculo de memória com outros leitos)
     const pacienteBase = patients[activeTab];
     const r = pacienteBase ? JSON.parse(JSON.stringify(pacienteBase)) : {};
@@ -1535,7 +1570,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, '0');
       const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const colName = `${dd}/${mm} - ${physioData.gasoHora}`;
+      const colName = `Admissão ${physioData.gasoHora}`; // Corrigido para bater com a tabela
 
       if (!r.customGasometriaCols.includes(colName)) {
         r.customGasometriaCols.unshift(colName);

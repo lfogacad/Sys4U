@@ -330,8 +330,26 @@ const PhysioAdmissionModal = ({
                   <Activity size={14} className="text-red-500" /> Gasometria de Admissão
                 </label>
                 <div className="flex items-center gap-2 bg-red-50 p-1.5 rounded-lg border border-red-100">
-                  <span className="text-[10px] font-bold text-red-700 uppercase">Horário:</span>
-                  <input type="time" className="p-1 border rounded bg-white text-xs text-red-700 font-bold" value={physioData.gasoHora || ""} onChange={(e) => setPhysioData({ ...physioData, gasoHora: e.target.value })} onBlur={(e) => !isReadOnly && handleSyncGasometriaAdmissao && handleSyncGasometriaAdmissao({ ...physioData, gasoHora: e.target.value })} disabled={isReadOnly}/>
+                  <span className="text-[10px] font-bold text-red-700 uppercase flex items-center gap-1">
+                    Horário: 
+                    {/* Asterisco vermelho se for obrigatório */}
+                    {["gaso_pH", "gaso_pCO2", "gaso_PaO2", "gaso_BE", "gaso_HCO3", "gaso_SatO2", "gaso_FiO2"].some(k => physioData[k]) && !physioData.gasoHora && (
+                      <span className="text-red-500 text-lg leading-none">*</span>
+                    )}
+                  </span>
+                  <input 
+                    type="time" 
+                    // Se tiver algum dado preenchido e faltar a hora, a borda fica vermelha e pulsante
+                    className={`p-1 border rounded bg-white text-xs font-bold transition-all ${
+                      ["gaso_pH", "gaso_pCO2", "gaso_PaO2", "gaso_BE", "gaso_HCO3", "gaso_SatO2", "gaso_FiO2"].some(k => physioData[k]) && !physioData.gasoHora 
+                      ? 'border-red-500 ring-2 ring-red-200 text-red-700' 
+                      : 'border-red-200 text-red-700'
+                    }`} 
+                    value={physioData.gasoHora || ""} 
+                    onChange={(e) => setPhysioData({ ...physioData, gasoHora: e.target.value })} 
+                    onBlur={(e) => !isReadOnly && handleSyncGasometriaAdmissao && handleSyncGasometriaAdmissao({ ...physioData, gasoHora: e.target.value })} 
+                    disabled={isReadOnly}
+                  />
                 </div>
               </div>
               

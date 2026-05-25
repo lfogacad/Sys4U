@@ -283,7 +283,19 @@ const GestorDashboard = ({ userProfile }) => {
     if (abaRiscoAtiva === 'escalas') {
       const buscarAuditoriaEscalas = async () => {
         try {
-          // 1. Busca os pacientes que já tiveram alta (Histórico)
+          // Função ultra-blindada para ler datas do Firebase (Timestamps ou Strings)
+          const parseData = (dataStr) => {
+            if (!dataStr) return new Date(0);
+            if (typeof dataStr.toDate === 'function') return dataStr.toDate();
+            if (dataStr.seconds) return new Date(dataStr.seconds * 1000);
+            if (typeof dataStr === 'string' && dataStr.includes('/')) {
+              const parts = dataStr.split(' ')[0].split('/');
+              if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+            }
+            return new Date(dataStr);
+          };
+
+          // 1. Busca Histórico (ADICIONAMOS A DATA DE SAÍDA)
           const snapHist = await getDocs(collection(db, "internacoes_historico"));
           const historico = snapHist.docs.map(doc => {
             const data = doc.data();
@@ -292,70 +304,94 @@ const GestorDashboard = ({ userProfile }) => {
               idInternacao: data.idInternacao,
               nome: data.nomePaciente || data.nome,
               dataInternacao: data.dataEntrada || data.dataInternacao,
+              dataSaida: data.dataSaida || data.dataDesfecho, // <-- CRUCIAL PARA A JANELA
               status: 'Alta/Óbito'
             };
           });
 
-          // 2. Busca os pacientes internados agora nos 10 leitos
+          // 2. Busca Ativos
           const snapAtivos = await getDocs(collection(db, "leitos_uti"));
           const ativos = snapAtivos.docs
             .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(p => p.nome) // Filtra apenas camas ocupadas
+            .filter(p => p.nome)
             .map(p => ({
               id: p.id,
               idInternacao: p.idInternacao,
               nome: p.nome,
               dataInternacao: p.dataInternacao,
+              dataSaida: new Date(), // Paciente ativo, a "saída" é hoje
               status: 'Internado'
             }));
 
-          // 3. Junta tudo e prepara o filtro de tempo
           let todos = [...ativos, ...historico];
           
           const inicio = new Date(`${filtroDataInicio}T00:00:00`);
           const fim = new Date(`${filtroDataFim}T23:59:59`);
 
-          // 4. Aplica o funil de datas
+          // 4. Filtro principal de exibição na tabela
           todos = todos.filter(pac => {
-            if (!pac.dataInternacao) return false;
-            let dataPac;
-            if (pac.dataInternacao.includes('/')) {
-              const [dia, mes, ano] = pac.dataInternacao.split('/');
-              dataPac = new Date(`${ano}-${mes}-${dia}T12:00:00`);
-            } else {
-              dataPac = new Date(pac.dataInternacao);
-            }
+            const dataPac = parseData(pac.dataInternacao);
             return dataPac >= inicio && dataPac <= fim;
           });
 
           // =========================================================================
-          // 🔥 O SEGREDO: Buscar as escalas no "Cofre" de Indicadores de Performance
+          // 🔥 BUSCA E CRUZAMENTO COM JANELA DE TEMPO
           // =========================================================================
           const snapIndicadores = await getDocs(collection(db, "indicadores_performance"));
           const indicadores = snapIndicadores.docs.map(doc => doc.data());
 
-          // Cruzamos o paciente com as escalas dele achadas no cofre
           const pacientesComEscalas = todos.map(pac => {
-            // Procura usando o ID da Internação ou o Nome como segurança
-            const indSaps = indicadores.find(ind => ind.tipo === "SAPS 3" && (ind.idInternacao === pac.idInternacao || ind.nomePaciente === pac.nome));
-            const indBraden = indicadores.find(ind => ind.tipo === "BRADEN" && (ind.idInternacao === pac.idInternacao || ind.nomePaciente === pac.nome));
-            const indMorse = indicadores.find(ind => ind.tipo === "MORSE" && (ind.idInternacao === pac.idInternacao || ind.nomePaciente === pac.nome));
+            const pacDataInt = parseData(pac.dataInternacao);
+            // Se for alta mas não tiver data de saída registrada, usa a data atual como segurança máxima
+            const pacDataSai = pac.status === 'Internado' || !pac.dataSaida ? new Date() : parseData(pac.dataSaida);
+
+            // Função interna para achar a escala correta
+            const obterEscala = (tipo) => {
+              // 1. Filtra as escalas que pertencem a este paciente (por ID ou Nome + Data)
+              const escalasDoPaciente = indicadores.filter(ind => {
+                if (ind.tipo !== tipo) return false;
+                
+                // Match Perfeito por ID (Bala de Prata)
+                if (ind.idInternacao && pac.idInternacao && String(ind.idInternacao) === String(pac.idInternacao)) {
+                  return true;
+                }
+                
+                // Match por Nome + JANELA DE TEMPO (O Segredo!)
+                if (ind.nomePaciente === pac.nome) {
+                  const dataInd = parseData(ind.dataRegistro || ind.data);
+                  
+                  // Margem: Considera escalas feitas 1 dia antes da admissão até 1 dia após a saída
+                  const inicioJanela = new Date(pacDataInt);
+                  inicioJanela.setDate(inicioJanela.getDate() - 1);
+                  
+                  const fimJanela = new Date(pacDataSai);
+                  fimJanela.setDate(fimJanela.getDate() + 1);
+                  
+                  if (dataInd >= inicioJanela && dataInd <= fimJanela) {
+                    return true;
+                  }
+                }
+                return false;
+              });
+
+              if (escalasDoPaciente.length === 0) return null;
+
+              // 2. Se achou mais de uma (ex: refez a escala), pega a mais recente!
+              escalasDoPaciente.sort((a, b) => parseData(b.dataRegistro || b.data) - parseData(a.dataRegistro || a.data));
+              
+              return { score: escalasDoPaciente[0].valor, respostas: escalasDoPaciente[0].respostas };
+            };
 
             return {
               ...pac,
-              // Formatamos exatamente como o nosso Modal de Auditoria espera ler!
-              saps3: indSaps ? { score: indSaps.valor, respostas: indSaps.respostas } : null,
-              braden: indBraden ? { score: indBraden.valor, respostas: indBraden.respostas } : null,
-              morse: indMorse ? { score: indMorse.valor, respostas: indMorse.respostas } : null
+              saps3: obterEscala("SAPS 3"),
+              braden: obterEscala("BRADEN"),
+              morse: obterEscala("MORSE")
             };
           });
 
-          // 5. Ordena do mais recente para o mais antigo
-          pacientesComEscalas.sort((a, b) => {
-            const dateA = a.dataInternacao.includes('/') ? new Date(a.dataInternacao.split('/').reverse().join('-')) : new Date(a.dataInternacao);
-            const dateB = b.dataInternacao.includes('/') ? new Date(b.dataInternacao.split('/').reverse().join('-')) : new Date(b.dataInternacao);
-            return dateB - dateA;
-          });
+          // 5. Ordena do mais recente para o mais antigo na tabela
+          pacientesComEscalas.sort((a, b) => parseData(b.dataInternacao) - parseData(a.dataInternacao));
           
           setListaEscalas(pacientesComEscalas);
         } catch (error) {
@@ -612,14 +648,17 @@ const GestorDashboard = ({ userProfile }) => {
   }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput]);
 
   // ================================================================
-  // 🔥 MOTOR DO GRÁFICO: SMR DOS ÚLTIMOS 12 MESES (VIA FIREBASE)
+  // 🔥 MOTOR DO GRÁFICO: SMR DOS ÚLTIMOS 12 MESES (ALINHADO AO FIREBASE)
   // ================================================================
   const dadosSMRAnual = useMemo(() => {
     if (!listaHistorico || listaHistorico.length === 0) return [];
 
+    // Função auxiliar ultra-blindada (Suporta String e Timestamp do Firebase)
     const parseData = (dataStr) => {
       if (!dataStr) return new Date(0);
-      if (dataStr.includes && dataStr.includes('/')) {
+      if (typeof dataStr.toDate === 'function') return dataStr.toDate(); // Se for Timestamp Firebase
+      if (dataStr.seconds) return new Date(dataStr.seconds * 1000);       // Se for objeto de segundos
+      if (typeof dataStr === 'string' && dataStr.includes('/')) {
         const parts = dataStr.split(' ')[0].split('/');
         if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
       }
@@ -644,7 +683,9 @@ const GestorDashboard = ({ userProfile }) => {
 
     // 2. Distribui os pacientes do Firebase nos meses corretos
     listaHistorico.forEach(pac => {
-      const dataSaida = parseData(pac.dataSaida || pac.dataDesfecho || pac.dataEntrada);
+      // Puxa a data do root ou de dentro do mapa de indicadores
+      const dataFinalStr = pac.dataSaida || pac.dataDesfecho || pac.dataEntrada || pac.indicadores?.dataSaida;
+      const dataSaida = parseData(dataFinalStr);
       if (dataSaida.getFullYear() < 2000) return;
 
       let mesStr = dataSaida.toLocaleString('pt-BR', { month: 'short' });
@@ -653,10 +694,14 @@ const GestorDashboard = ({ userProfile }) => {
       const label = `${mesStr}/${anoStr}`;
 
       if (agrupamento[label]) {
-        const saps3Prob = pac.backupProntuario?.saps3?.lockedProb || pac.saps3?.lockedProb;
+        // Captura o saps3 direto do root (conforme o print do seu banco)
+        const saps3Prob = pac.saps3?.lockedProb || pac.backupProntuario?.saps3?.lockedProb || pac.indicadores?.saps3?.lockedProb;
         if (saps3Prob) {
           agrupamento[label].esperados += (parseFloat(saps3Prob) / 100);
-          const desfecho = String(pac.desfecho || pac.motivoSaida || pac.status).toLowerCase();
+          
+          // Alinhamento com pac.indicadores.resultado do seu Firebase
+          const statusReal = pac.indicadores?.resultado || pac.desfecho || pac.status || "";
+          const desfecho = String(statusReal).toLowerCase();
           if (desfecho.includes('óbito') || desfecho.includes('obito')) {
             agrupamento[label].observados += 1;
           }
@@ -676,7 +721,7 @@ const GestorDashboard = ({ userProfile }) => {
 
   }, [listaHistorico]);
 
-const metricasQualidade = useMemo(() => {
+  const metricasQualidade = useMemo(() => {
     if (!listaCenso.length && !listaHistorico.length) {
       return { taxaReadmissao: "0.0", taxaIdentificacao: "0.0", mortalidadeBruta: "0.0", mortalidadeEsperada: "0.0", smr: "0.00" };
     }
@@ -685,10 +730,11 @@ const metricasQualidade = useMemo(() => {
     const trintaDiasAtras = new Date();
     trintaDiasAtras.setDate(hoje.getDate() - 30);
 
-    // Função auxiliar blindada para entender qualquer formato de data do Firebase
     const parseData = (dataStr) => {
       if (!dataStr) return new Date(0);
-      if (dataStr.includes && dataStr.includes('/')) {
+      if (typeof dataStr.toDate === 'function') return dataStr.toDate();
+      if (dataStr.seconds) return new Date(dataStr.seconds * 1000);
+      if (typeof dataStr === 'string' && dataStr.includes('/')) {
         const parts = dataStr.split(' ')[0].split('/');
         if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
       }
@@ -705,19 +751,22 @@ const metricasQualidade = useMemo(() => {
     let obitosObservadosSaps30d = 0;
 
     listaHistorico.forEach(pac => {
-      const dataPac = parseData(pac.dataSaida || pac.dataDesfecho || pac.dataEntrada);
+      const dataFinalStr = pac.dataSaida || pac.dataDesfecho || pac.dataEntrada || pac.indicadores?.dataSaida;
+      const dataPac = parseData(dataFinalStr);
       
       // O paciente saiu nos últimos 30 dias?
       if (dataPac >= trintaDiasAtras && dataPac <= hoje) {
         totalDesfechos30d++;
         
-        const desfecho = String(pac.desfecho || pac.motivoSaida || pac.status).toLowerCase();
+        // Alinhamento com pac.indicadores.resultado do seu Firebase
+        const statusReal = pac.indicadores?.resultado || pac.desfecho || pac.status || "";
+        const desfecho = String(statusReal).toLowerCase();
         const isObito = desfecho.includes('óbito') || desfecho.includes('obito');
         
         if (isObito) obitosTotais30d++;
 
-        // Checagem do SAPS 3 para o SMR
-        const saps3Prob = pac.backupProntuario?.saps3?.lockedProb || pac.saps3?.lockedProb;
+        // Checagem robusta do SAPS 3 (lockedProb)
+        const saps3Prob = pac.saps3?.lockedProb || pac.backupProntuario?.saps3?.lockedProb || pac.indicadores?.saps3?.lockedProb;
         if (saps3Prob) {
           pacientesComSaps30d++;
           obitosEsperadosSaps30d += (parseFloat(saps3Prob) / 100);
@@ -727,12 +776,12 @@ const metricasQualidade = useMemo(() => {
     });
 
     // ================================================================
-    // 2. MOTOR DE READMISSÃO (Reinternação < 48h nos últimos 30 dias)
+    // 2. MOTOR DE READMISSÃO (Janela Móvel de 30 dias)
     // ================================================================
     let contagemReadmissao30d = 0;
     
     const porPaciente = listaHistorico.reduce((acc, doc) => {
-      const id = doc.cpf && doc.cpf !== "000.000.000-00" ? doc.cpf : doc.nomePaciente;
+      const id = doc.cpf && doc.cpf !== "000.000.000-00" ? doc.cpf : (doc.nomePaciente || doc.indicadores?.nomePaciente);
       if (!acc[id]) acc[id] = [];
       acc[id].push(doc);
       return acc;
@@ -743,11 +792,10 @@ const metricasQualidade = useMemo(() => {
         estadias.sort((a, b) => parseData(a.dataEntrada) - parseData(b.dataEntrada));
         
         for (let i = 1; i < estadias.length; i++) {
-          const altaAnterior = parseData(estadias[i-1].dataSaida);
+          const altaAnterior = parseData(estadias[i-1].dataSaida || estadias[i-1].indicadores?.dataSaida);
           const entradaNova = parseData(estadias[i].dataEntrada);
           const diffHoras = (entradaNova - altaAnterior) / (1000 * 60 * 60);
           
-          // Conta apenas se a RE-ENTRADA aconteceu nesta nossa janela de 30 dias
           if (entradaNova >= trintaDiasAtras && entradaNova <= hoje) {
             if (diffHoras > 0 && diffHoras <= 48) {
               contagemReadmissao30d++;
@@ -758,7 +806,7 @@ const metricasQualidade = useMemo(() => {
     });
 
     // ================================================================
-    // 3. MOTOR DE IDENTIFICAÇÃO (Média diária dos últimos 30 dias)
+    // 3. MOTOR DE IDENTIFICAÇÃO (Janela Móvel de 30 dias)
     // ================================================================
     let totalOcupados30d = 0;
     let totalIdentificados30d = 0;
@@ -766,7 +814,6 @@ const metricasQualidade = useMemo(() => {
     listaCenso.forEach(dia => {
       const dataCenso = parseData(dia.data || dia.idRegistro || dia.id);
       
-      // Avalia o preenchimento apenas dos plantões dos últimos 30 dias
       if (dataCenso >= trintaDiasAtras && dataCenso <= hoje) {
         totalOcupados30d += (Number(dia.totalLeitosOcupados) || 0);
         totalIdentificados30d += (Number(dia.pacientesIdentificados) || 0);
@@ -774,13 +821,11 @@ const metricasQualidade = useMemo(() => {
     });
 
     // ================================================================
-    // 4. MATEMÁTICA FINAL DE TODOS OS INDICADORES
+    // 4. MATEMÁTICA FINAL
     // ================================================================
     const mortalidadeBrutaCalc = totalDesfechos30d > 0 ? ((obitosTotais30d / totalDesfechos30d) * 100).toFixed(1) : "0.0";
     const mortalidadeEsperadaCalc = pacientesComSaps30d > 0 ? ((obitosEsperadosSaps30d / pacientesComSaps30d) * 100).toFixed(1) : "0.0";
     const smrCalculado = obitosEsperadosSaps30d > 0 ? (obitosObservadosSaps30d / obitosEsperadosSaps30d).toFixed(2) : "0.00";
-    
-    // A taxa de readmissão divide as readmissões pelo total de saídas do período
     const taxaReadmReal = totalDesfechos30d > 0 ? ((contagemReadmissao30d / totalDesfechos30d) * 100).toFixed(1) : "0.0";
     const taxaID30d = totalOcupados30d > 0 ? ((totalIdentificados30d / totalOcupados30d) * 100).toFixed(1) : "0.0";
 
@@ -2741,8 +2786,9 @@ const metricasQualidade = useMemo(() => {
             {(() => {
               const smrVal = parseFloat(metricasQualidade.smr);
               
-              // 1. Tratamento da falta de dados
-              const semDados = isNaN(smrVal) || smrVal === 0; 
+              // 1. Tratamento da falta de dados corrigido!
+              // Só é "Sem Dados" se não houver Mortalidade Esperada calculada
+              const semDados = isNaN(smrVal) || metricasQualidade.mortalidadeEsperada === "0.0"; 
               
               if (semDados) {
                 return (
@@ -4895,7 +4941,8 @@ const metricasQualidade = useMemo(() => {
                         <td className="p-4 text-center border-l border-slate-100">
                           {pac.saps3 ? (
                             <div className="flex items-center justify-center gap-2">
-                              <span className="font-black text-slate-700 text-lg">{pac.saps3.score || pac.saps3.pontuacao || '-'}</span>
+                              {/* Trocamos || por ?? para respeitar o Zero */}
+                              <span className="font-black text-slate-700 text-lg">{pac.saps3.score ?? pac.saps3.pontuacao ?? '-'}</span>
                               <button onClick={() => abrirAuditoriaEscala('SAPS 3', pac.nome, pac.saps3)} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
                                 <Search size={16} />
                               </button>
@@ -4909,7 +4956,8 @@ const metricasQualidade = useMemo(() => {
                         <td className="p-4 text-center border-l border-slate-100">
                           {pac.braden ? (
                             <div className="flex items-center justify-center gap-2">
-                              <span className="font-black text-slate-700 text-lg">{pac.braden.score || pac.braden.pontuacao || '-'}</span>
+                              {/* Trocamos || por ?? */}
+                              <span className="font-black text-slate-700 text-lg">{pac.braden.score ?? pac.braden.pontuacao ?? '-'}</span>
                               <button onClick={() => abrirAuditoriaEscala('Braden', pac.nome, pac.braden)} className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
                                 <Search size={16} />
                               </button>
@@ -4923,7 +4971,8 @@ const metricasQualidade = useMemo(() => {
                         <td className="p-4 text-center border-l border-slate-100">
                           {pac.morse ? (
                             <div className="flex items-center justify-center gap-2">
-                              <span className="font-black text-slate-700 text-lg">{pac.morse.score || pac.morse.pontuacao || '-'}</span>
+                              {/* Trocamos || por ?? */}
+                              <span className="font-black text-slate-700 text-lg">{pac.morse.score ?? pac.morse.pontuacao ?? '-'}</span>
                               <button onClick={() => abrirAuditoriaEscala('Morse', pac.nome, pac.morse)} className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
                                 <Search size={16} />
                               </button>
@@ -5627,12 +5676,6 @@ const metricasQualidade = useMemo(() => {
                       >
                         <option value="">Selecione o profissional...</option>
                         
-                        {/* 
-                            LÓGICA DE FILTRAGEM:
-                            Presumindo que você tenha uma lista mestre chamada 'listaProfissionais' 
-                            (ou o nome da variável que guarda toda a sua equipe cadastrada).
-                            Filtramos para exibir apenas quem bate com a categoria ativa da tela.
-                        */}
                         {listaProfissionais
                           .filter(prof => prof.categoria === categoriaAtiva)
                           .map((prof) => (
