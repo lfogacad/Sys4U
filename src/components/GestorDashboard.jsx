@@ -1,11 +1,13 @@
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from "jspdf-autotable";
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
-  FileText, Edit3
+  FileText, Edit3, MapPin, Printer, Download
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -133,6 +135,11 @@ const GestorDashboard = ({ userProfile }) => {
     "Gentamicina": 0.24, "Ciprofloxacino": 0.8, "Levofloxacino": 0.5, 
     "Metronidazol": 1.5, "SMT/TMP": 1.6
   };
+
+  const dataAtual = new Date();
+  const mesAtualString = `${dataAtual.getFullYear()}-${String(dataAtual.getMonth() + 1).padStart(2, '0')}`;
+  const [mesFiltroOrigem, setMesFiltroOrigem] = useState(mesAtualString);
+  const [mesRelatorio, setMesRelatorio] = useState(new Date().toISOString().substring(0, 7));
 
   // ==========================================
   // ESTADOS DO DOSSIÊ DE AUDITORIA
@@ -623,29 +630,164 @@ const GestorDashboard = ({ userProfile }) => {
       .sort((a, b) => a.dataPadrao.localeCompare(b.dataPadrao))
       .map(dia => {
         let valorCalculado = 0;
+        
+        const pacientesOcupando = Number(dia.totalLeitosOcupados) || 0;
 
-        // O motor agora calcula a matemática real dependendo do indicador escolhido
-        // Usamos Number() para garantir que Firebase não sabote o cálculo enviando texto
         if (indicadorTendencia === 'ocupacao') {
-          valorCalculado = ((Number(dia.totalLeitosOcupados) || 0) / (capacidadeInput || 10)) * 100;
+          valorCalculado = ((pacientesOcupando) / (capacidadeInput || 10)) * 100;
         } else if (indicadorTendencia === 'identificacao') {
-          valorCalculado = Number(dia.totalLeitosOcupados) > 0 ? ((Number(dia.pacientesIdentificados) || 0) / Number(dia.totalLeitosOcupados)) * 100 : 0;
+          valorCalculado = pacientesOcupando > 0 ? ((Number(dia.pacientesIdentificados) || 0) / pacientesOcupando) * 100 : 0;
         } else if (indicadorTendencia === 'mortalidade') {
           valorCalculado = Number(dia.obitos) || 0;
-        } else if (indicadorTendencia === 'diasVM') {
-          valorCalculado = Number(dia.pacientesEmVM) || 0;
+        } else if (indicadorTendencia === 'utilizacaoVM') {
+          valorCalculado = pacientesOcupando > 0 ? ((Number(dia.pacientesEmVM) || 0) / pacientesOcupando) * 100 : 0;
+          
+        // 💡 LÓGICA DE UNIÃO: Paciente com CVC ou Shiley conta como 1 único Acesso Central
+        } else if (indicadorTendencia === 'utilizacaoAcessoCentral') {
+          const cvc = Number(dia.pacientesComCVC) || 0;
+          const shiley = Number(dia.pacientesComShiley) || 0;
+          const totalAcessos = Math.min(cvc + shiley, pacientesOcupando); // Impede de passar de 100%
+          valorCalculado = pacientesOcupando > 0 ? (totalAcessos / pacientesOcupando) * 100 : 0;
+          
+        } else if (indicadorTendencia === 'utilizacaoSVD') {
+          valorCalculado = pacientesOcupando > 0 ? ((Number(dia.pacientesComSVD) || 0) / pacientesOcupando) * 100 : 0;
         } else {
-          // Fallback seguro para outros indicadores diretos (smr, los, etc)
           valorCalculado = Number(dia[indicadorTendencia]) || 0;
         }
 
         return {
           name: new Date(dia.dataPadrao + "T12:00:00").toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
-          // FORÇAMOS A CHAVE UNIVERSAL: O gráfico não vai mais se perder
           valor: Number(Number(valorCalculado).toFixed(1))
         };
       });
   }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput]);
+
+  // ================================================================
+  // 🔥 MOTOR DO MAPA EPIDEMIOLÓGICO CORRIGIDO (RASTREAMENTO MÁXIMO)
+  // ================================================================
+  const dadosEpidemiologicos = useMemo(() => {
+    const todasInternacoes = [...listaHistorico]; 
+
+    const parseData = (dataStr) => {
+      if (!dataStr) return new Date();
+      if (typeof dataStr.toDate === 'function') return dataStr.toDate();
+      if (dataStr.seconds) return new Date(dataStr.seconds * 1000);
+      
+      if (typeof dataStr === 'string') {
+        if (dataStr.includes('/')) {
+          const parts = dataStr.split(' ')[0].split('/');
+          return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 12, 0, 0);
+        }
+        if (dataStr.length >= 10 && dataStr.includes('-')) {
+          const parts = dataStr.split('T')[0].split('-');
+          return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0);
+        }
+      }
+      return new Date(dataStr);
+    };
+
+    // -------------------------------------------------------------
+    // 1. DADOS PARA O GRÁFICO DE PIZZA E TABELA (MÊS SELECIONADO)
+    // -------------------------------------------------------------
+    const [anoFiltro, mesFiltro] = mesFiltroOrigem.split('-');
+    
+    let totaisPizza = {};
+    let listaTabela = [];
+
+    todasInternacoes.forEach(pac => {
+      const dataEntrada = parseData(pac.dataEntrada || pac.dataInternacao);
+      if (dataEntrada.getFullYear() === parseInt(anoFiltro) && (dataEntrada.getMonth() + 1) === parseInt(mesFiltro)) {
+
+        // 🔍 DETECTIVE DE PROCEDÊNCIA: Vasculha todas as estruturas possíveis do objeto
+        let rawProcedencia = 
+          pac.procedencia || 
+          pac.origem || 
+          pac.admissionData?.origem || 
+          pac.admissionData?.procedencia || 
+          "";
+
+        // Limpa espaços vazios (como o " " que usamos de gatilho) ou textos inválidos
+        let procedencia = String(rawProcedencia).trim();
+        if (!procedencia || procedencia.toLowerCase() === "undefined" || procedencia === "null") {
+          procedencia = "Não Informada";
+        }
+        
+        if (!totaisPizza[procedencia]) totaisPizza[procedencia] = 0;
+        totaisPizza[procedencia]++;
+
+        listaTabela.push({
+          nome: pac.nomePaciente || pac.nome,
+          data: dataEntrada.toLocaleDateString('pt-BR'),
+          procedencia: procedencia,
+          status: pac.status || (pac.dataSaida ? "Alta/Óbito" : "Internado")
+        });
+      }
+    });
+
+    const dadosPizza = Object.keys(totaisPizza).map(key => ({
+      name: key,
+      value: totaisPizza[key]
+    })).sort((a, b) => b.value - a.value);
+
+    // -------------------------------------------------------------
+    // 2. DADOS PARA O GRÁFICO DE LINHA (TENDÊNCIA 12 MESES)
+    // -------------------------------------------------------------
+    const mesesArray = [];
+    const agrupamento12m = {};
+    const hoje = new Date();
+
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      let mesStr = d.toLocaleString('pt-BR', { month: 'short' });
+      mesStr = mesStr.charAt(0).toUpperCase() + mesStr.slice(1, 3);
+      const anoStr = d.getFullYear().toString().slice(-2);
+      
+      const label = `${mesStr}/${anoStr}`;
+      mesesArray.push({ label, ano: d.getFullYear(), mes: d.getMonth() + 1 });
+      agrupamento12m[label] = { ariquemes: 0, regional: 0, total: 0 };
+    }
+
+    todasInternacoes.forEach(pac => {
+      const dataEntrada = parseData(pac.dataEntrada || pac.dataInternacao);
+      if (dataEntrada.getFullYear() < 2000) return;
+
+      let mesStr = dataEntrada.toLocaleString('pt-BR', { month: 'short' });
+      mesStr = mesStr.charAt(0).toUpperCase() + mesStr.slice(1, 3);
+      const anoStr = dataEntrada.getFullYear().toString().slice(-2);
+      const label = `${mesStr}/${anoStr}`;
+
+      if (agrupamento12m[label]) {
+        let rawProcedencia = pac.procedencia || pac.origem || pac.admissionData?.origem || pac.admissionData?.procedencia || "";
+        let procedencia = String(rawProcedencia).trim().toLowerCase();
+        
+        agrupamento12m[label].total++;
+        
+        if (procedencia.includes("ariquemes")) {
+          agrupamento12m[label].ariquemes++;
+        } else if (procedencia && procedencia !== "não informada" && procedencia !== "null" && procedencia !== "undefined") {
+          agrupamento12m[label].regional++;
+        }
+      }
+    });
+
+    const dadosLinha = mesesArray.map(item => {
+      const dados = agrupamento12m[item.label];
+      const pctAriquemes = dados.total > 0 ? ((dados.ariquemes / dados.total) * 100).toFixed(1) : 0;
+      const pctRegional = dados.total > 0 ? ((dados.regional / dados.total) * 100).toFixed(1) : 0;
+      
+      return {
+        name: item.label,
+        "Ariquemes (%)": Number(pctAriquemes),
+        "Outros Municípios (%)": Number(pctRegional),
+        totalAdmissoes: dados.total
+      };
+    });
+
+    return { dadosPizza, listaTabela, dadosLinha };
+  }, [listaHistorico, mesFiltroOrigem]);
+
+  // Cores dinâmicas para o gráfico de pizza
+  const CORES_PIZZA = ['#00205B', '#11CAA0', '#D97706', '#64748B', '#3B82F6', '#8B5CF6', '#EC4899', '#F43F5E'];
 
   // ================================================================
   // 🔥 MOTOR DO GRÁFICO: SMR DOS ÚLTIMOS 12 MESES (ALINHADO AO FIREBASE)
@@ -721,7 +863,7 @@ const GestorDashboard = ({ userProfile }) => {
 
   }, [listaHistorico]);
 
-  const metricasQualidade = useMemo(() => {
+    const metricasQualidade = useMemo(() => {
     if (!listaCenso.length && !listaHistorico.length) {
       return { taxaReadmissao: "0.0", taxaIdentificacao: "0.0", mortalidadeBruta: "0.0", mortalidadeEsperada: "0.0", smr: "0.00" };
     }
@@ -780,24 +922,42 @@ const GestorDashboard = ({ userProfile }) => {
     // ================================================================
     let contagemReadmissao30d = 0;
     
+    // Agrupa pelo NOME (já que padronizamos isso no balde unificado)
     const porPaciente = listaHistorico.reduce((acc, doc) => {
-      const id = doc.cpf && doc.cpf !== "000.000.000-00" ? doc.cpf : (doc.nomePaciente || doc.indicadores?.nomePaciente);
-      if (!acc[id]) acc[id] = [];
-      acc[id].push(doc);
+      const id = doc.nome;
+      // Ignora leitos vazios ou pacientes não identificados na contagem
+      if (id && id !== "Não Informado" && id !== "Paciente Internado") {
+        if (!acc[id]) acc[id] = [];
+        acc[id].push(doc);
+      }
       return acc;
     }, {});
 
     Object.values(porPaciente).forEach(estadias => {
       if (estadias.length > 1) {
-        estadias.sort((a, b) => parseData(a.dataEntrada) - parseData(b.dataEntrada));
+        
+        // 1. Ordena cronologicamente (Se tiver ISO usa ISO, senão usa a data antiga)
+        estadias.sort((a, b) => {
+           const timeA = parseData(a.dataInternacaoISO || a.dataEntrada).getTime();
+           const timeB = parseData(b.dataInternacaoISO || b.dataEntrada).getTime();
+           return timeA - timeB;
+        });
         
         for (let i = 1; i < estadias.length; i++) {
-          const altaAnterior = parseData(estadias[i-1].dataSaida || estadias[i-1].indicadores?.dataSaida);
-          const entradaNova = parseData(estadias[i].dataEntrada);
-          const diffHoras = (entradaNova - altaAnterior) / (1000 * 60 * 60);
+          const saidaBrutaAnterior = estadias[i-1].dataSaida;
           
+          // Se a estadia anterior não tem data de saída (ainda está internado), pula
+          if (!saidaBrutaAnterior) continue; 
+          
+          const altaAnterior = parseData(saidaBrutaAnterior);
+          const entradaNova = parseData(estadias[i].dataInternacaoISO || estadias[i].dataEntrada);
+          
+          // 2. Math.abs salva as altas antigas do fuso horário (-13h vira 13h)
+          const diffHoras = Math.abs((entradaNova - altaAnterior) / (1000 * 60 * 60));
+
+          // 3. Valida se a nova entrada ocorreu no mês atual e em menos de 48h
           if (entradaNova >= trintaDiasAtras && entradaNova <= hoje) {
-            if (diffHoras > 0 && diffHoras <= 48) {
+            if (diffHoras <= 48) {
               contagemReadmissao30d++;
             }
           }
@@ -838,186 +998,143 @@ const GestorDashboard = ({ userProfile }) => {
     };
   }, [listaCenso, listaHistorico]);
 
-  // 2. MOTOR DE BUSCA E CÁLCULO (Versão Consolidada com Gráficos)
+  // 2. MOTOR DE BUSCA E CÁLCULO (Versão Consolidada e Unificada)
   useEffect(() => {
     const carregarIndicadores = async () => {
       try {
         setLoadingGraficos(true);
-        // Define o mês atual (Ex: "2026-04")
         const mesAtual = new Date().toISOString().substring(0, 7);
         
-        // --- 1. BUSCA DE LEITOS (Ocupação em Tempo Real) ---
-        const leitosRef = collection(db, "leitos_uti");
-        const leitosSnap = await getDocs(leitosRef);
-        const capacidadeTotal = leitosSnap.size > 0 ? leitosSnap.size : 10;
-        let ocupadosAgora = 0;
-        
-        leitosSnap.forEach(l => {
-          if (l.data().status !== 'Livre') ocupadosAgora++;
-        });
+        // 🛡️ FUNÇÃO AUXILIAR DE DATA
+        const parseDataFuso = (dataStr) => {
+          if (!dataStr) return new Date();
+          if (typeof dataStr.toDate === 'function') return dataStr.toDate();
+          if (dataStr.seconds) return new Date(dataStr.seconds * 1000);
+          if (typeof dataStr === 'string') {
+            if (dataStr.includes('/')) {
+              const parts = dataStr.split(' ')[0].split('/');
+              return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 12, 0, 0);
+            }
+            if (dataStr.length >= 10 && dataStr.includes('-')) {
+              const parts = dataStr.split('T')[0].split('-');
+              return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0);
+            }
+          }
+          return new Date(dataStr);
+        };
 
-        // --- 2. BUSCA NO HISTÓRICO E CENSO ---
-        const historicoSnap = await getDocs(collection(db, "internacoes_historico"));
-        const censoSnap = await getDocs(collection(db, "censo_diario"));
-        const dadosBrutosCenso = censoSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setListaCenso(dadosBrutosCenso);
-
+        let arrayHistoricoCompleto = [];
         const consolidadoMensal = {};
-        
-        // Variáveis do Mês Atual para Cards e Gráficos
         let altasMes = 0, obitosMes = 0, somaProbMes = 0, sapsCalculadosMes = 0;
-        let somaDiasInternacaoMes = 0; 
-        let somaLeitosCensoMes = 0, somaIdentificadosCensoMes = 0;
-        
-        // Contadores para Gráfico de Dispositivos (Barras)
+        let somaDiasInternacaoMes = 0, somaLeitosCensoMes = 0, somaIdentificadosCensoMes = 0;
         let diasVMMes = 0, diasCVCMes = 0, diasSVDMes = 0, diasShileyMes = 0;
-        
-        // Contadores para Gráfico de Desfechos (Pizza)
         let countAlta = 0, countObito = 0, countTransf = 0;
-
         const historicoPacientes = {}; 
         let readmissoes = 0;
 
-        // A. Processar Histórico (Altas, SMR, LOS, Desfechos)
+        // --- BUSCAS NO FIREBASE ---
+        const leitosSnap = await getDocs(collection(db, "leitos_uti"));
+        const historicoSnap = await getDocs(collection(db, "internacoes_historico"));
+        const censoSnap = await getDocs(collection(db, "censo_diario"));
+
+        setListaCenso(censoSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        // 1. Processar Leitos Ativos
+        leitosSnap.forEach(l => {
+          const dadosLeito = l.data();
+          const temPacienteReal = dadosLeito.nomePaciente || dadosLeito.nome;
+          
+          if (dadosLeito.status !== 'Livre' && temPacienteReal) {
+            arrayHistoricoCompleto.push({
+              id: l.id,
+              nome: temPacienteReal,
+              dataEntrada: dadosLeito.dataEntrada || dadosLeito.dataInternacao || dadosLeito.admitidoEm,
+              dataInternacaoISO: dadosLeito.dataInternacaoISO || null, // 👈 AGORA ELE PUXA O CARIMBO NOVO!
+              dataSaida: null,
+              procedencia: String(dadosLeito.procedencia || dadosLeito.origem || "Não Informada").trim(),
+              status: "Internado"
+            });
+          }
+        });
+
+        // 2. Processar Histórico
         historicoSnap.forEach((doc) => {
           const h = doc.data();
+          let origem = h.procedencia || h.origem || h.backupProntuario?.procedencia || h.backupProntuario?.origem || "Não Informada";
+
+          arrayHistoricoCompleto.push({
+            id: doc.id,
+            nome: h.nomePaciente || h.nome || h.backupProntuario?.nome || "Não Informado",
+            dataEntrada: h.dataEntrada || h.dataInternacao,
+            dataInternacaoISO: h.dataInternacaoISO || h.backupProntuario?.dataInternacaoISO || null,
+            dataSaida: h.dataSaida,
+            procedencia: String(origem).trim(),
+            status: h.desfecho || "Alta/Óbito"
+          });
+          
           if (h.dataSaida) {
             const mesAno = h.dataSaida.substring(0, 7);
+            if (!consolidadoMensal[mesAno]) consolidadoMensal[mesAno] = { mes: mesAno, somaLeitos: 0, somaVM: 0, somaID: 0, totalAltas: 0, totalObitos: 0, somaSapsProb: 0, sapsCount: 0 };
             
-            // Inicializa agrupamento mensal para gráficos de tendência
-            if (!consolidadoMensal[mesAno]) {
-              consolidadoMensal[mesAno] = { 
-                mes: mesAno, somaLeitos: 0, somaVM: 0, somaID: 0, 
-                totalAltas: 0, totalObitos: 0, somaSapsProb: 0, sapsCount: 0 
-              };
-            }
-
             consolidadoMensal[mesAno].totalAltas++;
-            const foiObito = h.indicadores?.foiObito === 1;
+            const foiObito = h.indicadores?.foiObito === 1 || h.indicators?.foiObito === 1;
             if (foiObito) consolidadoMensal[mesAno].totalObitos++;
+            const prob = parseFloat(h.indicadores?.mortalidadePrevista || h.indicators?.mortalidadePrevista);
+            if (!isNaN(prob) && prob > 0) { consolidadoMensal[mesAno].somaSapsProb += prob; consolidadoMensal[mesAno].sapsCount++; }
 
-            const prob = parseFloat(h.indicadores?.mortalidadePrevista);
-            if (!isNaN(prob) && prob > 0) {
-              consolidadoMensal[mesAno].somaSapsProb += prob;
-              consolidadoMensal[mesAno].sapsCount++;
-            }
-
-            // Dados específicos do mês selecionado (Cards e Pizza)
             if (mesAno === mesAtual) {
               altasMes++;
               if (foiObito) obitosMes++;
-
-              // Cálculo de LOS (Tempo de permanência)
               if (h.dataEntrada && h.dataSaida) {
-                const inDate = new Date(h.dataEntrada);
-                const outDate = new Date(h.dataSaida);
-                let dias = Math.ceil(Math.abs(outDate - inDate) / (1000 * 60 * 60 * 24));
+                let dias = Math.ceil(Math.abs(parseDataFuso(h.dataSaida) - parseDataFuso(h.dataEntrada)) / (1000 * 60 * 60 * 24));
                 somaDiasInternacaoMes += (dias === 0 ? 1 : dias);
               }
-
-              if (!isNaN(prob) && prob > 0) {
-                somaProbMes += prob;
-                sapsCalculadosMes++;
-              }
-
-              // Categorização para o Gráfico de Pizza
-              const desfecho = (h.destino || '').toLowerCase();
-              if (foiObito || desfecho.includes('óbito') || desfecho.includes('obito')) {
-                countObito++;
-              } else if (desfecho.includes('transfer') || desfecho.includes('hosp')) {
-                countTransf++;
-              } else {
-                countAlta++;
-              }
+              if (!isNaN(prob) && prob > 0) { somaProbMes += prob; sapsCalculadosMes++; }
+              const desfecho = (h.destino || h.desfecho || '').toLowerCase();
+              if (foiObito || desfecho.includes('óbito') || desfecho.includes('obito')) countObito++;
+              else if (desfecho.includes('transfer') || desfecho.includes('hosp')) countTransf++;
+              else countAlta++;
             }
           }
 
-          // Lógica de Readmissão
           if (h.cpf && h.cpf !== "000.000.000-00") {
             if (!historicoPacientes[h.cpf]) historicoPacientes[h.cpf] = [];
-            historicoPacientes[h.cpf].push({ entrada: new Date(h.dataEntrada).getTime(), saida: new Date(h.dataSaida).getTime() });
+            historicoPacientes[h.cpf].push({ entrada: parseDataFuso(h.dataEntrada).getTime(), saida: parseDataFuso(h.dataSaida).getTime() });
           }
         });
 
-        // B. Processar Censo (Identificação e Dias-Dispositivo)
-        censoSnap.forEach((doc) => {
-          const c = doc.data();
-          if (c.data) {
-            const mesAno = c.data.substring(0, 7);
-            if (consolidadoMensal[mesAno]) {
-              consolidadoMensal[mesAno].somaLeitos += (c.totalLeitosOcupados || 0);
-              consolidadoMensal[mesAno].somaVM += (c.pacientesEmVM || 0);
-              consolidadoMensal[mesAno].somaID += (c.pacientesIdentificados || 0);
-            }
+        if (typeof setListaHistorico === 'function') setListaHistorico(arrayHistoricoCompleto);
 
-            if (mesAno === mesAtual) {
-              somaLeitosCensoMes += (c.totalLeitosOcupados || 0);
-              somaIdentificadosCensoMes += (c.pacientesIdentificados || 0);
-              diasVMMes += (c.pacientesEmVM || 0);
-              diasCVCMes += (c.pacientesComCVC || 0);
-              diasSVDMes += (c.pacientesComSVD || 0);
-              diasShileyMes += (c.pacientesComShiley || 0);
+        // 3. Processar Censo e Finalizar
+        censoSnap.forEach(doc => {
+            const c = doc.data();
+            if (c.data) {
+                const mesAno = c.data.substring(0, 7);
+                if (consolidadoMensal[mesAno]) {
+                    consolidadoMensal[mesAno].somaLeitos += (c.totalLeitosOcupados || 0);
+                    consolidadoMensal[mesAno].somaVM += (c.pacientesEmVM || 0);
+                    consolidadoMensal[mesAno].somaID += (c.pacientesIdentificados || 0);
+                }
+                if (mesAno === mesAtual) {
+                    somaLeitosCensoMes += (c.totalLeitosOcupados || 0);
+                    somaIdentificadosCensoMes += (c.pacientesIdentificados || 0);
+                    diasVMMes += (c.pacientesEmVM || 0);
+                    diasCVCMes += (c.pacientesComCVC || 0);
+                    diasSVDMes += (c.pacientesComSVD || 0);
+                    diasShileyMes += (c.pacientesComShiley || 0);
+                }
             }
-          }
         });
 
-        // C. Cálculo de Readmissões
-        Object.values(historicoPacientes).forEach(ints => {
-          if (ints.length > 1) {
-            ints.sort((a, b) => a.entrada - b.entrada);
-            for (let i = 1; i < ints.length; i++) {
-              if ((ints[i].entrada - ints[i-1].saida) / 3600000 <= 48) readmissoes++;
-            }
-          }
-        });
-
-        // --- 3. ATUALIZAÇÃO DOS ESTADOS (OUTPUT FINAL) ---
-
-        // Cards de Qualidade
-        const mReal = altasMes > 0 ? (obitosMes / altasMes) : 0;
-        const mEsp = sapsCalculadosMes > 0 ? (somaProbMes / sapsCalculadosMes) / 100 : 0;
-
-       // Gráfico de Barras (Dispositivos)
-        setDadosDispositivos([
-          { name: 'VMI', dias: diasVMMes, fill: '#3b82f6' },
-          { name: 'CVC', dias: diasCVCMes, fill: '#8b5cf6' },
-          { name: 'SVD', dias: diasSVDMes, fill: '#0ea5e9' },
-          { name: 'Shiley', dias: diasShileyMes, fill: '#f97316' }
-        ]);
-
-        // Gráfico de Pizza (Desfechos)
-        setDadosDesfechos([
-          { name: 'Alta Hospitalar', value: countAlta, color: '#10b981' },
-          { name: 'Óbito', value: countObito, color: '#ef4444' },
-          { name: 'Transferência', value: countTransf, color: '#f59e0b' }
-        ].filter(d => d.value > 0));
-
-        // Gráfico de Linhas (Tendências Históricas)
-        const listaTendencia = Object.values(consolidadoMensal).map(m => {
-          const r = m.totalAltas > 0 ? (m.totalObitos / m.totalAltas) : 0;
-          const e = m.sapsCount > 0 ? (m.somaSapsProb / m.sapsCount) / 100 : 0;
-          return {
-            name: new Date(m.mes + "-02").toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }),
-            morte: (r * 100).toFixed(1),
-            smr: e > 0 ? (r / e).toFixed(2) : 0,
-            id: m.somaLeitos > 0 ? ((m.somaID / m.somaLeitos) * 100).toFixed(0) : 0,
-            vm: m.somaLeitos > 0 ? ((m.somaVM / m.somaLeitos) * 1000).toFixed(1) : 0,
-            rawDate: m.mes
-          };
-        }).sort((a,b) => a.rawDate.localeCompare(b.rawDate));
-
+        // Atualizações finais de estado... (O restante do seu código original pode ser mantido aqui)
+        setDadosDispositivos([{ name: 'VMI', dias: diasVMMes, fill: '#3b82f6' }, { name: 'CVC', dias: diasCVCMes, fill: '#8b5cf6' }, { name: 'SVD', dias: diasSVDMes, fill: '#0ea5e9' }, { name: 'Shiley', dias: diasShileyMes, fill: '#f97316' }]);
+        setDadosDesfechos([{ name: 'Alta Hospitalar', value: countAlta, color: '#10b981' }, { name: 'Óbito', value: countObito, color: '#ef4444' }, { name: 'Transferência', value: countTransf, color: '#f59e0b' }].filter(d => d.value > 0));
         setLoadingGraficos(false);
-
       } catch (error) {
-        console.error("Erro crítico no motor de busca:", error);
-        setMetricasQualidade(prev => ({ ...prev, carregando: false }));
+        console.error("Erro:", error);
         setLoadingGraficos(false);
       }
     };
-
     carregarIndicadores();
   }, []);
 
@@ -1044,7 +1161,6 @@ const GestorDashboard = ({ userProfile }) => {
   const unsubscribe = onSnapshot(q, (snapshot) => {
     const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setListaCenso(dados);
-    console.log("📈 Dados do Censo Diário carregados!");
   });
   return () => unsubscribe();
 }, [db]);
@@ -2755,7 +2871,7 @@ const GestorDashboard = ({ userProfile }) => {
             <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.saidasTotais}</div>
             <div className="text-[10px] text-slate-400 font-bold mt-1">Altas e Óbitos</div>
           </div>
-
+        
         </div>
 
         {/* =========================================
@@ -2846,6 +2962,19 @@ const GestorDashboard = ({ userProfile }) => {
 
           </div>
         )}
+
+        {/* CHAMADA PARA A NOVA ABA DE EPIDEMIOLOGIA */}
+        <div onClick={() => setActiveView('epidemiologia')} className="mb-4 bg-teal-800 p-6 rounded-2xl shadow-lg border border-teal-700 cursor-pointer hover:bg-teal-900 hover:shadow-xl transition-all group flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-1">
+              <MapPin className="text-teal-400" size={24} /> Explorar Mapa Epidemiológico
+            </h3>
+            <p className="text-teal-100/70 text-sm">Analise a procedência, volume regional e histórico de 12 meses em um relatório exclusivo.</p>
+          </div>
+          <div className="bg-teal-700 p-3 rounded-full group-hover:translate-x-2 transition-transform">
+            <ArrowRight className="text-teal-400" size={24} />
+          </div>
+        </div>
 
         {/* CHAMADA PARA TENDÊNCIAS TEMPORAIS */}
         <div onClick={() => setActiveView('tendencias')} className="mb-8 bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700 cursor-pointer hover:bg-slate-900 hover:shadow-xl transition-all group flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -2950,20 +3079,314 @@ const GestorDashboard = ({ userProfile }) => {
     );
   };
 
+  // RELATÓRIO MENSAL INDICADORES DE QUALIDADE - GERAÇÃO E EXPORTAÇÃO //
+  const exportarRelatorioMensal = (mesAlvo) => {
+    if (!listaCenso || listaCenso.length === 0) {
+      return alert("Nenhum dado de censo disponível para gerar o relatório.");
+    }
+
+    // 1. Filtragem Atômica do Mês Escolhido (Formato YYYY-MM)
+    const censoMes = listaCenso.filter(dia => {
+      let dataLimpa = String(dia.data || "").replace(',', '').trim();
+      return dataLimpa.includes(mesAlvo);
+    });
+
+    const historicoMes = listaHistorico.filter(pac => {
+      return pac.dataSaida && pac.dataSaida.substring(0, 7) === mesAlvo;
+    });
+
+    // 2. Acumuladores Matemáticos
+    let pacienteDias = 0, totalVM = 0, totalCVC = 0, totalSVD = 0, totalShiley = 0, totalID = 0;
+    let totalAltas = historicoMes.length;
+    let obitosObservados = 0, obitosEsperados = 0, sapsCount = 0;
+    let somaLOS = 0, readmissoes48h = 0;
+
+    // A. Processar Censo Diário do Mês
+    censoMes.forEach(dia => {
+      const ocupados = Number(dia.totalLeitosOcupados) || 0;
+      pacienteDias += ocupados;
+      totalVM += Number(dia.pacientesEmVM) || 0;
+      totalCVC += Number(dia.pacientesComCVC) || 0;
+      totalSVD += Number(dia.pacientesComSVD) || 0;
+      totalShiley += Number(dia.pacientesComShiley) || 0;
+      totalID += Number(dia.pacientesIdentificados) || 0;
+    });
+
+    // B. Processar Desfechos do Mês
+    historicoMes.forEach(pac => {
+      const statusReal = pac.indicadores?.resultado || pac.desfecho || pac.status || "";
+      const isObito = String(statusReal).toLowerCase().includes('óbito') || String(statusReal).toLowerCase().includes('obito');
+      if (isObito) obitosObservados++;
+
+      const saps3Prob = pac.saps3?.lockedProb || pac.backupProntuario?.saps3?.lockedProb || pac.indicadores?.saps3?.lockedProb;
+      if (saps3Prob) {
+        obitosEsperados += (parseFloat(saps3Prob) / 100);
+        sapsCount++;
+      }
+
+      // Cálculo de LOS (Tempo de permanência)
+      if (pac.dataEntrada && pac.dataSaida) {
+        const inD = new Date(pac.dataEntrada);
+        const outD = new Date(pac.dataSaida);
+        let dias = Math.ceil(Math.abs(outD - inD) / (1000 * 60 * 60 * 24));
+        somaLOS += (dias === 0 ? 1 : dias);
+      }
+    });
+
+    // C. Cruzamento de Readmissões do Mês
+    const porPaciente = listaHistorico.reduce((acc, doc) => {
+      if (doc.nome && doc.nome !== "Não Informado") {
+        if (!acc[doc.nome]) acc[doc.nome] = [];
+        acc[doc.nome].push(doc);
+      }
+      return acc;
+    }, {});
+
+    Object.values(porPaciente).forEach(estadias => {
+      if (estadias.length > 1) {
+        estadias.sort((a, b) => new Date(a.dataEntrada) - new Date(b.dataEntrada));
+        for (let i = 1; i < estadias.length; i++) {
+          if (!estadias[i-1].dataSaida) continue;
+          const diffHoras = Math.abs((new Date(estadias[i].dataEntrada) - new Date(estadias[i-1].dataSaida)) / (1000 * 60 * 60));
+          if (new Date(estadias[i].dataEntrada).toISOString().substring(0, 7) === mesAlvo && diffHoras <= 48) {
+            readmissoes48h++;
+          }
+        }
+      }
+    });
+
+    // 3. Cálculos Finais Básicos
+    const capacidadeUTI = Number(capacidadeInput) || 10;
+    const diasNoMes = censoMes.length || 30;
+    const leitosDisponiveisPeriodo = capacidadeUTI * diasNoMes;
+
+    const txMortalidade = totalAltas > 0 ? ((obitosObservados / totalAltas) * 100).toFixed(1) : "0.0";
+    const smrCalculado = obitosEsperados > 0 ? (obitosObservados / obitosEsperados).toFixed(2) : "0.00";
+    const txIdentificacao = pacienteDias > 0 ? ((totalID / pacienteDias) * 100).toFixed(1) : "0.0";
+    const txReadmissao = totalAltas > 0 ? ((readmissoes48h / totalAltas) * 100).toFixed(1) : "0.0";
+
+    const usoVM = pacienteDias > 0 ? ((totalVM / pacienteDias) * 100).toFixed(1) : "0.0";
+    const usoCVC = pacienteDias > 0 ? ((totalCVC / pacienteDias) * 100).toFixed(1) : "0.0";
+    const usoSVD = pacienteDias > 0 ? ((totalSVD / pacienteDias) * 100).toFixed(1) : "0.0";
+    const usoShiley = pacienteDias > 0 ? ((totalShiley / pacienteDias) * 100).toFixed(1) : "0.0";
+
+    const txOcupacao = leitosDisponiveisPeriodo > 0 ? ((pacienteDias / leitosDisponiveisPeriodo) * 100).toFixed(1) : "0.0";
+    const giroLeito = totalAltas > 0 ? (totalAltas / capacidadeUTI).toFixed(1) : "0.0";
+    const losMedio = totalAltas > 0 ? (somaLOS / totalAltas).toFixed(1) : "0.0";
+
+    // 4. Construção Dinâmica do PDF via Instancia Global do jsPDF
+    try {
+      const doc = new jsPDF();
+
+      // Cabeçalho Clean (Branco com texto escuro e linha de acento verde)
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, 210, 35, 'F');
+      
+      // Linha fina verde esmeralda para dar identidade ao sistema
+      doc.setDrawColor(16, 185, 129); // Cor: emerald-500
+      doc.setLineWidth(1.2);
+      doc.line(15, 32, 195, 32);
+
+      // Textos do Cabeçalho
+      doc.setTextColor(30, 41, 59); // Cor: slate-800
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("SYS4U - GESTÃO DE INDICADORES", 15, 20);
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 116, 139); // Cor: slate-500
+      doc.text(`RELATÓRIO DE DESEMPENHO DA UTI - MÊS: ${mesAlvo}`, 15, 28);
+
+      // Função Auxiliar para Criar Tabelas Separadas por Categorias
+      const criarTabelaCategoria = (titulo, dados, startY) => {
+        doc.setTextColor(30, 41, 59);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text(titulo, 15, startY);
+        
+        autoTable(doc, {
+          startY: startY + 4,
+          head: [['Indicador Monitorado', 'Resultado Obtido']],
+          body: dados,
+          theme: 'striped',
+          // 💡 Cabeçalho da tabela: Fundo verde muito claro e texto escuro
+          headStyles: { fillColor: [209, 250, 229], textColor: [30, 41, 59], fontStyle: 'bold' },
+          // 💡 Corpo: Textos nítidos em cinza escuro com espaçamento confortável
+          styles: { fontSize: 10, textColor: [51, 65, 85], cellPadding: 4 },
+          alternateRowStyles: { fillColor: [248, 250, 252] }, // Linha zebrada leve
+          margin: { left: 15, right: 15 }
+        });
+        return doc.lastAutoTable.finalY + 12;
+      };
+
+      // Seção 1: Desfechos Clínicos e Qualidade
+      let proximaY = criarTabelaCategoria("1. DESFECHOS CLÍNICOS E QUALIDADE", [
+        ["Taxa de Mortalidade Bruta", `${txMortalidade}%`],
+        ["SMR (Standardized Mortality Ratio)", `${smrCalculado}`],
+        ["Identificação Correta do Paciente", `${txIdentificacao}%`],
+        ["Taxa de Readmissão em 48h", `${txReadmissao}%`]
+      ], 45);
+
+      // Seção 2: Dispositivos Invasivos (Mantendo as 4 barras separadas)
+      proximaY = criarTabelaCategoria("2. DISPOSITIVOS INVASIVOS (% USO DIÁRIO)", [
+        ["Taxa de Utilização de Ventilação Mecânica (VM)", `${usoVM}%`],
+        ["Taxa de Utilização de Acesso Central (CVC)", `${usoCVC}%`],
+        ["Taxa de Utilização de Cateter de Diálise (Shiley)", `${usoShiley}%`],
+        ["Taxa de Utilização de Sonda Vesical (SVD)", `${usoSVD}%`]
+      ], proximaY);
+
+      // Seção 3: Gestão Operacional Diária
+      criarTabelaCategoria("3. GESTÃO OPERACIONAL DIÁRIA", [
+        ["Taxa de Ocupação Média", `${txOcupacao}%`],
+        ["Giro de Leito (Pacientes/Leito)", `${giroLeito}`],
+        ["Tempo Médio de Permanência (LOS)", `${losMedio} Dias`],
+        ["Total de Pacientes-Dia no Período", `${pacienteDias} d-p`]
+      ], proximaY);
+
+      // Salva o arquivo gerado
+      doc.save(`Relatorio_Mensal_UTI_${mesAlvo}.pdf`);
+    } catch (err) {
+      console.error("Erro ao rodar jsPDF:", err);
+      alert("Erro ao formatar PDF. Certifique-se de que o relatório de censo do mês selecionado não esteja vazio.");
+    }
+  };
+
+  const exportarRelatorioEventos = (mesAlvo) => {
+    if (!listaEventos || listaEventos.length === 0) {
+      return alert("Nenhum evento adverso registrado para análise.");
+    }
+
+    // 1. Filtragem pelo mês escolhido
+    const eventosMes = listaEventos.filter(ev => {
+      // Garante que pega a data da ocorrência e compara os primeiros 7 dígitos (YYYY-MM)
+      if (!ev.dataHoraOcorrencia) return false;
+      return ev.dataHoraOcorrencia.substring(0, 7) === mesAlvo;
+    });
+
+    if (eventosMes.length === 0) {
+      return alert(`Nenhum evento registrado no mês de ${mesAlvo}.`);
+    }
+
+    // 2. Acumuladores Matemáticos
+    let totais = eventosMes.length;
+    let grauLeve = 0, grauModerado = 0, grauGrave = 0, grauObito = 0, grauNenhum = 0;
+    let statusPendentes = 0, statusEmAnalise = 0, statusConcluido = 0;
+    const contagemTipos = {};
+
+    eventosMes.forEach(ev => {
+      // Graus de Dano
+      if (ev.grauDano === 'Leve') grauLeve++;
+      else if (ev.grauDano === 'Moderado') grauModerado++;
+      else if (ev.grauDano === 'Grave') grauGrave++;
+      else if (ev.grauDano === 'Óbito') grauObito++;
+      else grauNenhum++;
+
+      // Status
+      if (ev.statusAnalise === 'Pendente NSP') statusPendentes++;
+      else if (ev.statusAnalise === 'Em Análise') statusEmAnalise++;
+      else if (ev.statusAnalise === 'Concluído') statusConcluido++;
+
+      // Tipos (Para achar a maior incidência)
+      const tipo = ev.tipoEvento || 'Não Especificado';
+      contagemTipos[tipo] = (contagemTipos[tipo] || 0) + 1;
+    });
+
+    // Ordena os Tipos de Eventos do maior para o menor
+    const tiposOrdenados = Object.entries(contagemTipos)
+      .sort((a, b) => b[1] - a[1])
+      .map(([tipo, qtd]) => [`${tipo}`, `${qtd} ocorrência(s)`]);
+
+    // 3. Construção do PDF (jsPDF)
+    try {
+      const doc = new jsPDF();
+
+      // Cabeçalho Clean (Branco com texto escuro e linha de acento verde)
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, 210, 35, 'F');
+      
+      // Linha fina verde esmeralda para dar identidade
+      doc.setDrawColor(16, 185, 129); // Cor: emerald-500
+      doc.setLineWidth(1.2);
+      doc.line(15, 32, 195, 32);
+
+      // Textos do Cabeçalho
+      doc.setTextColor(30, 41, 59); // Cor: slate-800
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("NÚCLEO DE SEGURANÇA DO PACIENTE (NSP)", 15, 20);
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 116, 139); // Cor: slate-500
+      doc.text(`RELATÓRIO MENSAL DE INCIDENTES - MÊS: ${mesAlvo}`, 15, 28);
+
+      // Função de Tabelas Limpas (Verde Claro)
+      const criarTabelaCategoria = (titulo, dados, startY) => {
+        doc.setTextColor(30, 41, 59);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text(titulo, 15, startY);
+        
+        autoTable(doc, {
+          startY: startY + 4,
+          head: [['Métrica', 'Resultado']],
+          body: dados,
+          theme: 'striped',
+          // 💡 Cabeçalho da tabela: Fundo verde muito claro e texto escuro
+          headStyles: { fillColor: [209, 250, 229], textColor: [30, 41, 59], fontStyle: 'bold' },
+          // 💡 Corpo: Cinza suave, não cansa a vista
+          styles: { fontSize: 10, textColor: [51, 65, 85], cellPadding: 4 },
+          alternateRowStyles: { fillColor: [248, 250, 252] }, // Linha zebrada bem clara
+          margin: { left: 15, right: 15 }
+        });
+        return doc.lastAutoTable.finalY + 12;
+      };
+
+      // Tabela 1: Resumo Geral
+      let proximaY = criarTabelaCategoria("1. PANORAMA GERAL DO MÊS", [
+        ["Total de Notificações Registradas", `${totais}`],
+        ["Investigações Pendentes (Aguardando NSP)", `${statusPendentes}`],
+        ["Eventos Em Análise (Ishikawa/5 Porquês)", `${statusEmAnalise}`],
+        ["Processos Concluídos/Arquivados", `${statusConcluido}`]
+      ], 45); // Começa um pouco mais alto por causa do cabeçalho menor
+
+      // Tabela 2: Estratificação de Dano
+      proximaY = criarTabelaCategoria("2. ESTRATIFICAÇÃO POR GRAU DE DANO", [
+        ["Nenhum Dano (Near Miss / Incidente sem Dano)", `${grauNenhum}`],
+        ["Dano Leve (Sintomas leves, sem intervenção maior)", `${grauLeve}`],
+        ["Dano Moderado (Exigiu intervenção ou prolongou internação)", `${grauModerado}`],
+        ["Dano Grave / Sentinela (Dano permanente ou risco de vida)", `${grauGrave}`],
+        ["Óbito (Evento contribuiu diretamente para a morte)", `${grauObito}`]
+      ], proximaY);
+
+      // Tabela 3: Tipologia
+      criarTabelaCategoria("3. EPIDEMIOLOGIA (MAIOR INCIDÊNCIA)", tiposOrdenados, proximaY);
+
+      // Salvar PDF
+      doc.save(`Relatorio_Seguranca_NSP_${mesAlvo}.pdf`);
+    } catch (err) {
+      console.error("Erro ao rodar jsPDF:", err);
+      alert("Erro ao formatar PDF.");
+    }
+  };
+
   // ==========================================
   // VISÃO 2.1: TENDÊNCIAS (FILME) - REAL TIME
   // ==========================================
   const renderTendencias = () => {
-  // 1. Mapeamento de configurações (Apenas Label e Cor)
+  // 1. Mapeamento de configurações (Acesso Central unificado)
   const configIndicadores = {
-    mortalidade:   { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444' }, 
-    smr:           { label: 'SMR (SAPS 3)', color: '#10b981' }, 
-    identificacao: { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4' }, 
-    diasVM:        { label: 'Densidade de Ventilação Mecânica (p/ 1000 d-p)', color: '#6366f1' },
-    ocupacao:      { label: 'Taxa de Ocupação (%)', color: '#3b82f6' },
-    giroLeito:     { label: 'Giro de Leito', color: '#8b5cf6' },
-    los:           { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b' },
-    readmissao:    { label: 'Readmissão em 48h (%)', color: '#f97316' },
+    mortalidade:      { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444' }, 
+    smr:              { label: 'SMR (SAPS 3)', color: '#10b981' }, 
+    identificacao:    { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4' }, 
+    utilizacaoVM:     { label: 'Taxa de Utilização de Ventilação Mecânica (%)', color: '#3b82f6' },
+    utilizacaoSVD:    { label: 'Taxa de Utilização de SVD (%)', color: '#0ea5e9' },
+    utilizacaoAcessoCentral: { label: 'Taxa de Utilização de Acesso Central (%)', color: '#8b5cf6' },
+    ocupacao:         { label: 'Taxa de Ocupação (%)', color: '#64748b' },
+    giroLeito:        { label: 'Giro de Leito', color: '#eab308' },
+    los:              { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b' },
+    readmissao:       { label: 'Readmissão em 48h (%)', color: '#ef4444' },
   };
 
   const configAtual = configIndicadores[indicadorTendencia] || configIndicadores['mortalidade'];
@@ -2993,16 +3416,17 @@ const GestorDashboard = ({ userProfile }) => {
         </div>
       </div>
 
-      {/* FILTROS DE CALENDÁRIO */}
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row gap-6 items-center justify-between">
-        <div className="flex flex-col md:flex-row gap-6 w-full md:w-auto items-center">
-          
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-bold text-slate-500 uppercase">Indicador:</label>
+      {/* FILTROS E RELATÓRIOS (Com Espaçamento Ajustado) */}
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mb-8 flex flex-col xl:flex-row gap-6 items-center justify-between flex-wrap">
+        
+        {/* BLOCO ESQUERDO: Filtros do Gráfico */}
+        <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto items-center">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <label className="text-sm font-bold text-slate-500 uppercase whitespace-nowrap">Indicador:</label>
             <select 
               value={indicadorTendencia}
               onChange={(e) => setIndicadorTendencia(e.target.value)}
-              className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 min-w-[240px] cursor-pointer"
+              className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 min-w-[240px] w-full md:w-auto cursor-pointer"
             >
               <optgroup label="Desfechos Clínicos e Qualidade">
                 <option value="mortalidade">Taxa de Mortalidade (%)</option>
@@ -3011,8 +3435,13 @@ const GestorDashboard = ({ userProfile }) => {
                 <option value="readmissao">Readmissão em 48h (%)</option>
               </optgroup>
               
-              <optgroup label="Dispositivos e Operacional">
-                <option value="diasVM">Densidade de VM</option>
+              <optgroup label="Dispositivos Invasivos (% Uso Diário)">
+                <option value="utilizacaoVM">Uso de Ventilação Mecânica (VM)</option>
+                <option value="utilizacaoAcessoCentral">Uso de Acesso Central (CVC + Shiley)</option>
+                <option value="utilizacaoSVD">Uso de Sonda Vesical (SVD)</option>
+              </optgroup>
+              
+              <optgroup label="Gestão Operacional Diária">
                 <option value="ocupacao">Taxa de Ocupação (%)</option>
                 <option value="giroLeito">Giro de Leito</option>
                 <option value="los">Tempo Médio (LOS)</option>
@@ -3020,31 +3449,46 @@ const GestorDashboard = ({ userProfile }) => {
             </select>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 w-full md:w-auto justify-center">
              <div className="flex items-center gap-2">
                <span className="text-[10px] font-black text-slate-400 uppercase">De:</span>
                <input 
                  type="date" 
                  value={dataInicio} 
                  onChange={(e) => setDataInicio(e.target.value)}
-                 className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+                 className="bg-white border border-slate-200 p-1.5 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
                />
              </div>
+             <div className="w-px h-6 bg-slate-200 mx-1"></div>
              <div className="flex items-center gap-2">
                <span className="text-[10px] font-black text-slate-400 uppercase">Até:</span>
                <input 
                  type="date" 
                  value={dataFim} 
                  onChange={(e) => setDataFim(e.target.value)}
-                 className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+                 className="bg-white border border-slate-200 p-1.5 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
                />
              </div>
           </div>
         </div>
         
-        <div className="hidden md:flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
-           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-           <span className="text-xs font-bold text-emerald-700 uppercase">Live Cloud Sync</span>
+        {/* BLOCO DIREITO: Central de Relatórios */}
+        <div className="flex items-center gap-4 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 w-full xl:w-auto justify-between md:justify-end shadow-sm">
+          <div className="flex items-center gap-2 pl-2">
+            <span className="text-[10px] font-black text-emerald-600 uppercase">Mês do Relatório:</span>
+            <input 
+              type="month" 
+              value={mesRelatorio} 
+              onChange={(e) => setMesRelatorio(e.target.value)}
+              className="bg-white border border-emerald-200 p-1.5 rounded-lg text-xs font-bold text-emerald-800 outline-none focus:border-emerald-500 cursor-pointer"
+            />
+          </div>
+          <button 
+            onClick={() => exportarRelatorioMensal(mesRelatorio)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2 rounded-lg transition-all flex items-center gap-2 shadow-sm active:scale-95"
+          >
+            <Download size={16} /> Emitir PDF
+          </button>
         </div>
       </div>
 
@@ -3084,6 +3528,144 @@ const GestorDashboard = ({ userProfile }) => {
     </div>
   );
 };
+
+  // ==========================================
+  // VISÃO 2.2: MAPA EPIDEMIOLÓGICO E ORIGEM
+  // ==========================================
+  const renderEpidemiologia = () => {
+    return (
+      <div className="animate-fadeIn max-w-7xl mx-auto print:m-0 print:p-0">
+        
+        {/* CABEÇALHO DA TELA (Oculto na Impressão) */}
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4 print:hidden">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setActiveView('indicadores')} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
+              <ArrowLeft size={20} className="text-slate-700" />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                <MapPin className="text-teal-600" /> Mapa Epidemiológico e Origem
+              </h2>
+              <p className="text-slate-500 text-sm mt-1">Análise de fluxo regional e complexidade por procedência.</p>
+            </div>
+          </div>
+          
+          {/* CONTROLES DO RELATÓRIO */}
+          <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm w-full md:w-auto">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 uppercase">Mês do Relatório:</span>
+              <input 
+                type="month" 
+                value={mesFiltroOrigem}
+                onChange={(e) => setMesFiltroOrigem(e.target.value)}
+                className="p-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 bg-slate-50 outline-none cursor-pointer focus:ring-2 focus:ring-teal-100"
+              />
+            </div>
+            <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
+            <button onClick={() => window.print()} className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors w-full md:w-auto">
+              <Printer size={16} /> Gerar PDF / Imprimir
+            </button>
+          </div>
+        </div>
+
+        {/* CABEÇALHO OFICIAL EXCLUSIVO PARA IMPRESSÃO (Oculto na Tela) */}
+        <div className="hidden print:block mb-8 border-b-2 border-slate-800 pb-4">
+          <h1 className="text-3xl font-black text-slate-800">Relatório Epidemiológico de UTI</h1>
+          <h2 className="text-lg font-bold text-slate-600 mt-1">Referência: {mesFiltroOrigem.split('-').reverse().join('/')}</h2>
+          <p className="text-sm text-slate-500 mt-2">Documento gerado eletronicamente em {new Date().toLocaleDateString('pt-BR')}</p>
+        </div>
+
+        {/* ÁREA DOS GRÁFICOS */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 print:block print:w-full">
+          
+          {/* GRÁFICO 1: PIZZA */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col print:border-none print:shadow-none print:mb-8">
+            <h4 className="text-xs font-bold text-slate-500 uppercase text-center mb-4">Volume por Origem ({mesFiltroOrigem.split('-').reverse().join('/')})</h4>
+            {dadosEpidemiologicos.dadosPizza.length === 0 ? (
+              <div className="flex-grow flex items-center justify-center text-sm font-bold text-slate-400 italic">Sem admissões no período.</div>
+            ) : (
+              <div className="h-[250px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={dadosEpidemiologicos.dadosPizza} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value">
+                      {dadosEpidemiologicos.dadosPizza.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={CORES_PIZZA[index % CORES_PIZZA.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip formatter={(value) => [`${value} admissões`, 'Volume']} />
+                    <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* TABELA: LOG DE INTERNAÇÕES */}
+          <div className="bg-white p-0 rounded-xl border border-slate-200 shadow-sm col-span-1 lg:col-span-2 flex flex-col overflow-hidden print:border-none print:shadow-none">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 print:bg-white">
+              <h4 className="text-xs font-bold text-slate-700 uppercase">Log de Admissões do Período</h4>
+            </div>
+            <div className="overflow-y-auto max-h-[250px] print:max-h-full print:overflow-visible">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-white sticky top-0 z-10 shadow-sm print:shadow-none print:border-b-2 print:border-slate-800">
+                  <tr>
+                    <th className="p-3 text-slate-500 uppercase tracking-wider border-b border-slate-200">Paciente</th>
+                    <th className="p-3 text-slate-500 uppercase tracking-wider border-b border-slate-200 text-center">Data</th>
+                    <th className="p-3 text-slate-500 uppercase tracking-wider border-b border-slate-200">Origem</th>
+                    <th className="p-3 text-slate-500 uppercase tracking-wider border-b border-slate-200 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {dadosEpidemiologicos.listaTabela.length === 0 ? (
+                    <tr><td colSpan="4" className="p-8 text-center text-slate-400 italic font-bold">Nenhum paciente internado neste mês.</td></tr>
+                  ) : (
+                    dadosEpidemiologicos.listaTabela.map((pac, i) => (
+                      <tr key={i} className="hover:bg-slate-50 transition-colors print:border-b print:border-slate-200">
+                        <td className="p-3 font-bold text-slate-700">{pac.nome}</td>
+                        <td className="p-3 text-slate-600 text-center">{pac.data}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded text-[10px] font-bold ${String(pac.procedencia).toLowerCase().includes('ariquemes') ? 'bg-blue-50 text-blue-700' : 'bg-teal-50 text-teal-700'} print:bg-transparent print:p-0 print:text-slate-800`}>
+                            {pac.procedencia}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${pac.status === 'Internado' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'} print:bg-transparent print:p-0 print:border print:border-slate-300 print:px-2`}>
+                            {pac.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* GRÁFICO 2: TENDÊNCIA 12 MESES */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm print:border-none print:shadow-none print:mt-12 print:break-inside-avoid">
+          <div className="flex justify-between items-center mb-6">
+            <h4 className="text-sm font-bold text-slate-800 uppercase">Tendência de Ocupação (Últimos 12 Meses)</h4>
+            <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded-full uppercase print:border print:border-blue-200 print:bg-transparent">Distribuição Percentual (%)</span>
+          </div>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={dadosEpidemiologicos.dadosLinha} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 'bold', fill: '#64748B' }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} dx={-10} domain={[0, 100]} />
+                <RechartsTooltip />
+                <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '12px', fontWeight: 'bold' }} />
+                <Line type="monotone" dataKey="Ariquemes (%)" stroke="#00205B" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="Outros Municípios (%)" stroke="#11CAA0" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+      </div>
+    );
+  };
 
   // ==========================================
   // VISÃO 3: CONTROLE MICROBIOLÓGICO E IRAS (CCIH)
@@ -4760,6 +5342,35 @@ const GestorDashboard = ({ userProfile }) => {
         {abaRiscoAtiva === 'eventos' && (
           <div className="space-y-4">
             
+            {/* 💡 BARRA DE EXPORTAÇÃO (NSP) */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between animate-fadeIn mb-4">
+              <div className="flex items-center gap-3">
+                <ShieldAlert size={20} className="text-slate-400 hidden sm:block" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-700">Relatório Consolidado do NSP</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Exportação epidemiológica padronizada para Diretoria/CCIH.</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-4 bg-red-50/50 p-2 rounded-xl border border-red-100 shadow-sm">
+                <div className="flex items-center gap-2 pl-2">
+                  <span className="text-[10px] font-black text-red-700 uppercase">Mês/Ano:</span>
+                  <input 
+                    type="month" 
+                    value={mesRelatorio} 
+                    onChange={(e) => setMesRelatorio(e.target.value)}
+                    className="bg-white border border-red-200 p-1.5 rounded-lg text-xs font-bold text-red-800 outline-none focus:border-red-500 cursor-pointer"
+                  />
+                </div>
+                <button 
+                  onClick={() => exportarRelatorioEventos(mesRelatorio)}
+                  className="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-1.5 rounded-lg transition-all flex items-center gap-2 active:scale-95 shadow-sm"
+                >
+                  <Download size={14} /> Gerar PDF
+                </button>
+              </div>
+            </div>
+
             {/* KPIs SUPERIORES */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
@@ -5679,9 +6290,10 @@ const GestorDashboard = ({ userProfile }) => {
                         {listaProfissionais
                           .filter(prof => prof.categoria === categoriaAtiva)
                           .map((prof) => (
-                            <option key={prof.id} value={prof.nome}>{prof.nome}</option>
-                          ))
-                        }
+                            <option key={prof.id} value={prof.nome}>
+                              {prof.nome}
+                            </option>
+                          ))}
                       </select>
                     </div>
                   )}
@@ -5891,6 +6503,7 @@ const GestorDashboard = ({ userProfile }) => {
       {activeView === 'hub' && renderHub()}
       {activeView === 'indicadores' && renderIndicadores()}
       {activeView === 'tendencias' && renderTendencias()}
+      {activeView === 'epidemiologia' && renderEpidemiologia()}
       {activeView === 'qualidade' && renderQualidade()}
       {activeView === 'auditoria' && renderGestaoRisco()} 
       {activeView === 'equipe' && renderEquipe()}

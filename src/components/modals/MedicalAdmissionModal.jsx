@@ -52,11 +52,59 @@ const MedicalAdmissionModal = ({
               </select>
             </div>
             
-            {/* CAMPO LIVRE */}
-            <div className="md:col-span-3">
-              <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Origem da Admissão</label>
-              <input type="text" disabled={isReadOnly} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-100 text-slate-700 bg-white" placeholder="Setor/Hospital..." value={admissionData.origem || ""} onChange={(e) => setAdmissionData({ ...admissionData, origem: e.target.value })} />
-            </div>
+            {/* CAMPO ORIGEM DA ADMISSÃO (COM LISTA E CAMPO MANUAL) */}
+            {(() => {
+              // Lista exata em ordem alfabética
+              const origensLista = [
+                "Alto Paraíso", "Ariquemes-CDP", "Ariquemes-HMA", "Ariquemes-HMI", "Ariquemes-UPA",
+                "Buritis", "Cacaulândia", "Cacoal", "Campo Novo de Rondônia", "Cujubim", 
+                "Jaru", "Ji-Paraná", "Machadinho D´Oeste", "Monte Negro", "Ouro Preto D´Oeste", 
+                "Porto Velho", "Rio Crespo", "Vale do Anari", "Vilhena"
+              ];
+              
+              // Verifica se a origem atual é uma palavra digitada manualmente
+              const isOutro = admissionData.origem && !origensLista.includes(admissionData.origem);
+
+              return (
+                <div className="md:col-span-3">
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Origem da Admissão</label>
+                  <div className="flex gap-2">
+                    <select 
+                      disabled={isReadOnly} 
+                      className={`p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-100 text-slate-700 bg-white transition-all ${isOutro ? 'w-1/3' : 'w-full'}`}
+                      value={origensLista.includes(admissionData.origem) ? admissionData.origem : (admissionData.origem ? "Outro" : "")}
+                      onChange={(e) => {
+                        if (e.target.value === "Outro") {
+                          // Um espaço em branco serve como gatilho invisível para abrir o input de texto
+                          setAdmissionData({ ...admissionData, origem: " " }); 
+                        } else {
+                          setAdmissionData({ ...admissionData, origem: e.target.value });
+                        }
+                      }}
+                    >
+                      <option value="">-- Selecione a Origem --</option>
+                      {origensLista.map(cidade => (
+                        <option key={cidade} value={cidade}>{cidade}</option>
+                      ))}
+                      <option value="Outro">Outro...</option>
+                    </select>
+
+                    {/* CAMPO MANUAL (Aparece apenas se "Outro" for acionado) */}
+                    {isOutro && (
+                      <input 
+                        type="text" 
+                        disabled={isReadOnly} 
+                        className="w-2/3 p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-100 text-slate-700 bg-white animate-fadeIn" 
+                        placeholder="Qual a origem?" 
+                        value={admissionData.origem === " " ? "" : admissionData.origem} 
+                        onChange={(e) => setAdmissionData({ ...admissionData, origem: e.target.value || " " })} 
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* DADOS PARA SAPS 3 (OBRIGATÓRIOS) */}

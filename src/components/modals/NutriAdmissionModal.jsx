@@ -88,7 +88,8 @@ const NutriAdmissionModal = ({
 
           <div className="p-5 bg-white border border-lime-100 rounded-xl shadow-sm">
             <h4 className="font-bold text-lime-800 mb-4 flex items-center gap-2 border-b pb-2">Metas Nutricionais</h4>
-            <div className="grid md:grid-cols-3 gap-4">
+            {/* Ajustado para 4 colunas no desktop e 2 no tablet */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Calórica Total</label>
                 <input type="number" disabled={isReadOnly} className="w-full p-2.5 border rounded-lg font-bold disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.metaCalTotal || ""} onChange={(e) => setNutriData({ ...nutriData, metaCalTotal: e.target.value })} />
@@ -100,6 +101,10 @@ const NutriAdmissionModal = ({
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Proteica Total</label>
                 <input type="number" disabled={isReadOnly} className="w-full p-2.5 border rounded-lg font-bold disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.metaProtTotal || ""} onChange={(e) => setNutriData({ ...nutriData, metaProtTotal: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Proteica Diária</label>
+                <input type="number" disabled={isReadOnly} className="w-full p-2.5 border rounded-lg font-bold disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.metaProtDiaria || ""} onChange={(e) => setNutriData({ ...nutriData, metaProtDiaria: e.target.value })} />
               </div>
             </div>
           </div>

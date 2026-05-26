@@ -108,9 +108,9 @@ const NutriDashboard = ({
         </div>
 
         {/* METAS DESBLOQUEADAS */}
-        <div className="grid md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div>
-            <label className="text-xs font-bold text-lime-700 uppercase">Meta Calórica Total (kcal)</label>
+            <label className="text-xs font-bold text-lime-700 uppercase truncate block">Meta Calórica Total (kcal)</label>
             <input
               type="number"
               className="w-full p-2 border-2 border-lime-100 rounded bg-white font-black"
@@ -119,7 +119,7 @@ const NutriDashboard = ({
             />
           </div>
           <div>
-            <label className="text-xs font-bold text-lime-700 uppercase">Meta Calórica Diária (kcal)</label>
+            <label className="text-xs font-bold text-lime-700 uppercase truncate block">Meta Cal. Diária (kcal)</label>
             <input
               type="number"
               className="w-full p-2 border-2 border-lime-100 rounded bg-white font-black"
@@ -128,12 +128,21 @@ const NutriDashboard = ({
             />
           </div>
           <div>
-            <label className="text-xs font-bold text-lime-700 uppercase">Meta Proteica Total (g)</label>
+            <label className="text-xs font-bold text-lime-700 uppercase truncate block">Meta Proteica Total (g)</label>
             <input
               type="number"
               className="w-full p-2 border-2 border-lime-100 rounded bg-white font-black"
               value={currentPatient.nutri?.metaProtTotal || ""}
               onChange={(e) => updateNested("nutri", "metaProtTotal", e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-lime-700 uppercase truncate block">Meta Prot. Diária (g)</label>
+            <input
+              type="number"
+              className="w-full p-2 border-2 border-lime-100 rounded bg-white font-black"
+              value={currentPatient.nutri?.metaProtDiaria || ""}
+              onChange={(e) => updateNested("nutri", "metaProtDiaria", e.target.value)}
             />
           </div>
         </div>

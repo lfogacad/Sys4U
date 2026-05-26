@@ -200,14 +200,73 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
 
         {/* 2. PROCEDÊNCIA: 2º no Celular | 1º no PC (Esquerda) */}
         <div className="order-2 md:order-1">
-          <label className="text-xs font-bold text-gray-400">Procedência</label>
-          <input 
-            type="text" 
-            value={currentPatient.procedencia || ""} 
-            onChange={(e) => updateP("procedencia", e.target.value)} 
-            onBlur={() => handleBlurSave("Médico: Editou Procedência")}
-            className="w-full p-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-teal-100" 
-          />
+          <label className="text-xs font-bold text-gray-400">Procedência / Origem</label>
+          {(() => {
+            const origensLista = [
+              "Alto Paraíso", "Ariquemes-CDP", "Ariquemes-HMA", "Ariquemes-HMI", "Ariquemes-UPA",
+              "Buritis", "Cacaulândia", "Cacoal", "Campo Novo de Rondônia", "Cujubim", 
+              "Jaru", "Ji-Paraná", "Machadinho D´Oeste", "Monte Negro", "Ouro Preto D´Oeste", 
+              "Porto Velho", "Rio Crespo", "Vale do Anari", "Vilhena"
+            ];
+            
+            // 💡 UNIFICAÇÃO: Lê de qualquer um dos dois, mas a tela agora respeita uma fonte só
+            const valorAtual = currentPatient.procedencia || currentPatient.origem || "";
+            const isOutro = valorAtual && !origensLista.includes(valorAtual) && valorAtual !== " ";
+
+            const handleAlterarSelect = (novoValor) => {
+              if (valorAtual && valorAtual !== " " && valorAtual !== novoValor) {
+                if (!window.confirm("⚠️ Deseja mesmo alterar a procedência deste paciente? Isso afetará os indicadores epidemiológicos.")) {
+                  return; // Aborta
+                }
+              }
+              
+              // 🔥 Apenas UMA ordem direta! Acabou a corrida assíncrona.
+              updateP("procedencia", novoValor);
+              
+              if (novoValor !== " ") {
+                setTimeout(() => handleBlurSave(`Médico: Alterou a procedência para ${novoValor}`), 200);
+              }
+            };
+
+            return (
+              <div className="flex gap-2">
+                <select 
+                  value={origensLista.includes(valorAtual) ? valorAtual : (valorAtual ? "Outro" : "")} 
+                  onChange={(e) => {
+                    if (e.target.value === "Outro") {
+                      handleAlterarSelect(" "); 
+                    } else {
+                      handleAlterarSelect(e.target.value);
+                    }
+                  }}
+                  className={`p-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-teal-100 text-slate-700 transition-all ${isOutro ? 'w-1/3' : 'w-full'}`} 
+                >
+                  <option value="">-- Selecione --</option>
+                  {origensLista.map(cidade => (
+                    <option key={cidade} value={cidade}>{cidade}</option>
+                  ))}
+                  <option value="Outro">Outro...</option>
+                </select>
+
+                {/* CAMPO MANUAL PARA "OUTRO" */}
+                {isOutro && (
+                  <input 
+                    type="text" 
+                    className="w-2/3 p-2 border rounded-lg outline-none focus:ring-2 focus:ring-teal-100 text-slate-700 bg-white animate-fadeIn" 
+                    placeholder="Qual a procedência?" 
+                    value={valorAtual === " " ? "" : valorAtual} 
+                    onChange={(e) => {
+                      updateP("procedencia", e.target.value || " ");
+                    }} 
+                    onBlur={(e) => {
+                      handleBlurSave(`Médico: Alterou a procedência manual para ${e.target.value}`);
+                    }}
+                    autoFocus
+                  />
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* 3. DIAGNÓSTICO PRINCIPAL: 3º no Celular | 3º no PC (Esquerda) */}

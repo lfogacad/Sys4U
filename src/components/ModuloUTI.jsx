@@ -1291,6 +1291,14 @@ const clearAntibiotic = (i) => {
     const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
     
     // ========================================================
+    // O CARIMBO ATÔMICO DE TEMPO (Protege a Janela de Readmissão)
+    // ========================================================
+    // Se o paciente ainda não tinha um carimbo exato de internação, gera agora!
+    if (!r.dataInternacaoISO) {
+      r.dataInternacaoISO = new Date().toISOString(); 
+    }
+
+    // ========================================================
     // O COFRE DA ADMISSÃO MÉDICA (Congela a imagem inicial)
     // ========================================================
     if (!r.admissaoMedica) {
@@ -1310,7 +1318,9 @@ const clearAntibiotic = (i) => {
     r.nome = admissionData.nome.trim().toUpperCase();
     r.sexo = admissionData.sexo || "";
     r.dataNascimento = admissionData.dataNascimento || "";
-    r.dataInternacao = r.dataInternacao || getManausDateStr(); // Protege a data original
+    
+    r.dataInternacao = r.dataInternacao || getManausDateStr(); // Mantém o formato YYYY-MM-DD para a tela do médico
+    
     r.bh.date = r.bh.date || getManausDateStr();
     r.procedencia = admissionData.origem;
     r.diagnostico = admissionData.diagAgudos;
@@ -2208,6 +2218,7 @@ ${conduta}
       metaCalTotal: cofre.metaCalTotal || "",
       metaCalDiaria: cofre.metaCalDiaria || "",
       metaProtTotal: cofre.metaProtTotal || "",
+      metaProtDiaria: cofre.metaProtDiaria || "", // 👈 O CAMPO NOVO ADICIONADO AQUI!
       risco_nutricional: cofre.risco_nutricional || "",
       via: cofre.via || "",
       caracteristicasDieta: cofre.caracteristicasDieta || []
