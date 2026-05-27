@@ -1440,9 +1440,22 @@ ${admissionData.medicamentos || "-"}
 NÍVEL DE CONSCIÊNCIA BASAL: ${admissionData.conscienciaBasal || "-"}
 MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
-    // Agora a Aba Médica recebe apenas o resumo
+    // Agora a Aba Médica recebe apenas o resumo na história
     r.historiaClinica = historiaAbaMedica;
     r.admissionData = admissionData; // Mantém abastecendo o dia a dia normalmente
+
+    // 💡 A CORREÇÃO: Inicializamos o Exame Físico da Evolução Diária (Medical)
+    // Puxando APENAS como base inicial, MAS salvando na propriedade correta!
+    r.medical = {
+      ...(r.medical || {}),
+      exameGeral: admissionData.exameGeral || "",
+      exameAR: admissionData.exameAR || "",
+      exameACV: admissionData.exameACV || "",
+      exameABD: admissionData.exameABD || "",
+      exameExtremidades: admissionData.exameExtremidades || "",
+      examesComplementares: admissionData.examesComplementares || "",
+      condutaPlano: admissionData.conduta || ""
+    };
 
     // -----------------------------------------
     const up = [...patients];
