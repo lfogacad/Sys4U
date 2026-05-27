@@ -165,8 +165,15 @@ const MedicalAdmissionModal = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold mb-1 text-purple-700">Se sim, qual o Sítio?</label>
-                  <select className="w-full p-2 border rounded disabled:opacity-50" disabled={admissionData.saps_infeccao !== "Sim" || isReadOnly} value={admissionData.saps_sitioInfeccao || ""} onChange={(e) => setAdmissionData({ ...admissionData, saps_sitioInfeccao: e.target.value })}>
+                  <label className="block font-bold mb-1 text-purple-700">
+                    Se sim, qual o Sítio? {admissionData.saps_infeccao === "Sim" && <span className="text-red-500">*</span>}
+                  </label>
+                  <select 
+                    className="w-full p-2 border rounded disabled:opacity-50 transition-all" 
+                    disabled={admissionData.saps_infeccao !== "Sim" || isReadOnly} 
+                    value={admissionData.saps_sitioInfeccao || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, saps_sitioInfeccao: e.target.value })}
+                  >
                     <option value="">Selecione...</option>
                     <option value="Respiratório">Respiratório</option>
                     <option value="Outros focos">Outros focos</option>

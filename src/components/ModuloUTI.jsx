@@ -1294,12 +1294,16 @@ const clearAntibiotic = (i) => {
       );
     }
 
-    // 2. VERIFICAÇÃO SAPS 3 (NOVA OBRIGATORIEDADE)
+    // 2. VERIFICAÇÃO SAPS 3 (OBRIGATÓRIOS BÁSICOS)
     const requiredSapsFields = ["saps_dias", "saps_origem", "saps_motivo", "saps_sistema", "saps_infeccao"];
     for (let field of requiredSapsFields) {
       if (!admissionData[field]) {
         return alert("⚠️ O preenchimento de todos os Fatores SAPS 3 Pré-Admissão é obrigatório para admitir o paciente!");
       }
+    }
+
+    if (admissionData.saps_infeccao === "Sim" && !admissionData.saps_sitioInfeccao) {
+      return alert("⚠️ Como há Infecção na Admissão, é obrigatório selecionar o 'Sítio da Infecção' para o SAPS 3!");
     }
 
     const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);

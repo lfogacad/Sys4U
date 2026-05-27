@@ -168,6 +168,34 @@ const PhysioDashboard = ({
     if (nextInput) { nextInput.focus(); setTimeout(() => nextInput.select(), 10); }
   };
 
+  const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
+    // 1. Salva o fluxo digitado
+    updateNested("physio", "parametro", novoFluxo);
+
+    const fluxo = parseFloat(novoFluxo);
+    if (!isNaN(fluxo)) {
+      let fio2Calculada = "";
+
+      if (suporteAtual === "Cateter Nasal" || suporteAtual === "Macronebulização por TQT") {
+        // Regra dos 4 para Cateter e TQT
+        fio2Calculada = Math.min(100, Math.round(21 + (4 * fluxo)));
+      } else if (suporteAtual === "Máscara não reinalante") {
+        // 💡 NOVA REGRA CLÍNICA PARA MÁSCARA NÃO REINALANTE
+        if (fluxo >= 10) {
+          fio2Calculada = "Aprox. 85%";
+        } else {
+          fio2Calculada = "Fluxo insuficiente";
+        }
+      }
+      
+      // Atualiza o campo FiO2 automaticamente
+      updateNested("physio", "fiO2", fio2Calculada);
+    } else {
+      // Se apagar o fluxo, limpa a FiO2
+      updateNested("physio", "fiO2", "");
+    }
+  };
+
   // ==============================================================
   // 🔐 TELAS DE BLOQUEIO (PADRONIZADAS)
   // ==============================================================
@@ -293,22 +321,71 @@ const PhysioDashboard = ({
           {SUPORTE_RESP_OPTS.map((o) => <option key={o}>{o}</option>)}
         </select>
 
-        {/* PARÂMETROS CONDICIONAIS */}
-        {(currentPatient.physio?.suporte === "Cateter Nasal" || currentPatient.physio?.suporte === "Máscara não reinalante") && (
-          <div className="mb-2"><label className="text-xs font-bold">Fluxo (L/min)</label><input type="number" className="w-full p-2 border rounded" placeholder="L/min" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Fluxo de O2")} /></div>
-        )}
-        {currentPatient.physio?.suporte === "Venturi" && (
-          <div className="mb-2"><label className="text-xs font-bold">Porcentagem (%)</label><input type="number" className="w-full p-2 border rounded" placeholder="%" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 Venturi")} /></div>
-        )}
-        {currentPatient.physio?.suporte === "Macronebulização por TQT" && (
-          <div className="mb-2"><label className="text-xs font-bold text-cyan-800">Fluxo (L/min) / FiO2 (%)</label><input type="text" className="w-full p-2 border rounded" placeholder="Ex: 10 L/min - 40%" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Parâmetros TQT")} /></div>
-        )}
-        {currentPatient.physio?.suporte === "VNI" && (
-          <div className="grid grid-cols-2 gap-4 mb-2">
-            <div><label className="text-xs font-bold">Modo (CPAP/BIPAP)</label><select className="w-full p-2 border rounded" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Alterou Modo VNI")}><option value="CPAP">CPAP</option><option value="BIPAP">BIPAP</option></select></div>
-            <div><label className="text-xs font-bold">FiO2 (%)</label><input type="number" className="w-full p-2 border rounded" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 VNI")} /></div>
+       {/* PARÂMETROS CONDICIONAIS */}
+        
+        {/* 💡 BLOCO UNIFICADO: Fluxo -> FiO2 Automática com Trava Visual de Segurança */}
+        {(currentPatient.physio?.suporte === "Cateter Nasal" || 
+          currentPatient.physio?.suporte === "Máscara não reinalante" || 
+          currentPatient.physio?.suporte === "Macronebulização por TQT") && (
+          <div className="grid grid-cols-2 gap-4 mb-2 animate-fadeIn">
+            <div>
+              <label className="text-xs font-bold text-slate-700">Fluxo (L/min)</label>
+              <input 
+                type="number" 
+                className={`w-full p-2 border rounded outline-none transition-colors ${
+                  currentPatient.physio?.suporte === "Cateter Nasal" && Number(currentPatient.physio?.parametro) > 6 
+                  ? 'border-red-500 bg-red-50 text-red-700 focus:border-red-600' 
+                  : 'border-slate-300 focus:border-cyan-500'
+                }`}
+                placeholder="Ex: 5" 
+                value={currentPatient.physio?.parametro || ""} 
+                onChange={(e) => handleFluxoO2Change(e.target.value, currentPatient.physio?.suporte)} 
+                onBlur={() => handleBlurSave("Fisioterapia: Editou Fluxo de O2")} 
+              />
+              {currentPatient.physio?.suporte === "Cateter Nasal" && Number(currentPatient.physio?.parametro) > 6 && (
+                <span className="text-[9px] text-red-600 font-bold mt-1 block">* Cateter Nasal idealmente até 6 L/min</span>
+              )}
+            </div>
+            <div>
+              <label className="text-xs font-bold text-cyan-800">FiO2 Estimada (%)</label>
+              <input 
+                type="text" 
+                className={`w-full p-2 border font-bold rounded outline-none transition-colors ${
+                  currentPatient.physio?.fiO2 === "Fluxo insuficiente"
+                  ? 'border-red-400 bg-red-50 text-red-700 focus:border-red-500'
+                  : 'border-cyan-200 bg-cyan-50 text-cyan-900 focus:border-cyan-500'
+                }`}
+                value={currentPatient.physio?.fiO2 || ""} 
+                onChange={(e) => updateNested("physio", "fiO2", e.target.value)} 
+                onBlur={() => handleBlurSave("Fisioterapia: Ajustou FiO2 manualmente")} 
+              />
+            </div>
           </div>
         )}
+
+        {currentPatient.physio?.suporte === "Venturi" && (
+          <div className="mb-2">
+            <label className="text-xs font-bold text-slate-700">Porcentagem (%)</label>
+            <input type="number" className="w-full p-2 border rounded" placeholder="%" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 Venturi")} />
+          </div>
+        )}
+        
+        {currentPatient.physio?.suporte === "VNI" && (
+          <div className="grid grid-cols-2 gap-4 mb-2">
+            <div>
+              <label className="text-xs font-bold text-slate-700">Modo</label>
+              <select className="w-full p-2 border rounded" value={currentPatient.physio?.parametro || ""} onChange={(e) => updateNested("physio", "parametro", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Alterou Modo VNI")}>
+                <option value="CPAP">CPAP</option>
+                <option value="BIPAP">BIPAP</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700">FiO2 (%)</label>
+              <input type="number" className="w-full p-2 border rounded" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 VNI")} />
+            </div>
+          </div>
+        )}
+
         {currentPatient.physio?.suporte === "VM" && (
           <div className="animate-fadeIn">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
