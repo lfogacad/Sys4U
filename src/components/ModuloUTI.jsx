@@ -878,7 +878,21 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         sexo: patientFromQueue.sexo,
         dataInternacao: getManausDateStr(),
         procedencia: patientFromQueue.origem || "Recepção",
-        statusInternacao: "Aguardando Admissão Médica"
+        statusInternacao: "Aguardando Admissão Médica",
+        
+        // 💡 VASSOURA DE ESCALAS: Garante que as escalas venham limpas
+        enfermagem: {
+          bradenResult: "",
+          morseResult: "",
+          nrsResult: "",
+          // O resto da enfermagem pode ficar vazio ou ser adicionado conforme necessidade
+        },
+        // 💡 VASSOURA DO SAPS 3 (Se já preenchido anteriormente, apaga)
+        saps3: {
+          score: "",
+          lockedProb: "",
+          comorbidades: []
+        }
       };
 
       // 1. Salva no Firebase (AQUI ENTRA O + 1: bed_0 vira bed_1)
@@ -1580,10 +1594,14 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, '0');
       const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const colName = `Admissão ${physioData.gasoHora}`; // Corrigido para bater com a tabela
+      
+      // 💡 CORREÇÃO: Formato exato da tabela (ex: "27/05 - 10:00 (Adm)")
+      const horaLimpa = physioData.gasoHora.replace(':', 'h');
+      const colName = `${dd}/${mm} - ${physioData.gasoHora} (Adm)`; 
 
+      // Garante que a coluna entra na ordem correta do array
       if (!r.customGasometriaCols.includes(colName)) {
-        r.customGasometriaCols.unshift(colName);
+        r.customGasometriaCols.push(colName);
       }
 
       if (!r.gasometriaHistory[colName]) r.gasometriaHistory[colName] = {};

@@ -599,7 +599,8 @@ const GestorDashboard = ({ userProfile }) => {
       ocupacao: ocupacaoCalc,
       giro: giroCalc,
       los: losCalc,
-      saidasTotais: totalSaidas30d
+      saidasTotais: totalSaidas30d,
+      pacientesDia: totalPacientesDia30d 
     };
   }, [listaCenso, listaHistorico, leitosConfig]);
 
@@ -2865,11 +2866,10 @@ const GestorDashboard = ({ userProfile }) => {
             <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.los} <span className="text-sm font-normal text-slate-500">dias</span></div>
           </div>
 
-          {/* CARD 4: TOTAL DE SAÍDAS */}
+          {/* CARD 4: PACIENTES-DIA */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Saídas</span>
-            <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.saidasTotais}</div>
-            <div className="text-[10px] text-slate-400 font-bold mt-1">Altas e Óbitos</div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Total Pacientes-Dia</span>
+            <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.pacientesDia}</div>
           </div>
         
         </div>

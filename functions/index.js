@@ -385,11 +385,19 @@ exports.gerarCensoUTI = onSchedule({
           }
         }
       }
-    });
+      // ====================================================================
+      // 5. RESET DE PROTOCOLO DE SEGURANÇA (PARA O NOVO DIA)
+      // ====================================================================
+      // Adicionamos a promessa de reset no array para ser executada junto com o fechamento
+      promessasAuditoria.push(doc.ref.update({
+        "enfermagem.identificacaoCorreta": false
+      }));
+
+    }); // Fechamento do: leitosSnapshot.forEach
 
     await Promise.all(promessasAuditoria);
     await db.collection("censo_diario").add(contadores);
-    console.log(`✅ Fechamento concluído com sucesso. Casos capturados nesta madrugada: PAV=${novosCasosPAV}, IPCS-C=${novosCasosIPCSC}, ITU-AC=${novosCasosITU}.`);
+    console.log(`✅ Fechamento concluído com sucesso. Casos capturados nesta madrugada: PAV=${novosCasosPAV}, IPCS-C=${novosCasosIPCSC}, ITU-AC=${novosCasosITU}. Todos os leitos resetados.`);
     
   } catch (error) {
     console.error("❌ Erro fatal no fechamento do servidor:", error);
