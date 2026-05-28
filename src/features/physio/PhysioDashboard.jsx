@@ -253,22 +253,131 @@ const PhysioDashboard = ({
 
       {/* DATAS DE VIA AÉREA */}
       <div className="grid md:grid-cols-4 gap-4 bg-cyan-50 p-4 rounded-xl border border-cyan-100">
+        
+        {/* INTUBAÇÃO */}
         <div>
-          <label className="text-xs font-bold text-cyan-700 flex justify-between">Data Intubação <button onClick={(e) => { e.preventDefault(); clearDate("dataIntubacao"); }} className={`${!isEditable ? "hidden" : ""}`}><X size={12} /></button></label>
-          <input type="date" className="w-full p-2 border rounded bg-white" value={currentPatient.dataIntubacao || ""} onChange={(e) => updateP("dataIntubacao", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Data Intubação")} />
+          <label className="text-xs font-bold text-cyan-700 flex justify-between">
+            Data Intubação 
+            <button 
+              onClick={(e) => { 
+                e.preventDefault(); 
+                clearDate("dataIntubacao"); 
+                if (typeof registrarLogAuditoria === "function") {
+                  registrarLogAuditoria("VIA AÉREA: INTUBAÇÃO", "Data apagada pelo utilizador", currentPatient.id, currentPatient.nome);
+                }
+              }} 
+              className={`${!isEditable ? "hidden" : ""}`}
+            >
+              <X size={12} />
+            </button>
+          </label>
+          <input 
+            type="date" 
+            className="w-full p-2 border rounded bg-white" 
+            value={currentPatient.dataIntubacao || ""} 
+            onChange={(e) => updateP("dataIntubacao", e.target.value)} 
+            onBlur={(e) => {
+              handleBlurSave("Fisioterapia: Editou Data Intubação");
+              if (typeof registrarLogAuditoria === "function") {
+                registrarLogAuditoria("VIA AÉREA: INTUBAÇÃO", `Data alterada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+              }
+            }} 
+          />
         </div>
+
+        {/* EXTUBAÇÃO */}
         <div>
-          <label className="text-xs font-bold text-cyan-700 flex justify-between">Data Extubação <button onClick={(e) => { e.preventDefault(); clearDate("dataExtubacao"); }} className={`${!isEditable ? "hidden" : ""}`}><X size={12} /></button></label>
-          <input type="date" className="w-full p-2 border rounded bg-white" value={currentPatient.dataExtubacao || ""} onChange={(e) => updateP("dataExtubacao", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Data Extubação")} />
+          <label className="text-xs font-bold text-cyan-700 flex justify-between">
+            Data Extubação 
+            <button 
+              onClick={(e) => { 
+                e.preventDefault(); 
+                clearDate("dataExtubacao"); 
+                if (typeof registrarLogAuditoria === "function") {
+                  registrarLogAuditoria("VIA AÉREA: EXTUBAÇÃO", "Data apagada pelo utilizador", currentPatient.id, currentPatient.nome);
+                }
+              }} 
+              className={`${!isEditable ? "hidden" : ""}`}
+            >
+              <X size={12} />
+            </button>
+          </label>
+          <input 
+            type="date" 
+            className="w-full p-2 border rounded bg-white" 
+            value={currentPatient.dataExtubacao || ""} 
+            onChange={(e) => updateP("dataExtubacao", e.target.value)} 
+            onBlur={(e) => {
+              handleBlurSave("Fisioterapia: Editou Data Extubação");
+              if (typeof registrarLogAuditoria === "function") {
+                registrarLogAuditoria("VIA AÉREA: EXTUBAÇÃO", `Data alterada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+              }
+            }} 
+          />
         </div>
+
+        {/* TQT */}
         <div>
-          <label className="text-xs font-bold text-cyan-700 flex justify-between">Data TQT <button onClick={(e) => { e.preventDefault(); clearDate("dataTQT"); }} className={`${!isEditable ? "hidden" : ""}`}><X size={12} /></button></label>
-          <input type="date" className="w-full p-2 border rounded bg-white" value={currentPatient.dataTQT || ""} onChange={(e) => updateP("dataTQT", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Data TQT")} />
+          <label className="text-xs font-bold text-cyan-700 flex justify-between">
+            Data TQT 
+            <button 
+              onClick={(e) => { 
+                e.preventDefault(); 
+                clearDate("dataTQT"); 
+                if (typeof registrarLogAuditoria === "function") {
+                  registrarLogAuditoria("VIA AÉREA: TQT", "Data apagada pelo utilizador", currentPatient.id, currentPatient.nome);
+                }
+              }} 
+              className={`${!isEditable ? "hidden" : ""}`}
+            >
+              <X size={12} />
+            </button>
+          </label>
+          <input 
+            type="date" 
+            className="w-full p-2 border rounded bg-white" 
+            value={currentPatient.dataTQT || ""} 
+            onChange={(e) => updateP("dataTQT", e.target.value)} 
+            onBlur={(e) => {
+              handleBlurSave("Fisioterapia: Editou Data TQT");
+              if (typeof registrarLogAuditoria === "function") {
+                registrarLogAuditoria("VIA AÉREA: TQT", `Data alterada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+              }
+            }} 
+          />
         </div>
+
+        {/* DECANULAÇÃO */}
         <div>
-          <label className="text-xs font-bold text-cyan-700 flex justify-between">Data Decanulação <button onClick={(e) => { e.preventDefault(); clearDate("dataDecanulacao"); }} className={`${!isEditable ? "hidden" : ""}`}><X size={12} /></button></label>
-          <input type="date" className="w-full p-2 border rounded bg-white" value={currentPatient.dataDecanulacao || ""} onChange={(e) => updateP("dataDecanulacao", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Data Decanulação")} />
+          <label className="text-xs font-bold text-cyan-700 flex justify-between">
+            Data Decanulação 
+            <button 
+              onClick={(e) => { 
+                e.preventDefault(); 
+                clearDate("dataDecanulacao"); 
+                if (typeof registrarLogAuditoria === "function") {
+                  registrarLogAuditoria("VIA AÉREA: DECANULAÇÃO", "Data apagada pelo utilizador", currentPatient.id, currentPatient.nome);
+                }
+              }} 
+              className={`${!isEditable ? "hidden" : ""}`}
+            >
+              <X size={12} />
+            </button>
+          </label>
+          <input 
+            type="date" 
+            className="w-full p-2 border rounded bg-white" 
+            value={currentPatient.dataDecanulacao || ""} 
+            onChange={(e) => updateP("dataDecanulacao", e.target.value)} 
+            onBlur={(e) => {
+              handleBlurSave("Fisioterapia: Editou Data Decanulação");
+              if (typeof registrarLogAuditoria === "function") {
+                registrarLogAuditoria("VIA AÉREA: DECANULAÇÃO", `Data alterada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+              }
+            }} 
+          />
         </div>
+
       </div>
 
       {/* ANTROPOMETRIA */}

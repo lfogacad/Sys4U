@@ -244,7 +244,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
       const leitoRef = doc(db, "leitos_uti", docId);
 
-      // O "Documento Legal" da alteração
+      // O "Documento Legal" da alteração local
       const auditLog = {
         dataAcao: new Date().toISOString(),
         dataBHAlterado: dateStr,
@@ -261,6 +261,19 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
       // Também aciona o seu log de atividades normal
       handleBlurSave(`AUDITORIA: ${userProfile?.nome} destravou o BH arquivado do dia ${dateStr}. Motivo: ${reason}`);
+
+      // =========================================================================
+      // 💡 AUDITORIA GLOBAL: O "X-9" reporta a alteração retroativa à central
+      // =========================================================================
+      if (typeof registrarLogAuditoria === "function") {
+        registrarLogAuditoria(
+          "BALANÇO HÍDRICO: DESTRAVAMENTO RETROATIVO (ALERTA)", 
+          `Data destravada: ${dateStr} | Justificativa: ${reason}`, 
+          `Leito ${apenasNumero === "0" ? "1" : apenasNumero}`, 
+          currentPatient.nome
+        );
+      }
+
     } catch (error) {
       console.error("Erro ao registrar auditoria de destravamento:", error);
     }
@@ -270,6 +283,21 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const handleLockHistoricalBH = () => {
     setUnlockedBHDates(prev => prev.filter(date => date !== selectedBHDate));
     handleBlurSave(`AUDITORIA: ${userProfile?.nome || "Usuário"} encerrou a edição retroativa do BH e trancou o prontuário.`);
+    
+    // =========================================================================
+    // 💡 AUDITORIA GLOBAL: Registo do fecho da edição retroativa
+    // =========================================================================
+    if (typeof registrarLogAuditoria === "function") {
+      let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
+      const apenasNumero = String(idBruto).replace(/bed_/g, "");
+      
+      registrarLogAuditoria(
+        "BALANÇO HÍDRICO: RETRAVAMENTO", 
+        `Edição retroativa encerrada para a data: ${selectedBHDate}.`, 
+        `Leito ${apenasNumero === "0" ? "1" : apenasNumero}`, 
+        currentPatient.nome
+      );
+    }
   };
 
   // O Vigia Silencioso: Se mudar de data ou de paciente (activeTab), tranca tudo automaticamente
@@ -864,7 +892,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     setShowQueueModal(true);
   };
 
-  // Função que efetiva a internação (tira da fila e põe no leito)
+// Função que efetiva a internação (tira da fila e põe no leito)
   const bindPatientToBed = async (patientFromQueue) => {
     try {
       const bedIndex = selectedBedForAdmission; // Para o computador, Leito 1 = 0
@@ -909,6 +937,18 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         leitoAtribuido: bedIndex + 1, // <--- Ajustado aqui também para o histórico da recepção
         dataInternada: serverTimestamp()
       });
+
+      // =========================================================================
+      // 💡 4. AUDITORIA: Registra quem efetivou a ocupação do leito
+      // =========================================================================
+      if (typeof registrarLogAuditoria === "function") {
+        registrarLogAuditoria(
+          "VINCULAÇÃO DE LEITO / ADMISSÃO", 
+          `Paciente puxado da fila de espera. Procedência: ${patientFromQueue.origem || "Não informada"}.`, 
+          `Leito ${bedIndex + 1}`, 
+          patientFromQueue.nome
+        );
+      }
 
       setShowQueueModal(false);
       alert(`${patientFromQueue.nome} foi vinculado ao Leito ${bedIndex + 1}.`);
@@ -1308,17 +1348,12 @@ const clearAntibiotic = (i) => {
 
     const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
     
-    // ========================================================
-    // O CARIMBO ATÔMICO DE TEMPO (Protege a Janela de Readmissão)
-    // ========================================================
-    // Se o paciente ainda não tinha um carimbo exato de internação, gera agora!
+    // O CARIMBO ATÔMICO DE TEMPO
     if (!r.dataInternacaoISO) {
       r.dataInternacaoISO = new Date().toISOString(); 
     }
 
-    // ========================================================
-    // O COFRE DA ADMISSÃO MÉDICA (Congela a imagem inicial)
-    // ========================================================
+    // O COFRE DA ADMISSÃO MÉDICA
     if (!r.admissaoMedica) {
       r.admissaoMedica = {
         ...admissionData,
@@ -1326,18 +1361,14 @@ const clearAntibiotic = (i) => {
       };
     }
 
-    // --- GERADOR DE IDENTIDADE DE INTERNAÇÃO ---
-    // Criamos um ID único combinando CPF e a data/hora atual
     const idInternacao = `${admissionData.cpf || 'SEM_CPF'}_${Date.now()}`;
-    // Só cria o ID de internação se não houver um! (Garante que se o médico reabrir, não gera um ID novo)
     if (!r.idInternacao) r.idInternacao = idInternacao; 
 
-    r.statusInternacao = "Ativo"; // Libera o cadeado da Aba Médica
+    r.statusInternacao = "Ativo";
     r.nome = admissionData.nome.trim().toUpperCase();
     r.sexo = admissionData.sexo || "";
     r.dataNascimento = admissionData.dataNascimento || "";
-    
-    r.dataInternacao = r.dataInternacao || getManausDateStr(); // Mantém o formato YYYY-MM-DD para a tela do médico
+    r.dataInternacao = r.dataInternacao || getManausDateStr();
     
     r.bh.date = r.bh.date || getManausDateStr();
     r.procedencia = admissionData.origem;
@@ -1346,19 +1377,10 @@ const clearAntibiotic = (i) => {
 
     const getVal = (s) => parseInt(s?.split(" ")[0]) || 0;
     const ao = getVal(admissionData.ecg_ao);
-    const rv = admissionData.ecg_rv?.startsWith("T")
-      ? 1
-      : getVal(admissionData.ecg_rv);
+    const rv = admissionData.ecg_rv?.startsWith("T") ? 1 : getVal(admissionData.ecg_rv);
     const rm = getVal(admissionData.ecg_rm);
-    const totalEcg =
-      admissionData.ecg_ao || admissionData.ecg_rv || admissionData.ecg_rm
-        ? ao + rv + rm
-        : null;
-    const ecgText =
-      totalEcg !== null
-        ? `${totalEcg} (AO:${ao} RV:${admissionData.ecg_rv?.startsWith("T") ? "T" : rv
-        } RM:${rm})`
-        : "-";
+    const totalEcg = admissionData.ecg_ao || admissionData.ecg_rv || admissionData.ecg_rm ? ao + rv + rm : null;
+    const ecgText = totalEcg !== null ? `${totalEcg} (AO:${ao} RV:${admissionData.ecg_rv?.startsWith("T") ? "T" : rv } RM:${rm})` : "-";
 
     r.neuro.glasgowAO = admissionData.ecg_ao;
     r.neuro.glasgowRV = admissionData.ecg_rv;
@@ -1386,12 +1408,10 @@ const clearAntibiotic = (i) => {
       comorbidades: admissionData.saps_comorbidades || [],
     };
 
-    // Lógica para montar a linha do Glasgow Basal no texto
     const basalAo = parseInt(admissionData.ecg_basal_ao?.split(" ")[0]) || 0;
     const basalRv = admissionData.ecg_basal_rv?.startsWith("T") ? 1 : (parseInt(admissionData.ecg_basal_rv?.split(" ")[0]) || 0);
     const basalRm = parseInt(admissionData.ecg_basal_rm?.split(" ")[0]) || 0;
     const totalBasal = (basalAo || basalRv || basalRm) ? (basalAo + basalRv + basalRm) : null;
-
     const basalText = (admissionData.rass && totalBasal !== null) ? `  |  ECG Pré-Sedação: ${totalBasal}` : "";
 
     const text = 
@@ -1431,7 +1451,6 @@ ${admissionData.diagCronicos || "-"}
 CONDUTA:
 ${admissionData.conduta || "-"}`;
 
-    // Criando o bloco filtrado apenas com o que importa para o dia a dia
     const historiaAbaMedica = `${admissionData.historia || "-"}
   
 MEDICAMENTOS DE USO HABITUAL:
@@ -1440,12 +1459,9 @@ ${admissionData.medicamentos || "-"}
 NÍVEL DE CONSCIÊNCIA BASAL: ${admissionData.conscienciaBasal || "-"}
 MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
-    // Agora a Aba Médica recebe apenas o resumo na história
     r.historiaClinica = historiaAbaMedica;
-    r.admissionData = admissionData; // Mantém abastecendo o dia a dia normalmente
+    r.admissionData = admissionData;
 
-    // 💡 A CORREÇÃO: Inicializamos o Exame Físico da Evolução Diária (Medical)
-    // Puxando APENAS como base inicial, MAS salvando na propriedade correta!
     r.medical = {
       ...(r.medical || {}),
       exameGeral: admissionData.exameGeral || "",
@@ -1457,14 +1473,25 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       condutaPlano: admissionData.conduta || ""
     };
 
-    // -----------------------------------------
     const up = [...patients];
     up[activeTab] = r;
     setPatients(up);
     save(r, "Médico: Realizou a Admissão Completa do Paciente (Pré-UTI, SAPS 3 e Exame Físico)");
 
+    // =========================================================================
+    // 💡 AUDITORIA: Registo da Admissão Médica
+    // =========================================================================
+    if (typeof registarLogAuditoria === "function" || typeof registrarLogAuditoria === "function") {
+      const auditoriaFn = typeof registrarLogAuditoria === "function" ? registrarLogAuditoria : registarLogAuditoria;
+      auditoriaFn(
+        "ADMISSÃO MÉDICA FINALIZADA",
+        `Diagnóstico Agudo: ${admissionData.diagAgudos?.substring(0, 50) || "Não descrito"}... | Tipo SAPS 3: ${admissionData.saps_motivo || "N/A"}`,
+        `Leito ${activeTab + 1}`,
+        r.nome
+      );
+    }
+
     setShowAdmissionModal(false);
-    // A tela de copiar texto final continua recebendo a Admissão Completa
     setGeneratedAdmissionText(text);
     setViewMode("medical");
   };
@@ -1643,6 +1670,22 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       save(r, "Fisioterapia: Realizou a Admissão Completa (Avaliação Inicial, Parâmetros Ventilatórios e Escalas)");
     }
 
+    // =========================================================================
+    // 💡 AUDITORIA GLOBAL: Registo da Admissão da Fisioterapia
+    // =========================================================================
+    const auditoriaFn = typeof registrarLogAuditoria === "function" 
+      ? registrarLogAuditoria 
+      : (typeof registarLogAuditoria === "function" ? registarLogAuditoria : null);
+    
+    if (auditoriaFn) {
+      auditoriaFn(
+        "ADMISSÃO FISIOTERAPÊUTICA FINALIZADA", 
+        `Suporte inicial: ${physioData.suporte || "Ar ambiente"}. Funcionalidade: ${physioData.funcionalidade || "Não avaliada"}.`, 
+        `Leito ${activeTab + 1}`, 
+        r.nome || "Paciente não identificado"
+      );
+    }
+
     // ========================================================
     // 6. GERADOR DE TEXTO (Mantido exato)
     // ========================================================
@@ -1810,6 +1853,19 @@ ${physioData.condutas || "Nenhuma conduta descrita."}`;
         }
       });
       console.log("Auditoria do SAPS 3 salva no banco de gestão.");
+      
+      // =========================================================================
+      // 💡 AUDITORIA: Registra o Travamento Oficial
+      // =========================================================================
+      if (typeof registrarLogAuditoria === "function") {
+        registrarLogAuditoria(
+          "SAPS 3: TRAVADO", 
+          `Score: ${calc.score} pontos | Mortalidade Prevista: ${calc.prob}%`, 
+          `Leito ${activeTab + 1}`, 
+          p.nome
+        );
+      }
+
     } catch (e) {
       console.error("Erro ao salvar indicador SAPS3 definitivo:", e);
     }
@@ -1824,9 +1880,19 @@ ${physioData.condutas || "Nenhuma conduta descrita."}`;
     }
     setPatients(up);
     save(p);
+
+    // =========================================================================
+    // 💡 AUDITORIA: Alerta Crítico de Destravamento
+    // =========================================================================
+    if (typeof registrarLogAuditoria === "function") {
+      registrarLogAuditoria(
+        "SAPS 3: DESTRAVADO (ALERTA DE SEGURANÇA)", 
+        `O cálculo definitivo do SAPS 3 foi reaberto para edição.`, 
+        `Leito ${activeTab + 1}`, 
+        p.nome
+      );
+    }
   };
-
-
 
 const generateAIEvolution = async (dadosDoTimeout = null) => {
     setIsGeneratingAI(true);
@@ -2811,8 +2877,6 @@ const handleFinalizeNursingAdmission = async () => {
     let morseRisco = morseTotal >= 45 ? "Alto" : morseTotal >= 25 ? "Baixo" : "Sem Risco";
 
     // 3. RECUPERANDO DADOS MÉDICOS COM CLONE PROFUNDO (O Padrão Ouro)
-    // O clone profundo (JSON.parse/stringify) rompe o vínculo de memória do React,
-    // garantindo que os dados não vazem para o próximo paciente.
     const pacienteBase = patients[activeTab];
     const r = pacienteBase ? JSON.parse(JSON.stringify(pacienteBase)) : {};
     
@@ -2884,7 +2948,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     }
 
     // =========================================================================
-    // 7. TRADUÇÃO DOS DETALHES DAS ESCALAS PARA AUDITORIA (Mantido Intacto)
+    // 7. TRADUÇÃO DOS DETALHES DAS ESCALAS PARA AUDITORIA
     // =========================================================================
     const detalhesBraden = {
       percepcaoSensorial: BRADEN_OPTIONS.percepcao.find(opt => opt.value == nursingData.braden_percepcao)?.label || "N/D",
@@ -2935,6 +2999,23 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       const incidencias = lesoesLista.filter(l => l.origem === "incidencia");
       for (let lpp of incidencias) {
         await addDoc(historicoRef, { ...baseData, tipo: "LPP_INCIDENCIA", local: lpp.localizacao });
+      }
+
+      // =========================================================================
+      // 💡 AUDITORIA GLOBAL: Registo da Admissão de Enfermagem
+      // =========================================================================
+      const auditoriaFn = typeof registrarLogAuditoria === "function" 
+        ? registrarLogAuditoria 
+        : (typeof registarLogAuditoria === "function" ? registarLogAuditoria : null);
+      
+      if (auditoriaFn) {
+        const lesoesPrevias = lesoesLista.filter(l => l.origem !== "incidencia").length;
+        auditoriaFn(
+          "ADMISSÃO DE ENFERMAGEM FINALIZADA", 
+          `Braden: ${bradenTotal} (${bradenRisco}) | LPP Prévia Admissão: ${lesoesPrevias > 0 ? "Sim" : "Não"}`, 
+          `Leito ${activeTab + 1}`, 
+          r.nome || "Paciente não identificado"
+        );
       }
 
     } catch (e) {
@@ -3227,6 +3308,22 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       // Sobrescreve o documento correto no Firebase com os dados vazios
       await setDoc(doc(db, "leitos_uti", docId), empty);
 
+      // =========================================================================
+      // 💡 AUDITORIA: Registro Seguro da Saída / Desfecho
+      // =========================================================================
+      const auditoriaFn = typeof registrarLogAuditoria === "function" 
+        ? registrarLogAuditoria 
+        : (typeof registarLogAuditoria === "function" ? registarLogAuditoria : null);
+      
+      if (auditoriaFn) {
+        auditoriaFn(
+          "SAÍDA DE PACIENTE / DESFECHO", 
+          `Desfecho clínico registrado: ${dischargeDestination}`, 
+          `Leito ${activeTab + 1}`, 
+          pacienteAtual.nome
+        );
+      }
+
       // Finaliza a interface
       setShowDischargeModal(false);
       setDischargeDestination("");
@@ -3276,6 +3373,22 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       const up = [...patients];
       up[bedIndex] = pacienteRecuperado;
       setPatients(up);
+
+      // =========================================================================
+      // 💡 AUDITORIA: Registro de reversão de alta
+      // =========================================================================
+      const auditoriaFn = typeof registrarLogAuditoria === "function" 
+        ? registrarLogAuditoria 
+        : (typeof registarLogAuditoria === "function" ? registarLogAuditoria : null);
+      
+      if (auditoriaFn) {
+        auditoriaFn(
+          "RECUPERAÇÃO DE PACIENTE (ALTA ANULADA)", 
+          `O desfecho anterior foi apagado do histórico e o paciente regressou ao leito ativo.`, 
+          `Leito ${bedIndex + 1}`, 
+          pacienteRecuperado.nome
+        );
+      }
 
       alert(`✅ Paciente ${pacienteRecuperado.nome} recuperado com sucesso!`);
 

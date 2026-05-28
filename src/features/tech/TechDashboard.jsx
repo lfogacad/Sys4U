@@ -379,6 +379,19 @@ const TechDashboard = ({
                 const apenasNumero = String(idBruto).replace(/bed_/g, "");
                 const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
                 await updateDoc(doc(db, "leitos_uti", docId), { "enfermagem.identificacaoCorreta": novoValor });
+
+                // =========================================================================
+                // 💡 AUDITORIA GLOBAL: Registo do Check de Identificação
+                // =========================================================================
+                if (typeof registrarLogAuditoria === "function") {
+                  registrarLogAuditoria(
+                    "SEGURANÇA: IDENTIFICAÇÃO DO PACIENTE", 
+                    `Status de identificação alterado para: ${novoValor ? "Confirmada (Pulseira/Placa)" : "Pendente/Incorreta"}`, 
+                    `Leito ${apenasNumero === "0" ? "1" : apenasNumero}`, 
+                    currentPatient.nome
+                  );
+                }
+
               } catch (error) { console.error("Erro crítico ao salvar identificação:", error); }
             }}
           />

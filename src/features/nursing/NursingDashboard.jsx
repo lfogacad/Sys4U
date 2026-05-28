@@ -205,7 +205,12 @@ return (
                     className="w-32 p-2 border rounded shrink-0" 
                     value={currentPatient.enfermagem?.cvcData || ""} 
                     onChange={(e) => updateNested("enfermagem", "cvcData", e.target.value)} 
-                    onBlur={() => handleBlurSave("Enfermagem: Editou CVC/PICC (Data Inserção)")}
+                    onBlur={(e) => {
+                      handleBlurSave("Enfermagem: Editou CVC/PICC (Data Inserção)");
+                      if (typeof registrarLogAuditoria === "function") {
+                        registrarLogAuditoria("DISPOSITIVO: CVC/PICC", `Data de inserção alterada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+                      }
+                    }}
                   />
                 </div>
                 
@@ -217,7 +222,12 @@ return (
                       className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
                       value={currentPatient.enfermagem?.cvcRetiradaData || ""} 
                       onChange={(e) => updateNested("enfermagem", "cvcRetiradaData", e.target.value)} 
-                      onBlur={() => handleBlurSave("Enfermagem: Registrou retirada do CVC/PICC")}
+                      onBlur={(e) => {
+                        handleBlurSave("Enfermagem: Registrou retirada do CVC/PICC");
+                        if (typeof registrarLogAuditoria === "function") {
+                          registrarLogAuditoria("DISPOSITIVO: CVC/PICC", `Data de retirada registada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+                        }
+                      }}
                       disabled={!isEditable} 
                     />
                   </div>
@@ -240,7 +250,12 @@ return (
                     className="w-32 p-2 border rounded shrink-0" 
                     value={currentPatient.enfermagem?.shileyData || ""} 
                     onChange={(e) => updateNested("enfermagem", "shileyData", e.target.value)} 
-                    onBlur={() => handleBlurSave("Enfermagem: Editou Shiley (Data Inserção)")}
+                    onBlur={(e) => {
+                      handleBlurSave("Enfermagem: Editou Shiley (Data Inserção)");
+                      if (typeof registrarLogAuditoria === "function") {
+                        registrarLogAuditoria("DISPOSITIVO: SHILEY", `Data de inserção alterada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+                      }
+                    }}
                   />
                 </div>
                 
@@ -252,7 +267,12 @@ return (
                       className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
                       value={currentPatient.enfermagem?.shileyRetiradaData || ""} 
                       onChange={(e) => updateNested("enfermagem", "shileyRetiradaData", e.target.value)} 
-                      onBlur={() => handleBlurSave("Enfermagem: Registrou retirada do Shiley")}
+                      onBlur={(e) => {
+                        handleBlurSave("Enfermagem: Registrou retirada do Shiley");
+                        if (typeof registrarLogAuditoria === "function") {
+                          registrarLogAuditoria("DISPOSITIVO: SHILEY", `Data de retirada registada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+                        }
+                      }}
                       disabled={!isEditable} 
                     />
                   </div>
@@ -270,7 +290,12 @@ return (
                     type="checkbox" 
                     checked={currentPatient.enfermagem?.svd || false} 
                     onChange={(e) => updateNested("enfermagem", "svd", e.target.checked)} 
-                    onBlur={() => handleBlurSave("Enfermagem: Alterou status de SVD")}
+                    onBlur={(e) => {
+                      handleBlurSave("Enfermagem: Alterou status de SVD");
+                      if (typeof registrarLogAuditoria === "function") {
+                        registrarLogAuditoria("DISPOSITIVO: SVD", `Status da SVD alterado para: ${e.target.checked ? "Ativa" : "Inativa"}`, currentPatient.id, currentPatient.nome);
+                      }
+                    }}
                   /> 
                   SVD (Sonda Vesical / Inserção)
                 </label>
@@ -280,7 +305,12 @@ return (
                     className={`w-full p-2 border rounded ${!currentPatient.enfermagem?.svd ? "bg-gray-100 opacity-50" : ""}`} 
                     value={currentPatient.enfermagem?.svdData || ""} 
                     onChange={(e) => updateNested("enfermagem", "svdData", e.target.value)} 
-                    onBlur={() => handleBlurSave("Enfermagem: Editou SVD (Data Inserção)")}
+                    onBlur={(e) => {
+                      handleBlurSave("Enfermagem: Editou SVD (Data Inserção)");
+                      if (typeof registrarLogAuditoria === "function") {
+                        registrarLogAuditoria("DISPOSITIVO: SVD", `Data de inserção alterada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+                      }
+                    }}
                     disabled={!currentPatient.enfermagem?.svd || !isEditable} 
                   />
                   
@@ -292,7 +322,12 @@ return (
                         className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
                         value={currentPatient.enfermagem?.svdRetiradaData || ""} 
                         onChange={(e) => updateNested("enfermagem", "svdRetiradaData", e.target.value)} 
-                        onBlur={() => handleBlurSave("Enfermagem: Registrou retirada da SVD")}
+                        onBlur={(e) => {
+                          handleBlurSave("Enfermagem: Registrou retirada da SVD");
+                          if (typeof registrarLogAuditoria === "function") {
+                            registrarLogAuditoria("DISPOSITIVO: SVD", `Data de retirada registada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
+                          }
+                        }}
                         disabled={!isEditable} 
                       />
                     </div>
