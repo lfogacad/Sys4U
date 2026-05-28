@@ -19,6 +19,7 @@ import { db } from "../config/firebase";
 import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
 import RelatorioANVISA from './relatorios/RelatorioANVISA';
+import PainelAuditoriaTab from './tabs/PainelAuditoriaTab';
 
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
@@ -5360,11 +5361,21 @@ const GestorDashboard = ({ userProfile }) => {
           >
             Notificações de Eventos Adversos
           </button>
+          
           <button 
             onClick={() => setAbaRiscoAtiva('escalas')}
             className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'escalas' ? 'border-blue-600 text-blue-700 bg-blue-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
           >
             Escalas Assistenciais
+          </button>
+
+          {/* 💡 A NOVA ABA: CAIXA PRETA / AUDITORIA */}
+          <button 
+            onClick={() => setAbaRiscoAtiva('auditoria')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'auditoria' ? 'border-slate-800 text-slate-800 bg-slate-100/80 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <ShieldAlert size={18} />
+            Caixa Preta (Auditoria)
           </button>
         </div>
 
@@ -5631,6 +5642,15 @@ const GestorDashboard = ({ userProfile }) => {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* 💡 AQUI ENTRA A NOSSA NOVA ABA DA CAIXA PRETA / AUDITORIA      */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'auditoria' && (
+          <div className="animate-fadeIn">
+             <PainelAuditoriaTab />
           </div>
         )}
 
