@@ -527,6 +527,38 @@ const GestorDashboard = ({ userProfile }) => {
     };
   }, [listaEventosAdversos, metricasEquipe.pendentes]);
 
+  // =========================================================================
+  // 🛡️ MOTOR DE AUDITORIA E RASTREABILIDADE (GOVERNANÇA CLÍNICA)
+  // =========================================================================
+  const registarLogAuditoria = async (acao, detalhes, leitoAlvo = "Sistema", pacienteAlvo = "N/A") => {
+    try {
+      // 1. Identifica quem está a executar a ação (Ajuste para a sua variável de utilizador)
+      const nomeUtilizador = userProfile?.nome || "Utilizador Desconhecido";
+      const perfilUtilizador = userProfile?.perfil || userProfile?.role || "Sem Perfil";
+
+      // 2. Aponta para a coleção isolada (leve e barata)
+      const logsRef = collection(db, "logs_auditoria");
+
+      // 3. Guarda o evento sem atrapalhar o fluxo da aplicação
+      await addDoc(logsRef, {
+        timestampServidor: serverTimestamp(), // Carimbo de tempo inviolável da Google
+        dataLocalFormata: new Date().toLocaleString('pt-PT'), // Para leitura fácil no ecrã
+        utilizador: nomeUtilizador,
+        perfil: perfilUtilizador,
+        leito: leitoAlvo,
+        paciente: pacienteAlvo,
+        acao: acao,
+        detalhes: detalhes
+      });
+      
+      console.log(`[AUDITORIA] Registado com sucesso: ${acao}`);
+
+    } catch (error) {
+      // Se a auditoria falhar (ex: falha rápida de rede), não quebra a app
+      console.error("Erro ao gravar log de auditoria:", error);
+    }
+  };
+
   // ================================================================
   // 🔥 MOTOR OPERACIONAL E FLUXO (ÚLTIMOS 30 DIAS + FILTRO DE MORADOR)
   // ================================================================

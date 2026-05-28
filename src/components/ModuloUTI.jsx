@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, arrayUnion, 
-         onSnapshot, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
+         onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
   Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
@@ -3186,7 +3186,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         totalDiasCVC: enf.cvcLocal ? calcularDias(enf.cvcData, enf.cvcRetiradaData) : 0,
         totalDiasShiley: enf.shileyLocal ? calcularDias(enf.shileyData, enf.shileyRetiradaData) : 0,
         saps3Score: pacienteAtual.saps3?.score || 0,
-        mortalidadePrevista: pacienteAtual.saps3?.probabilidade || 0,
+        mortalidadePrevista: pacienteAtual.saps3?.lockedProb || pacienteAtual.saps3?.probabilidade || 0,
         pacienteIdentificado: pacienteAtual.identificacaoCorreta || "auditado_positivo",
         foiObito: dischargeDestination === 'Óbito' ? 1 : 0,
         resultado: dischargeDestination === 'Óbito' ? 'Óbito' : 'Vivo'
@@ -3237,6 +3237,51 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       alert("Erro crítico ao salvar indicadores. Verifique a conexão.");
     } finally {
       setIsDischarging(false);
+    }
+  };
+
+  const recuperarUltimoPaciente = async (bedIndex) => {
+    const bedId = `bed_${bedIndex + 1}`;
+
+    const confirmar = window.confirm("Deseja realmente desfazer a última alta/óbito deste leito? Os dados retornarão para a tela e os indicadores de saída serão apagados.");
+    if (!confirmar) return;
+
+    try {
+      // 1. Busca no cofre o último paciente que ocupou ESTE leito específico
+      const historicoRef = collection(db, "internacoes_historico");
+      const q = query(
+        historicoRef,
+        where("leitoFinal", "==", bedId),
+        orderBy("dataSaida", "desc"),
+        limit(1)
+      );
+      
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        alert("Não foi encontrado nenhum registro recente de saída para este leito.");
+        return;
+      }
+
+      const docHistorico = querySnapshot.docs[0];
+      const pacienteRecuperado = docHistorico.data().backupProntuario;
+
+      // 2. Restaura o paciente para o leito ativo (com todos os dados exatos do momento da saída)
+      await setDoc(doc(db, "leitos_uti", bedId), pacienteRecuperado);
+
+      // 3. Apaga o registro do histórico para não poluir sua taxa de mortalidade e giro de leito
+      await deleteDoc(doc(db, "internacoes_historico", docHistorico.id));
+
+      // 4. Atualiza a tela instantaneamente
+      const up = [...patients];
+      up[bedIndex] = pacienteRecuperado;
+      setPatients(up);
+
+      alert(`✅ Paciente ${pacienteRecuperado.nome} recuperado com sucesso!`);
+
+    } catch (error) {
+      console.error("Erro crítico ao recuperar paciente:", error);
+      alert("Falha ao recuperar. Verifique o console. Pode ser necessário criar um Índice no Firebase.");
     }
   };
 
@@ -3778,12 +3823,23 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     const canPullPatient = role === "Médico" || role === "Enfermeiro" || role === "Desenvolvedor";
 
                     return canPullPatient ? (
-                      <button
-                        onClick={() => handleOpenQueue(activeTab)}
-                        className="mt-4 bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-colors"
-                      >
-                        Puxar Paciente da Fila
-                      </button>
+                      // 💡 CONTÊINER: Abraça os dois botões para não quebrar o React
+                      <div className="flex flex-col items-center gap-3 mt-4 w-full max-w-sm mx-auto">
+                        <button
+                          onClick={() => handleOpenQueue(activeTab)}
+                          className="w-full bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-colors"
+                        >
+                          Puxar Paciente da Fila
+                        </button>
+
+                        {/* 💡 NOVO BOTÃO: Recuperar Último Paciente */}
+                        <button 
+                          onClick={() => recuperarUltimoPaciente(activeTab)} 
+                          className="w-full p-3 bg-amber-50 text-amber-800 font-bold rounded-xl border border-amber-300 hover:bg-amber-100 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                        >
+                          <RotateCcw size={18} /> Recuperar Último Paciente
+                        </button>
+                      </div>
                     ) : (
                       <p className="mt-4 text-sm text-slate-400 font-medium px-4 py-2 bg-slate-50 rounded-lg border border-slate-100">
                         🔒 Apenas Médicos e Enfermeiros podem alocar pacientes.
