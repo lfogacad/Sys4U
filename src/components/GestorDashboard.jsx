@@ -712,42 +712,70 @@ const GestorDashboard = ({ userProfile }) => {
     }
 
     // =========================================================
-    // 🔍 2. A CAÇADA ÀS READMISSÕES
+    // 🔍 2. A CAÇADA ÀS READMISSÕES (Marcando no dia do Retorno)
     // =========================================================
-    const pacientesNaUTIAgora = typeof patients !== 'undefined' ? patients.filter(p => p.nome && (p.statusInternacao === 'Ativo' || p.dataInternacao)) : [];
-    const todosOsRegistros = [...(typeof listaHistorico !== 'undefined' ? listaHistorico : []), ...pacientesNaUTIAgora];
+    const porPaciente = {};
+    if (typeof listaHistorico !== 'undefined') {
+      
+      // 🛡️ Função blindada para converter qualquer data do Firebase
+      const safeDate = (val) => {
+        if (!val) return new Date(0);
+        if (typeof val.toDate === 'function') return val.toDate();
+        if (val.seconds) return new Date(val.seconds * 1000);
+        if (typeof val === 'string' && val.includes('/')) {
+          const p = val.split(' ')[0].split('/');
+          if (p.length === 3) return new Date(`${p[2]}-${p[1]}-${p[0]}T12:00:00`);
+        }
+        return new Date(val);
+      };
 
-    const porPaciente = todosOsRegistros.reduce((acc, doc) => {
-      const id = (doc.nomePaciente || doc.nome || "").toUpperCase().trim();
-      if (id && id !== "NÃO INFORMADO" && id !== "PACIENTE INTERNADO") {
-        if (!acc[id]) acc[id] = [];
-        acc[id].push(doc);
-      }
-      return acc;
-    }, {});
+      listaHistorico.forEach(doc => {
+        const id = doc.nome || doc.nomePaciente;
+        // Agrupa pelo nome, ignorando leitos vazios
+        if (id && id !== "Não Informado" && id !== "Paciente Internado") {
+          if (!porPaciente[id]) porPaciente[id] = [];
+          porPaciente[id].push(doc);
+        }
+      });
 
-    Object.values(porPaciente).forEach(estadias => {
-      if (estadias.length > 1) {
-        estadias.sort((a, b) => safeGetDateMs(a.dataInternacao || a.dataEntrada) - safeGetDateMs(b.dataInternacao || b.dataEntrada));
-        for (let i = 1; i < estadias.length; i++) {
-          const estAnt = estadias[i-1];
-          const estNova = estadias[i];
-          const saidaAnteriorMs = safeGetDateMs(estAnt.dataSaidaISO || estAnt.dataSaida);
-          const entradaNovaMs = safeGetDateMs(estNova.dataInternacaoISO || estNova.dataInternacao || estNova.dataEntrada);
+      Object.values(porPaciente).forEach(estadias => {
+        if (estadias.length > 1) {
           
-          if (!saidaAnteriorMs || !entradaNovaMs) continue; 
-          const dataEntradaStr = getPadraoDate(estNova.dataInternacaoISO || estNova.dataInternacao || estNova.dataEntrada);
+          // 1. Ordena cronologicamente caçando a entrada em todas as gavetas possíveis
+          estadias.sort((a, b) => {
+            const entradaA = a.dataInternacaoISO || a.dataEntrada || a.dataInternacao || a.admissaoMedica?.dataRegistroAdmissao;
+            const entradaB = b.dataInternacaoISO || b.dataEntrada || b.dataInternacao || b.admissaoMedica?.dataRegistroAdmissao;
+            return safeDate(entradaA).getTime() - safeDate(entradaB).getTime();
+          });
           
-          if (dataEntradaStr) {
-            admissoesPorDia[dataEntradaStr] = (admissoesPorDia[dataEntradaStr] || 0) + 1;
-            const diffHoras = Math.abs((entradaNovaMs - saidaAnteriorMs) / (1000 * 60 * 60));
+          for (let i = 1; i < estadias.length; i++) {
+            // 2. Pega a saída da internação ANTERIOR
+            const saidaAnterior = estadias[i-1].dataSaidaISO || estadias[i-1].dataSaida || estadias[i-1].backupProntuario?.dataSaida;
+            if (!saidaAnterior) continue; 
+            
+            // 3. Pega a entrada da internação ATUAL (A readmissão na UTI)
+            const entradaAtual = estadias[i].dataInternacaoISO || estadias[i].dataEntrada || estadias[i].dataInternacao || estadias[i].admissaoMedica?.dataRegistroAdmissao;
+            
+            const dataAlta = safeDate(saidaAnterior);
+            const dataReadmissao = safeDate(entradaAtual);
+            
+            // Proteção extra: se a data for inválida, pula
+            if (dataAlta.getTime() === 0 || dataReadmissao.getTime() === 0) continue;
+
+            // 4. Calcula a diferença em horas absolutas
+            const diffHoras = Math.abs((dataReadmissao - dataAlta) / (1000 * 60 * 60));
+
+            // 5. Se voltou em menos de 48h, pinta o ponto no gráfico no DIA DO RETORNO
             if (diffHoras <= 48) {
-              readmissoesPorDia[dataEntradaStr] = (readmissoesPorDia[dataEntradaStr] || 0) + 1;
+              const diaRetornoStr = typeof getPadraoDate === 'function' ? getPadraoDate(entradaAtual) : null;
+              if (diaRetornoStr) {
+                readmissoesPorDia[diaRetornoStr] = (readmissoesPorDia[diaRetornoStr] || 0) + 1;
+              }
             }
           }
         }
-      }
-    });
+      });
+    }
 
     // =========================================================
     // 📊 3. DESENHANDO A LINHA DO TEMPO (Restaurando Original)
