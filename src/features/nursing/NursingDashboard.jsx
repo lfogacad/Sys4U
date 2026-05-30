@@ -238,13 +238,20 @@ return (
               <div>
                 <label className="text-xs font-bold text-gray-500">Cateter de Shiley (Inserção)</label>
                 <div className="flex gap-2">
-                  <input 
-                    className="w-full p-2 border rounded" 
-                    placeholder="Local" 
+                  <select 
+                    className="w-full p-2 border rounded bg-white outline-none" 
                     value={currentPatient.enfermagem?.shileyLocal || ""} 
                     onChange={(e) => updateNested("enfermagem", "shileyLocal", e.target.value)} 
                     onBlur={() => handleBlurSave("Enfermagem: Editou Shiley (Local)")}
-                  />
+                  >
+                    <option value="">Local...</option>
+                    <option value="VJID">VJID</option>
+                    <option value="VJIE">VJIE</option>
+                    <option value="VSCD">VSCD</option>
+                    <option value="VSCE">VSCE</option>
+                    <option value="VFID">VFID</option>
+                    <option value="VFIE">VFIE</option>
+                  </select>
                   <input 
                     type="date" 
                     className="w-32 p-2 border rounded shrink-0" 

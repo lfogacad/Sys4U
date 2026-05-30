@@ -31,6 +31,7 @@ const MedicalDashboard = ({
   clearAntibiotic,
   updateAntibiotic,
   addAntibiotic,
+  removeAntibiotic,
   handleEditAdmission,
   handleNeuroSwitch
 }) => {
@@ -611,6 +612,24 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
                         >
                           <CheckCircle size={18} strokeWidth={2.5} />
                         </button>
+
+                        {/* 👇 NOVO: BOTÃO DE EXCLUIR A LINHA (Só aparece a partir do 4º item, idx >= 3) */}
+                        {idx >= 3 && isEditable && (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              if (typeof removeAntibiotic === 'function') {
+                                removeAntibiotic(idx);
+                              } else {
+                                alert("Função de remover não conectada!");
+                              }
+                            }}
+                            className="flex flex-shrink-0 items-center justify-center w-[42px] md:w-10 h-[42px] md:h-auto text-red-400 hover:text-white hover:bg-red-500 transition-colors bg-white border border-red-200 rounded-lg shadow-sm"
+                            title="Excluir esta linha extra"
+                          >
+                            <X size={18} strokeWidth={3} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </>
@@ -631,12 +650,9 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               e.preventDefault();
               
               if (typeof addAntibiotic === 'function') {
-                addAntibiotic();
-                if (typeof handleBlurSave === 'function') {
-                  setTimeout(() => handleBlurSave("Médico: Adicionou nova linha de ATB"), 200);
-                }
+                addAntibiotic(); // Agora a função já salva sozinha!
               } else {
-                alert("O botão foi clicado, mas a função 'addAntibiotic' não chegou até aqui. Verifique o Passo 2!");
+                alert("O botão foi clicado, mas a função 'addAntibiotic' não chegou até aqui.");
               }
             }}
             className="w-full mt-1 py-2 border-2 border-dashed border-orange-300 text-orange-600 rounded-lg text-sm font-bold hover:bg-orange-100 hover:border-orange-500 hover:text-orange-700 transition-colors flex items-center justify-center gap-2"

@@ -859,19 +859,35 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   };
 
   const updateNested = (categoria, campo, valor) => {
-    // Usar "prev" garante que o React sempre pegue a versão MAIS RECENTE do paciente,
-    // mesmo se dispararmos 10 atualizações no mesmo milissegundo!
     setPatients(prev => {
       const novosPacientes = [...prev];
-      // Fazemos uma cópia profunda e segura do paciente atual
       const pacienteAlvo = JSON.parse(JSON.stringify(novosPacientes[activeTab])); 
       
       if (!pacienteAlvo[categoria]) pacienteAlvo[categoria] = {};
       pacienteAlvo[categoria][campo] = valor;
+
+      // 🔄 SINCRONIZAÇÃO DE MÃO DUPLA (SHILEY <-> HEMODIÁLISE)
+      
+      // 1. Sincroniza a Data de Inserção
+      if (categoria === "enfermagem" && campo === "shileyData") {
+        if (!pacienteAlvo["hd_acesso"]) pacienteAlvo["hd_acesso"] = {};
+        pacienteAlvo["hd_acesso"]["insercao"] = valor;
+      } else if (categoria === "hd_acesso" && campo === "insercao") {
+        if (!pacienteAlvo["enfermagem"]) pacienteAlvo["enfermagem"] = {};
+        pacienteAlvo["enfermagem"]["shileyData"] = valor;
+      }
+
+      // 2. Sincroniza o Local do Catéter
+      if (categoria === "enfermagem" && campo === "shileyLocal") {
+        if (!pacienteAlvo["hd_acesso"]) pacienteAlvo["hd_acesso"] = {};
+        pacienteAlvo["hd_acesso"]["cateter_local"] = valor;
+      } else if (categoria === "hd_acesso" && campo === "cateter_local") {
+        if (!pacienteAlvo["enfermagem"]) pacienteAlvo["enfermagem"] = {};
+        pacienteAlvo["enfermagem"]["shileyLocal"] = valor;
+      }
       
       novosPacientes[activeTab] = pacienteAlvo;
       
-      // 🚨 A CURA DA AMNÉSIA: Dispara o salvamento direto na nuvem (Firebase)
       if (typeof save === 'function') {
         save(pacienteAlvo, `Atualização Automática: ${categoria} > ${campo}`);
       }
@@ -1032,6 +1048,33 @@ const clearAntibiotic = (i) => {
       p.antibiotics.push({ name: "", date: "", locked: false });
       
       up[activeTab] = p;
+
+      // 🚨 SALVAMENTO DIRETO: Salva no Firebase a versão exata com a nova linha
+      if (typeof save === 'function') {
+        save(p, "Médico: Adicionou nova linha de ATB");
+      }
+      
+      return up;
+    });
+  };
+
+  const removeAntibiotic = (indexToRemove) => {
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab]));
+      
+      // Remove o item apenas se ele existir e for além dos 3 primeiros (índice 0, 1 e 2)
+      if (p.antibiotics && p.antibiotics.length > indexToRemove && indexToRemove >= 3) {
+        p.antibiotics.splice(indexToRemove, 1);
+      }
+      
+      up[activeTab] = p;
+
+      // 🚨 SALVAMENTO DIRETO: Salva no Firebase a versão sem a linha
+      if (typeof save === 'function') {
+        save(p, "Médico: Removeu linha de ATB extra");
+      }
+      
       return up;
     });
   };
@@ -4068,6 +4111,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         setShowATBHistoryModal={setShowATBHistoryModal}
                         updateAntibiotic={updateAntibiotic}
                         addAntibiotic={addAntibiotic}
+                        removeAntibiotic={removeAntibiotic}
                         clearAntibiotic={clearAntibiotic}
                         abrirChecklistEvolucao={abrirEvolucaoInteligente}
                         isGeneratingAI={isGeneratingAI}
