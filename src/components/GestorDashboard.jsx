@@ -638,63 +638,231 @@ const GestorDashboard = ({ userProfile }) => {
   }, [listaCenso, listaHistorico, leitosConfig]);
 
   // =========================================================
-  // 3. MOTOR DE TENDÊNCIAS (BLINDADO E PADRONIZADO)
+  // 3. MOTOR DE TENDÊNCIAS (BLINDADO - COM SMR E MORTALIDADE)
   // =========================================================
   const dadosTendencia = useMemo(() => {
     if (!listaCenso || listaCenso.length === 0) return [];
 
-    return listaCenso
-      .map(dia => {
-        // TRADUTOR: Remove vírgulas e padroniza para YYYY-MM-DD
-        let dataLimpa = String(dia.data || "").replace(',', '').trim();
-        let dataPadrao = "";
+    const readmissoesPorDia = {};
+    const admissoesPorDia = {};
+    const obitosPorDia = {};
+    const saidasPorDia = {};
+    const mortPrevistaPorDia = {}; // 💡 NOVO: Guarda o risco do SAPS 3
+    
+    const safeGetDateMs = (dateVal) => {
+      if (!dateVal) return 0;
+      const str = String(dateVal).trim();
+      if (str.includes('T')) return new Date(str).getTime();
+      if (str.includes('/')) {
+        const p = str.split('/');
+        return new Date(`${p[2]}-${p[1]}-${p[0]}T12:00:00Z`).getTime();
+      }
+      return new Date(`${str}T12:00:00Z`).getTime();
+    };
+
+    const getPadraoDate = (dateVal) => {
+      if (!dateVal) return null;
+      const str = String(dateVal).trim();
+      if (str.includes('T')) return str.substring(0, 10);
+      if (str.includes('/')) {
+        const p = str.split('/');
+        return `${p[2]}-${p[1]}-${p[0]}`;
+      }
+      return str.substring(0, 10);
+    };
+
+    // =========================================================
+    // 🔍 1. A CAÇADA AOS ÓBITOS E AO RISCO (Cópia fiel do Card)
+    // =========================================================
+    if (typeof listaHistorico !== 'undefined') {
+      listaHistorico.forEach(doc => {
+        const dataSaidaStr = getPadraoDate(doc.dataSaidaISO || doc.dataSaida);
         
-        if (dataLimpa.includes("/")) {
-          const partes = dataLimpa.split("/");
-          if (partes.length >= 3) {
-            dataPadrao = `${partes[2].trim()}-${partes[1].padStart(2, '0')}-${partes[0].padStart(2, '0')}`;
+        if (dataSaidaStr) {
+          saidasPorDia[dataSaidaStr] = (saidasPorDia[dataSaidaStr] || 0) + 1;
+          
+          // O mesmo leitor de óbitos do Card original
+          const statusReal = doc.indicadores?.resultado || doc.desfecho || doc.status || "";
+          const desfecho = String(statusReal).toLowerCase();
+          const isObito = desfecho.includes('óbito') || desfecho.includes('obito');
+          
+          if (isObito) {
+            obitosPorDia[dataSaidaStr] = (obitosPorDia[dataSaidaStr] || 0) + 1;
           }
-        } else {
-          dataPadrao = dataLimpa.substring(0, 10);
-        }
 
-        return { ...dia, dataPadrao };
-      })
-      .filter(dia => dia.dataPadrao >= dataInicio && dia.dataPadrao <= dataFim)
-      .sort((a, b) => a.dataPadrao.localeCompare(b.dataPadrao))
-      .map(dia => {
-        let valorCalculado = 0;
-        
-        const pacientesOcupando = Number(dia.totalLeitosOcupados) || 0;
-
-        if (indicadorTendencia === 'ocupacao') {
-          valorCalculado = ((pacientesOcupando) / (capacidadeInput || 10)) * 100;
-        } else if (indicadorTendencia === 'identificacao') {
-          valorCalculado = pacientesOcupando > 0 ? ((Number(dia.pacientesIdentificados) || 0) / pacientesOcupando) * 100 : 0;
-        } else if (indicadorTendencia === 'mortalidade') {
-          valorCalculado = Number(dia.obitos) || 0;
-        } else if (indicadorTendencia === 'utilizacaoVM') {
-          valorCalculado = pacientesOcupando > 0 ? ((Number(dia.pacientesEmVM) || 0) / pacientesOcupando) * 100 : 0;
+          // O mesmo leitor de SAPS do Card original
+          const saps3Prob = doc.saps3?.lockedProb || doc.backupProntuario?.saps3?.lockedProb || doc.indicadores?.saps3?.lockedProb;
           
-        // 💡 LÓGICA DE UNIÃO: Paciente com CVC ou Shiley conta como 1 único Acesso Central
-        } else if (indicadorTendencia === 'utilizacaoAcessoCentral') {
-          const cvc = Number(dia.pacientesComCVC) || 0;
-          const shiley = Number(dia.pacientesComShiley) || 0;
-          const totalAcessos = Math.min(cvc + shiley, pacientesOcupando); // Impede de passar de 100%
-          valorCalculado = pacientesOcupando > 0 ? (totalAcessos / pacientesOcupando) * 100 : 0;
-          
-        } else if (indicadorTendencia === 'utilizacaoSVD') {
-          valorCalculado = pacientesOcupando > 0 ? ((Number(dia.pacientesComSVD) || 0) / pacientesOcupando) * 100 : 0;
-        } else {
-          valorCalculado = Number(dia[indicadorTendencia]) || 0;
+          if (saps3Prob) {
+            const probDecimal = parseFloat(saps3Prob) / 100;
+            mortPrevistaPorDia[dataSaidaStr] = (mortPrevistaPorDia[dataSaidaStr] || 0) + probDecimal;
+          }
         }
+      });
+    }
 
+    if (typeof listaCenso !== 'undefined') {
+      listaCenso.forEach(dia => {
+        const dStr = getPadraoDate(dia.data);
+        const df = String(dia.desfecho || "").toLowerCase();
+        if (dStr && (df.includes('óbito') || df.includes('obito') || Number(dia.obitos) > 0)) {
+          obitosPorDia[dStr] = (obitosPorDia[dStr] || 0) + (Number(dia.obitos) > 0 ? Number(dia.obitos) : 1);
+        }
+      });
+    }
+
+    // =========================================================
+    // 🔍 2. A CAÇADA ÀS READMISSÕES
+    // =========================================================
+    const pacientesNaUTIAgora = typeof patients !== 'undefined' ? patients.filter(p => p.nome && (p.statusInternacao === 'Ativo' || p.dataInternacao)) : [];
+    const todosOsRegistros = [...(typeof listaHistorico !== 'undefined' ? listaHistorico : []), ...pacientesNaUTIAgora];
+
+    const porPaciente = todosOsRegistros.reduce((acc, doc) => {
+      const id = (doc.nomePaciente || doc.nome || "").toUpperCase().trim();
+      if (id && id !== "NÃO INFORMADO" && id !== "PACIENTE INTERNADO") {
+        if (!acc[id]) acc[id] = [];
+        acc[id].push(doc);
+      }
+      return acc;
+    }, {});
+
+    Object.values(porPaciente).forEach(estadias => {
+      if (estadias.length > 1) {
+        estadias.sort((a, b) => safeGetDateMs(a.dataInternacao || a.dataEntrada) - safeGetDateMs(b.dataInternacao || b.dataEntrada));
+        for (let i = 1; i < estadias.length; i++) {
+          const estAnt = estadias[i-1];
+          const estNova = estadias[i];
+          const saidaAnteriorMs = safeGetDateMs(estAnt.dataSaidaISO || estAnt.dataSaida);
+          const entradaNovaMs = safeGetDateMs(estNova.dataInternacaoISO || estNova.dataInternacao || estNova.dataEntrada);
+          
+          if (!saidaAnteriorMs || !entradaNovaMs) continue; 
+          const dataEntradaStr = getPadraoDate(estNova.dataInternacaoISO || estNova.dataInternacao || estNova.dataEntrada);
+          
+          if (dataEntradaStr) {
+            admissoesPorDia[dataEntradaStr] = (admissoesPorDia[dataEntradaStr] || 0) + 1;
+            const diffHoras = Math.abs((entradaNovaMs - saidaAnteriorMs) / (1000 * 60 * 60));
+            if (diffHoras <= 48) {
+              readmissoesPorDia[dataEntradaStr] = (readmissoesPorDia[dataEntradaStr] || 0) + 1;
+            }
+          }
+        }
+      }
+    });
+
+    // =========================================================
+    // 📊 3. DESENHANDO A LINHA DO TEMPO (Restaurando Original)
+    // =========================================================
+    
+    // 💡 INTERCEPTADOR MENSAL: Se for Giro ou LOS, muda o eixo X para meses!
+    if (['giroLeito', 'los'].includes(indicadorTendencia)) {
+      const dadosMensais = {};
+      
+      if (typeof listaHistorico !== 'undefined') {
+        listaHistorico.forEach(doc => {
+          const saidaMs = safeGetDateMs(doc.dataSaidaISO || doc.dataSaida);
+          if (!saidaMs) return;
+          
+          const d = new Date(saidaMs);
+          const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+          
+          if (!dadosMensais[mesAno]) dadosMensais[mesAno] = { altas: 0, somaDias: 0 };
+          dadosMensais[mesAno].altas += 1;
+          
+          const entMs = safeGetDateMs(doc.dataInternacaoISO || doc.dataInternacao || doc.dataEntrada);
+          if (entMs) {
+            const diasInternado = Math.max(1, (saidaMs - entMs) / (1000 * 60 * 60 * 24));
+            dadosMensais[mesAno].somaDias += diasInternado;
+          }
+        });
+      }
+      
+      // Converte para o formato do gráfico e ordena cronologicamente
+      return Object.keys(dadosMensais).sort((a, b) => {
+        const [ma, ya] = a.split('/');
+        const [mb, yb] = b.split('/');
+        return new Date(`${ya}-${ma}-01`).getTime() - new Date(`${yb}-${mb}-01`).getTime();
+      }).map(mesAno => {
+        const dados = dadosMensais[mesAno];
+        let valor = 0;
+        if (indicadorTendencia === 'los') {
+          valor = dados.altas > 0 ? dados.somaDias / dados.altas : 0;
+        } else if (indicadorTendencia === 'giroLeito') {
+          valor = dados.altas / (capacidadeInput || 10);
+        }
         return {
-          name: new Date(dia.dataPadrao + "T12:00:00").toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
-          valor: Number(Number(valorCalculado).toFixed(1))
+          name: mesAno, // O Eixo X agora mostrará ex: "05/2026"
+          valor: Number(valor.toFixed(1))
         };
       });
-  }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput]);
+    }
+
+    // 1. Recolhe os dias corretos para desenhar o gráfico
+    const diasComDados = new Set();
+    
+    if (typeof listaCenso !== 'undefined') {
+      listaCenso.forEach(dia => {
+        const dp = getPadraoDate(dia.data);
+        if (dp) diasComDados.add(dp);
+      });
+    }
+
+    // 2. Se for um indicador clínico, "puxa" também os dias que tiveram eventos mas esqueceram do Censo
+    if (['mortalidade', 'readmissao', 'smr'].includes(indicadorTendencia)) {
+      Object.keys(obitosPorDia).forEach(d => diasComDados.add(d));
+      Object.keys(readmissoesPorDia).forEach(d => diasComDados.add(d));
+    }
+
+    // 3. Filtra pelo calendário selecionado e ordena cronologicamente
+    const diasParaRenderizar = Array.from(diasComDados)
+      .filter(d => d >= dataInicio && d <= dataFim)
+      .sort((a, b) => a.localeCompare(b));
+
+    return diasParaRenderizar.map(dataPadrao => {
+      const diaCenso = listaCenso.find(dia => getPadraoDate(dia.data) === dataPadrao) || {};
+
+      let valorCalculado = 0;
+      const pacientesOcupando = Number(diaCenso.totalLeitosOcupados) || 0;
+
+      if (indicadorTendencia === 'mortalidade') {
+        const obitosNesteDia = obitosPorDia[dataPadrao] || 0;
+        const saidasNesteDia = saidasPorDia[dataPadrao] || 1; 
+        valorCalculado = obitosNesteDia > 0 ? (obitosNesteDia / saidasNesteDia) * 100 : 0;
+        
+      } else if (indicadorTendencia === 'readmissao') {
+        valorCalculado = readmissoesPorDia[dataPadrao] || 0;
+        
+      } else if (indicadorTendencia === 'smr') {
+        const obitosNesteDia = obitosPorDia[dataPadrao] || 0;
+        const mortPrevNesteDia = mortPrevistaPorDia[dataPadrao] || 0;
+        valorCalculado = mortPrevNesteDia > 0 ? (obitosNesteDia / mortPrevNesteDia) : 0;
+
+      } else if (indicadorTendencia === 'ocupacao') {
+        valorCalculado = ((pacientesOcupando) / (capacidadeInput || 10)) * 100;
+        
+      } else if (indicadorTendencia === 'identificacao') {
+        valorCalculado = pacientesOcupando > 0 ? ((Number(diaCenso.pacientesIdentificados) || 0) / pacientesOcupando) * 100 : 0;
+        
+      } else if (indicadorTendencia === 'utilizacaoVM') {
+        valorCalculado = pacientesOcupando > 0 ? ((Number(diaCenso.pacientesEmVM) || 0) / pacientesOcupando) * 100 : 0;
+        
+      } else if (indicadorTendencia === 'utilizacaoAcessoCentral') {
+        const cvc = Number(diaCenso.pacientesComCVC) || 0;
+        const shiley = Number(diaCenso.pacientesComShiley) || 0;
+        valorCalculado = pacientesOcupando > 0 ? (Math.min(cvc + shiley, pacientesOcupando) / pacientesOcupando) * 100 : 0;
+        
+      } else if (indicadorTendencia === 'utilizacaoSVD') {
+        valorCalculado = pacientesOcupando > 0 ? ((Number(diaCenso.pacientesComSVD) || 0) / pacientesOcupando) * 100 : 0;
+        
+      } else {
+        valorCalculado = Number(diaCenso[indicadorTendencia]) || 0;
+      }
+
+      return {
+        name: new Date(dataPadrao + "T12:00:00Z").toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+        valor: indicadorTendencia === 'smr' ? Number(Number(valorCalculado).toFixed(2)) : Number(Number(valorCalculado).toFixed(1))
+      };
+    });
+  }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput, typeof listaHistorico !== 'undefined' ? listaHistorico : [], typeof patients !== 'undefined' ? patients : []]);
 
   // ================================================================
   // 🔥 MOTOR DO MAPA EPIDEMIOLÓGICO CORRIGIDO (RASTREAMENTO MÁXIMO)
@@ -873,8 +1041,13 @@ const GestorDashboard = ({ userProfile }) => {
         // Captura o saps3 direto do root (conforme o print do seu banco)
         const saps3Prob = pac.saps3?.lockedProb || pac.backupProntuario?.saps3?.lockedProb || pac.indicadores?.saps3?.lockedProb;
         if (saps3Prob) {
-          agrupamento[label].esperados += (parseFloat(saps3Prob) / 100);
+          // Troca vírgula por ponto para evitar o NaN
+          const probDecimal = parseFloat(String(saps3Prob).replace(',', '.'));
           
+          if (!isNaN(probDecimal) && probDecimal > 0) {
+            agrupamento[label].esperados += (probDecimal / 100);
+          }
+
           // Alinhamento com pac.indicadores.resultado do seu Firebase
           const statusReal = pac.indicadores?.resultado || pac.desfecho || pac.status || "";
           const desfecho = String(statusReal).toLowerCase();
@@ -918,7 +1091,7 @@ const GestorDashboard = ({ userProfile }) => {
     };
 
     // ================================================================
-    // 1. MOTOR DE DESFECHOS (Mortalidade Bruta, SMR e Total de Altas)
+    // 1. MOTOR DE DESFECHOS E SMR (Blindado contra Pacientes Ativos)
     // ================================================================
     let totalDesfechos30d = 0;
     let obitosTotais30d = 0;
@@ -927,39 +1100,44 @@ const GestorDashboard = ({ userProfile }) => {
     let obitosObservadosSaps30d = 0;
 
     listaHistorico.forEach(pac => {
-      const dataFinalStr = pac.dataSaida || pac.dataDesfecho || pac.dataEntrada || pac.indicadores?.dataSaida;
+      // 🚨 TRAVA DA AMIB: Se o paciente ainda está na cama, ele NÃO entra nas métricas de desfecho!
+      if (pac.status === 'Internado' || (!pac.dataSaidaISO && !pac.dataSaida && !pac.indicadores?.dataSaida)) {
+        return; 
+      }
+
+      const dataFinalStr = pac.dataSaidaISO || pac.dataSaida || pac.indicadores?.dataSaida;
       const dataPac = parseData(dataFinalStr);
       
-      // O paciente saiu nos últimos 30 dias?
       if (dataPac >= trintaDiasAtras && dataPac <= hoje) {
-        totalDesfechos30d++;
+        totalDesfechos30d++; // Agora, só conta as saídas reais (Altas/Óbitos)
         
-        // Alinhamento com pac.indicadores.resultado do seu Firebase
         const statusReal = pac.indicadores?.resultado || pac.desfecho || pac.status || "";
         const desfecho = String(statusReal).toLowerCase();
         const isObito = desfecho.includes('óbito') || desfecho.includes('obito');
         
         if (isObito) obitosTotais30d++;
 
-        // Checagem robusta do SAPS 3 (lockedProb)
-        const saps3Prob = pac.saps3?.lockedProb || pac.backupProntuario?.saps3?.lockedProb || pac.indicadores?.saps3?.lockedProb;
-        if (saps3Prob) {
-          pacientesComSaps30d++;
-          obitosEsperadosSaps30d += (parseFloat(saps3Prob) / 100);
-          if (isObito) obitosObservadosSaps30d++;
+        // Extrai o SAPS do Histórico (agora garantido pelo seu botão de alta novo)
+        const sapsRaw = pac.indicadores?.mortalidadePrevista || pac.backupProntuario?.saps3?.lockedProb || pac.saps3?.lockedProb;
+        
+        if (sapsRaw) {
+          const probDecimal = parseFloat(String(sapsRaw).replace(',', '.'));
+          if (!isNaN(probDecimal) && probDecimal > 0) {
+            pacientesComSaps30d++;
+            obitosEsperadosSaps30d += (probDecimal / 100);
+            if (isObito) obitosObservadosSaps30d++;
+          }
         }
       }
     });
 
     // ================================================================
-    // 2. MOTOR DE READMISSÃO (Janela Móvel de 30 dias)
+    // 2. MOTOR DE READMISSÃO E 3. MOTOR DE IDENTIFICAÇÃO (Original)
     // ================================================================
     let contagemReadmissao30d = 0;
     
-    // Agrupa pelo NOME (já que padronizamos isso no balde unificado)
     const porPaciente = listaHistorico.reduce((acc, doc) => {
       const id = doc.nome;
-      // Ignora leitos vazios ou pacientes não identificados na contagem
       if (id && id !== "Não Informado" && id !== "Paciente Internado") {
         if (!acc[id]) acc[id] = [];
         acc[id].push(doc);
@@ -969,8 +1147,6 @@ const GestorDashboard = ({ userProfile }) => {
 
     Object.values(porPaciente).forEach(estadias => {
       if (estadias.length > 1) {
-        
-        // 1. Ordena cronologicamente (Se tiver ISO usa ISO, senão usa a data antiga)
         estadias.sort((a, b) => {
            const timeA = parseData(a.dataInternacaoISO || a.dataEntrada).getTime();
            const timeB = parseData(b.dataInternacaoISO || b.dataEntrada).getTime();
@@ -979,17 +1155,12 @@ const GestorDashboard = ({ userProfile }) => {
         
         for (let i = 1; i < estadias.length; i++) {
           const saidaBrutaAnterior = estadias[i-1].dataSaida;
-          
-          // Se a estadia anterior não tem data de saída (ainda está internado), pula
           if (!saidaBrutaAnterior) continue; 
           
           const altaAnterior = parseData(saidaBrutaAnterior);
           const entradaNova = parseData(estadias[i].dataInternacaoISO || estadias[i].dataEntrada);
-          
-          // 2. Math.abs salva as altas antigas do fuso horário (-13h vira 13h)
           const diffHoras = Math.abs((entradaNova - altaAnterior) / (1000 * 60 * 60));
 
-          // 3. Valida se a nova entrada ocorreu no mês atual e em menos de 48h
           if (entradaNova >= trintaDiasAtras && entradaNova <= hoje) {
             if (diffHoras <= 48) {
               contagemReadmissao30d++;
@@ -999,15 +1170,11 @@ const GestorDashboard = ({ userProfile }) => {
       }
     });
 
-    // ================================================================
-    // 3. MOTOR DE IDENTIFICAÇÃO (Janela Móvel de 30 dias)
-    // ================================================================
     let totalOcupados30d = 0;
     let totalIdentificados30d = 0;
     
     listaCenso.forEach(dia => {
       const dataCenso = parseData(dia.data || dia.idRegistro || dia.id);
-      
       if (dataCenso >= trintaDiasAtras && dataCenso <= hoje) {
         totalOcupados30d += (Number(dia.totalLeitosOcupados) || 0);
         totalIdentificados30d += (Number(dia.pacientesIdentificados) || 0);
@@ -1097,6 +1264,7 @@ const GestorDashboard = ({ userProfile }) => {
           let origem = h.procedencia || h.origem || h.backupProntuario?.procedencia || h.backupProntuario?.origem || "Não Informada";
 
           arrayHistoricoCompleto.push({
+            ...h, // 👈 A MÁGICA: Isso puxa TUDO do Firebase (incluindo o backupProntuario e saps3)
             id: doc.id,
             nome: h.nomePaciente || h.nome || h.backupProntuario?.nome || "Não Informado",
             dataEntrada: h.dataEntrada || h.dataInternacao,
@@ -3417,9 +3585,9 @@ const GestorDashboard = ({ userProfile }) => {
     utilizacaoSVD:    { label: 'Taxa de Utilização de SVD (%)', color: '#0ea5e9' },
     utilizacaoAcessoCentral: { label: 'Taxa de Utilização de Acesso Central (%)', color: '#8b5cf6' },
     ocupacao:         { label: 'Taxa de Ocupação (%)', color: '#64748b' },
-    giroLeito:        { label: 'Giro de Leito', color: '#eab308' },
-    los:              { label: 'Tempo Médio - LOS (Dias)', color: '#f59e0b' },
-    readmissao:       { label: 'Readmissão em 48h (%)', color: '#ef4444' },
+    readmissao:       { label: 'Readmissão em 48h (Nº Absoluto)', color: '#ef4444' },
+    giroLeito:        { label: 'Giro de Leito (Escala Mensal)', color: '#eab308' },
+    los:              { label: 'Tempo Médio - LOS (Escala Mensal)', color: '#f59e0b' },
   };
 
   const configAtual = configIndicadores[indicadorTendencia] || configIndicadores['mortalidade'];
@@ -3465,7 +3633,7 @@ const GestorDashboard = ({ userProfile }) => {
                 <option value="mortalidade">Taxa de Mortalidade (%)</option>
                 <option value="smr">SMR (SAPS 3)</option>
                 <option value="identificacao">Identificação Correta (%)</option>
-                <option value="readmissao">Readmissão em 48h (%)</option>
+                <option value="readmissao">Readmissão em 48h (Nº Absoluto)</option>
               </optgroup>
               
               <optgroup label="Dispositivos Invasivos (% Uso Diário)">
@@ -3474,10 +3642,10 @@ const GestorDashboard = ({ userProfile }) => {
                 <option value="utilizacaoSVD">Uso de Sonda Vesical (SVD)</option>
               </optgroup>
               
-              <optgroup label="Gestão Operacional Diária">
+              <optgroup label="Gestão Operacional">
                 <option value="ocupacao">Taxa de Ocupação (%)</option>
-                <option value="giroLeito">Giro de Leito</option>
-                <option value="los">Tempo Médio (LOS)</option>
+                <option value="giroLeito">Giro de Leito (Mensal)</option>
+                <option value="los">Tempo Médio (LOS Mensal)</option>
               </optgroup>
             </select>
           </div>

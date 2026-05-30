@@ -3259,15 +3259,26 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       const historicoRef = collection(db, "internacoes_historico");
       const hojeISO = new Date().toISOString();
 
-      // --- 🧠 MOTOR DE INDICADORES OTIMIZADO ---
+      // --- 🧠 MOTOR DE INDICADORES OTIMIZADO (COM BUSCA BLINDADA DE SAPS) ---
+      
+      // Tenta achar a mortalidade em qualquer lugar do prontuário antes de fechar o pacote
+      const sapsEncontrado = pacienteAtual.saps3?.lockedProb || 
+                             pacienteAtual.backupProntuario?.saps3?.lockedProb || 
+                             pacienteAtual.saps3?.probabilidade || 
+                             pacienteAtual.saps3?.probabilidadeMortalidade || 0;
+                             
+      const scoreEncontrado = pacienteAtual.saps3?.lockedScore || 
+                              pacienteAtual.backupProntuario?.saps3?.lockedScore || 
+                              pacienteAtual.saps3?.score || 0;
+
       const indicadores_finais = {
         permanenciaTotal: calcularDias(pacienteAtual.dataInternacao, hojeISO),
         totalDiasVM: typeof getTempoVMNumber === 'function' ? getTempoVMNumber(pacienteAtual) : 0,
         totalDiasSVD: enf.svd ? calcularDias(enf.svdData, enf.svdRetiradaData) : 0,
         totalDiasCVC: enf.cvcLocal ? calcularDias(enf.cvcData, enf.cvcRetiradaData) : 0,
         totalDiasShiley: enf.shileyLocal ? calcularDias(enf.shileyData, enf.shileyRetiradaData) : 0,
-        saps3Score: pacienteAtual.saps3?.score || 0,
-        mortalidadePrevista: pacienteAtual.saps3?.lockedProb || pacienteAtual.saps3?.probabilidade || 0,
+        saps3Score: scoreEncontrado, // <-- Agora envia o valor real salvo
+        mortalidadePrevista: sapsEncontrado, // <-- Agora envia a probabilidade real salva
         pacienteIdentificado: pacienteAtual.identificacaoCorreta || "auditado_positivo",
         foiObito: dischargeDestination === 'Óbito' ? 1 : 0,
         resultado: dischargeDestination === 'Óbito' ? 'Óbito' : 'Vivo'
