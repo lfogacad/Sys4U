@@ -12,14 +12,31 @@ export default function PainelAuditoriaTab() {
     const fetchLogs = async () => {
       try {
         setLoading(true);
-        const logsRef = collection(db, "logs_auditoria");
-        const q = query(logsRef, orderBy("timestampServidor", "desc"), limit(150));
+        
+        // 1. Aponta para a coleção EXATA do seu Firebase
+        const logsRef = collection(db, "logs"); 
+        
+        // 2. Ordena pelo campo exato de data que o senhor tem ("data")
+        const q = query(logsRef, orderBy("data", "desc"), limit(150));
         
         const snapshot = await getDocs(q);
-        const logData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const logData = snapshot.docs.map(doc => {
+          const d = doc.data();
+          
+          // 3. Traduz os dados do Firebase para o que a tela espera ver
+          return {
+            id: doc.id,
+            acao: d.acao || "Ação não especificada",
+            utilizador: d.usuario || "Usuário Desconhecido", // Puxa do seu campo 'usuario'
+            perfil: d.perfil || "Sem perfil",
+            paciente: d.pacienteId || "N/A", // Puxa do seu campo 'pacienteId'
+            leito: d.leito || "Geral", 
+            detalhes: d.detalhes || d.conselho || "", 
+            // Converte a sua data ISO do Firebase para o formato brasileiro
+            dataLocalFormata: d.data ? new Date(d.data).toLocaleString('pt-BR') : "Data não registada",
+            ...d
+          };
+        });
         
         setLogs(logData);
       } catch (error) {
