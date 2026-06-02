@@ -4535,27 +4535,28 @@ const navButtons = allNavButtons.filter((btn) => {
             className="absolute -top-6 right-0 md:-right-4 w-[280px] md:w-[350px] opacity-15 pointer-events-none z-0" 
           />
 
-          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE (Carrossel 3D Mobile) */}
+          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE (Carrossel Inteligente) */}
           <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
             <div className="relative mb-6 md:mb-0 print:hidden">
 
-              {/* CONTAINER DO CARROSSEL AJUSTADO PARA WEBKIT/IOS */}
+              {/* CONTAINER DO CARROSSEL: Adapta-se se tem muitas ou poucas abas */}
               <div
                 ref={navScrollRef}
                 onScroll={handleNavScroll}
-                // SUTURA: Ativa a aceleração de hardware nativa de rolagem da Apple
                 style={{ WebkitOverflowScrolling: 'touch' }} 
-                // CORREÇÃO: Remoção do px-[40vw]. Adição do touch-pan-x e pseudo-elementos
-                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-0 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center touch-pan-x
-                  before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden
-                  after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden
+                className={`flex overflow-x-auto md:overflow-visible md:flex-col pb-4 md:pb-0 scrollbar-hide items-center transition-all duration-300
+                  ${visibleNavButtons.length > 3 
+                    ? "gap-0 md:gap-3 snap-x snap-mandatory touch-pan-x before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden" 
+                    : "gap-4 justify-center w-full" // <- CORREÇÃO: Para os técnicos, tira as margens gigantes e centraliza
+                  }
                 `}
               >
                 {visibleNavButtons.map((btn, index) => {
                   const isActive = viewMode === btn.id;
+                  const poucasAbas = visibleNavButtons.length <= 3;
                   
-                  // SE SÓ TIVER 2 ABAS, ELAS FICAM SEMPRE "EXPANDIDAS" NO MOBILE PARA FACILITAR O TOQUE
-                  const isExpandedMobile = window.innerWidth < 768 && centerTab === btn.id;
+                  // Se tem poucas abas (Técnico), expande a que está ATIVA. Se tem muitas (Médico), expande a que está no CENTRO do scroll.
+                  const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
 
                   // --- CÁLCULO DA CASCATA 3D ---
                   const centerIndex = visibleNavButtons.findIndex(b => b.id === (centerTab || visibleNavButtons[0]?.id));
@@ -4567,15 +4568,18 @@ const navButtons = allNavButtons.filter((btn) => {
                       key={btn.id}
                       id={`nav-${btn.id}`}
                       style={{ zIndex: zIndexCascata }} 
-                      className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out 
-                        ${window.innerWidth < 768 ? '-ml-5 first:ml-0' : ''} 
+                      className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out 
+                        ${!poucasAbas ? 'snap-center' : ''} 
+                        ${window.innerWidth < 768 && !poucasAbas ? '-ml-5 first:ml-0' : ''} 
                         hover:z-[100]
                       `}
                     >
                       <button
                         onClick={() => {
                           const isMobile = window.innerWidth < 768;
-                          if (isMobile) {
+                          
+                          if (isMobile && !poucasAbas) {
+                            // Para Médicos (Muitas abas): Clica para centralizar primeiro, depois clica para abrir
                             if (centerTab !== btn.id) {
                                const el = document.getElementById(`nav-${btn.id}`);
                                if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -4583,7 +4587,12 @@ const navButtons = allNavButtons.filter((btn) => {
                                setViewMode(btn.id);
                             }
                           } else {
+                            // Para Técnicos (Poucas abas) ou Desktop: Clica e ABRE IMEDIATAMENTE!
                             setViewMode(btn.id);
+                            if (isMobile) {
+                              const el = document.getElementById(`nav-${btn.id}`);
+                              if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                            }
                           }
                         }}
                         className={`flex items-center h-12 md:h-12 min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
