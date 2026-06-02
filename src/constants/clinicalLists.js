@@ -10,7 +10,6 @@ export const PROFISSOES = [
     "Administrador",
     "Fonoaudiólogo",
   ];
-export const CODIGO_MESTRE_RT = "UTI@ARIQUEMES";
   
 export const EXAM_ROWS = [
     "Hemoglobina",

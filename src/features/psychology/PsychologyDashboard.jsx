@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Brain, FileText, Users, Activity, TrendingUp, CheckCircle, AlertCircle, Info, Send } from 'lucide-react';
+import { Brain, FileText, Users, Activity, TrendingUp, CheckCircle, AlertCircle, Info, Send, X } from 'lucide-react';
 
 const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleBlurSave, userProfile }) => {
   const [activeSubTab, setActiveSubTab] = useState('VISÃO GERAL');
@@ -26,7 +26,6 @@ const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleB
     } else {
       currentArray = [...currentArray, value];
     }
-    // Apenas updateNested é suficiente, pois ele já dispara o salvamento (save) com o dado fresco!
     updateNested("psychology", field, currentArray);
   };
 
@@ -63,8 +62,7 @@ const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleB
 
     const solicitacoesAtuais = psiData.solicitacoes || [];
     
-    // 🚨 CORREÇÃO: O updateNested já salva direto no Firebase. 
-    // Removemos o setTimeout(handleBlurSave) que estava causando a "viagem no tempo" e apagando o dado.
+    // Salva direto no Firebase
     updateNested("psychology", "solicitacoes", [...solicitacoesAtuais, novaSolicitacao]);
     
     // Limpa o formulário local
@@ -79,6 +77,15 @@ const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleB
     if (index !== -1) {
       const novasSolicitacoes = [...solicitacoesAtuais];
       novasSolicitacoes[index] = { ...novasSolicitacoes[index], [field]: value };
+      updateNested("psychology", "solicitacoes", novasSolicitacoes);
+    }
+  };
+
+  // Função para EXCLUIR uma solicitação inteira
+  const handleDeleteSolicitacao = (id) => {
+    if (window.confirm("Tem certeza que deseja excluir esta solicitação? Esta ação não pode ser desfeita.")) {
+      const solicitacoesAtuais = psiData.solicitacoes || [];
+      const novasSolicitacoes = solicitacoesAtuais.filter(s => s.id !== id);
       updateNested("psychology", "solicitacoes", novasSolicitacoes);
     }
   };
@@ -326,10 +333,24 @@ const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleB
                   </div>
 
                   {/* Lado Direito: Uso Exclusivo da Psicologia (Bloqueado para outros) */}
-                  <div className="p-5 md:w-1/3 bg-slate-50 flex flex-col gap-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Brain size={16} className="text-purple-600" />
-                      <span className="text-xs font-bold text-purple-800 uppercase tracking-wider">Gestão da Psicologia</span>
+                  <div className="p-5 md:w-1/3 bg-slate-50 flex flex-col gap-3 relative">
+                    
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <Brain size={16} className="text-purple-600" />
+                        <span className="text-xs font-bold text-purple-800 uppercase tracking-wider">Gestão da Psicologia</span>
+                      </div>
+                      
+                      {/* BOTÃO DE EXCLUIR SOLICITAÇÃO (Aparece apenas se tiver permissão de edição) */}
+                      {isEditable && (
+                        <button 
+                          onClick={(e) => { e.preventDefault(); handleDeleteSolicitacao(solic.id); }}
+                          className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors"
+                          title="Excluir Solicitação"
+                        >
+                          <X size={16} strokeWidth={2.5} />
+                        </button>
+                      )}
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">
