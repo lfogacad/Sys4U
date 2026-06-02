@@ -35,6 +35,7 @@ import NursingDashboard from '../features/nursing/NursingDashboard';
 import PhysioDashboard from '../features/physio/PhysioDashboard';
 import NutriDashboard from '../features/nutri/NutriDashboard';
 import SpeechDashboard from '../features/speech/SpeechDashboard';
+import PsychologyDashboard from '../features/psychology/PsychologyDashboard';
 import HemoDashboard from '../features/hemo/HemoDashboard';
 import TechDashboard from '../features/tech/TechDashboard';
 import OverviewTab from './tabs/OverviewTab';
@@ -3521,58 +3522,64 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
 // Define o que cada perfil pode VER (views) e o que pode EDITAR (edits)
 const ROLE_PERMISSIONS = {
   "Desenvolvedor": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
-    edits: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "management", "reception"],
+    edits: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "management", "reception"],
     canSeeLeito11: true
   },
   "Diretor Administrativo": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "management", "reception"],
     edits: ["management", "reception"],
     canSeeLeito11: false
   },
   "Gerente de Enfermagem": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "management", "reception"],
     edits: ["management", "nursing", "tech", "hemodialysis", "reception"],
     canSeeLeito11: false
   },
   "RT da Fisioterapia": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management", "reception"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "management", "reception"],
     edits: ["management", "physio"],
     canSeeLeito11: false
   },
   "CCIH UTI": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "management"],
     edits: ["management"],
     canSeeLeito11: false
   },
   "CCIH Geral": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "management"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "management"],
     edits: [], // Somente visualiza
     canSeeLeito11: false
   },
   "Médico": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "reception"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "reception"],
     edits: ["medical", "nutri", "speech", "reception"],
     canSeeLeito11: false
   },
   "Enfermeiro": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis", "reception"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "reception"],
     edits: ["nursing", "tech", "hemodialysis", "reception"],
     canSeeLeito11: false
   },
   "Fisioterapeuta": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis"],
     edits: ["physio"],
     canSeeLeito11: false
   },
   "Nutricionista": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis"],
     edits: ["nutri"],
     canSeeLeito11: false
   },
   "Fonoaudiólogo": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis"],
     edits: ["speech"],
+    canSeeLeito11: false
+  },
+  // 👇 NOVO PERFIL ADICIONADO AQUI
+  "Psicólogo": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis"],
+    edits: ["psychology"],
     canSeeLeito11: false
   },
   "Téc. em Enf.": {
@@ -3581,7 +3588,7 @@ const ROLE_PERMISSIONS = {
     canSeeLeito11: false
   },
   "Nefrologista": {
-    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "tech", "hemodialysis"],
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis"],
     edits: ["hemodialysis"],
     canSeeLeito11: false
   }
@@ -3601,6 +3608,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
     { id: "physio", label: "Fisioterapeuta", icon: <Wind size={20} /> },
     { id: "nutri", label: "Nutrição", icon: <Apple size={20} /> },
     { id: "speech", label: "Fonoaudiologia", icon: <Mic size={20} /> },
+    { id: "psychology", label: "Psicologia", icon: <Brain size={18} /> },
     { id: "tech", label: "Téc. em Enf.", icon: <Thermometer size={20} /> },
     { id: "hemodialysis", label: "Hemodiálise", icon: <Filter size={20} /> }
   ];
@@ -4192,6 +4200,16 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       toggleArrayItem={toggleArrayItem} 
                     />
                   }
+
+                  {viewMode === "psychology" && (
+                    <PsychologyDashboard
+                      currentPatient={currentPatient}
+                      isEditable={isEditable}
+                      updateNested={updateNested}
+                      handleBlurSave={handleBlurSave}
+                      userProfile={userProfile}
+                    />
+                  )}
 
                   {viewMode === "tech" && (() => {
                     // 1. Lógica de triagem: Qual Balanço Hídrico exibir?
