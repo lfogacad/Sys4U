@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Brain, FileText, Users, Activity, TrendingUp, CheckCircle, AlertCircle, Info, Send } from 'lucide-react';
+import { Brain, FileText, Users, Activity, TrendingUp, CheckCircle, AlertCircle, Info, X, Send } from 'lucide-react';
 
 const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleBlurSave, userProfile }) => {
   const [activeSubTab, setActiveSubTab] = useState('VISÃO GERAL');
@@ -79,6 +79,16 @@ const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleB
     if (index !== -1) {
       const novasSolicitacoes = [...solicitacoesAtuais];
       novasSolicitacoes[index] = { ...novasSolicitacoes[index], [field]: value };
+      updateNested("psychology", "solicitacoes", novasSolicitacoes);
+    }
+  };
+
+  // Função para a Psicologia excluir uma solicitação
+  const handleDeleteSolicitacao = (id) => {
+    const confirmar = window.confirm("Tem certeza que deseja excluir esta solicitação?");
+    if (confirmar) {
+      const solicitacoesAtuais = psiData.solicitacoes || [];
+      const novasSolicitacoes = solicitacoesAtuais.filter(s => s.id !== id);
       updateNested("psychology", "solicitacoes", novasSolicitacoes);
     }
   };
@@ -300,10 +310,21 @@ const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleB
               
               {/* Mapeia as solicitações da mais nova para a mais antiga */}
               {[...psiData.solicitacoes].reverse().map((solic) => (
-                <div key={solic.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row">
+                <div key={solic.id} className="relative bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row">
                   
+                  {/* BOTÃO DE EXCLUSÃO (Apenas visível se estiver em modo de edição) */}
+                  {isEditable && (
+                    <button
+                      onClick={() => handleDeleteSolicitacao(solic.id)}
+                      className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors z-10 p-1 bg-white/50 rounded-full hover:bg-red-50"
+                      title="Excluir solicitação"
+                    >
+                      <X size={18} />
+                    </button>
+                  )}
+
                   {/* Lado Esquerdo: Dados do Pedido (Somente leitura) */}
-                  <div className="p-5 flex-1 border-b md:border-b-0 md:border-r border-slate-100">
+                  <div className="p-5 flex-1 border-b md:border-b-0 md:border-r border-slate-100 pr-10">
                     <div className="flex justify-between items-start mb-3">
                       <div>
                         <p className="text-xs font-bold text-slate-400">{formatarDataHora(solic.data)}</p>
@@ -325,11 +346,11 @@ const PsychologyDashboard = ({ currentPatient, isEditable, updateNested, handleB
                     )}
                   </div>
 
-                  {/* Lado Direito: Uso Exclusivo da Psicologia (Bloqueado para outros) */}
-                  <div className="p-5 md:w-1/3 bg-slate-50 flex flex-col gap-3">
+                  {/* Lado Direito: Uso Exclusivo da Psicologia */}
+                  <div className="p-5 md:w-1/3 bg-slate-50 flex flex-col gap-3 pt-8 md:pt-5">
                     <div className="flex items-center gap-2 mb-1">
                       <Brain size={16} className="text-purple-600" />
-                      <span className="text-xs font-bold text-purple-800 uppercase tracking-wider">Gestão da Psicologia</span>
+                      <span className="text-xs font-bold text-purple-800 uppercase tracking-wider pr-6">Gestão da Psicologia</span>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">
