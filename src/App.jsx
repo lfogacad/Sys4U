@@ -4818,7 +4818,6 @@ const navButtons = allNavButtons.filter((btn) => {
                 currentPatient={currentPatient}
                 isEditable={isEditable}
                 updateNested={updateNested}
-                handleBlurSave={handleBlurSave}
                 userProfile={userProfile}
                 />
              )}
