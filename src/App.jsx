@@ -72,6 +72,7 @@ import TechDashboard from './features/tech/TechDashboard';
 import HemoDashboard from './features/hemo/HemoDashboard';
 import NursingDashboard from './features/nursing/NursingDashboard';
 import MedicalDashboard from './features/medical/MedicalDashboard';
+import PsychologyDashboard from './features/psychology/PsychologyDashboard';
 import ForceChangePasswordModal from './components/modals/ForceChangePasswordModal';
 import HistoryModal from './components/modals/HistoryModal';
 import ATBHistoryModal from './components/modals/ATBHistoryModal';
@@ -4151,6 +4152,7 @@ const allNavButtons = [
   { id: "physio", label: "Fisioterapeuta", icon: <Wind size={16} /> },
   { id: "nutri", label: "Nutrição", icon: <Apple size={16} /> },
   { id: "speech", label: "Fonoaudiologia", icon: <Mic size={16} /> },
+  { id: "psychology", label: "Psicologia", icon: <Brain size={16} /> },
   { id: "tech", label: "Téc. em Enf.", icon: <Thermometer size={16} /> },
   { id: "hemodialysis", label: "Hemodiálise", icon: <Filter size={16} /> },
   ...(userProfile?.role === "Gestor" || userProfile?.role === "Administrador"
@@ -4810,6 +4812,16 @@ const navButtons = allNavButtons.filter((btn) => {
                   toggleArrayItem={toggleArrayItem}
                 />
               )}
+
+              {viewMode === "psychology" && (
+                <PsychologyDashboard
+                currentPatient={currentPatient}
+                isEditable={isEditable}
+                updateNested={updateNested}
+                handleBlurSave={handleBlurSave}
+                userProfile={userProfile}
+                />
+             )}
 
              {/* --- TECH --- */}
              {viewMode === "tech" && (
