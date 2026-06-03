@@ -4204,6 +4204,17 @@ const navButtons = allNavButtons.filter((btn) => {
         return userProfile?.role === "Enfermeiro";
       case "hemodialysis":
         return isDocRole || isNursingRole;
+      
+      // ==========================================
+      // 🔥 AQUI ESTÁ A CORREÇÃO: PERMISSÃO DA PSICOLOGIA
+      // ==========================================
+      case "psychology":
+        return (
+          userProfile?.role === "Psicólogo" || 
+          userProfile?.role === "Psicóloga" || 
+          userProfile?.role === "Psicologia"
+        );
+        
       case "overview":
         return false;
       case "management":
