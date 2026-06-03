@@ -50,15 +50,22 @@ const TechDashboard = ({
     return matchedKey ? LIMITS[category][matchedKey] : null;
   };
 
-  const handleValidatedChange = (hour, category, item, e) => {
+    const handleValidatedChange = (hour, category, item, e) => {
     let val = e.target.value;
     if (val === "") { updateBH(hour, category, item, val); return; }
+    
     const limits = getLimits(category, item);
     if (limits) {
-      if (!/^-?\d*[.,]?\d*$/.test(val)) return;
+      // Exceção: Se for HGT, pula a trava que bloqueia letras
+      if (item !== "HGT (mg/dL)") {
+        if (!/^-?\d*[.,]?\d*$/.test(val)) return;
+      }
+      
+      // Mantém a trava de valor máximo apenas se o que foi digitado for um número
       const numVal = parseFloat(val.replace(',', '.'));
       if (!isNaN(numVal) && numVal > limits.max) return; 
     }
+    
     updateBH(hour, category, item, val);
   };
 
