@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, FileText, Activity, ChevronDown, ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle } from 'lucide-react';
+import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, FileText, Activity, ChevronDown, 
+         ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle } from 'lucide-react';
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
-import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, analyzeOliguriaForSOFA, calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
+import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, analyzeOliguriaForSOFA, 
+         calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
+import ModalSugestaoATB from "../../components/modals/ModalSugestaoATB";
 
 const formatarDataBR = (dataISO) => {
   if (!dataISO) return "";
@@ -38,8 +41,31 @@ const MedicalDashboard = ({
   
 // 👇 INJETAMOS O "CÉREBRO" DO BOTÃO AQUI DENTRO:
 const [historyOpen, setHistoryOpen] = useState(false);
+const [showSugestaoModal, setShowSugestaoModal] = useState(false);
 
 const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOliguriaForSOFA(currentPatient) : null;
+
+const handleApplySugestaoATB = (drugs) => {
+  const currentAtbs = currentPatient.antibiotics || [];
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Mapeia os remédios sugeridos para o formato da sua tabela
+  const newAtbs = drugs.map(d => ({
+    name: d.nome,
+    date: today,
+    locked: true // Já entra fixado!
+  }));
+
+  // Filtra as linhas vazias que por acaso existam e adiciona os novos
+  const filteredAtbs = currentAtbs.filter(a => a.name || a.date);
+  const updatedAtbs = [...filteredAtbs, ...newAtbs];
+
+  // Garante que sempre tenha pelo menos uma linha vazia no final para digitar
+  updatedAtbs.push({ name: "", date: "", locked: false });
+
+  updateNested("antibiotics", null, updatedAtbs);
+  handleBlurSave("Médico: Aplicou Sugestão de ATB via Assistente");
+};
 
   return (
     <fieldset disabled={!isEditable} className="space-y-6 animate-fadeIn min-w-0 border-0 p-0 m-0">
@@ -517,21 +543,32 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         </div>
       </div>
 
-      {/* ATB */}
+            {/* ATB */}
       <div className="p-4 border border-orange-200 bg-orange-50 rounded-xl">
         <div className="flex justify-between items-center mb-3">
           <h4 className="text-sm font-bold text-orange-700">Prescrição de Antimicrobianos</h4>
           
-          <button 
-            onClick={(e) => { 
-              e.preventDefault(); 
-              if(setShowATBHistoryModal) setShowATBHistoryModal(true);
-              else alert("Ferramenta de Histórico não conectada!");
-            }} 
-            className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded hover:bg-orange-300 font-bold flex items-center gap-1 transition-colors"
-          >
-            <Clock size={14} /> Histórico
-          </button>
+          <div className="flex gap-2">
+            {/* NOVO BOTÃO DE SUGESTÃO */}
+            <button 
+              onClick={(e) => { e.preventDefault(); setShowSugestaoModal(true); }} 
+              className="text-xs bg-teal-100 text-teal-800 px-3 py-1 rounded-lg hover:bg-teal-200 font-bold flex items-center gap-1 transition-colors shadow-sm border border-teal-200"
+            >
+              <Brain size={14} /> Sugestão de ATB
+            </button>
+
+            {/* SEU BOTÃO DE HISTÓRICO ORIGINAL */}
+            <button 
+              onClick={(e) => { 
+                e.preventDefault(); 
+                if(setShowATBHistoryModal) setShowATBHistoryModal(true);
+                else alert("Ferramenta de Histórico não conectada!");
+              }} 
+              className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded hover:bg-orange-300 font-bold flex items-center gap-1 transition-colors"
+            >
+              <Clock size={14} /> Histórico
+            </button>
+          </div>
         </div>
         
         {currentPatient.antibiotics?.map((atb, idx) => {
@@ -705,6 +742,16 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
           />
         )}
       </div>
+
+      {/* ======================== */}
+      {/* MODAL DE SUGESTÃO DE ATB */}
+      {/* ======================== */}
+      <ModalSugestaoATB 
+        isOpen={showSugestaoModal}
+        onClose={() => setShowSugestaoModal(false)}
+        currentPatient={currentPatient}
+        onApply={handleApplySugestaoATB}
+      />
       
     </fieldset>
   );
