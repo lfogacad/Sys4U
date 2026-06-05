@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, 
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit } from 'lucide-react';
 import { ESCALA_DOR, PRECAUCOES, CARACTERISTICAS_DIURESE } from '../../constants/clinicalLists';
+import ModalChecklistEnfermagem from '../../components/modals/ModalChecklistEnfermagem';
 
 const NursingDashboard = ({
   currentPatient,
@@ -18,6 +19,9 @@ const NursingDashboard = ({
   isNursingRole,
   isGeneratingNursingAI
 }) => {
+
+  const [showNursingChecklistModal, setShowNursingChecklistModal] = useState(false);
+
 return (
     <div className="space-y-6 animate-fadeIn text-left">
       {/* 1. SE A ADMISSÃO NÃO FOI FEITA, MOSTRAMOS O BOTÃO LIVRE DO FIELDSET */}
@@ -490,7 +494,7 @@ return (
               <h4 className="font-bold text-slate-700 flex items-center gap-2"><Edit3 size={16} className="text-slate-400" /> Evolução de Enfermagem (Privativo)</h4>
               <button
                 type="button"
-                onClick={generateNursingAI_Evolution}
+                onClick={(e) => { e.preventDefault(); setShowNursingChecklistModal(true); }}
                 disabled={!isNursingRole || isGeneratingNursingAI}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden ${isGeneratingNursingAI ? "bg-slate-200 text-slate-500 cursor-not-allowed" : "bg-blue-100 text-blue-700 hover:bg-blue-200"} ${!isNursingRole ? "opacity-50 cursor-not-allowed" : ""}`}
                 title="Usar Inteligência Artificial para gerar evolução"
@@ -507,8 +511,20 @@ return (
             />
           </div>
         </>
+        
       </fieldset>
       )}
+
+      {/* MODAL DE CHECKLIST DA ENFERMAGEM */}
+      <ModalChecklistEnfermagem
+        isOpen={showNursingChecklistModal}
+        onClose={() => setShowNursingChecklistModal(false)}
+        currentPatient={currentPatient}
+        updateNested={updateNested}
+        handleBlurSave={handleBlurSave}
+        onGenerateAI={generateNursingAI_Evolution}
+      />
+
     </div>
   );
 };
