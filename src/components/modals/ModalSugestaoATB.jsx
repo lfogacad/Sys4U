@@ -77,7 +77,7 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
         case "CEFTRIAXONA":
           return isMeningiteOuGrave ? "2g IV 12/12h" : "2g IV 24/24h"; // Sem ajuste renal
 
-        case "AZITROMICINA": return "500mg IV 24/24h"; // Sem ajuste renal
+        case "AZITROMICINA": return "500mg VO 24/24h"; // Sem ajuste renal
         case "METRONIDAZOL": return "500mg IV 8/8h"; // Sem ajuste renal
         case "OXACILINA": return "2g IV 4/4h"; // Sem ajuste renal
         case "CLINDAMICINA": return "600mg IV 8/8h"; // Sem ajuste renal
@@ -111,7 +111,7 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
     if (foco === 'Pulmonar (PAC/PAV)') {
       if (origem === 'Comunitária') {
         drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: getDoseManutencao("CEFTRIAXONA"), infusao: "30 min" });
-        drugs.push({ nome: "AZITROMICINA", ataque: "Não aplicável", manutencao: getDoseManutencao("AZITROMICINA"), infusao: "60 min" });
+        drugs.push({ nome: "AZITROMICINA", ataque: "Não aplicável", manutencao: getDoseManutencao("AZITROMICINA"), infusao: "Não aplicável" });
       } else { // PAV
         if (isChoque) {
           drugs.push({ nome: "MEROPENEM", ataque: "1g a 2g IV", manutencao: getDoseManutencao("MEROPENEM", true), infusao: "Estendida 3h" });

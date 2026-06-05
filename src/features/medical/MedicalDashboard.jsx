@@ -33,6 +33,7 @@ const MedicalDashboard = ({
   setShowATBHistoryModal,
   clearAntibiotic,
   updateAntibiotic,
+  replaceAntibiotics,
   addAntibiotic,
   removeAntibiotic,
   handleEditAdmission,
@@ -45,27 +46,32 @@ const [showSugestaoModal, setShowSugestaoModal] = useState(false);
 
 const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOliguriaForSOFA(currentPatient) : null;
 
-const handleApplySugestaoATB = (drugs) => {
-  const currentAtbs = currentPatient.antibiotics || [];
-  const today = new Date().toISOString().split('T')[0];
-  
-  // Mapeia os remédios sugeridos para o formato da sua tabela
-  const newAtbs = drugs.map(d => ({
-    name: d.nome,
-    date: today,
-    locked: true // Já entra fixado!
-  }));
+    const handleApplySugestaoATB = (drugs) => {
+    const currentAtbs = currentPatient.antibiotics || [];
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Mapeia os remédios sugeridos com a dose no nome
+    const newAtbs = drugs.map(d => ({
+      name: `${d.nome} - ${d.manutencao}`,
+      date: today,
+      locked: true // Já entra fixado e verdinho!
+    }));
 
-  // Filtra as linhas vazias que por acaso existam e adiciona os novos
-  const filteredAtbs = currentAtbs.filter(a => a.name || a.date);
-  const updatedAtbs = [...filteredAtbs, ...newAtbs];
+    // Filtra as linhas vazias e junta com os novos remédios
+    const filteredAtbs = currentAtbs.filter(a => a.name || a.date);
+    const updatedAtbs = [...filteredAtbs, ...newAtbs];
 
-  // Garante que sempre tenha pelo menos uma linha vazia no final para digitar
-  updatedAtbs.push({ name: "", date: "", locked: false });
+    // Garante a linha vazia no final para o médico poder digitar novos depois
+    updatedAtbs.push({ name: "", date: "", locked: false });
 
-  updateNested("antibiotics", null, updatedAtbs);
-  handleBlurSave("Médico: Aplicou Sugestão de ATB via Assistente");
-};
+    // Usa a nova função super-poderosa para injetar a lista inteira de uma vez
+    if (replaceAntibiotics) {
+      replaceAntibiotics(updatedAtbs);
+      setTimeout(() => handleBlurSave("Médico: Aplicou Sugestão de ATB via Assistente"), 300);
+    } else {
+      alert("Erro: A função replaceAntibiotics não foi passada para o MedicalDashboard.");
+    }
+  };
 
   return (
     <fieldset disabled={!isEditable} className="space-y-6 animate-fadeIn min-w-0 border-0 p-0 m-0">

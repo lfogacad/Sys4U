@@ -1123,6 +1123,17 @@ const clearAntibiotic = (i) => {
     // O 'save' foi removido! A auditoria acontecerá pelo onBlur no <input>
   };
 
+    const replaceAntibiotics = (newArray) => {
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda segura
+      p.antibiotics = newArray; // Substitui a lista inteira
+      up[activeTab] = p;
+      return up;
+    });
+    // O salvamento no Firebase será chamado pelo handleBlurSave no Dashboard
+  };
+
   const handleNextDayBH = () => {
     if (!window.confirm("Deseja fechar o balanço atual e iniciar um novo dia?")) return;
 
@@ -4118,6 +4129,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         handleEditAdmission={handleEditAdmission}
                         setShowATBHistoryModal={setShowATBHistoryModal}
                         updateAntibiotic={updateAntibiotic}
+                        replaceAntibiotics={replaceAntibiotics}
                         addAntibiotic={addAntibiotic}
                         removeAntibiotic={removeAntibiotic}
                         clearAntibiotic={clearAntibiotic}
