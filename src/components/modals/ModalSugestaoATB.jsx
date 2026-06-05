@@ -26,7 +26,7 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
     if (isChoqueAuto && !gravidadeManual) setGravidadeManual('Choque Séptico');
   }, [isChoqueAuto, gravidadeManual]);
 
-  // --- MOTOR DE REGRAS (Baseado no Protocolo de Ariquemes) ---
+      // --- MOTOR DE REGRAS (Baseado no Protocolo de Ariquemes + Ajuste Renal Sanford) ---
   const sugestao = useMemo(() => {
     if (!foco && !isCirurgiaLimpa) return null;
 
@@ -34,13 +34,64 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
     let timeToAtb = isChoque ? "1 HORA" : "3 HORAS";
     let alertColor = isChoque ? "bg-red-100 text-red-800 border-red-300" : "bg-amber-100 text-amber-800 border-amber-300";
 
+    // FUNÇÃO INTERNA: Calcula a dose de manutenção com base no Clearance (Sanford Guide)
+    const getDoseManutencao = (atb, isMeningiteOuGrave = false) => {
+      const normal = !clcr || clcr >= 50;
+      const tagAjuste = " ⚠️ (Ajuste Renal)"; // Tag que aponta que houve correção
+      
+      switch(atb) {
+        case "MEROPENEM":
+          if (normal) return isMeningiteOuGrave ? "2g IV 8/8h" : "1g IV 8/8h";
+          if (clcr >= 26) return (isMeningiteOuGrave ? "2g IV 12/12h" : "1g IV 12/12h") + tagAjuste;
+          if (clcr >= 10) return (isMeningiteOuGrave ? "1g IV 12/12h" : "500mg IV 12/12h") + tagAjuste;
+          return (isMeningiteOuGrave ? "1g IV 24/24h" : "500mg IV 24/24h") + tagAjuste;
+
+        case "PIPERACILINA + TAZOBACTAM":
+          if (normal) return "4.5g IV 6/6h";
+          if (clcr >= 20) return "4.5g IV 8/8h" + tagAjuste;
+          return "2.25g IV 8/8h" + tagAjuste;
+
+        case "CEFEPIME":
+          if (normal) return "2g IV 8/8h";
+          if (clcr >= 30) return "2g IV 12/12h" + tagAjuste;
+          if (clcr >= 11) return "2g IV 24/24h" + tagAjuste;
+          return "1g IV 24/24h" + tagAjuste;
+
+        case "VANCOMICINA":
+          const vancoDose = peso ? `${Math.round(peso * 15)}mg IV` : "15 mg/kg IV";
+          if (normal) return `${vancoDose} 12/12h`;
+          if (clcr >= 20) return `${vancoDose} 24/24h` + tagAjuste;
+          return `${vancoDose} a cada 48h (Guiar por nível sérico)` + tagAjuste;
+
+        case "AMICACINA":
+          const amicaDose = peso ? `${Math.round(peso * 15)}mg IV` : "15 mg/kg IV";
+          if (normal) return `${amicaDose} 24/24h`;
+          if (clcr >= 20) return `${amicaDose} 48/48h` + tagAjuste;
+          return `${amicaDose} (Dose única - Guiar por nível sérico)` + tagAjuste;
+
+        case "AZTREONAM":
+          if (normal) return "2g IV 8/8h";
+          if (clcr >= 10) return "1g IV 8/8h" + tagAjuste;
+          return "500mg IV 8/8h" + tagAjuste;
+
+        case "CEFTRIAXONA":
+          return isMeningiteOuGrave ? "2g IV 12/12h" : "2g IV 24/24h"; // Sem ajuste renal
+
+        case "AZITROMICINA": return "500mg IV 24/24h"; // Sem ajuste renal
+        case "METRONIDAZOL": return "500mg IV 8/8h"; // Sem ajuste renal
+        case "OXACILINA": return "2g IV 4/4h"; // Sem ajuste renal
+        case "CLINDAMICINA": return "600mg IV 8/8h"; // Sem ajuste renal
+        case "CEFAZOLINA": return "2g IV 8/8h"; // Profilaxia
+        default: return "Dose padrão";
+      }
+    };
+
     // REGRA 1: Cirurgia Limpa (Trava de Profilaxia)
     if (isCirurgiaLimpa) {
       return {
-        drugs: [{ nome: "CEFAZOLINA", ataque: "Não aplicável", manutencao: "2g IV 8/8h", infusao: "30 min" }],
-        timeToAtb: "Profilaxia Cirúrgica",
-        alertColor: "bg-blue-100 text-blue-800 border-blue-300",
-        aviso: "⚠️ Pós-operatório de Cirurgia Limpa: O protocolo recomenda apenas profilaxia. ATB terapêutico desencorajado salvo evidência clara de infecção."
+        drugs: [{ nome: "CEFAZOLINA", ataque: "Não aplicável", manutencao: getDoseManutencao("CEFAZOLINA"), infusao: "30 min" }],
+        timeToAtb: "Profilaxia Cirúrgica", alertColor: "bg-blue-100 text-blue-800 border-blue-300",
+        aviso: "⚠️ Pós-operatório de Cirurgia Limpa: O protocolo recomenda apenas profilaxia. ATB terapêutico desencorajado."
       };
     }
 
@@ -48,70 +99,70 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
     if (isAlergiaBeta) {
       return {
         drugs: [
-          { nome: "AZTREONAM", ataque: "Não aplicável", manutencao: "2g IV 8/8h", infusao: "30 min" },
-          { nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: peso ? `${Math.round(peso * 15)}mg IV 12/12h` : "15-20 mg/kg 12/12h", infusao: "Lenta (máx 10mg/min)" }
+          { nome: "AZTREONAM", ataque: "Não aplicável", manutencao: getDoseManutencao("AZTREONAM"), infusao: "30 min" },
+          { nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: getDoseManutencao("VANCOMICINA"), infusao: "Lenta (máx 10mg/min)" }
         ],
         timeToAtb, alertColor,
-        aviso: "🚨 ALERGIA A BETALACTÂMICOS: Sugestão alternativa gerada. Discutir com CCIH/Infectologia para descalonamento."
+        aviso: "🚨 ALERGIA A BETALACTÂMICOS: Sugestão alternativa gerada. Discutir com CCIH/Infectologia."
       };
     }
 
-    // REGRA 3: Focos Infecciosos (Tabela 5 e 6)
+    // REGRA 3: Focos Infecciosos (Tabela 5 e 6 do Protocolo)
     if (foco === 'Pulmonar (PAC/PAV)') {
       if (origem === 'Comunitária') {
-        drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: "2g IV 24/24h", infusao: "30 min" });
-        drugs.push({ nome: "AZITROMICINA", ataque: "Não aplicável", manutencao: "500mg IV 24/24h", infusao: "60 min" });
+        drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: getDoseManutencao("CEFTRIAXONA"), infusao: "30 min" });
+        drugs.push({ nome: "AZITROMICINA", ataque: "Não aplicável", manutencao: getDoseManutencao("AZITROMICINA"), infusao: "60 min" });
       } else { // PAV
         if (isChoque) {
-          drugs.push({ nome: "MEROPENEM", ataque: "1g a 2g IV", manutencao: "1g a 2g IV 8/8h", infusao: "Estendida 3h" });
-          drugs.push({ nome: "AMICACINA", ataque: "Não aplicável", manutencao: peso ? `${Math.round(peso * 15)}mg IV 24/24h` : "15 mg/kg IV 24/24h", infusao: "30 min" });
-          if (riscoMDR) drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: "15 a 20 mg/kg 12/12h", infusao: "Lenta" });
+          drugs.push({ nome: "MEROPENEM", ataque: "1g a 2g IV", manutencao: getDoseManutencao("MEROPENEM", true), infusao: "Estendida 3h" });
+          drugs.push({ nome: "AMICACINA", ataque: "Não aplicável", manutencao: getDoseManutencao("AMICACINA"), infusao: "30 min" });
+          if (riscoMDR) drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: getDoseManutencao("VANCOMICINA"), infusao: "Lenta" });
         } else {
-          drugs.push({ nome: "CEFEPIME", ataque: "2g IV", manutencao: "2g IV 8/8h", infusao: "Estendida 3 a 4h" });
+          drugs.push({ nome: "CEFEPIME", ataque: "2g IV", manutencao: getDoseManutencao("CEFEPIME"), infusao: "Estendida 3 a 4h" });
         }
       }
     } 
     else if (foco === 'Urinário') {
       if (origem === 'Comunitária') {
-        if (riscoMDR) drugs.push({ nome: "MEROPENEM", ataque: "1g a 2g IV", manutencao: "1g IV 8/8h", infusao: "Estendida 3h" });
-        else drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: "2g IV 24/24h", infusao: "30 min" });
+        if (riscoMDR) drugs.push({ nome: "MEROPENEM", ataque: "1g a 2g IV", manutencao: getDoseManutencao("MEROPENEM"), infusao: "Estendida 3h" });
+        else drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: getDoseManutencao("CEFTRIAXONA"), infusao: "30 min" });
       } else { // ITU-AC
         if (isChoque || riscoMDR) {
-          drugs.push({ nome: "MEROPENEM", ataque: "1g a 2g IV", manutencao: "1g IV 8/8h", infusao: "Estendida 3h" });
-          drugs.push({ nome: "AMICACINA", ataque: "Não aplicável", manutencao: peso ? `${Math.round(peso * 15)}mg IV 24/24h` : "15 mg/kg IV 24/24h", infusao: "30 min" });
+          drugs.push({ nome: "MEROPENEM", ataque: "1g a 2g IV", manutencao: getDoseManutencao("MEROPENEM"), infusao: "Estendida 3h" });
+          drugs.push({ nome: "AMICACINA", ataque: "Não aplicável", manutencao: getDoseManutencao("AMICACINA"), infusao: "30 min" });
         } else {
-          drugs.push({ nome: "PIPERACILINA + TAZOBACTAM", ataque: "4.5g IV", manutencao: "4.5g IV 6/6h", infusao: "Estendida 3 a 4h" });
+          drugs.push({ nome: "PIPERACILINA + TAZOBACTAM", ataque: "4.5g IV", manutencao: getDoseManutencao("PIPERACILINA + TAZOBACTAM"), infusao: "Estendida 3 a 4h" });
         }
       }
     }
     else if (foco === 'Abdominal') {
       if (isChoque) {
-        drugs.push({ nome: "PIPERACILINA + TAZOBACTAM", ataque: "4.5g IV", manutencao: "4.5g IV 6/6h", infusao: "Estendida 3 a 4h" });
+        drugs.push({ nome: "PIPERACILINA + TAZOBACTAM", ataque: "4.5g IV", manutencao: getDoseManutencao("PIPERACILINA + TAZOBACTAM"), infusao: "Estendida 3 a 4h" });
       } else {
-        drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: "2g IV 24/24h", infusao: "30 min" });
-        drugs.push({ nome: "METRONIDAZOL", ataque: "Não aplicável", manutencao: "500mg IV 8/8h", infusao: "60 min" });
+        drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: getDoseManutencao("CEFTRIAXONA"), infusao: "30 min" });
+        drugs.push({ nome: "METRONIDAZOL", ataque: "Não aplicável", manutencao: getDoseManutencao("METRONIDAZOL"), infusao: "60 min" });
       }
     }
     else if (foco === 'Pele e Partes Moles') {
-      if (riscoMDR || isChoque) { // Necrosante / Risco MRSA
-        drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: "15 a 20 mg/kg 12/12h", infusao: "Lenta" });
-        drugs.push({ nome: "PIPERACILINA + TAZOBACTAM", ataque: "4.5g IV", manutencao: "4.5g IV 6/6h", infusao: "Estendida 3 a 4h" });
-        drugs.push({ nome: "CLINDAMICINA", ataque: "Não aplicável", manutencao: "600mg IV 8/8h", infusao: "30 min" });
+      if (riscoMDR || isChoque) { 
+        drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: getDoseManutencao("VANCOMICINA"), infusao: "Lenta" });
+        drugs.push({ nome: "PIPERACILINA + TAZOBACTAM", ataque: "4.5g IV", manutencao: getDoseManutencao("PIPERACILINA + TAZOBACTAM"), infusao: "Estendida 3 a 4h" });
+        drugs.push({ nome: "CLINDAMICINA", ataque: "Não aplicável", manutencao: getDoseManutencao("CLINDAMICINA"), infusao: "30 min" });
       } else {
-        drugs.push({ nome: "OXACILINA", ataque: "Não aplicável", manutencao: "2g IV 4/4h", infusao: "60 min" });
+        drugs.push({ nome: "OXACILINA", ataque: "Não aplicável", manutencao: getDoseManutencao("OXACILINA"), infusao: "60 min" });
       }
     }
     else if (foco === 'SNC (Meningite)') {
-      drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: "2g IV 12/12h", infusao: "30 min" });
-      if (riscoMDR) drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: "15 a 20 mg/kg 12/12h", infusao: "Lenta" });
+      drugs.push({ nome: "CEFTRIAXONA", ataque: "Não aplicável", manutencao: getDoseManutencao("CEFTRIAXONA", true), infusao: "30 min" });
+      if (riscoMDR) drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: getDoseManutencao("VANCOMICINA"), infusao: "Lenta" });
     }
     else if (foco === 'Corrente Sanguínea (IPCS-C)') {
-      drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: "15 a 20 mg/kg 12/12h", infusao: "Lenta" });
-      drugs.push({ nome: "CEFEPIME", ataque: "2g IV", manutencao: "2g IV 8/8h", infusao: "Estendida 3 a 4h" });
+      drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: getDoseManutencao("VANCOMICINA"), infusao: "Lenta" });
+      drugs.push({ nome: "CEFEPIME", ataque: "2g IV", manutencao: getDoseManutencao("CEFEPIME"), infusao: "Estendida 3 a 4h" });
     }
 
     return { drugs, timeToAtb, alertColor, aviso: null };
-  }, [foco, origem, isCirurgiaLimpa, isAlergiaBeta, riscoMDR, isChoque, peso]);
+  }, [foco, origem, isCirurgiaLimpa, isAlergiaBeta, riscoMDR, isChoque, peso, clcr]);
 
   if (!isOpen) return null;
 
@@ -223,8 +274,8 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
                 )}
 
                 {clcr && clcr < 50 && !isCirurgiaLimpa && (
-                  <div className="bg-red-50 p-2 border-b border-red-100 text-center text-red-700 text-xs font-bold uppercase">
-                    ⚠️ Atenção: Clearance &lt; 50 ml/min. Ajustar dose de manutenção conforme função renal.
+                  <div className="bg-blue-50 p-2 border-b border-blue-100 text-center text-blue-800 text-xs font-bold uppercase">
+                    ℹ️ Clearance reduzido ({clcrText} ml/min). As doses de manutenção abaixo já foram ajustadas automaticamente.
                   </div>
                 )}
 
