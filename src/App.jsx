@@ -4205,9 +4205,7 @@ const navButtons = allNavButtons.filter((btn) => {
       case "hemodialysis":
         return isDocRole || isNursingRole;
       
-      // ==========================================
-      // 🔥 AQUI ESTÁ A CORREÇÃO: PERMISSÃO DA PSICOLOGIA
-      // ==========================================
+      // PERMISSÃO DA PSICOLOGIA (Somente Médicos e Psicólogos editam)
       case "psychology":
         return (
           userProfile?.role === "Psicólogo" || 
@@ -4228,15 +4226,25 @@ const navButtons = allNavButtons.filter((btn) => {
   const canCloseDay = userProfile?.role === "Enfermeiro" || isOverviewEditable;
   const isBHReadOnly = viewingPreviousBH || !isEditable;
 
-  // FILTRO DE ABAS: Técnico vê 2, os outros profissionais veem TODAS
-  const visibleNavButtons = userProfile?.role === "Técnico em Enfermagem"
-    ? navButtons.filter(btn => btn.id === "tech" || btn.id === "hemodialysis")
-    : navButtons; // Para médicos, fisios, etc., retorna a lista completa
+  // ==========================================
+  // 🔥 CORREÇÃO DEFINITIVA: FILTRO ÚNICO DE ABAS
+  // ==========================================
+  const visibleNavButtons = allNavButtons.filter((btn) => {
+    if (userProfile?.role === "Técnico em Enfermagem") {
+      // Técnico vê exatamente estas 3 abas
+      return btn.id === "tech" || btn.id === "hemodialysis" || btn.id === "psychology";
+    }
+    // Para todos os outros profissionais, mostra a lista completa
+    return true; 
+  });
 
-  // GARANTIR QUE O TÉCNICO NÃO FIQUE PRESO NUMA ABA INVISÍVEL
+  // ==========================================
+  // 🔥 CORREÇÃO DA ARMADILHA DE REDIRECIONAMENTO
+  // ==========================================
   useEffect(() => {
     if (userProfile?.role === "Técnico em Enfermagem") {
-      const abasPermitidas = ["tech", "hemodialysis"];
+      // Agora o sistema "autoriza" o técnico a ficar na aba de psicologia sem o expulsar
+      const abasPermitidas = ["tech", "hemodialysis", "psychology"];
       if (!abasPermitidas.includes(viewMode)) {
         setViewMode("tech"); // Se cair numa aba proibida, redireciona para a dele
       }
