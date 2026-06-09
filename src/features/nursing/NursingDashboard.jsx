@@ -94,6 +94,31 @@ return (
               else morseRisk = "Risco Alto";
             }
           
+                        // --- LÓGICA PARA BUSCAR O ÚLTIMO VALOR DAS ESCALAS ---
+            let displayBradenScore = bradenSum > 0 ? bradenSum : "-";
+            let displayBradenRisk = bradenRisk || "Não Avaliado";
+            let displayMorseScore = currentPatient?.enfermagem?.morse_historico !== undefined || morseSum >= 0 ? morseSum : "-";
+            let displayMorseRisk = morseRisk || "Não Avaliado";
+
+            // Se existir histórico diário, pega a data mais recente e substitui os valores
+            if (currentPatient?.enfermagem?.escalas_diarias) {
+              const datas = Object.keys(currentPatient.enfermagem.escalas_diarias).sort((a, b) => new Date(b) - new Date(a));
+              if (datas.length > 0) {
+                const ultimaData = datas[0];
+                const ultimaEscala = currentPatient.enfermagem.escalas_diarias[ultimaData];
+                
+                if (ultimaEscala?.braden?.score !== undefined) {
+                  displayBradenScore = ultimaEscala.braden.score;
+                  displayBradenRisk = ultimaEscala.braden.risco;
+                }
+                if (ultimaEscala?.morse?.score !== undefined) {
+                  displayMorseScore = ultimaEscala.morse.score;
+                  displayMorseRisk = ultimaEscala.morse.risco;
+                }
+              }
+            }
+            // -----------------------------------------------------
+
             return (
               <div className="grid grid-cols-2 gap-4 mb-2 mt-4">
                 <div className="flex flex-col items-center justify-center p-4 border border-orange-200 rounded-xl bg-orange-50/50 text-center">
@@ -101,10 +126,10 @@ return (
                     <AlertTriangle size={14} /> Escala de Braden
                   </h4>
                   <div className="text-4xl font-black text-orange-600 leading-none">
-                    {bradenSum > 0 ? bradenSum : "-"}
+                    {displayBradenScore}
                   </div>
-                  <div className={`mt-3 px-3 py-1.5 text-[11px] font-bold rounded-lg leading-tight shadow-sm max-w-[90%] break-words ${bradenSum <= 12 ? "bg-red-200 text-red-900" : "bg-orange-200 text-orange-900"}`}>
-                    {bradenRisk || "Não Avaliado"}
+                  <div className={`mt-3 px-3 py-1.5 text-[11px] font-bold rounded-lg leading-tight shadow-sm max-w-[90%] break-words ${displayBradenScore !== "-" && displayBradenScore <= 12 ? "bg-red-200 text-red-900" : "bg-orange-200 text-orange-900"}`}>
+                    {displayBradenRisk}
                   </div>
                 </div>
           
@@ -113,10 +138,10 @@ return (
                     <AlertTriangle size={14} /> Escala de Morse
                   </h4>
                   <div className="text-4xl font-black text-blue-600 leading-none">
-                    {currentPatient.enfermagem?.morse_historico !== undefined ? morseSum : "-"}
+                    {displayMorseScore}
                   </div>
-                  <div className={`mt-3 px-3 py-1.5 text-[11px] font-bold rounded-lg leading-tight shadow-sm max-w-[90%] break-words ${morseSum >= 45 ? "bg-red-200 text-red-900" : "bg-blue-200 text-blue-900"}`}>
-                    {morseRisk || "Não Avaliado"}
+                  <div className={`mt-3 px-3 py-1.5 text-[11px] font-bold rounded-lg leading-tight shadow-sm max-w-[90%] break-words ${displayMorseScore !== "-" && displayMorseScore >= 45 ? "bg-red-200 text-red-900" : "bg-blue-200 text-blue-900"}`}>
+                    {displayMorseRisk}
                   </div>
                 </div>
               </div>

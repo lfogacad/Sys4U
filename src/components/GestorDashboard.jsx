@@ -7,7 +7,7 @@ import {
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
-  FileText, Edit3, MapPin, Printer, Download
+  FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -164,6 +164,48 @@ const GestorDashboard = ({ userProfile }) => {
   const [listaCenso, setListaCenso] = useState([]);
 
   const [abaIrasAtiva, setAbaIrasAtiva] = useState('geral');
+
+  const [modalHistorico, setModalHistorico] = useState({ isOpen: false, tipo: '', paciente: null });
+    // Estados para armazenar os dados vindos do Firebase
+  const [historicoData, setHistoricoData] = useState([]);
+  const [loadingHistorico, setLoadingHistorico] = useState(false);
+
+  // Efeito que dispara a busca no Firebase toda vez que o modal é aberto
+  useEffect(() => {
+    if (modalHistorico.isOpen && modalHistorico.paciente) {
+      const fetchHistorico = async () => {
+        setLoadingHistorico(true);
+        try {
+          // Pega o ID correto do paciente para buscar na coleção
+          const idBusca = modalHistorico.paciente.idInternacao || modalHistorico.paciente.id;
+          
+          // Monta a pesquisa: Busca na coleção "indicadores_performance" onde o ID bate e o tipo é BRADEN ou MORSE
+          const q = query(
+            collection(db, "indicadores_performance"),
+            where("idInternacao", "==", idBusca),
+            where("tipo", "==", modalHistorico.tipo.toUpperCase())
+          );
+          
+          const querySnapshot = await getDocs(q);
+          const docs = [];
+          querySnapshot.forEach((doc) => {
+            docs.push({ id: doc.id, ...doc.data() });
+          });
+          
+          // Ordena os resultados da data mais recente para a mais antiga
+          docs.sort((a, b) => b.dataRegistro.toDate() - a.dataRegistro.toDate());
+          
+          setHistoricoData(docs);
+        } catch (error) {
+          console.error("Erro ao buscar histórico:", error);
+        } finally {
+          setLoadingHistorico(false);
+        }
+      };
+      
+      fetchHistorico();
+    }
+  }, [modalHistorico]);
 
   const [dataInicio, setDataInicio] = useState(
     new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
@@ -447,6 +489,10 @@ const GestorDashboard = ({ userProfile }) => {
       score: dadosEscala.score || dadosEscala.pontuacao || dadosEscala.total || 'N/D',
       respostas: dadosEscala.respostas || dadosEscala.detalhes || dadosEscala // Flexível para o formato que o senhor salvou
     });
+  };
+
+   const abrirHistoricoEscalas = (tipo, paciente) => {
+    setModalHistorico({ isOpen: true, tipo, paciente });
   };
 
   // Calcula a epidemiologia real baseada no que veio do Firebase + NursingDashboard
@@ -5726,7 +5772,7 @@ const GestorDashboard = ({ userProfile }) => {
           </div>
         )}
 
-        {/* ============================================================== */}
+                {/* ============================================================== */}
         {/* ESTRUTURA PARA AS ESCALAS ASSISTENCIAIS (AUDITORIA)            */}
         {/* ============================================================== */}
         {abaRiscoAtiva === 'escalas' && (
@@ -5739,7 +5785,7 @@ const GestorDashboard = ({ userProfile }) => {
                 <p className="text-xs text-slate-500 mt-1">Verificação de conformidade do SAPS 3, Braden e Morse de todas as internações.</p>
               </div>
 
-              {/* 🔥 NOVO BLOCO: O CONTROLE DO FILTRO DE TEMPO */}
+              {/* O CONTROLE DO FILTRO DE TEMPO */}
               <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
                 <Filter size={16} className="text-slate-400 ml-2" />
                 <span className="text-xs font-bold text-slate-600 uppercase">Período:</span>
@@ -5791,7 +5837,6 @@ const GestorDashboard = ({ userProfile }) => {
                         <td className="p-4 text-center border-l border-slate-100">
                           {pac.saps3 ? (
                             <div className="flex items-center justify-center gap-2">
-                              {/* Trocamos || por ?? para respeitar o Zero */}
                               <span className="font-black text-slate-700 text-lg">{pac.saps3.score ?? pac.saps3.pontuacao ?? '-'}</span>
                               <button onClick={() => abrirAuditoriaEscala('SAPS 3', pac.nome, pac.saps3)} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
                                 <Search size={16} />
@@ -5804,12 +5849,15 @@ const GestorDashboard = ({ userProfile }) => {
 
                         {/* COLUNA 3: BRADEN */}
                         <td className="p-4 text-center border-l border-slate-100">
-                          {pac.braden ? (
+                          {pac.braden || (pac.enfermagem && pac.enfermagem.escalas_diarias) ? (
                             <div className="flex items-center justify-center gap-2">
-                              {/* Trocamos || por ?? */}
-                              <span className="font-black text-slate-700 text-lg">{pac.braden.score ?? pac.braden.pontuacao ?? '-'}</span>
-                              <button onClick={() => abrirAuditoriaEscala('Braden', pac.nome, pac.braden)} className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
+                              <span className="font-black text-slate-700 text-lg">{pac.braden?.score ?? pac.braden?.pontuacao ?? '-'}</span>
+                              <button onClick={() => abrirAuditoriaEscala('Braden', pac.nome, pac.braden)} className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition-colors" title="Auditar Admissão">
                                 <Search size={16} />
+                              </button>
+                              {/* NOVO BOTÃO DE HISTÓRICO DIÁRIO */}
+                              <button onClick={() => abrirHistoricoEscalas('Braden', pac)} className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors" title="Ver Histórico Diário">
+                                <History size={16} />
                               </button>
                             </div>
                           ) : (
@@ -5819,12 +5867,15 @@ const GestorDashboard = ({ userProfile }) => {
 
                         {/* COLUNA 4: MORSE */}
                         <td className="p-4 text-center border-l border-slate-100">
-                          {pac.morse ? (
+                          {pac.morse || (pac.enfermagem && pac.enfermagem.escalas_diarias) ? (
                             <div className="flex items-center justify-center gap-2">
-                              {/* Trocamos || por ?? */}
-                              <span className="font-black text-slate-700 text-lg">{pac.morse.score ?? pac.morse.pontuacao ?? '-'}</span>
-                              <button onClick={() => abrirAuditoriaEscala('Morse', pac.nome, pac.morse)} className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
+                              <span className="font-black text-slate-700 text-lg">{pac.morse?.score ?? pac.morse?.pontuacao ?? '-'}</span>
+                              <button onClick={() => abrirAuditoriaEscala('Morse', pac.nome, pac.morse)} className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors" title="Auditar Admissão">
                                 <Search size={16} />
+                              </button>
+                              {/* NOVO BOTÃO DE HISTÓRICO DIÁRIO */}
+                              <button onClick={() => abrirHistoricoEscalas('Morse', pac)} className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors" title="Ver Histórico Diário">
+                                <History size={16} />
                               </button>
                             </div>
                           ) : (
@@ -6925,6 +6976,66 @@ const GestorDashboard = ({ userProfile }) => {
                   </div>
                 </div>
               )}
+
+      {/* MODAL DE HISTÓRICO DE ESCALAS DIÁRIAS (BUSCANDO DO FIREBASE) */}
+      {modalHistorico.isOpen && modalHistorico.paciente && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-fade-in">
+            
+            <div className="bg-indigo-600 p-4 flex justify-between items-center text-white">
+              <div className="flex items-center gap-2">
+                <HistoryIcon size={24} />
+                <h2 className="text-lg font-black tracking-wide">
+                  Histórico Diário - Escala de {modalHistorico.tipo}
+                </h2>
+              </div>
+              <button onClick={() => setModalHistorico({ isOpen: false, tipo: '', paciente: null })} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto bg-slate-50">
+              <div className="mb-4">
+                <p className="text-sm font-bold text-slate-500 uppercase">Paciente</p>
+                <p className="text-lg font-black text-slate-800">{modalHistorico.paciente.nome}</p>
+              </div>
+
+              {loadingHistorico ? (
+                <div className="text-center p-12 text-slate-500 font-medium flex flex-col items-center justify-center">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-4 border-indigo-600 mb-4"></div>
+                  Buscando histórico no banco de dados...
+                </div>
+              ) : historicoData.length > 0 ? (
+                <div className="space-y-3">
+                  {historicoData.map(item => (
+                    <div key={item.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-lg font-bold text-sm">
+                          {/* Exibe a data e a hora exata que foi salvo no Firebase */}
+                          {item.dataRegistro?.toDate().toLocaleDateString('pt-BR')} às {item.dataRegistro?.toDate().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 font-bold uppercase">Risco</p>
+                          <p className="text-sm font-black text-slate-800">{item.risco}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500 font-bold uppercase">Pontuação</p>
+                        <p className="text-2xl font-black text-indigo-600">{item.valor}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center p-8 bg-white rounded-xl border border-slate-200">
+                  <p className="text-slate-500 font-medium">Nenhum histórico diário registrado para este paciente ainda.</p>
+                  <p className="text-xs text-slate-400 mt-2">As avaliações aparecerão aqui conforme a enfermagem preencher o checklist diário.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
