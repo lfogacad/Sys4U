@@ -4161,9 +4161,9 @@ const allNavButtons = [
 ];
 
 const navButtons = allNavButtons.filter((btn) => {
-  // Se for técnico, filtro rigoroso: apenas 2 abas
+  // Se for técnico, filtro rigoroso: liberado Tech, Hemodiálise e Psicologia
   if (userProfile?.role === "Técnico em Enfermagem") {
-    return btn.id === "tech" || btn.id === "hemodialysis";
+    return btn.id === "tech" || btn.id === "hemodialysis" || btn.id === "psychology";
   }
   // Para todos os outros profissionais, mostra TODAS as abas
   return true; 
