@@ -482,8 +482,17 @@ const TechDashboard = ({
                     GANHOS (+)
                   </td>
                 </tr>
-                {currentGains.map((item, rowIndex) => {
+                                {currentGains.map((item, rowIndex) => {
                   let rowTotal = 0;
+                  
+                  // 🔥 NOVO: Estado inicial da cor para esta linha (começa preto)
+                  let currentNoraState = false; 
+                  const isNoraRow = item.toLowerCase().includes("nora");
+                  
+                  // Pega a data do plantão atual para ler o histórico correto
+                  const bhDate = displayedBH?.date || getManausDateStr(); 
+                  const noraHistory = currentPatient.sofa_data_technical?.noraDoseHistory?.[bhDate] || {};
+
                   BH_HOURS.forEach((h) => (rowTotal += safeNumber(displayedBH.gains[h]?.[item])));
                   return (
                     <tr key={item} className="hover:bg-slate-200 transition-colors group border-b print:border-black">
@@ -513,38 +522,52 @@ const TechDashboard = ({
                           )}
                         </div>
                       </td>
-                      {BH_HOURS.map((h, colIndex) => (
-                        <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
-                          <input
-                            type="text"
-                            data-grid="gains" data-row={rowIndex} data-col={colIndex}
-                            className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden"
-                            value={displayedBH.gains[h]?.[item] || ""}
-                            onKeyDown={(e) => handleGridKeyDown(e, "gains", rowIndex, colIndex, currentGains.length - 1, numCols)}
-                            onChange={(e) => handleValidatedChange(h, "gains", item, e)}
-                            onBlur={(e) => {
-                              checkMinLimitOnBlur(h, "gains", item, e);
-                              const val = e.target.value;
-                              const newVal = parseFloat(val.replace(',', '.')) || 0;
-                              const isNora = item.toLowerCase().includes("nora");
-                              const todayStr = getManausDateStr();
-                              const modalAlreadyShownToday = currentPatient.sofa_data_technical?.noraModalShown_date === todayStr;
-                              const hourIndex = BH_HOURS.indexOf(h);
-                              const prevHour = hourIndex > 0 ? BH_HOURS[hourIndex - 1] : null;
-                              const prevRate = prevHour ? parseFloat((displayedBH.gains[prevHour]?.[item] || "0").replace(',', '.')) : 0;
-                              const isFirstTime = !modalAlreadyShownToday && val && val !== "0";
-                              const isSignificantDrop = prevRate > 0 && newVal > 0 && newVal <= (prevRate * 0.5);
-                              const isSignificantIncrease = prevRate > 0 && newVal > 0 && newVal >= (prevRate * 1.3);
-                              if (isNora && !viewingPreviousBH && (isFirstTime || isSignificantDrop || isSignificantIncrease)) {
-                                setCurrentNoraHour(h);
-                                setCurrentNoraRate(val);
-                                setShowNoraModal(true);
-                              }
-                            }}
-                          />
-                          <span className="hidden print:block text-center text-[8px] w-full align-middle">{displayedBH.gains[h]?.[item] || ""}</span>
-                        </td>
-                      ))}
+                      {BH_HOURS.map((h, colIndex) => {
+                        
+                        // 🔥 NOVO: Se houver um registro de mudança de dose NESTA hora, atualiza a cor daqui pra frente!
+                        if (isNoraRow && noraHistory[h] !== undefined) {
+                          currentNoraState = noraHistory[h];
+                        }
+
+                        // Só pinta de vermelho se for Nora, se o estado atual for dobrado, e se a célula não estiver vazia
+                        const hasValue = displayedBH.gains[h]?.[item];
+                        const textClass = (isNoraRow && currentNoraState && hasValue) ? "text-red-600 font-bold" : "";
+
+                        return (
+                          <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
+                            <input
+                              type="text"
+                              data-grid="gains" data-row={rowIndex} data-col={colIndex}
+                              className={`w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-0.5 print:hidden ${textClass}`}
+                              value={displayedBH.gains[h]?.[item] || ""}
+                              onKeyDown={(e) => handleGridKeyDown(e, "gains", rowIndex, colIndex, currentGains.length - 1, numCols)}
+                              onChange={(e) => handleValidatedChange(h, "gains", item, e)}
+                              onBlur={(e) => {
+                                checkMinLimitOnBlur(h, "gains", item, e);
+                                const val = e.target.value;
+                                const newVal = parseFloat(val.replace(',', '.')) || 0;
+                                const isNora = item.toLowerCase().includes("nora");
+                                const todayStr = getManausDateStr();
+                                const modalAlreadyShownToday = currentPatient.sofa_data_technical?.noraModalShown_date === todayStr;
+                                const hourIndex = BH_HOURS.indexOf(h);
+                                const prevHour = hourIndex > 0 ? BH_HOURS[hourIndex - 1] : null;
+                                const prevRate = prevHour ? parseFloat((displayedBH.gains[prevHour]?.[item] || "0").replace(',', '.')) : 0;
+                                const isFirstTime = !modalAlreadyShownToday && val && val !== "0";
+                                const isSignificantDrop = prevRate > 0 && newVal > 0 && newVal <= (prevRate * 0.5);
+                                const isSignificantIncrease = prevRate > 0 && newVal > 0 && newVal >= (prevRate * 1.3);
+                                if (isNora && !viewingPreviousBH && (isFirstTime || isSignificantDrop || isSignificantIncrease)) {
+                                  setCurrentNoraHour(h);
+                                  setCurrentNoraRate(val);
+                                  setShowNoraModal(true);
+                                }
+                              }}
+                            />
+                            <span className={`hidden print:block text-center text-[8px] w-full align-middle ${textClass}`}>
+                              {displayedBH.gains[h]?.[item] || ""}
+                            </span>
+                          </td>
+                        );
+                      })}
                       <td className="font-bold text-slate-700 bg-slate-50 print:bg-white print:text-black print:border-black text-[9px]">{rowTotal || ""}</td>
                     </tr>
                   );

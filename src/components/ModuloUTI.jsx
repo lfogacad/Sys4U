@@ -3465,12 +3465,10 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
   };
 
   const handlePrintHistory = () => {
-    // Essa função geralmente abre uma janela de impressão do histórico.
-    // Cole aqui o conteúdo original do seu App.jsx (que criava o window.open, montava o HTML e chamava window.print()).
     alert("Função de impressão em desenvolvimento para o novo módulo.");
   };
 
-  const handleNoraModalResponse = (isDoubleDose) => {
+    const handleNoraModalResponse = (isDoubleDose) => {
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
     const today = getManausDateStr();
@@ -3481,6 +3479,14 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
 
     p.sofa_data_technical.noraDoubleDoseToday = isDoubleDose;
     p.sofa_data_technical.noraModalShown_date = today;
+
+    // 🔥 NOVO: Cria um histórico de mudanças de dose por dia e hora
+    if (!p.sofa_data_technical.noraDoseHistory) p.sofa_data_technical.noraDoseHistory = {};
+    if (!p.sofa_data_technical.noraDoseHistory[today]) p.sofa_data_technical.noraDoseHistory[today] = {};
+    
+    // Grava a resposta exata (true ou false) na hora em que o modal abriu
+    p.sofa_data_technical.noraDoseHistory[today][currentNoraHour] = isDoubleDose;
+
     p.hd_monitoramento[currentNoraHour].noraRate = currentNoraRate;
 
     up[activeTab] = p;
