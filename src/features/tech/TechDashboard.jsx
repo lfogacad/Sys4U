@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, 
-         Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar } from 'lucide-react';
+         Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar, Coffee, ArrowRight, CheckCircle2,
+         ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
+         FileText, Copy } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -31,11 +33,389 @@ const TechDashboard = ({
   handleBlurSave
 }) => {
 
-  // ==============================================================
-  // 👇 2. OS USESTATES ENTRAM EXATAMENTE AQUI!
-  // ==============================================================
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
+
+  // =========================================================================
+  // FUNÇÃO AUXILIAR: ARREDONDA A HORA ATUAL PARA 00, 15, 30 OU 45
+  // =========================================================================
+  const getHoraAtualArredondada = () => {
+    const agora = new Date();
+    let horas = agora.getHours();
+    let minutos = agora.getMinutes();
+
+    const resto = minutos % 15;
+    if (resto < 8) {
+      minutos -= resto; // Arredonda para baixo
+    } else {
+      minutos += (15 - resto); // Arredonda para cima
+    }
+
+    if (minutos === 60) {
+      minutos = 0;
+      horas = (horas + 1) % 24;
+    }
+
+    return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`;
+  };
+
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DO MODAL DE DIETA VO
+  // =========================================================================
+  const [modalDieta, setModalDieta] = useState({
+    isOpen: false,
+    step: 1,
+    horario: "", // NOVO: Horário da oferta
+    refeicao: "", // NOVO: Tipo de refeição
+    tipos: { solida: false, liquida: false },
+    consumo: { solida: null, liquida: null } 
+  });
+
+  const salvarDietaVO = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_dieta_vo) p.enfermagem.historico_dieta_vo = [];
+
+    // Cria o registro com a data exata do clique, mas salva o horário e tipo informados
+    const novoRegistro = {
+      dataHoraRegistro: new Date().toISOString(),
+      horarioRefeicao: modalDieta.horario,
+      tipoRefeicao: modalDieta.refeicao,
+      tiposOferecidos: modalDieta.tipos,
+      consumo: modalDieta.consumo
+    };
+
+    p.enfermagem.historico_dieta_vo.push(novoRegistro);
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Registrou Dieta VO (${modalDieta.refeicao})`);
+    
+    // Fecha o modal e reseta
+    setModalDieta({ isOpen: false, step: 1, horario: "", refeicao: "", tipos: { solida: false, liquida: false }, consumo: { solida: null, liquida: null } });
+  };
+
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DO MODAL DE BANHO
+  // =========================================================================
+  const [modalBanho, setModalBanho] = useState({
+    isOpen: false,
+    horario: "",
+    tipo: ""
+  });
+
+  const salvarBanho = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_banho) p.enfermagem.historico_banho = [];
+
+    const novoRegistro = {
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalBanho.horario,
+      tipo: modalBanho.tipo
+    };
+
+    p.enfermagem.historico_banho.push(novoRegistro);
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Registrou Banho (${modalBanho.tipo})`);
+    
+    setModalBanho({ isOpen: false, horario: "", tipo: "" });
+  };
+
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DO MODAL DE DECÚBITO
+  // =========================================================================
+  const [modalDecubito, setModalDecubito] = useState({
+    isOpen: false,
+    horario: "",
+    posicao: ""
+  });
+
+  const salvarDecubito = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_decubito) p.enfermagem.historico_decubito = [];
+
+    const novoRegistro = {
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalDecubito.horario,
+      posicao: modalDecubito.posicao
+    };
+
+    p.enfermagem.historico_decubito.push(novoRegistro);
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Mudança de Decúbito (${modalDecubito.posicao})`);
+    
+    setModalDecubito({ isOpen: false, horario: "", posicao: "" });
+  };
+
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DOS MODAIS DE HIGIENE (ORAL E ÍNTIMA)
+  // =========================================================================
+  const [modalHigieneOral, setModalHigieneOral] = useState({ isOpen: false, horario: "" });
+  const [modalHigieneIntima, setModalHigieneIntima] = useState({ isOpen: false, horario: "" });
+
+  const salvarHigieneOral = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_higiene_oral) p.enfermagem.historico_higiene_oral = [];
+
+    p.enfermagem.historico_higiene_oral.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalHigieneOral.horario
+    });
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], "Enfermagem: Registrou Higiene Oral");
+    setModalHigieneOral({ isOpen: false, horario: "" });
+  };
+
+  const salvarHigieneIntima = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_higiene_intima) p.enfermagem.historico_higiene_intima = [];
+
+    p.enfermagem.historico_higiene_intima.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalHigieneIntima.horario
+    });
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], "Enfermagem: Registrou Higiene Íntima");
+    setModalHigieneIntima({ isOpen: false, horario: "" });
+  };
+
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DO MODAL DE ASPIRAÇÃO VAS
+  // =========================================================================
+  const [modalAspiracao, setModalAspiracao] = useState({
+    isOpen: false,
+    horario: "",
+    quantidade: "",
+    caracteristica: ""
+  });
+
+  const salvarAspiracao = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_aspiracao_vas) p.enfermagem.historico_aspiracao_vas = [];
+
+    p.enfermagem.historico_aspiracao_vas.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalAspiracao.horario,
+      quantidade: modalAspiracao.quantidade,
+      caracteristica: modalAspiracao.caracteristica
+    });
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Registrou Aspiração VAS (${modalAspiracao.quantidade}, ${modalAspiracao.caracteristica})`);
+    
+    setModalAspiracao({ isOpen: false, horario: "", quantidade: "", caracteristica: "" });
+  };
+
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DO MODAL DE TROCA DE FRALDA
+  // =========================================================================
+  const [modalFralda, setModalFralda] = useState({
+    isOpen: false,
+    horario: "",
+    evacuacao: null, // null, "Sim", "Não"
+    diarreica: false,
+    quantidade: "" // NOVO: Quantificação da evacuação (+, ++, +++, ++++)
+  });
+
+    const salvarFralda = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_fralda) p.enfermagem.historico_fralda = [];
+
+    // 1. Salva no histórico individual da fralda
+    p.enfermagem.historico_fralda.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalFralda.horario,
+      evacuacao: modalFralda.evacuacao,
+      diarreica: modalFralda.evacuacao === "Sim" ? modalFralda.diarreica : false,
+      quantidade: modalFralda.evacuacao === "Sim" ? modalFralda.quantidade : ""
+    });
+
+    // =========================================================================
+    // 2. INTEGRAÇÃO AUTOMÁTICA COM O BALANÇO HÍDRICO (BH)
+    // =========================================================================
+    if (modalFralda.evacuacao === "Sim" && modalFralda.horario) {
+      // Pega a hora e os minutos digitados
+      const [horaStr, minStr] = modalFralda.horario.split(':');
+      let hora = parseInt(horaStr, 10);
+      const min = parseInt(minStr, 10);
+      
+      // Arredonda para a hora mais próxima (ex: 14:35 vira 15h, 14:20 vira 14h)
+      if (min >= 30) {
+        hora = (hora + 1) % 24;
+      }
+      
+      // Formata para o padrão do BH (ex: "07h", "15h", "00h")
+      const horaBH = `${String(hora).padStart(2, '0')}h`;
+
+      // Garante que a estrutura do BH existe para não quebrar a tela
+      if (!p.bh) p.bh = { date: new Date().toISOString().split('T')[0], inputs: {}, losses: {}, vitals: {} };
+      if (!p.bh.losses) p.bh.losses = {};
+      if (!p.bh.losses[horaBH]) p.bh.losses[horaBH] = {};
+
+      // Injeta a quantidade (+, ++, etc) na linha "Evacuação"
+      p.bh.losses[horaBH]["Evacuação"] = modalFralda.quantidade;
+
+      // Se for diarreica, injeta o "S" na linha "Diarreia"
+      if (modalFralda.diarreica) {
+        p.bh.losses[horaBH]["Diarreia"] = "S";
+      }
+    }
+
+    up[activeTab] = p;
+    setPatients(up);
+    
+    // 3. Gera o Log de Auditoria
+    let logMsg = `Enfermagem: Registrou Troca de Fralda`;
+    if (modalFralda.evacuacao === "Sim") {
+      logMsg += ` (Evacuação: Sim [${modalFralda.quantidade}]${modalFralda.diarreica ? ' - Diarreica' : ''})`;
+    } else {
+      logMsg += ` (Apenas Diurese/Seca)`;
+    }
+    
+    save(up[activeTab], logMsg);
+    
+    // 4. Reseta e fecha o modal
+    setModalFralda({ isOpen: false, horario: "", evacuacao: null, diarreica: false, quantidade: "" });
+  };
+
+  // =========================================================================
+  // ESTADOS, OPÇÕES E FUNÇÕES DO MODAL DE CURATIVO
+  // =========================================================================
+  const [modalCurativo, setModalCurativo] = useState({
+    isOpen: false,
+    horario: "",
+    tipo: "",
+    localizacao: ""
+  });
+
+  const OPCOES_CURATIVO = {
+    "Acesso Periférico": ["MSD", "MSE", "MID", "MIE", "Jugular Externa D", "Jugular Externa E"],
+    "Acesso Central": ["Subclávia D", "Subclávia E", "Jugular Interna D", "Jugular Interna E", "Femoral D", "Femoral E", "PICC MSD", "PICC MSE"],
+    "Catéter de HD": ["Subclávia D", "Subclávia E", "Jugular Interna D", "Jugular Interna E", "Femoral D", "Femoral E"],
+    "Dreno de Tórax": ["Hemotórax Direito", "Hemotórax Esquerdo", "Mediastino"],
+    "Dreno Abdominal": ["Flanco Direito", "Flanco Esquerdo", "Fossa Ilíaca Direita", "Fossa Ilíaca Esquerda", "Pélvico", "Epigástrio"],
+    "Ferida Operatória": ["Abdominal", "Torácica", "Craniana", "Cervical", "MMSS", "MMII", "Outro"],
+    "Úlcera por Pressão": ["Sacral", "Calcâneo D", "Calcâneo E", "Isquiática D", "Isquiática E", "Trocantérica D", "Trocantérica E", "Occipital"]
+  };
+
+  const salvarCurativo = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_curativo) p.enfermagem.historico_curativo = [];
+
+    p.enfermagem.historico_curativo.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalCurativo.horario,
+      tipo: modalCurativo.tipo,
+      localizacao: modalCurativo.localizacao
+    });
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Registrou Curativo (${modalCurativo.tipo} - ${modalCurativo.localizacao})`);
+    
+    setModalCurativo({ isOpen: false, horario: "", tipo: "", localizacao: "" });
+  }
+
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DO RELATÓRIO DE ENFERMAGEM
+  // =========================================================================
+  const [modalRelatorio, setModalRelatorio] = useState({ isOpen: false, texto: "" });
+
+  const gerarRelatorioEnfermagem = () => {
+    const enf = currentPatient.enfermagem || {};
+    let eventos = [];
+
+    // Função auxiliar para varrer os arrays e extrair os textos
+    const addEvent = (historico, formatador) => {
+      if (Array.isArray(historico)) {
+        historico.forEach(item => {
+          if (item.horario) {
+            eventos.push({ horario: item.horario, texto: formatador(item) });
+          }
+        });
+      }
+    };
+
+    // Extraindo dados de cada modal
+    addEvent(enf.historico_dieta_vo, (i) => {
+      let txt = `Dieta VO (${i.tipoRefeicao}).`;
+      if (i.tiposOferecidos?.solida) txt += ` Sólida: ${i.consumo?.solida}% consumido.`;
+      if (i.tiposOferecidos?.liquida) txt += ` Líquida: ${i.consumo?.liquida}% consumido.`;
+      return txt;
+    });
+    addEvent(enf.historico_banho, (i) => `Banho: ${i.tipo}.`);
+    addEvent(enf.historico_decubito, (i) => `Mudança de Decúbito: ${i.posicao}.`);
+    addEvent(enf.historico_higiene_oral, () => `Higiene Oral realizada.`);
+    addEvent(enf.historico_higiene_intima, () => `Higiene Íntima realizada.`);
+    addEvent(enf.historico_curativo, (i) => `Troca/Avaliação de Curativo: ${i.tipo} (${i.localizacao}).`);
+    addEvent(enf.historico_aspiracao_vas, (i) => `Aspiração VAS: Secreção ${i.quantidade.toLowerCase()}, aspecto ${i.caracteristica.toLowerCase()}.`);
+    addEvent(enf.historico_fralda, (i) => {
+      let txt = `Troca de Fralda.`;
+      if (i.evacuacao === "Sim") {
+        txt += ` Evacuação: Sim [${i.quantidade}]`;
+        if (i.diarreica) txt += ` (Fezes Diarreicas).`;
+        else txt += `.`;
+      } else {
+        txt += ` Apenas diurese/seca.`;
+      }
+      return txt;
+    });
+
+    // Ordena todos os eventos do dia por horário (do mais cedo pro mais tarde)
+    eventos.sort((a, b) => a.horario.localeCompare(b.horario));
+
+    // Monta o texto final
+    let relatorio = `=== ANOTAÇÃO DE ENFERMAGEM ===\n`;
+    relatorio += `Paciente: ${currentPatient.nome}\n`;
+    relatorio += `Data: ${new Date().toLocaleDateString('pt-BR')}\n\n`;
+
+    if (eventos.length > 0) {
+      eventos.forEach(ev => {
+        relatorio += `[${ev.horario}] ${ev.texto}\n`;
+      });
+    } else {
+      relatorio += `Nenhum procedimento pontual registrado no sistema até o momento.\n`;
+    }
+
+    // Adiciona o texto livre do textarea no final
+    if (enf.anotacoes_tech && enf.anotacoes_tech.trim() !== "") {
+      relatorio += `\n--- OBSERVAÇÕES GERAIS ---\n${enf.anotacoes_tech.trim()}\n`;
+    }
+
+    setModalRelatorio({ isOpen: true, texto: relatorio });
+  };
 
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
   const LIMITS = {
@@ -405,6 +785,116 @@ const TechDashboard = ({
           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 disabled:opacity-50"></div>
         </label>
       </div>
+
+      {/* ========================================================================= */}
+      {/* NOVO BLOCO: REGISTROS DIÁRIOS (BOTÕES DE ACESSO RÁPIDO)                   */}
+      {/* ========================================================================= */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 print:hidden animate-fadeIn">
+        <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+          <ClipboardList className="text-indigo-600" size={18} />
+          Registros Diários
+        </h3>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              // Pega a hora atual no formato HH:MM
+              const horaAtual = getHoraAtualArredondada();
+              setModalDieta({ isOpen: true, step: 1, horario: horaAtual, refeicao: "", tipos: { solida: false, liquida: false }, consumo: { solida: null, liquida: null } });
+            }}
+            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+          >
+            <Utensils size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase text-center">Dieta VO</span>
+          </button>
+          
+           <button 
+            onClick={(e) => {
+              e.preventDefault();
+              const horaAtual = getHoraAtualArredondada();
+              setModalBanho({ isOpen: true, horario: horaAtual, tipo: "" });
+            }}
+            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+          >
+            <ShowerHead size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase text-center">Banho</span>
+          </button>
+          
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              const horaAtual = getHoraAtualArredondada();
+              setModalDecubito({ isOpen: true, horario: horaAtual, posicao: "" });
+            }}
+            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+          >
+            <RefreshCw size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase text-center">Decúbito</span>
+          </button>
+          
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              const horaAtual = getHoraAtualArredondada();
+              setModalHigieneOral({ isOpen: true, horario: horaAtual });
+            }}
+            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+          >
+            <Smile size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase text-center">Higiene Oral</span>
+          </button>
+          
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              const horaAtual = getHoraAtualArredondada();
+              setModalHigieneIntima({ isOpen: true, horario: horaAtual });
+            }}
+            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+          >
+            <ShieldPlus size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase text-center">Higiene Íntima</span>
+          </button>
+          
+           <button 
+            onClick={(e) => {
+              e.preventDefault();
+              const horaAtual = getHoraAtualArredondada();
+              setModalCurativo({ isOpen: true, horario: horaAtual, tipo: "", localizacao: "" });
+            }}
+            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+          >
+            <Bandage size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase text-center">Curativo</span>
+          </button>
+          
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              const horaAtual = getHoraAtualArredondada();
+              setModalAspiracao({ isOpen: true, horario: horaAtual, quantidade: "", caracteristica: "" });
+            }}
+            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+          >
+            <Wind size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase text-center">Aspiração VAS</span>
+          </button>
+          
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              const horaAtual = getHoraAtualArredondada();
+              setModalFralda({ isOpen: true, horario: horaAtual, evacuacao: null, diarreica: false, quantidade: "" });
+            }}
+            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+          >
+            <Package size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase text-center">Troca de Fralda</span>
+          </button>
+        </div>
+      </div>
+      {/* ========================================================================= */}
 
       {/* CABEÇALHO COM SELETOR DE DATAS */}
       <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center gap-4 mb-2 print:hidden bg-blue-50/50 p-4 rounded-xl border border-blue-100">
@@ -856,6 +1346,902 @@ const TechDashboard = ({
             onBlur={() => handleBlurSave("Equipe Técnica: Editou as Anotações Gerais")}
           />
         </div>
+
+        {/* 🔥 NOVO BOTÃO DE GERAR RELATÓRIO */}
+        <div className="mt-4 flex justify-end">
+          <button 
+            onClick={(e) => { e.preventDefault(); gerarRelatorioEnfermagem(); }}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-black uppercase tracking-wide transition-all shadow-md hover:shadow-lg"
+          >
+            <FileText size={20} />
+            Gerar Anotação de Enfermagem
+          </button>
+        </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE DIETA VO (2 ETAPAS)                                    */}
+      {/* ========================================================================= */}
+      {modalDieta.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            
+            {/* CABEÇALHO */}
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Utensils size={20} /></div>
+                <div>
+                  <h2 className="text-lg font-black tracking-wide leading-tight">Registro de Dieta VO</h2>
+                  <p className="text-indigo-200 text-xs font-medium">Passo {modalDieta.step} de 2</p>
+                </div>
+              </div>
+              <button onClick={() => setModalDieta({ ...modalDieta, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50">
+              
+              {/* ETAPA 1: DETALHES E O QUE FOI OFERECIDO? */}
+              {modalDieta.step === 1 && (
+                <div className="animate-fadeIn">
+                  
+                  {/* NOVOS CAMPOS: HORÁRIO E TIPO */}
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 mb-1 block">Horário da Oferta</label>
+                      <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  
+                  {/* SELECT DE HORAS (00 a 23) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalDieta.horario ? modalDieta.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalDieta({ ...modalDieta, horario: `${e.target.value}:${modalDieta.horario ? modalDieta.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  
+                  {/* SELECT DE MINUTOS (Restrito a 4 opções) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalDieta.horario ? modalDieta.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalDieta({ ...modalDieta, horario: `${modalDieta.horario ? modalDieta.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+
+                </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 mb-1 block">Tipo de Refeição</label>
+                      <select 
+                        className="w-full p-3 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-bold"
+                        value={modalDieta.refeicao}
+                        onChange={(e) => setModalDieta({ ...modalDieta, refeicao: e.target.value })}
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="Café da Manhã">Café da Manhã</option>
+                        <option value="Almoço">Almoço</option>
+                        <option value="Lanche">Lanche</option>
+                        <option value="Janta">Janta</option>
+                        <option value="Ceia">Ceia</option>
+                        <option value="Suplemento">Suplemento</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <h3 className="text-center text-slate-700 font-bold mb-4 border-t border-slate-100 pt-4">O que foi oferecido?</h3>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-8">
+                    <button 
+                      onClick={() => setModalDieta({ ...modalDieta, tipos: { ...modalDieta.tipos, solida: !modalDieta.tipos.solida } })}
+                      className={`flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 transition-all ${modalDieta.tipos.solida ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:border-indigo-200'}`}
+                    >
+                      <Utensils size={32} />
+                      <span className="font-black uppercase text-sm">Dieta Sólida</span>
+                    </button>
+
+                    <button 
+                      onClick={() => setModalDieta({ ...modalDieta, tipos: { ...modalDieta.tipos, liquida: !modalDieta.tipos.liquida } })}
+                      className={`flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 transition-all ${modalDieta.tipos.liquida ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:border-indigo-200'}`}
+                    >
+                      <Coffee size={32} />
+                      <span className="font-black uppercase text-sm">Dieta Líquida</span>
+                    </button>
+                  </div>
+
+                  <button 
+                    // O botão só libera se preencher o horário, a refeição E escolher pelo menos um tipo de dieta
+                    disabled={!modalDieta.refeicao || !modalDieta.horario || (!modalDieta.tipos.solida && !modalDieta.tipos.liquida)}
+                    onClick={() => setModalDieta({ ...modalDieta, step: 2 })}
+                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                  >
+                    Avançar para Consumo <ArrowRight size={18} />
+                  </button>
+                </div>
+              )}
+
+              {/* ETAPA 2: QUANTO SOBROU? */}
+              {modalDieta.step === 2 && (
+                <div className="animate-fadeIn space-y-6">
+                  <h3 className="text-center text-slate-700 font-black mb-2 text-lg">Quanto sobrou no prato/copo?</h3>
+
+                  {/* SELETOR SÓLIDA (PRATO VISUAL) */}
+                  {modalDieta.tipos.solida && (
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                      <div className="flex items-center gap-2 text-orange-700 font-black mb-4 border-b border-slate-100 pb-2">
+                        <Utensils size={16} /> DIETA SÓLIDA (Prato)
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        {[
+                          // val = % consumida (salva no banco) | fill = % que sobrou (desenho na tela)
+                          { val: 0, label: '100%', desc: 'Tudo (Recusou)', fill: 100 },
+                          { val: 25, label: '75%', desc: 'Sobrou 3/4', fill: 75 },
+                          { val: 50, label: '50%', desc: 'Metade', fill: 50 },
+                          { val: 75, label: '25%', desc: 'Sobrou 1/4', fill: 25 },
+                          { val: 100, label: '0%', desc: 'Nada (Comeu tudo)', fill: 0 }
+                        ].map(opt => {
+                          const isSelected = modalDieta.consumo.solida === opt.val;
+                          return (
+                            <button key={`solida-${opt.val}`} onClick={() => setModalDieta({ ...modalDieta, consumo: { ...modalDieta.consumo, solida: opt.val } })}
+                              className={`flex-1 flex flex-col items-center p-2 rounded-xl border-2 transition-all ${isSelected ? 'border-orange-500 bg-orange-50 scale-105 shadow-md' : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-orange-200'}`}
+                            >
+                              {/* DESENHO DO PRATO (Fatias de Pizza - Lógica Invertida) */}
+                              <div className={`relative w-10 h-10 rounded-full border-2 overflow-hidden shadow-inner mb-2 flex-shrink-0 ${isSelected ? 'border-orange-500 bg-white' : 'border-slate-300 bg-slate-100'}`}>
+                                <div 
+                                  className="absolute inset-0 transition-all duration-500"
+                                  style={{ background: `conic-gradient(${isSelected ? '#f97316' : '#fdba74'} ${opt.fill}%, transparent 0)` }}
+                                />
+                                <div className="absolute inset-1 rounded-full border border-black/5" />
+                              </div>
+                              
+                              <div className={`text-sm font-black ${isSelected ? 'text-orange-700' : 'text-slate-500'}`}>{opt.label}</div>
+                              <div className={`text-[9px] font-bold uppercase mt-1 text-center leading-tight ${isSelected ? 'text-orange-600' : 'text-slate-400'}`}>{opt.desc}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SELETOR LÍQUIDA (COPO VISUAL) */}
+                  {modalDieta.tipos.liquida && (
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                      <div className="flex items-center gap-2 text-blue-700 font-black mb-4 border-b border-slate-100 pb-2">
+                        <Coffee size={16} /> DIETA LÍQUIDA (Copo)
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        {[
+                          // val = % consumida (salva no banco) | fill = % que sobrou (desenho na tela)
+                          { val: 0, label: '100%', desc: 'Tudo (Recusou)', fill: 100 },
+                          { val: 25, label: '75%', desc: 'Sobrou 3/4', fill: 75 },
+                          { val: 50, label: '50%', desc: 'Metade', fill: 50 },
+                          { val: 75, label: '25%', desc: 'Sobrou 1/4', fill: 25 },
+                          { val: 100, label: '0%', desc: 'Nada (Tomou tudo)', fill: 0 }
+                        ].map(opt => {
+                          const isSelected = modalDieta.consumo.liquida === opt.val;
+                          return (
+                            <button key={`liquida-${opt.val}`} onClick={() => setModalDieta({ ...modalDieta, consumo: { ...modalDieta.consumo, liquida: opt.val } })}
+                              className={`flex-1 flex flex-col items-center p-2 rounded-xl border-2 transition-all ${isSelected ? 'border-blue-500 bg-blue-50 scale-105 shadow-md' : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-blue-200'}`}
+                            >
+                              {/* DESENHO DO COPO (Nível de Líquido - Lógica Invertida) */}
+                              <div className={`relative w-8 h-10 border-2 rounded-b-xl overflow-hidden shadow-inner mb-2 flex-shrink-0 ${isSelected ? 'border-blue-500 bg-white' : 'border-slate-300 bg-slate-100'}`}>
+                                <div 
+                                  className="absolute bottom-0 left-0 right-0 transition-all duration-500"
+                                  style={{ 
+                                    height: `${opt.fill}%`, 
+                                    backgroundColor: isSelected ? '#3b82f6' : '#93c5fd' 
+                                  }}
+                                />
+                              </div>
+
+                              <div className={`text-sm font-black ${isSelected ? 'text-blue-700' : 'text-slate-500'}`}>{opt.label}</div>
+                              <div className={`text-[9px] font-bold uppercase mt-1 text-center leading-tight ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}>{opt.desc}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => setModalDieta({ ...modalDieta, step: 1 })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                      Voltar
+                    </button>
+                    <button 
+                      disabled={(modalDieta.tipos.solida && modalDieta.consumo.solida === null) || (modalDieta.tipos.liquida && modalDieta.consumo.liquida === null)}
+                      onClick={salvarDietaVO}
+                      className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                    >
+                      <CheckCircle2 size={18} /> Salvar Registro
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE BANHO                                                  */}
+      {/* ========================================================================= */}
+      {modalBanho.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            
+            {/* CABEÇALHO */}
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><ShowerHead size={20} /></div>
+                <div>
+                  <h2 className="text-lg font-black tracking-wide leading-tight">Registro de Banho</h2>
+                </div>
+              </div>
+              <button onClick={() => setModalBanho({ ...modalBanho, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6">
+              
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário do Banho/Higiene</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  
+                  {/* SELECT DE HORAS (00 a 23) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalBanho.horario ? modalBanho.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalBanho({ ...modalBanho, horario: `${e.target.value}:${modalBanho.horario ? modalBanho.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  
+                  {/* SELECT DE MINUTOS (Restrito a 4 opções) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalBanho.horario ? modalBanho.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalBanho({ ...modalBanho, horario: `${modalBanho.horario ? modalBanho.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+
+                </div>
+              </div>
+
+              {/* TIPO DE BANHO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Selecione o Tipo</label>
+                <div className="grid grid-cols-1 gap-3">
+                  {['No Leito', 'Aspersão', 'Higienização'].map(tipo => (
+                    <button 
+                      key={tipo}
+                      onClick={() => setModalBanho({ ...modalBanho, tipo })}
+                      className={`p-4 rounded-2xl border-2 font-black uppercase tracking-wide transition-all ${modalBanho.tipo === tipo ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}
+                    >
+                      {tipo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* BOTÕES DE AÇÃO */}
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalBanho({ ...modalBanho, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Cancelar
+                </button>
+                <button 
+                  disabled={!modalBanho.horario || !modalBanho.tipo}
+                  onClick={salvarBanho}
+                  className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                >
+                  <CheckCircle2 size={18} /> Salvar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE MUDANÇA DE DECÚBITO                                    */}
+      {/* ========================================================================= */}
+      {modalDecubito.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            
+            {/* CABEÇALHO */}
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><RefreshCw size={20} /></div>
+                <div>
+                  <h2 className="text-lg font-black tracking-wide leading-tight">Mudança de Decúbito</h2>
+                </div>
+              </div>
+              <button onClick={() => setModalDecubito({ ...modalDecubito, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6">
+              
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Mudança</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  
+                  {/* SELECT DE HORAS (00 a 23) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalDecubito.horario ? modalDecubito.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalDecubito({ ...modalDecubito, horario: `${e.target.value}:${modalDecubito.horario ? modalDecubito.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  
+                  {/* SELECT DE MINUTOS (Restrito a 4 opções) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalDecubito.horario ? modalDecubito.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalDecubito({ ...modalDecubito, horario: `${modalDecubito.horario ? modalDecubito.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+
+                </div>
+              </div>
+
+              {/* POSIÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Selecione a Posição</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {['Dorso', 'Prona', 'DLE', 'DLD'].map(posicao => (
+                    <button 
+                      key={posicao}
+                      onClick={() => setModalDecubito({ ...modalDecubito, posicao })}
+                      className={`p-4 rounded-2xl border-2 font-black uppercase tracking-wide transition-all ${modalDecubito.posicao === posicao ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}
+                    >
+                      {posicao}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* BOTÕES DE AÇÃO */}
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalDecubito({ ...modalDecubito, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Cancelar
+                </button>
+                <button 
+                  disabled={!modalDecubito.horario || !modalDecubito.posicao}
+                  onClick={salvarDecubito}
+                  className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                >
+                  <CheckCircle2 size={18} /> Salvar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE HIGIENE ORAL                                           */}
+      {/* ========================================================================= */}
+      {modalHigieneOral.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Smile size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Higiene Oral</h2>
+              </div>
+              <button onClick={() => setModalHigieneOral({ ...modalHigieneOral, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-6">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Higiene Oral</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  
+                  {/* SELECT DE HORAS (00 a 23) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalHigieneOral.horario ? modalHigieneOral.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalHigieneOral({ ...modalHigieneOral, horario: `${e.target.value}:${modalHigieneOral.horario ? modalHigieneOral.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  
+                  {/* SELECT DE MINUTOS (Restrito a 4 opções) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalHigieneOral.horario ? modalHigieneOral.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalHigieneOral({ ...modalHigieneOral, horario: `${modalHigieneOral.horario ? modalHigieneOral.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setModalHigieneOral({ ...modalHigieneOral, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalHigieneOral.horario} onClick={salvarHigieneOral} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE HIGIENE ÍNTIMA                                         */}
+      {/* ========================================================================= */}
+      {modalHigieneIntima.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><ShieldPlus size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Higiene Íntima</h2>
+              </div>
+              <button onClick={() => setModalHigieneIntima({ ...modalHigieneIntima, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-6">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Higiene Íntima</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  
+                  {/* SELECT DE HORAS (00 a 23) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalHigieneIntima.horario ? modalHigieneIntima.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalHigieneIntima({ ...modalHigieneIntima, horario: `${e.target.value}:${modalHigieneIntima.horario ? modalHigieneIntima.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  
+                  {/* SELECT DE MINUTOS (Restrito a 4 opções) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalHigieneIntima.horario ? modalHigieneIntima.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalHigieneIntima({ ...modalHigieneIntima, horario: `${modalHigieneIntima.horario ? modalHigieneIntima.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setModalHigieneIntima({ ...modalHigieneIntima, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalHigieneIntima.horario} onClick={salvarHigieneIntima} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE ASPIRAÇÃO VAS                                          */}
+      {/* ========================================================================= */}
+      {modalAspiracao.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            
+            {/* CABEÇALHO */}
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Wind size={20} /></div>
+                <div>
+                  <h2 className="text-lg font-black tracking-wide leading-tight">Aspiração VAS</h2>
+                </div>
+              </div>
+              <button onClick={() => setModalAspiracao({ ...modalAspiracao, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6">
+              
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Aspiração</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  
+                  {/* SELECT DE HORAS (00 a 23) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalAspiracao.horario ? modalAspiracao.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalAspiracao({ ...modalAspiracao, horario: `${e.target.value}:${modalAspiracao.horario ? modalAspiracao.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  
+                  {/* SELECT DE MINUTOS (Restrito a 4 opções) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalAspiracao.horario ? modalAspiracao.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalAspiracao({ ...modalAspiracao, horario: `${modalAspiracao.horario ? modalAspiracao.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+
+                </div>
+              </div>
+
+              {/* QUANTIDADE */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Quantidade de Secreção</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['Pouca', 'Moderada', 'Abundante'].map(qtd => (
+                    <button 
+                      key={qtd}
+                      onClick={() => setModalAspiracao({ ...modalAspiracao, quantidade: qtd })}
+                      className={`p-2 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalAspiracao.quantidade === qtd ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}
+                    >
+                      {qtd}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* CARACTERÍSTICA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Característica</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['Fluida', 'Espessa', 'Sanguinolenta'].map(carac => (
+                    <button 
+                      key={carac}
+                      onClick={() => setModalAspiracao({ ...modalAspiracao, caracteristica: carac })}
+                      className={`p-2 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalAspiracao.caracteristica === carac ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}
+                    >
+                      {carac}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* BOTÕES DE AÇÃO */}
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalAspiracao({ ...modalAspiracao, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Cancelar
+                </button>
+                <button 
+                  disabled={!modalAspiracao.horario || !modalAspiracao.quantidade || !modalAspiracao.caracteristica}
+                  onClick={salvarAspiracao}
+                  className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                >
+                  <CheckCircle2 size={18} /> Salvar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+    
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE TROCA DE FRALDA                                        */}
+      {/* ========================================================================= */}
+      {modalFralda.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            
+            {/* CABEÇALHO */}
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Package size={20} /></div>
+                <div>
+                  <h2 className="text-lg font-black tracking-wide leading-tight">Troca de Fralda</h2>
+                </div>
+              </div>
+              <button onClick={() => setModalFralda({ ...modalFralda, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6">
+              
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Troca</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  
+                  {/* SELECT DE HORAS (00 a 23) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalFralda.horario ? modalFralda.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalFralda({ ...modalFralda, horario: `${e.target.value}:${modalFralda.horario ? modalFralda.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  
+                  {/* SELECT DE MINUTOS (Restrito a 4 opções) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalFralda.horario ? modalFralda.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalFralda({ ...modalFralda, horario: `${modalFralda.horario ? modalFralda.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+
+                </div>
+              </div>
+
+              {/* EVACUAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Houve Evacuação?</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => setModalFralda({ ...modalFralda, evacuacao: "Sim" })}
+                    className={`p-4 rounded-2xl border-2 font-black uppercase tracking-wide transition-all ${modalFralda.evacuacao === "Sim" ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-orange-200'}`}
+                  >
+                    Sim
+                  </button>
+                  <button 
+                    onClick={() => setModalFralda({ ...modalFralda, evacuacao: "Não", diarreica: false, quantidade: "" })}
+                    className={`p-4 rounded-2xl border-2 font-black uppercase tracking-wide transition-all ${modalFralda.evacuacao === "Não" ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}
+                  >
+                    Não
+                  </button>
+                </div>
+              </div>
+
+              {/* QUANTIDADE E DIARREICA (Aparecem apenas se Evacuação = Sim) */}
+              {modalFralda.evacuacao === "Sim" && (
+                <div className="animate-fadeIn space-y-4 bg-orange-50/50 p-4 rounded-2xl border border-orange-100">
+                  
+                  {/* QUANTIDADE */}
+                  <div>
+                    <label className="text-[10px] font-bold text-orange-800 mb-2 block text-center uppercase">Volume da Evacuação</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {['+', '++', '+++', '++++'].map(qtd => (
+                        <button 
+                          key={qtd}
+                          onClick={() => setModalFralda({ ...modalFralda, quantidade: qtd })}
+                          className={`p-2 rounded-xl border-2 font-black text-sm transition-all ${modalFralda.quantidade === qtd ? 'border-orange-500 bg-orange-500 text-white shadow-md scale-105' : 'border-orange-200 bg-white text-orange-600 hover:border-orange-300'}`}
+                        >
+                          {qtd}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* DIARREICA */}
+                  <div className="pt-3 border-t border-orange-200/50">
+                    <label className="flex items-center justify-center gap-3 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="w-6 h-6 text-orange-600 rounded-md focus:ring-orange-500 border-orange-300"
+                        checked={modalFralda.diarreica}
+                        onChange={(e) => setModalFralda({ ...modalFralda, diarreica: e.target.checked })}
+                      />
+                      <span className="text-sm font-black text-orange-800 uppercase">Fezes Diarreicas?</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* BOTÕES DE AÇÃO */}
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalFralda({ ...modalFralda, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Cancelar
+                </button>
+                <button 
+                  // O botão só ativa se: tiver horário E (marcou Não OR (marcou Sim E escolheu a quantidade))
+                  disabled={!modalFralda.horario || modalFralda.evacuacao === null || (modalFralda.evacuacao === "Sim" && !modalFralda.quantidade)}
+                  onClick={salvarFralda}
+                  className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                >
+                  <CheckCircle2 size={18} /> Salvar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE CURATIVO                                               */}
+      {/* ========================================================================= */}
+      {modalCurativo.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
+            
+            {/* CABEÇALHO */}
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Bandage size={20} /></div>
+                <div>
+                  <h2 className="text-lg font-black tracking-wide leading-tight">Registro de Curativo</h2>
+                </div>
+              </div>
+              <button onClick={() => setModalCurativo({ ...modalCurativo, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+              
+              {/* HORÁRIO (RELÓGIO RESTRITO 00/15/30/45) */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Troca/Avaliação</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none"
+                    value={modalCurativo.horario ? modalCurativo.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalCurativo({ ...modalCurativo, horario: `${e.target.value}:${modalCurativo.horario ? modalCurativo.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none"
+                    value={modalCurativo.horario ? modalCurativo.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalCurativo({ ...modalCurativo, horario: `${modalCurativo.horario ? modalCurativo.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* TIPO DE CURATIVO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Curativo</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.keys(OPCOES_CURATIVO).map(tipo => (
+                    <button 
+                      key={tipo}
+                      onClick={() => setModalCurativo({ ...modalCurativo, tipo, localizacao: "" })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCurativo.tipo === tipo ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}
+                    >
+                      {tipo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* LOCALIZAÇÃO (Aparece apenas após escolher o Tipo) */}
+              {modalCurativo.tipo && (
+                <div className="animate-fadeIn bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                  <label className="text-xs font-bold text-indigo-800 mb-3 block text-center uppercase">Localização ({modalCurativo.tipo})</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {OPCOES_CURATIVO[modalCurativo.tipo].map(local => (
+                      <button 
+                        key={local}
+                        onClick={() => setModalCurativo({ ...modalCurativo, localizacao: local })}
+                        className={`p-2 rounded-xl border-2 font-bold text-[11px] uppercase transition-all ${modalCurativo.localizacao === local ? 'border-indigo-500 bg-indigo-500 text-white shadow-md scale-105' : 'border-indigo-200 bg-white text-indigo-700 hover:border-indigo-300'}`}
+                      >
+                        {local}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* BOTÕES DE AÇÃO */}
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalCurativo({ ...modalCurativo, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Cancelar
+                </button>
+                <button 
+                  disabled={!modalCurativo.horario || !modalCurativo.tipo || !modalCurativo.localizacao}
+                  onClick={salvarCurativo}
+                  className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                >
+                  <CheckCircle2 size={18} /> Salvar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: RELATÓRIO DE ENFERMAGEM GERADO                                     */}
+      {/* ========================================================================= */}
+      {modalRelatorio.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
+            
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><FileText size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Anotação de Enfermagem</h2>
+              </div>
+              <button onClick={() => setModalRelatorio({ isOpen: false, texto: "" })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50 flex flex-col gap-4">
+              <p className="text-sm text-slate-500 font-medium">
+                O texto abaixo foi gerado automaticamente e ordenado por horário. Você pode editá-lo livremente antes de copiar.
+              </p>
+              
+              <textarea 
+                className="w-full h-80 p-4 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-mono bg-white shadow-inner resize-none"
+                value={modalRelatorio.texto}
+                onChange={(e) => setModalRelatorio({ ...modalRelatorio, texto: e.target.value })}
+              />
+              
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setModalRelatorio({ isOpen: false, texto: "" })} className="px-6 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Fechar
+                </button>
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(modalRelatorio.texto);
+                    alert("Anotação copiada com sucesso para a área de transferência!");
+                  }}
+                  className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                >
+                  <Copy size={20} /> Copiar Texto
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       </fieldset>
     </div>
   );
