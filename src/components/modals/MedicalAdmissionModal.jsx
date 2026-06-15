@@ -220,11 +220,11 @@ const MedicalAdmissionModal = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:col-span-2 p-3 bg-white border rounded-xl">
   
                 <div className="sm:col-span-3">
-                  <label className="text-[11px] font-bold text-indigo-500 mb-1 block">NEURO (Nível de Consciência Geral)</label>
+                  <label className="text-[11px] font-bold text-indigo-500 mb-1 block">Nível de Consciência</label>
                   <input 
                     disabled={isReadOnly} 
                     className="w-full p-2 border rounded bg-indigo-50/30 outline-none" 
-                    placeholder="Nível de consciência..." 
+                    placeholder="LOTE, TORPOROSO, SONOLENTO, SEDADO..." 
                     value={admissionData.exameNeuro || ""} 
                     onChange={(e) => setAdmissionData({ ...admissionData, exameNeuro: e.target.value })} 
                   />

@@ -3612,6 +3612,11 @@ const ROLE_PERMISSIONS = {
     edits: ["medical", "nutri", "speech", "reception"],
     canSeeLeito11: false
   },
+  "RT Médico": {
+    views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "reception"],
+    edits: ["management", "medical", "nutri", "speech", "reception"],
+    canSeeLeito11: false
+  },
   "Enfermeiro": {
     views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis", "reception"],
     edits: ["nursing", "tech", "hemodialysis", "reception"],
