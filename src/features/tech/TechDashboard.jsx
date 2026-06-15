@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, 
          Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar, Coffee, ArrowRight, CheckCircle2,
          ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
-         FileText, Copy } from 'lucide-react';
+         FileText, Copy, Syringe, Scissors, Snowflake, TestTube, ChevronDown, ChevronRight } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -35,6 +35,7 @@ const TechDashboard = ({
 
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
+  const [registrosOpen, setRegistrosOpen] = useState(false);
 
   // =========================================================================
   // FUNÇÃO AUXILIAR: ARREDONDA A HORA ATUAL PARA 00, 15, 30 OU 45
@@ -243,7 +244,7 @@ const TechDashboard = ({
     quantidade: "" // NOVO: Quantificação da evacuação (+, ++, +++, ++++)
   });
 
-    const salvarFralda = () => {
+const salvarFralda = () => {
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
 
@@ -273,8 +274,8 @@ const TechDashboard = ({
         hora = (hora + 1) % 24;
       }
       
-      // Formata para o padrão do BH (ex: "07h", "15h", "00h")
-      const horaBH = `${String(hora).padStart(2, '0')}h`;
+      // 🔥 A GRANDE MUDANÇA ESTÁ AQUI: formato "HH:00" em vez de "HHh"
+      const horaBH = `${String(hora).padStart(2, '0')}:00`;
 
       // Garante que a estrutura do BH existe para não quebrar a tela
       if (!p.bh) p.bh = { date: new Date().toISOString().split('T')[0], inputs: {}, losses: {}, vitals: {} };
@@ -321,7 +322,7 @@ const TechDashboard = ({
     "Acesso Periférico": ["MSD", "MSE", "MID", "MIE", "Jugular Externa D", "Jugular Externa E"],
     "Acesso Central": ["Subclávia D", "Subclávia E", "Jugular Interna D", "Jugular Interna E", "Femoral D", "Femoral E", "PICC MSD", "PICC MSE"],
     "Catéter de HD": ["Subclávia D", "Subclávia E", "Jugular Interna D", "Jugular Interna E", "Femoral D", "Femoral E"],
-    "Dreno de Tórax": ["Hemotórax Direito", "Hemotórax Esquerdo", "Mediastino"],
+    "Dreno de Tórax": ["Hemitórax Direito", "Hemitórax Esquerdo", "Mediastino"],
     "Dreno Abdominal": ["Flanco Direito", "Flanco Esquerdo", "Fossa Ilíaca Direita", "Fossa Ilíaca Esquerda", "Pélvico", "Epigástrio"],
     "Ferida Operatória": ["Abdominal", "Torácica", "Craniana", "Cervical", "MMSS", "MMII", "Outro"],
     "Úlcera por Pressão": ["Sacral", "Calcâneo D", "Calcâneo E", "Isquiática D", "Isquiática E", "Trocantérica D", "Trocantérica E", "Occipital"]
@@ -348,27 +349,147 @@ const TechDashboard = ({
     setModalCurativo({ isOpen: false, horario: "", tipo: "", localizacao: "" });
   }
 
+  // 
+  // ESTADOS E FUNÇÕES DOS NOVOS MODAIS (ACESSO, TRICOTOMIA, CRIO E INSULINA)
+  // 
+  const [modalAcesso, setModalAcesso] = useState({ isOpen: false, horario: "", local: "", calibre: "" });
+  const [modalTricotomia, setModalTricotomia] = useState({ isOpen: false, horario: "", local: "" });
+  const [modalCrioterapia, setModalCrioterapia] = useState({ isOpen: false, horario: "" });
+  const [modalInsulina, setModalInsulina] = useState({ isOpen: false, horario: "", tipo: "", dose: "" });
+
+  const salvarAcesso = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_acesso) p.enfermagem.historico_acesso = [];
+
+    // 1. Salva no histórico do botão
+    p.enfermagem.historico_acesso.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalAcesso.horario,
+      local: modalAcesso.local,
+      calibre: modalAcesso.calibre
+    });
+
+    // 🔥 2. INTEGRAÇÃO: Atualiza o painel da enfermagem automaticamente
+    p.enfermagem.avpLocal = modalAcesso.local;
+    // Pega a data de hoje no formato YYYY-MM-DD para o input type="date"
+    p.enfermagem.avpData = new Date().toISOString().split('T')[0];
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Registrou Acesso Periférico (${modalAcesso.calibre} em ${modalAcesso.local})`);
+    setModalAcesso({ isOpen: false, horario: "", local: "", calibre: "" });
+  };
+
+  const salvarTricotomia = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_tricotomia) p.enfermagem.historico_tricotomia = [];
+
+    p.enfermagem.historico_tricotomia.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalTricotomia.horario,
+      local: modalTricotomia.local
+    });
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Registrou Tricotomia (${modalTricotomia.local})`);
+    setModalTricotomia({ isOpen: false, horario: "", local: "" });
+  };
+
+  const salvarCrioterapia = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_crioterapia) p.enfermagem.historico_crioterapia = [];
+
+    p.enfermagem.historico_crioterapia.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalCrioterapia.horario
+    });
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Registrou Crioterapia`);
+    setModalCrioterapia({ isOpen: false, horario: "" });
+  };
+
+  const salvarInsulina = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_insulina) p.enfermagem.historico_insulina = [];
+
+    // 1. Salva no histórico do botão
+    p.enfermagem.historico_insulina.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalInsulina.horario,
+      tipo: modalInsulina.tipo,
+      dose: modalInsulina.dose
+    });
+
+    // 2. INTEGRAÇÃO AUTOMÁTICA COM O BALANÇO HÍDRICO (SINAIS VITAIS)
+    if (modalInsulina.horario && modalInsulina.tipo && modalInsulina.dose) {
+      const [horaStr, minStr] = modalInsulina.horario.split(':');
+      let hora = parseInt(horaStr, 10);
+      const min = parseInt(minStr, 10);
+      
+      if (min >= 30) {
+        hora = (hora + 1) % 24;
+      }
+      
+      // 🔥 A GRANDE MUDANÇA ESTÁ AQUI: formato "HH:00" em vez de "HHh"
+      const horaBH = `${String(hora).padStart(2, '0')}:00`;
+
+      if (!p.bh) p.bh = { date: new Date().toISOString().split('T')[0], inputs: {}, losses: {}, vitals: {} };
+      if (!p.bh.vitals) p.bh.vitals = {};
+      if (!p.bh.vitals[horaBH]) p.bh.vitals[horaBH] = {};
+
+      const sufixo = modalInsulina.tipo === 'NPH' ? 'N' : 'R';
+      const novoRegistro = `${modalInsulina.dose}${sufixo}`;
+
+      const registroAtual = p.bh.vitals[horaBH]["Insulina"] || "";
+
+      if (registroAtual) {
+        p.bh.vitals[horaBH]["Insulina"] = `${registroAtual}/${novoRegistro}`;
+      } else {
+        p.bh.vitals[horaBH]["Insulina"] = novoRegistro;
+      }
+    }
+
+    up[activeTab] = p;
+    setPatients(up);
+    
+    save(up[activeTab], `Enfermagem: Registrou Insulina (${modalInsulina.tipo} - ${modalInsulina.dose} UI)`);
+    setModalInsulina({ isOpen: false, horario: "", tipo: "", dose: "" });
+  };
+
   // =========================================================================
   // ESTADOS E FUNÇÕES DO RELATÓRIO DE ENFERMAGEM
   // =========================================================================
   const [modalRelatorio, setModalRelatorio] = useState({ isOpen: false, texto: "" });
 
-  const gerarRelatorioEnfermagem = () => {
+    const gerarRelatorioEnfermagem = () => {
     const enf = currentPatient.enfermagem || {};
     let eventos = [];
 
-    // Função auxiliar para varrer os arrays e extrair os textos
+    const dataHoje = new Date().toISOString().split('T')[0];
+
+    // Função auxiliar para os modais
     const addEvent = (historico, formatador) => {
       if (Array.isArray(historico)) {
         historico.forEach(item => {
-          if (item.horario) {
+          if (item.horario && item.dataHoraRegistro && item.dataHoraRegistro.startsWith(dataHoje)) {
             eventos.push({ horario: item.horario, texto: formatador(item) });
           }
         });
       }
     };
 
-    // Extraindo dados de cada modal
+    // Extraindo dados dos modais
     addEvent(enf.historico_dieta_vo, (i) => {
       let txt = `Dieta VO (${i.tipoRefeicao}).`;
       if (i.tiposOferecidos?.solida) txt += ` Sólida: ${i.consumo?.solida}% consumido.`;
@@ -392,8 +513,32 @@ const TechDashboard = ({
       }
       return txt;
     });
+    addEvent(enf.historico_acesso, (i) => `Acesso Periférico: ${i.calibre} em ${i.local}.`);
+    addEvent(enf.historico_tricotomia, (i) => `Tricotomia: ${i.local}.`);
+    addEvent(enf.historico_crioterapia, () => `Crioterapia realizada.`);
+    addEvent(enf.historico_insulina, (i) => `Insulina: ${i.tipo} - ${i.dose} UI.`);
 
-    // Ordena todos os eventos do dia por horário (do mais cedo pro mais tarde)
+    // 🔥 NOVO: Extraindo Diurese diretamente da tabela do Balanço Hídrico (BH)
+    if (currentPatient.bh && currentPatient.bh.losses) {
+      // Verifica se o BH atual é de hoje (para não puxar diurese de dias anteriores)
+      const dataBH = currentPatient.bh.date;
+      if (!dataBH || dataBH.startsWith(dataHoje)) {
+        Object.keys(currentPatient.bh.losses).forEach(horaBH => {
+          const volumeDiurese = currentPatient.bh.losses[horaBH]["Diurese"];
+          // Se tiver algum valor digitado na coluna "Diurese" para este horário
+          if (volumeDiurese && volumeDiurese.toString().trim() !== "") {
+            // Converte "08h" para "08:00" para ficar no mesmo padrão do relatório
+            const horaFormatada = horaBH.replace('h', ':00').padStart(5, '0');
+            eventos.push({ 
+              horario: horaFormatada, 
+              texto: `Desprezado diurese (${volumeDiurese} ml).` 
+            });
+          }
+        });
+      }
+    }
+
+    // Ordena todos os eventos de HOJE por horário (do mais cedo pro mais tarde)
     eventos.sort((a, b) => a.horario.localeCompare(b.horario));
 
     // Monta o texto final
@@ -406,7 +551,7 @@ const TechDashboard = ({
         relatorio += `[${ev.horario}] ${ev.texto}\n`;
       });
     } else {
-      relatorio += `Nenhum procedimento pontual registrado no sistema até o momento.\n`;
+      relatorio += `Nenhum procedimento pontual registrado no sistema no dia de hoje.\n`;
     }
 
     // Adiciona o texto livre do textarea no final
@@ -787,112 +932,154 @@ const TechDashboard = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* NOVO BLOCO: REGISTROS DIÁRIOS (BOTÕES DE ACESSO RÁPIDO)                   */}
+      {/* NOVO BLOCO: REGISTROS DIÁRIOS (BOTÕES DE ACESSO RÁPIDO) - RETRÁTIL        */}
       {/* ========================================================================= */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 print:hidden animate-fadeIn">
-        <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-          <ClipboardList className="text-indigo-600" size={18} />
-          Registros Diários
-        </h3>
         
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <button 
-            onClick={(e) => {
-              e.preventDefault();
-              // Pega a hora atual no formato HH:MM
-              const horaAtual = getHoraAtualArredondada();
-              setModalDieta({ isOpen: true, step: 1, horario: horaAtual, refeicao: "", tipos: { solida: false, liquida: false }, consumo: { solida: null, liquida: null } });
-            }}
-            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
-          >
-            <Utensils size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase text-center">Dieta VO</span>
-          </button>
-          
-           <button 
-            onClick={(e) => {
-              e.preventDefault();
-              const horaAtual = getHoraAtualArredondada();
-              setModalBanho({ isOpen: true, horario: horaAtual, tipo: "" });
-            }}
-            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
-          >
-            <ShowerHead size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase text-center">Banho</span>
-          </button>
-          
-          <button 
-            onClick={(e) => {
-              e.preventDefault();
-              const horaAtual = getHoraAtualArredondada();
-              setModalDecubito({ isOpen: true, horario: horaAtual, posicao: "" });
-            }}
-            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
-          >
-            <RefreshCw size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase text-center">Decúbito</span>
-          </button>
-          
-          <button 
-            onClick={(e) => {
-              e.preventDefault();
-              const horaAtual = getHoraAtualArredondada();
-              setModalHigieneOral({ isOpen: true, horario: horaAtual });
-            }}
-            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
-          >
-            <Smile size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase text-center">Higiene Oral</span>
-          </button>
-          
-          <button 
-            onClick={(e) => {
-              e.preventDefault();
-              const horaAtual = getHoraAtualArredondada();
-              setModalHigieneIntima({ isOpen: true, horario: horaAtual });
-            }}
-            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
-          >
-            <ShieldPlus size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase text-center">Higiene Íntima</span>
-          </button>
-          
-           <button 
-            onClick={(e) => {
-              e.preventDefault();
-              const horaAtual = getHoraAtualArredondada();
-              setModalCurativo({ isOpen: true, horario: horaAtual, tipo: "", localizacao: "" });
-            }}
-            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
-          >
-            <Bandage size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase text-center">Curativo</span>
-          </button>
-          
-          <button 
-            onClick={(e) => {
-              e.preventDefault();
-              const horaAtual = getHoraAtualArredondada();
-              setModalAspiracao({ isOpen: true, horario: horaAtual, quantidade: "", caracteristica: "" });
-            }}
-            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
-          >
-            <Wind size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase text-center">Aspiração VAS</span>
-          </button>
-          
-          <button 
-            onClick={(e) => {
-              e.preventDefault();
-              const horaAtual = getHoraAtualArredondada();
-              setModalFralda({ isOpen: true, horario: horaAtual, evacuacao: null, diarreica: false, quantidade: "" });
-            }}
-            className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
-          >
-            <Package size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase text-center">Troca de Fralda</span>
-          </button>
-        </div>
+        {/* BOTÃO QUE ABRE/FECHA A SEÇÃO */}
+        <button 
+          onClick={(e) => { e.preventDefault(); setRegistrosOpen(!registrosOpen); }} 
+          className="flex items-center gap-2 font-bold text-slate-700 w-full text-left"
+        >
+          {registrosOpen ? <ChevronDown size={20} className="text-indigo-600" /> : <ChevronRight size={20} className="text-slate-400" />} 
+          <ClipboardList className={registrosOpen ? "text-indigo-600" : "text-slate-400"} size={18} />
+          Registros Diários
+        </button>
+        
+        {/* CONTEÚDO QUE APARECE QUANDO ESTÁ ABERTO */}
+        {registrosOpen && (
+          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalDieta({ isOpen: true, step: 1, horario: horaAtual, refeicao: "", tipos: { solida: false, liquida: false }, consumo: { solida: null, liquida: null } });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Utensils size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Dieta VO</span>
+            </button>
+            
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalBanho({ isOpen: true, horario: horaAtual, tipo: "" });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <ShowerHead size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Banho</span>
+            </button>
+            
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalDecubito({ isOpen: true, horario: horaAtual, posicao: "" });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <RefreshCw size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Decúbito</span>
+            </button>
+            
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalHigieneOral({ isOpen: true, horario: horaAtual });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Smile size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Higiene Oral</span>
+            </button>
+            
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalHigieneIntima({ isOpen: true, horario: horaAtual });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <ShieldPlus size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Higiene Íntima</span>
+            </button>
+            
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalCurativo({ isOpen: true, horario: horaAtual, tipo: "", localizacao: "" });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Bandage size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Curativo</span>
+            </button>
+            
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalAspiracao({ isOpen: true, horario: horaAtual, quantidade: "", caracteristica: "" });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Wind size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Aspiração VAS</span>
+            </button>
+            
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalFralda({ isOpen: true, horario: horaAtual, evacuacao: null, diarreica: false, quantidade: "" });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Package size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Troca de Fralda</span>
+            </button>
+
+            <button 
+              onClick={(e) => { e.preventDefault(); setModalAcesso({ isOpen: true, horario: getHoraAtualArredondada(), local: "", calibre: "" }); }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Syringe size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Acesso Periférico</span>
+            </button>
+
+            <button 
+              onClick={(e) => { e.preventDefault(); setModalTricotomia({ isOpen: true, horario: getHoraAtualArredondada(), local: "" }); }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Scissors size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Tricotomia</span>
+            </button>
+
+            <button 
+              onClick={(e) => { e.preventDefault(); setModalCrioterapia({ isOpen: true, horario: getHoraAtualArredondada() }); }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Snowflake size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Crioterapia</span>
+            </button>
+
+            <button 
+              onClick={(e) => { e.preventDefault(); setModalInsulina({ isOpen: true, horario: getHoraAtualArredondada(), tipo: "", dose: "" }); }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <TestTube size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Insulina</span>
+            </button>
+
+          </div>
+        )}
       </div>
       {/* ========================================================================= */}
 
@@ -2236,6 +2423,208 @@ const TechDashboard = ({
                 >
                   <Copy size={20} /> Copiar Texto
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/*  */}
+      {/* MODAL: ACESSO PERIFÉRICO                                                  */}
+      {/*  */}
+      {modalAcesso.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Syringe size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Acesso Periférico</h2>
+              </div>
+              <button onClick={() => setModalAcesso({ ...modalAcesso, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Punção</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalAcesso.horario ? modalAcesso.horario.split(':')[0] : "00"} onChange={(e) => setModalAcesso({ ...modalAcesso, horario: `${e.target.value}:${modalAcesso.horario ? modalAcesso.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalAcesso.horario ? modalAcesso.horario.split(':')[1] : "00"} onChange={(e) => setModalAcesso({ ...modalAcesso, horario: `${modalAcesso.horario ? modalAcesso.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* LOCAL */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Local da Punção</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['MSD', 'MSE', 'MID', 'MIE', 'Jugular Externa D', 'Jugular Externa E'].map(local => (
+                    <button key={local} onClick={() => setModalAcesso({ ...modalAcesso, local })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalAcesso.local === local ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{local}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* CALIBRE */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Calibre do Jelco</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { val: '14G', cor: 'bg-orange-500' }, { val: '16G', cor: 'bg-gray-400' }, 
+                    { val: '18G', cor: 'bg-green-500' }, { val: '20G', cor: 'bg-pink-400' }, 
+                    { val: '22G', cor: 'bg-blue-500' }, { val: '24G', cor: 'bg-yellow-400' }
+                  ].map(cal => (
+                    <button key={cal.val} onClick={() => setModalAcesso({ ...modalAcesso, calibre: cal.val })} className={`relative p-3 rounded-xl border-2 font-black text-sm transition-all overflow-hidden ${modalAcesso.calibre === cal.val ? 'border-indigo-500 text-indigo-800 shadow-md scale-105' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200'}`}>
+                      <div className={`absolute top-0 left-0 w-full h-1 ${cal.cor}`}></div>
+                      {cal.val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalAcesso({ ...modalAcesso, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalAcesso.horario || !modalAcesso.local || !modalAcesso.calibre} onClick={salvarAcesso} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/*  */}
+      {/* MODAL: TRICOTOMIA                                                         */}
+      {/*  */}
+      {modalTricotomia.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Scissors size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Tricotomia</h2>
+              </div>
+              <button onClick={() => setModalTricotomia({ ...modalTricotomia, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-6">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTricotomia.horario ? modalTricotomia.horario.split(':')[0] : "00"} onChange={(e) => setModalTricotomia({ ...modalTricotomia, horario: `${e.target.value}:${modalTricotomia.horario ? modalTricotomia.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTricotomia.horario ? modalTricotomia.horario.split(':')[1] : "00"} onChange={(e) => setModalTricotomia({ ...modalTricotomia, horario: `${modalTricotomia.horario ? modalTricotomia.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Local</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Cabeça', 'Tórax', 'Abdome', 'MMSS', 'MMII', 'Região Púbica'].map(local => (
+                    <button key={local} onClick={() => setModalTricotomia({ ...modalTricotomia, local })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTricotomia.local === local ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{local}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalTricotomia({ ...modalTricotomia, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalTricotomia.horario || !modalTricotomia.local} onClick={salvarTricotomia} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/*  */}
+      {/* MODAL: CRIOTERAPIA                                                        */}
+      {/*  */}
+      {modalCrioterapia.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Snowflake size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Crioterapia</h2>
+              </div>
+              <button onClick={() => setModalCrioterapia({ ...modalCrioterapia, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-6">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Crioterapia</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalCrioterapia.horario ? modalCrioterapia.horario.split(':')[0] : "00"} onChange={(e) => setModalCrioterapia({ ...modalCrioterapia, horario: `${e.target.value}:${modalCrioterapia.horario ? modalCrioterapia.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalCrioterapia.horario ? modalCrioterapia.horario.split(':')[1] : "00"} onChange={(e) => setModalCrioterapia({ ...modalCrioterapia, horario: `${modalCrioterapia.horario ? modalCrioterapia.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalCrioterapia({ ...modalCrioterapia, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalCrioterapia.horario} onClick={salvarCrioterapia} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/*  */}
+      {/* MODAL: INSULINA                                                           */}
+      {/*  */}
+      {modalInsulina.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Activity size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Insulina</h2>
+              </div>
+              <button onClick={() => setModalInsulina({ ...modalInsulina, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-6">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalInsulina.horario ? modalInsulina.horario.split(':')[0] : "00"} onChange={(e) => setModalInsulina({ ...modalInsulina, horario: `${e.target.value}:${modalInsulina.horario ? modalInsulina.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalInsulina.horario ? modalInsulina.horario.split(':')[1] : "00"} onChange={(e) => setModalInsulina({ ...modalInsulina, horario: `${modalInsulina.horario ? modalInsulina.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Insulina</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {['NPH', 'Regular'].map(tipo => (
+                    <button key={tipo} onClick={() => setModalInsulina({ ...modalInsulina, tipo })} className={`p-4 rounded-2xl border-2 font-black uppercase tracking-wide transition-all ${modalInsulina.tipo === tipo ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{tipo}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Dose (UI)</label>
+                <div className="flex items-center justify-center gap-3">
+                  <input 
+                    type="number" 
+                    min="1"
+                    className="w-32 p-4 border border-slate-200 rounded-2xl text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-3xl shadow-inner bg-white"
+                    value={modalInsulina.dose}
+                    onChange={(e) => setModalInsulina({ ...modalInsulina, dose: e.target.value })}
+                  />
+                  <span className="text-xl font-bold text-slate-400">UI</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalInsulina({ ...modalInsulina, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalInsulina.horario || !modalInsulina.tipo || !modalInsulina.dose} onClick={salvarInsulina} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>
           </div>

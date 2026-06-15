@@ -201,16 +201,25 @@ return (
               <div>
                 <label className="text-xs font-bold text-gray-500">AVP (Local/Data)</label>
                 <div className="flex gap-2">
-                  <input 
-                    className="w-full p-2 border rounded" 
-                    placeholder="Local" 
+                  {/* 🔥 SUBSTITUÍDO O INPUT DE TEXTO POR UM SELECT */}
+                  <select 
+                    className="w-full p-2 border rounded text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-white" 
                     value={currentPatient.enfermagem?.avpLocal || ""} 
                     onChange={(e) => updateNested("enfermagem", "avpLocal", e.target.value)} 
                     onBlur={() => handleBlurSave("Enfermagem: Editou AVP (Local)")}
-                  />
+                  >
+                    <option value="">Selecione o local...</option>
+                    <option value="MSD">MSD</option>
+                    <option value="MSE">MSE</option>
+                    <option value="MID">MID</option>
+                    <option value="MIE">MIE</option>
+                    <option value="Jugular Externa D">Jugular Externa D</option>
+                    <option value="Jugular Externa E">Jugular Externa E</option>
+                  </select>
+                  
                   <input 
                     type="date" 
-                    className="w-32 p-2 border rounded shrink-0" 
+                    className="w-32 p-2 border rounded shrink-0 text-sm outline-none focus:ring-2 focus:ring-blue-100" 
                     value={currentPatient.enfermagem?.avpData || ""} 
                     onChange={(e) => updateNested("enfermagem", "avpData", e.target.value)} 
                     onBlur={() => handleBlurSave("Enfermagem: Editou AVP (Data)")}
@@ -222,16 +231,31 @@ return (
               <div>
                 <label className="text-xs font-bold text-gray-500">CVC/PICC (Inserção)</label>
                 <div className="flex gap-2">
-                  <input 
-                    className="w-full p-2 border rounded" 
-                    placeholder="Local" 
+                  {/* 🔥 SUBSTITUÍDO O INPUT DE TEXTO POR UM SELECT */}
+                  <select 
+                    className="w-full p-2 border rounded text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-white" 
                     value={currentPatient.enfermagem?.cvcLocal || ""} 
                     onChange={(e) => updateNested("enfermagem", "cvcLocal", e.target.value)} 
                     onBlur={() => handleBlurSave("Enfermagem: Editou CVC/PICC (Local)")}
-                  />
+                  >
+                    <option value="">Selecione o local...</option>
+                    <optgroup label="Acesso Central (CVC)">
+                      <option value="Subclávia D">Subclávia D</option>
+                      <option value="Subclávia E">Subclávia E</option>
+                      <option value="Jugular Interna D">Jugular Interna D</option>
+                      <option value="Jugular Interna E">Jugular Interna E</option>
+                      <option value="Femoral D">Femoral D</option>
+                      <option value="Femoral E">Femoral E</option>
+                    </optgroup>
+                    <optgroup label="PICC">
+                      <option value="PICC MSD">PICC MSD</option>
+                      <option value="PICC MSE">PICC MSE</option>
+                    </optgroup>
+                  </select>
+
                   <input 
                     type="date" 
-                    className="w-32 p-2 border rounded shrink-0" 
+                    className="w-32 p-2 border rounded shrink-0 text-sm outline-none focus:ring-2 focus:ring-blue-100" 
                     value={currentPatient.enfermagem?.cvcData || ""} 
                     onChange={(e) => updateNested("enfermagem", "cvcData", e.target.value)} 
                     onBlur={(e) => {
@@ -244,11 +268,11 @@ return (
                 </div>
                 
                 {currentPatient.enfermagem?.cvcLocal && (
-                  <div className="mt-2">
+                  <div className="mt-2 animate-fadeIn">
                     <label className="block text-[10px] font-bold text-red-500 uppercase">Data de Retirada (CVC/PICC)</label>
                     <input 
                       type="date" 
-                      className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
+                      className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none text-sm" 
                       value={currentPatient.enfermagem?.cvcRetiradaData || ""} 
                       onChange={(e) => updateNested("enfermagem", "cvcRetiradaData", e.target.value)} 
                       onBlur={(e) => {
