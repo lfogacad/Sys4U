@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, ClipboardSignature, 
-         Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History } from 'lucide-react';
+         Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History, RefreshCw } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
 import { formatDateDDMM } from '../../utils/core';
 
@@ -8,6 +8,25 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   
   // 🔥 NOVO: Estado para controlar as sub-abas da Fisioterapia
   const [activePhysioTab, setActivePhysioTab] = useState('suporte');
+
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DO MODAL DE TROCA DE VIA AÉREA
+  // =========================================================================
+  const [modalTrocaVA, setModalTrocaVA] = useState({ isOpen: false, tipo: "", data: "" });
+
+  const salvarTrocaVA = () => {
+    // Define qual campo será salvo na base de dados (TOT ou TQT)
+    const campo = modalTrocaVA.tipo === 'TOT' ? 'dataUltimaTrocaTOT' : 'dataUltimaTrocaTQT';
+    
+    updateP(campo, modalTrocaVA.data);
+    handleBlurSave(`Fisioterapia: Editou Última Troca de ${modalTrocaVA.tipo}`);
+    
+    if (typeof registrarLogAuditoria === "function") {
+      registrarLogAuditoria(`VIA AÉREA: TROCA ${modalTrocaVA.tipo}`, `Data alterada para: ${modalTrocaVA.data || "Vazio"}`, currentPatient.id, currentPatient.nome);
+    }
+    
+    setModalTrocaVA({ isOpen: false, tipo: "", data: "" });
+  };
 
   // Estado para controlar o modal do gráfico de O2
   const [showO2History, setShowO2History] = useState(false);
@@ -323,10 +342,22 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
 
           {/* DATAS DE VIA AÉREA */}
           <div className="grid md:grid-cols-4 gap-4 bg-cyan-50 p-4 rounded-xl border border-cyan-100">
-            {/* INTUBAÇÃO */}
+             {/* INTUBAÇÃO */}
             <div>
-              <label className="text-xs font-bold text-cyan-700 flex justify-between">
-                Data Intubação
+              <label className="text-xs font-bold text-cyan-700 flex justify-between items-center mb-1">
+                <span className="flex items-center gap-2">
+                  Data Intubação
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setModalTrocaVA({ isOpen: true, tipo: 'TOT', data: currentPatient.dataUltimaTrocaTOT || "" });
+                    }}
+                    className="text-cyan-500 hover:text-cyan-800 transition-colors"
+                    title="Última troca"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                </span>
                 <button
                   onClick={(e) => {
                     e.preventDefault();
@@ -352,6 +383,12 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                   }
                 }}
               />
+              {/* Exibe a data da última troca se existir */}
+              {currentPatient.dataUltimaTrocaTOT && (
+                <div className="text-[10px] font-semibold text-cyan-600 mt-1 animate-fadeIn">
+                  Última troca: {new Date(currentPatient.dataUltimaTrocaTOT).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}
+                </div>
+              )}
             </div>
             {/* EXTUBAÇÃO */}
             <div>
@@ -383,10 +420,22 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                 }}
               />
             </div>
-            {/* TQT */}
+             {/* TQT */}
             <div>
-              <label className="text-xs font-bold text-cyan-700 flex justify-between">
-                Data TQT
+              <label className="text-xs font-bold text-cyan-700 flex justify-between items-center mb-1">
+                <span className="flex items-center gap-2">
+                  Data TQT
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setModalTrocaVA({ isOpen: true, tipo: 'TQT', data: currentPatient.dataUltimaTrocaTQT || "" });
+                    }}
+                    className="text-cyan-500 hover:text-cyan-800 transition-colors"
+                    title="Última troca"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                </span>
                 <button
                   onClick={(e) => {
                     e.preventDefault();
@@ -412,6 +461,12 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                   }
                 }}
               />
+              {/* Exibe a data da última troca se existir */}
+              {currentPatient.dataUltimaTrocaTQT && (
+                <div className="text-[10px] font-semibold text-cyan-600 mt-1 animate-fadeIn">
+                  Última troca: {new Date(currentPatient.dataUltimaTrocaTQT).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}
+                </div>
+              )}
             </div>
             {/* DECANULAÇÃO */}
             <div>
@@ -832,6 +887,47 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                   <p className="text-xs text-slate-400 mt-2">O robô registrará o suporte automaticamente todos os dias às 12h e 00h.</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: ÚLTIMA TROCA DE VIA AÉREA                                          */}
+      {/* ========================================================================= */}
+      {modalTrocaVA.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-cyan-500/20">
+            
+            <div className="bg-cyan-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><RefreshCw size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Última Troca ({modalTrocaVA.tipo})</h2>
+              </div>
+              <button onClick={() => setModalTrocaVA({ isOpen: false, tipo: "", data: "" })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Data da Troca</label>
+                <input 
+                  type="date" 
+                  className="w-full p-3 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-bold text-center text-lg shadow-inner bg-white"
+                  value={modalTrocaVA.data}
+                  onChange={(e) => setModalTrocaVA({ ...modalTrocaVA, data: e.target.value })}
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalTrocaVA({ isOpen: false, tipo: "", data: "" })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Cancelar
+                </button>
+                <button onClick={salvarTrocaVA} className="flex-1 py-4 bg-cyan-600 hover:bg-cyan-700 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider">
+                  Salvar
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -2732,14 +2732,53 @@ const generateNursingAI_Evolution = async () => {
       return 0;
     };
 
-    let gasoTxt = "Nenhuma gasometria registrada.";
+    // 🔥 NOVO BLOCO: CAPTURA TODAS AS GASOMETRIAS DO DIA (OMITINDO 00:00)
+    let gasoTxt = "";
     if (p.gasometriaHistory) {
-      const keys = Object.keys(p.gasometriaHistory).sort((a, b) => parseDateForSort(b) - parseDateForSort(a));
-      if (keys.length > 0) {
-        const lastG = p.gasometriaHistory[keys[0]];
-        gasoTxt = `Data/Hora: ${keys[0]}\npH: ${lastG['pH']||'-'} | pCO2: ${lastG['pCO2']||'-'} | PaO2: ${lastG['PaO2']||'-'} | HCO3: ${lastG['HCO3']||'-'} | BE: ${lastG['BE']||'-'} | SatO2: ${lastG['SatO2']||'-'} | FiO2: ${lastG['FiO2']||'-'} | P/F: ${lastG['P/F']||'-'}`;
+      // Define o início e o fim do dia de hoje (meia-noite até 23:59:59)
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const endOfToday = startOfToday + 24 * 60 * 60 * 1000 - 1;
+
+      // Pega todas as chaves e ordena da mais ANTIGA para a mais RECENTE (cronológica)
+      const keys = Object.keys(p.gasometriaHistory).sort((a, b) => parseDateForSort(a) - parseDateForSort(b));
+      
+      // Filtra apenas as chaves que caem no intervalo de hoje
+      const keysHoje = keys.filter(k => {
+        const t = parseDateForSort(k);
+        return t >= startOfToday && t <= endOfToday;
+      });
+
+      if (keysHoje.length > 0) {
+        // Monta a linha de cada gasometria encontrada hoje
+        keysHoje.forEach(k => {
+          const g = p.gasometriaHistory[k];
+          
+          // Converte o timestamp para extrair data e hora
+          const dateObj = new Date(parseDateForSort(k));
+          const dd = String(dateObj.getDate()).padStart(2, '0');
+          const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const yyyy = dateObj.getFullYear();
+          const hh = String(dateObj.getHours()).padStart(2, '0');
+          const min = String(dateObj.getMinutes()).padStart(2, '0');
+          
+          // Se for exatamente meia-noite, omite o horário. Caso contrário, exibe "às HH:mm"
+          let dataFormatada = `${dd}-${mm}-${yyyy}`;
+          if (hh !== '00' || min !== '00') {
+            dataFormatada += ` às ${hh}:${min}`;
+          }
+
+          gasoTxt += `[${dataFormatada}] pH: ${g['pH']||'-'} | pCO2: ${g['pCO2']||'-'} | PaO2: ${g['PaO2']||'-'} | HCO3: ${g['HCO3']||'-'} | BE: ${g['BE']||'-'} | SatO2: ${g['SatO2']||'-'} | FiO2: ${g['FiO2']||'-'} | P/F: ${g['P/F']||'-'}\n`;
+        });
+      } else {
+        gasoTxt = "Nenhuma gasometria registrada no dia de hoje.\n";
       }
+    } else {
+      gasoTxt = "Nenhuma gasometria registrada no sistema.\n";
     }
+    
+    // Remove a última quebra de linha extra
+    gasoTxt = gasoTxt.trim();
 
     // --- CONSTRUÇÃO DO TEXTO ---
     let evo = `EVOLUÇÃO FISIOTERAPÊUTICA\n\n`;
