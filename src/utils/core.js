@@ -759,15 +759,41 @@ export const calculatePesoPredito = (altura, sexo) => {
 };
 
 export const extractTextFromPdf = async (file) => {
-  const ab = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument(ab).promise;
-  let txt = "";
-  for (let j = 1; j <= pdf.numPages; j++) {
-    const p = await pdf.getPage(j);
-    const c = await p.getTextContent();
-    txt += c.items.map((i) => i.str).join(" ");
+  try {
+    // 1. Injeta o leitor de PDF no navegador automaticamente caso não exista
+    if (typeof window.pdfjsLib === 'undefined') {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+        script.onload = () => {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+          resolve();
+        };
+        script.onerror = () => reject(new Error("Falha ao carregar a biblioteca de leitura de PDF."));
+        document.head.appendChild(script);
+      });
+    }
+
+    // 2. Transforma o arquivo em dados binários
+    const arrayBuffer = await file.arrayBuffer();
+    
+    // 3. Lê o PDF usando a biblioteca garantida
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+    
+    // 4. Extrai o texto página por página
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(" ");
+      fullText += pageText + "\n";
+    }
+    
+    return fullText;
+  } catch (error) {
+    console.error("Erro interno ao extrair PDF:", error);
+    throw new Error("Não foi possível ler o arquivo PDF. Verifique se ele não está corrompido ou protegido por senha.");
   }
-  return txt;
 };
 
 export const parseManual = (text) => {
@@ -791,8 +817,6 @@ export const parseManual = (text) => {
 };
 
 export const analyzeTextWithGemini = async (text) => {
-  // Mantive a sua lógica dinâmica de EXAM_ROWS caso esteja usando ela na V2!
-  // Mas certifique-se de que a variável EXAM_ROWS esteja definida no topo do seu core.js
   const prompt = `
       Você é um assistente médico especializado na extração de dados de laudos laboratoriais.
       Sua tarefa é analisar o texto do laudo abaixo e extrair o nome do paciente, a data de liberação e os resultados.

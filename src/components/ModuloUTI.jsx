@@ -399,6 +399,9 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         const txt = await extractTextFromPdf(file);
         const json = await analyzeTextWithGemini(txt);
 
+        // Proteção caso a IA falhe e retorne nulo
+        if (!json) throw new Error("Falha ao analisar o texto do exame com a IA.");
+
         const extName = normalizeName(json.patientName || "");
         const date = json.date || getManausDateStr();
         let matchIdx = -1;
@@ -424,7 +427,11 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         if (matchIdx !== -1) {
           setPatients((curr) => {
             const list = [...curr];
-            const target = list[matchIdx];
+            // Fazemos uma cópia profunda para não mutar o estado diretamente
+            const target = JSON.parse(JSON.stringify(list[matchIdx]));
+            
+            // 🔥 CORREÇÃO PRINCIPAL: Cria a gaveta principal se ela não existir
+            if (!target.examHistory) target.examHistory = {}; 
             if (!target.examHistory[date]) target.examHistory[date] = {};
 
             Object.keys(json.results || {}).forEach((k) => {
@@ -433,11 +440,15 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
               }
             });
 
-            list[matchIdx] = syncLabsFromHistory(target);
+            const finalTarget = syncLabsFromHistory(target);
+            list[matchIdx] = finalTarget;
 
-            if (user && db) {
-              setDoc(doc(db, "leitos_uti", `bed_${target.id}`), target);
+            // Salva no banco de dados com proteção no ID
+            if (typeof user !== 'undefined' && typeof db !== 'undefined') {
+              const docId = String(finalTarget.id).startsWith("bed_") ? finalTarget.id : `bed_${finalTarget.id}`;
+              setDoc(doc(db, "leitos_uti", docId), finalTarget);
             }
+
             return list;
           });
 
@@ -462,9 +473,11 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           });
         }
       } catch (e) {
+        console.error(`Erro ao processar ${file.name}:`, e);
         setBulkProgress((prev) => {
           const n = [...prev];
-          n[fileIndex] = { status: "error", msg: `❌ Erro ao processar ${file.name}` };
+          // 🔥 CORREÇÃO: Agora ele mostra o motivo real do erro na tela!
+          n[fileIndex] = { status: "error", msg: `❌ Erro: ${e.message}` };
           return n;
         });
       }
