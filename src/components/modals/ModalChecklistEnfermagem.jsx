@@ -46,20 +46,32 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
   const [initialCvc, setInitialCvc] = useState(false);
   const [initialShiley, setInitialShiley] = useState(false);
   const [initialSvd, setInitialSvd] = useState(false);
+  const [cvcLocal, setCvcLocal] = useState('');
+  const [shileyLocal, setShileyLocal] = useState('');
 
   useEffect(() => {
     if (isOpen && currentPatient) {
       const escalasHoje = currentPatient.enfermagem?.escalas_diarias?.[today];
       
-      if (escalasHoje?.braden?.detalhes) setBradenData(escalasHoje.braden.detalhes);
-      if (escalasHoje?.morse?.detalhes) setMorseData(escalasHoje.morse.detalhes);
+      // 🔥 Zera as escalas toda vez que o modal abre
+      setBradenData({ percepcaoSensorial: '', umidade: '', atividade: '', mobilidade: '', nutricao: '', friccaoCisalhamento: '' });
+      setMorseData({ historicoDeQuedas: '', diagnosticoSecundario: '', auxilioNaMarcha: '', terapiaEndovenosa: '', marcha: '', estadoMental: '' });
 
-      const hasActiveCvc = currentPatient.dispositivos?.cvc?.dataInstalacao && !currentPatient.dispositivos?.cvc?.dataRetirada;
-      const hasActiveShiley = currentPatient.dispositivos?.shiley?.dataInstalacao && !currentPatient.dispositivos?.shiley?.dataRetirada;
-      const hasActiveSvd = currentPatient.dispositivos?.svd?.dataInstalacao && !currentPatient.dispositivos?.svd?.dataRetirada;
+      const enf = currentPatient.enfermagem || {};
+      
+      const hasActiveCvc = !!enf.cvcData && !enf.cvcRetiradaData;
+      const hasActiveShiley = !!enf.shileyData && !enf.shileyRetiradaData;
+      const hasActiveSvd = !!enf.svdData && !enf.svdRetiradaData;
 
-      setCvcActive(!!hasActiveCvc); setShileyActive(!!hasActiveShiley); setSvdActive(!!hasActiveSvd);
-      setInitialCvc(!!hasActiveCvc); setInitialShiley(!!hasActiveShiley); setInitialSvd(!!hasActiveSvd);
+      setCvcActive(hasActiveCvc); 
+      setShileyActive(hasActiveShiley); 
+      setSvdActive(hasActiveSvd);
+      
+      setInitialCvc(hasActiveCvc); 
+      setInitialShiley(hasActiveShiley); 
+      setInitialSvd(hasActiveSvd);
+      setCvcLocal(enf.cvcLocal || '');
+      setShileyLocal(enf.shileyLocal || '');
     }
   }, [isOpen, currentPatient, today]);
 
@@ -87,6 +99,14 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
   const morseRisk = getMorseRisk(morseScore);
 
   const handleConfirmAndGenerate = async () => {
+    const bradenIncompleto = Object.values(bradenData).some(v => v === '');
+    const morseIncompleto = Object.values(morseData).some(v => v === '');
+
+    if (bradenIncompleto || morseIncompleto) {
+      alert("⚠️ Atenção: É obrigatório preencher todos os campos das Escalas de Braden e Morse para gerar a evolução.");
+      return;
+    }
+
     let auditMessages = [];
 
     // 1. Salva na coleção externa "indicadores_performance" para o Dashboard de Gestão
@@ -151,28 +171,34 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       } 
     });
 
-    // 3. Lógica Bidirecional de Dispositivos
+    // 3. Lógica Bidirecional de Dispositivos (Corrigido para salvar em "enfermagem")
     if (!initialCvc && cvcActive) {
-      updateNested("dispositivos", "cvc", { ...currentPatient.dispositivos?.cvc, dataInstalacao: today, dataRetirada: "" });
+      updateNested("enfermagem", "cvcData", today);
+      updateNested("enfermagem", "cvcLocal", cvcLocal);
+      updateNested("enfermagem", "cvcRetiradaData", "");
       auditMessages.push("CVC instalado");
     } else if (initialCvc && !cvcActive) {
-      updateNested("dispositivos", "cvc", { ...currentPatient.dispositivos?.cvc, dataRetirada: today });
+      updateNested("enfermagem", "cvcRetiradaData", today);
       auditMessages.push("CVC retirado");
     }
 
     if (!initialShiley && shileyActive) {
-      updateNested("dispositivos", "shiley", { ...currentPatient.dispositivos?.shiley, dataInstalacao: today, dataRetirada: "" });
+      updateNested("enfermagem", "shileyData", today);
+      updateNested("enfermagem", "shileyLocal", shileyLocal)
+      updateNested("enfermagem", "shileyRetiradaData", "");
       auditMessages.push("Shiley instalado");
     } else if (initialShiley && !shileyActive) {
-      updateNested("dispositivos", "shiley", { ...currentPatient.dispositivos?.shiley, dataRetirada: today });
+      updateNested("enfermagem", "shileyRetiradaData", today);
       auditMessages.push("Shiley retirado");
     }
 
     if (!initialSvd && svdActive) {
-      updateNested("dispositivos", "svd", { ...currentPatient.dispositivos?.svd, dataInstalacao: today, dataRetirada: "" });
+      updateNested("enfermagem", "svdData", today);
+      updateNested("enfermagem", "cvcLocal", "");
+      updateNested("enfermagem", "svdRetiradaData", "");
       auditMessages.push("SVD instalada");
     } else if (initialSvd && !svdActive) {
-      updateNested("dispositivos", "svd", { ...currentPatient.dispositivos?.svd, dataRetirada: today });
+      updateNested("enfermagem", "svdRetiradaData", today);
       auditMessages.push("SVD retirada");
     }
 
@@ -193,7 +219,7 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
         <div className="bg-blue-600 p-4 flex justify-between items-center text-white">
           <div className="flex items-center gap-2">
             <Activity size={24} />
-            <h2 className="text-lg font-black tracking-wide">Checklist Diário de Enfermagem</h2>
+            <h2 className="text-lg font-black tracking-wide">Evolução Diária da Enfermagem</h2>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg transition-colors"><X size={24} /></button>
         </div>
@@ -269,32 +295,89 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
             </p>
 
             <div className="space-y-3">
-              <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${cvcActive ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
-                <div className="flex items-center gap-3">
-                  <input type="checkbox" checked={cvcActive} onChange={(e) => setCvcActive(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
-                  <span className="text-sm font-bold text-slate-700">Cateter Venoso Central (CVC)</span>
-                </div>
-                {!initialCvc && cvcActive && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Será instalado hoje</span>}
-                {initialCvc && !cvcActive && <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded">Será baixado hoje</span>}
-              </label>
+              <div className={`p-3 rounded-lg border transition-colors ${cvcActive ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <input type="checkbox" checked={cvcActive} onChange={(e) => setCvcActive(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
+                    <span className="text-sm font-bold text-slate-700">Cateter Venoso Central (CVC)</span>
+                  </div>
+                  {!initialCvc && cvcActive && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Será instalado hoje</span>}
+                  {initialCvc && !cvcActive && <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded">Será baixado hoje</span>}
+                </label>
+                {/* 🔥 Select do local aparece apenas quando marcado */}
+                {cvcActive && (
+                  <div className="mt-2 ml-8">
+                    <select
+                      value={cvcLocal}
+                      onChange={(e) => setCvcLocal(e.target.value)}
+                      className="w-full p-2 border border-blue-200 rounded-lg outline-none focus:border-blue-500 text-sm font-medium text-slate-700 bg-white"
+                    >
+                      <option value="">Selecione o local...</option>
+                      <option disabled className="font-bold text-slate-400">─── Acesso Central (CVC) ───</option>
+                      <option value="Subclávia D">Subclávia D</option>
+                      <option value="Subclávia E">Subclávia E</option>
+                      <option value="Jugular Interna D">Jugular Interna D</option>
+                      <option value="Jugular Interna E">Jugular Interna E</option>
+                      <option value="Femoral D">Femoral D</option>
+                      <option value="Femoral E">Femoral E</option>
+                      <option disabled className="font-bold text-slate-400">─── PICC ───</option>
+                      <option value="PICC MSD">PICC MSD</option>
+                      <option value="PICC MSE">PICC MSE</option>
+                    </select>
+                  </div>
+                )}
+              </div>
 
-              <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${shileyActive ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
-                <div className="flex items-center gap-3">
-                  <input type="checkbox" checked={shileyActive} onChange={(e) => setShileyActive(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
-                  <span className="text-sm font-bold text-slate-700">Cateter de Hemodiálise (Shiley)</span>
-                </div>
-                {!initialShiley && shileyActive && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Será instalado hoje</span>}
-                {initialShiley && !shileyActive && <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded">Será baixado hoje</span>}
-              </label>
+              <div className={`p-3 rounded-lg border transition-colors ${shileyActive ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <input type="checkbox" checked={shileyActive} onChange={(e) => setShileyActive(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
+                    <span className="text-sm font-bold text-slate-700">Cateter de Hemodiálise (Shiley)</span>
+                  </div>
+                  {!initialShiley && shileyActive && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Será instalado hoje</span>}
+                  {initialShiley && !shileyActive && <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded">Será baixado hoje</span>}
+                </label>
+                {/* 🔥 Select do local aparece apenas quando marcado */}
+                {shileyActive && (
+                  <div className="mt-2 ml-8">
+                    <select
+                      value={shileyLocal}
+                      onChange={(e) => setShileyLocal(e.target.value)}
+                      className="w-full p-2 border border-blue-200 rounded-lg outline-none focus:border-blue-500 text-sm font-medium text-slate-700 bg-white"
+                    >
+                      <option value="">Local...</option>
+                      <option value="VJID">VJID</option>
+                      <option value="VJIE">VJIE</option>
+                      <option value="VSCD">VSCD</option>
+                      <option value="VSCE">VSCE</option>
+                      <option value="VFID">VFID</option>
+                      <option value="VFIE">VFIE</option>
+                    </select>
+                  </div>
+                )}
+              </div>
 
-              <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${svdActive ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
-                <div className="flex items-center gap-3">
-                  <input type="checkbox" checked={svdActive} onChange={(e) => setSvdActive(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
-                  <span className="text-sm font-bold text-slate-700">Sonda Vesical de Demora (SVD)</span>
-                </div>
-                {!initialSvd && svdActive && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Será instalada hoje</span>}
-                {initialSvd && !svdActive && <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded">Será baixada hoje</span>}
-              </label>
+              <div className={`p-3 rounded-lg border transition-colors ${svdActive ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <input type="checkbox" checked={svdActive} onChange={(e) => setSvdActive(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
+                    <span className="text-sm font-bold text-slate-700">Sonda Vesical de Demora (SVD)</span>
+                  </div>
+                  {!initialSvd && svdActive && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Será instalada hoje</span>}
+                  {initialSvd && !svdActive && <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded">Será baixada hoje</span>}
+                </label>
+                {svdActive && (
+                  <div className="mt-2 ml-8">
+                    <input 
+                      type="date" 
+                      className="w-full p-2 border border-blue-200 rounded-lg outline-none focus:border-blue-500 text-sm bg-white"
+                      value={currentPatient.enfermagem?.svdData || today}
+                      disabled
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Data de inserção registrada na admissão</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

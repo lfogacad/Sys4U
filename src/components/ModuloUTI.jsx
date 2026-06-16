@@ -2593,9 +2593,12 @@ ${conduta}
     const geniFrase = `${svdTexto}, com ${diureseStatus} de aspecto ${diureseAspecto.toLowerCase()}`;
 
     // 7. TEGUMENTAR
-    const lesoes = p.enfermagem?.lesaoLocal ? `Apresenta lesão: ${p.enfermagem.lesaoLocal}` : "Pele íntegra";
-    const curativos = p.enfermagem?.curativoTipo ? `com curativo: ${p.enfermagem.curativoTipo} (Data: ${p.enfermagem.curativoData || "NT"})` : "";
-    const tegumentarFrase = curativos ? `${lesoes}, ${curativos}` : lesoes;
+    const lesoesArray = p.enfermagem?.lesoes || [];
+    const tegumentarFrase = lesoesArray.length > 0 
+      ? lesoesArray.map(l => 
+          `${l.origem === 'incidencia' ? 'Lesão adquirida na UTI' : 'Lesão prévia'}: ${l.localizacao}${l.curativo ? ` — Curativo: ${l.curativo}` : ''}`
+        ).join('. ')
+      : "Pele íntegra";
 
     // 8. DISPOSITIVOS E INTERCORRÊNCIAS
     const dispositivos = [
@@ -3019,7 +3022,7 @@ const handleFinalizeNursingAdmission = async () => {
       : "Pele íntegra / Sem lesões por pressão.";
 
     // 5. O NOVO CARIMBADOR (Texto Integrado para Evolução)
-    const text = `ADMISSÃO DE ENFERMAGEM COMPLETA
+    const text = `ADMISSÃO DE ENFERMAGEM
 
 --- HISTÓRIA CLÍNICA (ADMISSÃO MÉDICA) ---
 ${historia}
@@ -3032,7 +3035,7 @@ DISPOSITIVOS INVASIVOS E DATAS:
 AVP: ${nursingData.avpLocal ? `${nursingData.avpLocal} (Data: ${nursingData.avpData || "-"})` : "Não possui"}
 CVC/PICC: ${nursingData.cvcLocal ? `${nursingData.cvcLocal} (Ins: ${nursingData.cvcData || "-"}) ${nursingData.cvcRetiradaData ? `| RETIRADA: ${nursingData.cvcRetiradaData}` : ""}` : "Não possui"}
 SHILEY: ${nursingData.shileyLocal ? `${nursingData.shileyLocal} (Ins: ${nursingData.shileyData || "-"}) ${nursingData.shileyRetiradaData ? `| RETIRADA: ${nursingData.shileyRetiradaData}` : ""}` : "Não possui"}
-SVD: ${nursingData.svd ? `Sim (Ins: ${nursingData.svdData || "-"}) ${nursingData.svdRetiradaData ? `| RETIRADA: ${nursingData.svdRetiradaData}` : ""}` : "Não possui"}
+SVD: ${nursingData.svdData ? `Sim (Ins: ${nursingData.svdData}) ${nursingData.svdRetiradaData ? `| RETIRADA: ${nursingData.svdRetiradaData}` : ""}` : "Não possui"}
 SNE: ${nursingData.sneCm ? `Fixação em ${nursingData.sneCm} cm (Data: ${nursingData.sneData || "-"})` : "Não possui"}
 Drenos: ${nursingData.drenoTipo || "Nenhum"}
 
@@ -3040,8 +3043,8 @@ INTEGRIDADE CUTÂNEA E CURATIVOS:
 ${textoLesoes}
 
 ESCALAS DE RISCO:
-- BRADEN: ${bradenTotal} pontos (Risco ${bradenRisco})
-- MORSE: ${morseTotal} pontos (Risco de Queda ${morseRisco})
+- BRADEN: ${bradenTotal} pontos (Risco: ${bradenRisco})
+- MORSE: ${morseTotal} pontos (Risco de Queda: ${morseRisco})
 
 ---
 Documento gerado eletronicamente e registrado nos indicadores de performance da unidade.
@@ -3111,9 +3114,9 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       await addDoc(historicoRef, { ...baseData, tipo: "MORSE", valor: morseTotal, risco: morseRisco, respostas: detalhesMorse });
 
       const dispositivos = [
-        { nome: "SVD", ativo: nursingData.svd, inicio: nursingData.svdData, fim: nursingData.svdRetiradaData },
-        { nome: "CVC", ativo: nursingData.cvcLocal, inicio: nursingData.cvcData, fim: nursingData.cvcRetiradaData },
-        { nome: "SHILEY", ativo: nursingData.shileyLocal, inicio: nursingData.shileyData, fim: nursingData.shileyRetiradaData }
+        { nome: "SVD", ativo: !!nursingData.svdData, inicio: nursingData.svdData, fim: nursingData.svdRetiradaData },
+        { nome: "CVC", ativo: !!nursingData.cvcLocal, inicio: nursingData.cvcData, fim: nursingData.cvcRetiradaData },
+        { nome: "SHILEY", ativo: !!nursingData.shileyLocal, inicio: nursingData.shileyData, fim: nursingData.shileyRetiradaData }
       ];
 
       for (let disp of dispositivos) {

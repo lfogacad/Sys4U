@@ -57,39 +57,106 @@ const NursingAdmissionModal = ({
           {/* INVASIVOS E DISPOSITIVOS */}
           <div className="p-4 border rounded-xl bg-orange-50/20 shadow-sm">
             <h4 className="font-bold text-orange-800 mb-3">Invasivos e Dispositivos</h4>
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
+            
+            {/* PRIMEIRA LINHA: AVP, CVC/PICC e SHILEY */}
+            <div className="grid md:grid-cols-3 gap-4 mb-4">
+              {/* AVP */}
               <div>
                 <label className="text-xs font-bold text-gray-500 mb-1 block">AVP (Local/Data)</label>
                 <div className="flex gap-2">
-                  <input className="w-full p-2 border rounded" placeholder="Local" value={nursingData.avpLocal || ""} onChange={(e) => setNursingData({ ...nursingData, avpLocal: e.target.value })} disabled={isReadOnly}/>
-                  <input type="date" className="w-40 p-2 border rounded" value={nursingData.avpData || ""} onChange={(e) => setNursingData({ ...nursingData, avpData: e.target.value })} disabled={isReadOnly}/>
+                  <select 
+                    className="w-full p-2 border rounded bg-white focus:ring-2 focus:ring-orange-500 outline-none" 
+                    value={nursingData.avpLocal || ""} 
+                    onChange={(e) => setNursingData({ ...nursingData, avpLocal: e.target.value })} 
+                    disabled={isReadOnly}
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="MSE">MSE</option>
+                    <option value="MSD">MSD</option>
+                    <option value="MIE">MIE</option>
+                    <option value="MID">MID</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                  <input type="date" className="w-40 p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" value={nursingData.avpData || ""} onChange={(e) => setNursingData({ ...nursingData, avpData: e.target.value })} disabled={isReadOnly}/>
                 </div>
               </div>
+
+              {/* CVC/PICC */}
               <div>
                 <label className="text-xs font-bold text-gray-500 mb-1 block">CVC/PICC (Local/Data)</label>
                 <div className="flex gap-2">
-                  <input className="w-full p-2 border rounded" placeholder="Local" value={nursingData.cvcLocal || ""} onChange={(e) => setNursingData({ ...nursingData, cvcLocal: e.target.value })} disabled={isReadOnly}/>
-                  <input type="date" className="w-40 p-2 border rounded" value={nursingData.cvcData || ""} onChange={(e) => setNursingData({ ...nursingData, cvcData: e.target.value })} disabled={isReadOnly}/>
+                  <select 
+                    className="w-full p-2 border rounded bg-white focus:ring-2 focus:ring-orange-500 outline-none" 
+                    value={nursingData.cvcLocal || ""} 
+                    onChange={(e) => setNursingData({ ...nursingData, cvcLocal: e.target.value })} 
+                    disabled={isReadOnly}
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="VJID">VJID</option>
+                    <option value="VJIE">VJIE</option>
+                    <option value="VSCD">VSCD</option>
+                    <option value="VSCE">VSCE</option>
+                    <option value="Femoral D">Femoral D</option>
+                    <option value="Femoral E">Femoral E</option>
+                    <option value="PICC MSD">PICC MSD</option>
+                    <option value="PICC MSE">PICC MSE</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                  <input type="date" className="w-40 p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" value={nursingData.cvcData || ""} onChange={(e) => setNursingData({ ...nursingData, cvcData: e.target.value })} disabled={isReadOnly}/>
+                </div>
+              </div>
+
+              {/* SHILEY (NOVO) */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Shiley (Local/Data)</label>
+                <div className="flex gap-2">
+                  <select 
+                    className="w-full p-2 border rounded bg-white focus:ring-2 focus:ring-orange-500 outline-none" 
+                    value={nursingData.shileyLocal || ""} 
+                    onChange={(e) => setNursingData({ ...nursingData, shileyLocal: e.target.value })} 
+                    disabled={isReadOnly}
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="VJID">VJID</option>
+                    <option value="VJIE">VJIE</option>
+                    <option value="VSCD">VSCD</option>
+                    <option value="VSCE">VSCE</option>
+                    <option value="Femoral D">Femoral D</option>
+                    <option value="Femoral E">Femoral E</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                  <input type="date" className="w-40 p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" value={nursingData.shileyData || ""} onChange={(e) => setNursingData({ ...nursingData, shileyData: e.target.value })} disabled={isReadOnly}/>
                 </div>
               </div>
             </div>
+
+            {/* SEGUNDA LINHA: SVD, SNE e DRENOS */}
             <div className="grid md:grid-cols-3 gap-4">
+              {/* SVD (Sem checkbox) */}
               <div>
-                <label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-1">
-                  <input type="checkbox" checked={nursingData.svd || false} onChange={(e) => setNursingData({ ...nursingData, svd: e.target.checked })} disabled={isReadOnly}/> SVD (Data)
-                </label>
-                <input type="date" className={`w-full p-2 border rounded ${!nursingData.svd ? "bg-gray-100 opacity-50" : "bg-white"}`} value={nursingData.svdData || ""} onChange={(e) => setNursingData({ ...nursingData, svdData: e.target.value })} disabled={!nursingData.svd || isReadOnly} />
+                <label className="text-xs font-bold text-gray-500 mb-1 block">SVD (Data)</label>
+                <input 
+                  type="date" 
+                  className="w-full p-2 border rounded bg-white focus:ring-2 focus:ring-orange-500 outline-none" 
+                  value={nursingData.svdData || ""} 
+                  onChange={(e) => setNursingData({ ...nursingData, svdData: e.target.value })} 
+                  disabled={isReadOnly} 
+                />
               </div>
+
+              {/* SNE */}
               <div>
                 <label className="text-xs font-bold text-gray-500 mb-1 block">SNE (Fixação cm / Data)</label>
                 <div className="flex gap-2">
-                  <input className="w-full p-2 border rounded" placeholder="cm" value={nursingData.sneCm || ""} onChange={(e) => setNursingData({ ...nursingData, sneCm: e.target.value })} disabled={isReadOnly}/>
-                  <input type="date" className="w-32 p-2 border rounded" value={nursingData.sneData || ""} onChange={(e) => setNursingData({ ...nursingData, sneData: e.target.value })} disabled={isReadOnly}/>
+                  <input className="w-full p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" placeholder="cm" value={nursingData.sneCm || ""} onChange={(e) => setNursingData({ ...nursingData, sneCm: e.target.value })} disabled={isReadOnly}/>
+                  <input type="date" className="w-32 p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" value={nursingData.sneData || ""} onChange={(e) => setNursingData({ ...nursingData, sneData: e.target.value })} disabled={isReadOnly}/>
                 </div>
               </div>
+
+              {/* DRENOS */}
               <div>
                 <label className="text-xs font-bold text-gray-500 mb-1 block">Drenos</label>
-                <input className="w-full p-2 border rounded" placeholder="Tipo/Características" value={nursingData.drenoTipo || ""} onChange={(e) => setNursingData({ ...nursingData, drenoTipo: e.target.value })} disabled={isReadOnly}/>
+                <input className="w-full p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Tipo/Características" value={nursingData.drenoTipo || ""} onChange={(e) => setNursingData({ ...nursingData, drenoTipo: e.target.value })} disabled={isReadOnly}/>
               </div>
             </div>
           </div>

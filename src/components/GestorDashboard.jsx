@@ -6626,16 +6626,24 @@ const GestorDashboard = ({ userProfile }) => {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-emerald-700 mb-2">Nome do Médico Extra:</label>
+                    {/* Label dinâmica baseada na categoria ativa */}
+                    <label className="block text-sm font-bold text-emerald-700 mb-2">
+                      Nome do {categoriaAtiva} Extra:
+                    </label>
                     <select 
                       value={extraNome} 
                       onChange={(e) => setExtraNome(e.target.value)} 
                       className="w-full p-3 bg-emerald-50 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 font-bold"
                     >
                       <option value="">Selecione o reforço...</option>
-                      {listaMedicos.map((med) => (
-                        <option key={med.id} value={med.nome}>{med.nome}</option>
-                      ))}
+                      
+                      {/* 🔥 Filtra a lista geral pela categoria que o gestor está visualizando */}
+                      {listaProfissionais
+                        .filter(prof => prof.categoria === categoriaAtiva)
+                        .map((med) => (
+                          <option key={med.id} value={med.nome}>{med.nome}</option>
+                        ))
+                      }
                     </select>
                   </div>
                 </div>

@@ -74,10 +74,16 @@ export const verificarCatraca = async (userProfile) => {
       const plantao = doc.data();
       if (!plantao.nome || !plantao.sigla) return;
 
-      const nomeEscala = plantao.nome.toUpperCase().trim();
+      // 🔥 CORREÇÃO: Limpa as tags do nome antes de comparar
+      const nomeEscala = plantao.nome
+        .toUpperCase()
+        .replace('[EXTRA]', '')
+        .replace('[FALTOU]', '')
+        .replace('[ATESTADO]', '')
+        .trim();
 
-      // Regra da Interseção Nominal
-      if (nomeBanco.includes(nomeEscala)) {
+      // Regra da Interseção Nominal (Verifica de ambos os lados para garantir)
+      if (nomeBanco.includes(nomeEscala) || nomeEscala.includes(nomeBanco)) {
         // Valida se, além de estar na escala, ele está na janela cronológica correta
         const dentroDaJanela = verificarJanelaDeTempo(plantao.data, plantao.sigla, now);
         

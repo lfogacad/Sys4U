@@ -344,25 +344,15 @@ return (
             {/* GRADE 2: OUTROS DISPOSITIVOS (SVD, DIURESE, SNE, DRENOS) */}
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
               
+              {/* SVD (Sem Checkbox) */}
               <div>
                 <label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-1">
-                  <input 
-                    type="checkbox" 
-                    checked={currentPatient.enfermagem?.svd || false} 
-                    onChange={(e) => updateNested("enfermagem", "svd", e.target.checked)} 
-                    onBlur={(e) => {
-                      handleBlurSave("Enfermagem: Alterou status de SVD");
-                      if (typeof registrarLogAuditoria === "function") {
-                        registrarLogAuditoria("DISPOSITIVO: SVD", `Status da SVD alterado para: ${e.target.checked ? "Ativa" : "Inativa"}`, currentPatient.id, currentPatient.nome);
-                      }
-                    }}
-                  /> 
                   SVD (Sonda Vesical / Inserção)
                 </label>
                 <div className="space-y-2">
                   <input 
                     type="date" 
-                    className={`w-full p-2 border rounded ${!currentPatient.enfermagem?.svd ? "bg-gray-100 opacity-50" : ""}`} 
+                    className="w-full p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" 
                     value={currentPatient.enfermagem?.svdData || ""} 
                     onChange={(e) => updateNested("enfermagem", "svdData", e.target.value)} 
                     onBlur={(e) => {
@@ -371,10 +361,11 @@ return (
                         registrarLogAuditoria("DISPOSITIVO: SVD", `Data de inserção alterada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
                       }
                     }}
-                    disabled={!currentPatient.enfermagem?.svd || !isEditable} 
+                    disabled={!isEditable} 
                   />
                   
-                  {currentPatient.enfermagem?.svd && (
+                  {/* Só mostra a data de retirada se a SVD tiver uma data de inserção */}
+                  {currentPatient.enfermagem?.svdData && (
                     <div className="mt-2">
                       <label className="block text-[10px] font-bold text-red-500 uppercase">Data de Retirada (SVD)</label>
                       <input 
