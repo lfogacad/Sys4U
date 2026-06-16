@@ -2047,10 +2047,11 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       let renalStatus = "sem cálculo de função renal";
       
       if (!isNaN(crclNum)) {
-        if (crclNum >= 90) renalStatus = "função renal normal";
-        else if (crclNum >= 60) renalStatus = "redução leve da função renal";
-        else if (crclNum >= 30) renalStatus = "falha moderada da função renal";
-        else renalStatus = "falha severa da função renal";
+        // 🔥 MUDANÇA: A palavra "com" agora fica embutida aqui, apenas se houver cálculo
+        if (crclNum >= 90) renalStatus = "com função renal normal";
+        else if (crclNum >= 60) renalStatus = "com redução leve da função renal";
+        else if (crclNum >= 30) renalStatus = "com falha moderada da função renal";
+        else renalStatus = "com falha severa da função renal";
       }
 
      // 6. LABORATORIAL
@@ -2068,11 +2069,12 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
 
       let leucoStatus = "sem dados recentes de leucometria";
       if (leucoVal > 0) {
-        if (leucoVal < 5000) leucoStatus = "leucopenia";
-        else if (leucoVal <= 10000) leucoStatus = "leucometria normal";
-        else if (leucoVal <= 12000) leucoStatus = "leucocitose discreta";
-        else if (leucoVal <= 20000) leucoStatus = "leucocitose";
-        else leucoStatus = "leucocitose importante";
+        // 🔥 MUDANÇA: A palavra "com" agora fica embutida aqui também
+        if (leucoVal < 5000) leucoStatus = "com leucopenia";
+        else if (leucoVal <= 10000) leucoStatus = "com leucometria normal";
+        else if (leucoVal <= 12000) leucoStatus = "com leucocitose discreta";
+        else if (leucoVal <= 20000) leucoStatus = "com leucocitose";
+        else leucoStatus = "com leucocitose importante";
       }
 
       const atbValidado = dadosDoTimeout?.atbs || currentPatient.medical?.antibioticosTextoIA || "";
@@ -2128,8 +2130,8 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       FORMATO OBRIGATÓRIO:
       ${sexoPaciente} encontra-se em [ESTADO GERAL], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].
       [HEMODINÂMICA], [DVA], apresenta-se [FC], [PA].
-      [DIURESE], com [FUNÇÃO RENAL].
-      ${mantemSe} [TEMPERATURA], com [LEUCOMETRIA] e [ATB].
+      [DIURESE], [FUNÇÃO RENAL].
+      ${mantemSe} [TEMPERATURA], [LEUCOMETRIA] e [ATB].
       A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO].[TGI]
 
       DADOS CLÍNICOS REAIS:
@@ -2196,6 +2198,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
             // Puxando Exames e Conduta (Novos Campos)
             const examesComp = currentPatient.medical?.examesComplementares || "Aguardando resultados / Sem exames descritos.";
             const conduta = currentPatient.medical?.condutaPlano || "Mantidas condutas prévias. Monitoramento contínuo.";
+            const obsImportantes = currentPatient.medical?.observacoesImportantes || "Sem observações adicionais.";
 
             // Formatando listas de Sedação e DVA
             const sedacaoList = currentPatient.neuro?.sedacao && currentPatient.neuro?.drogasSedacao?.length > 0 
@@ -2236,6 +2239,9 @@ DVA: ${dvaList}
 
 EVOLUÇÃO E INTERCORRÊNCIAS:
 ${aiEvolucaoClinica}
+
+OBSERVAÇÕES IMPORTANTES:
+${obsImportantes}
 
 EXAMES COMPLEMENTARES:
 ${examesComp}
@@ -4694,13 +4700,18 @@ const userRole = userProfile?.role || userProfile?.perfil;
                               const leitoFormatado = num.toString().padStart(2, '0'); // Ex: "01"
                               const leitoSemZero = num.toString(); // Ex: "1"
                               
-                              // 🔥 BUSCA BLINDADA: Tenta achar o leito por todas as chaves possíveis
-                              const pac = (listaCenso || []).find(p => 
-                                p.id === `bed_${leitoSemZero}` ||   // Procura pelo ID do documento (bed_1)
-                                p.id === `bed_${leitoFormatado}` || // Procura pelo ID do documento (bed_01)
-                                p.leito === leitoFormatado ||       // Procura pelo campo interno "01"
-                                p.leito === leitoSemZero            // Procura pelo campo interno "1"
-                              );
+                              // 🔥 BUSCA CORRIGIDA: Converte o leito do banco para texto antes de comparar
+                              const pac = (listaCenso || []).find(p => {
+                                // Pega o leito do banco e transforma em texto (se for 3, vira "3")
+                                const leitoBanco = p.leito !== undefined && p.leito !== null ? String(p.leito) : "";
+                                
+                                return (
+                                  p.id === `bed_${leitoSemZero}` ||   // Procura pelo ID: bed_3
+                                  p.id === `bed_${leitoFormatado}` || // Procura pelo ID: bed_03
+                                  leitoBanco === leitoSemZero ||      // Compara texto com texto: "3" === "3"
+                                  leitoBanco === leitoFormatado       // Compara texto com texto: "03" === "03"
+                                );
+                              });
 
                               // Garante que o nome existe antes de tentar cortar o primeiro nome
                               const nomePaciente = pac && pac.nome ? pac.nome.split(' ')[0] : null;

@@ -278,7 +278,7 @@ const salvarFralda = () => {
       const horaBH = `${String(hora).padStart(2, '0')}:00`;
 
       // Garante que a estrutura do BH existe para não quebrar a tela
-      if (!p.bh) p.bh = { date: new Date().toISOString().split('T')[0], inputs: {}, losses: {}, vitals: {} };
+      if (!p.bh) p.bh = { date: getManausDateStr(), inputs: {}, losses: {}, vitals: {} };
       if (!p.bh.losses) p.bh.losses = {};
       if (!p.bh.losses[horaBH]) p.bh.losses[horaBH] = {};
 
@@ -374,7 +374,7 @@ const salvarFralda = () => {
     // 🔥 2. INTEGRAÇÃO: Atualiza o painel da enfermagem automaticamente
     p.enfermagem.avpLocal = modalAcesso.local;
     // Pega a data de hoje no formato YYYY-MM-DD para o input type="date"
-    p.enfermagem.avpData = new Date().toISOString().split('T')[0];
+    p.enfermagem.avpData = getManausDateStr();
 
     up[activeTab] = p;
     setPatients(up);
@@ -444,7 +444,7 @@ const salvarFralda = () => {
       // 🔥 A GRANDE MUDANÇA ESTÁ AQUI: formato "HH:00" em vez de "HHh"
       const horaBH = `${String(hora).padStart(2, '0')}:00`;
 
-      if (!p.bh) p.bh = { date: new Date().toISOString().split('T')[0], inputs: {}, losses: {}, vitals: {} };
+      if (!p.bh) p.bh = { date: getManausDateStr(), inputs: {}, losses: {}, vitals: {} };
       if (!p.bh.vitals) p.bh.vitals = {};
       if (!p.bh.vitals[horaBH]) p.bh.vitals[horaBH] = {};
 
@@ -476,7 +476,7 @@ const salvarFralda = () => {
     const enf = currentPatient.enfermagem || {};
     let eventos = [];
 
-    const dataHoje = new Date().toISOString().split('T')[0];
+    const dataHoje = getManausDateStr();
 
     // Função auxiliar para os modais
     const addEvent = (historico, formatador) => {
@@ -541,10 +541,14 @@ const salvarFralda = () => {
     // Ordena todos os eventos de HOJE por horário (do mais cedo pro mais tarde)
     eventos.sort((a, b) => a.horario.localeCompare(b.horario));
 
+    // 🔥 CORREÇÃO: Pega a data da "pasta" do plantão e formata para DD/MM/AAAA
+    const dataDoPlantao = selectedDate || currentPatient.bh?.date || getManausDateStr();
+    const dataFormatada = dataDoPlantao.split('-').reverse().join('/');
+
     // Monta o texto final
     let relatorio = `=== ANOTAÇÃO DE ENFERMAGEM ===\n`;
     relatorio += `Paciente: ${currentPatient.nome}\n`;
-    relatorio += `Data: ${new Date().toLocaleDateString('pt-BR')}\n\n`;
+    relatorio += `Data do Plantão: ${dataFormatada}\n\n`;
 
     if (eventos.length > 0) {
       eventos.forEach(ev => {

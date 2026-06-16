@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, X, Bug, CheckCircle, Stethoscope, ArrowRight, ArrowLeft, Microscope, Activity } from 'lucide-react';
-import { RASS_OPTS } from '../../constants/clinicalLists'; 
+import { RASS_OPTS, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM } from '../../constants/clinicalLists'; 
 
 const ChecklistEvoModal = ({
   showChecklistEvo,
@@ -184,17 +184,53 @@ const ChecklistEvoModal = ({
                       </div>
                     ) : (
                       <div className="pl-6 animate-fadeIn">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Escala de Glasgow</label>
-                        <select 
-                          className="w-full p-1.5 border rounded text-sm bg-white outline-none focus:ring-2 focus:ring-slate-300"
-                          value={neuro.glasgow || ""} 
-                          onChange={(e) => updateNested("neuro", "glasgow", e.target.value)}
-                        >
-                          <option value="">Selecione...</option>
-                          {["15", "14", "13", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3"].map(g => (
-                            <option key={g} value={g}>{g}</option>
-                          ))}
-                        </select>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Escala de Glasgow (AO / RV / RM)</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <select 
+                            className="w-full p-1.5 border rounded text-xs bg-white outline-none focus:ring-2 focus:ring-slate-300"
+                            value={neuro.glasgowAO || ""} 
+                            onChange={(e) => updateNested("neuro", "glasgowAO", e.target.value)}
+                          >
+                            <option value="">AO</option>
+                            {GLASGOW_AO.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                          
+                          <select 
+                            className="w-full p-1.5 border rounded text-xs bg-white outline-none focus:ring-2 focus:ring-slate-300"
+                            value={neuro.glasgowRV || ""} 
+                            onChange={(e) => updateNested("neuro", "glasgowRV", e.target.value)}
+                          >
+                            <option value="">RV</option>
+                            {GLASGOW_RV.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                          
+                          <select 
+                            className="w-full p-1.5 border rounded text-xs bg-white outline-none focus:ring-2 focus:ring-slate-300"
+                            value={neuro.glasgowRM || ""} 
+                            onChange={(e) => updateNested("neuro", "glasgowRM", e.target.value)}
+                          >
+                            <option value="">RM</option>
+                            {GLASGOW_RM.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        </div>
+                        
+                        <div className="text-right mt-2">
+                          <span className="text-xs font-bold text-slate-600">Total Glasgow: </span>
+                          <span className="text-sm font-black text-indigo-600">
+                            {(() => {
+                              const ao = parseInt(neuro.glasgowAO) || 0;
+                              const rm = parseInt(neuro.glasgowRM) || 0;
+                              const rvStr = neuro.glasgowRV || "";
+                              
+                              if (!neuro.glasgowAO && !rvStr && !neuro.glasgowRM) return "-";
+                              
+                              if (rvStr.startsWith("T") || rvStr.startsWith("1 - T")) return `${ao + rm}T`;
+                              
+                              const rv = parseInt(rvStr) || 0;
+                              return ao + rm + rv;
+                            })()}
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -268,13 +304,41 @@ const ChecklistEvoModal = ({
                     <label className="text-[10px] font-bold text-slate-500 uppercase">EXTREMIDADES</label>
                     <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameExtremidades || ""} onChange={(e) => updateNested("medical", "exameExtremidades", e.target.value)} rows={2} />
                   </div>
+
+                  {/* OBSERVAÇÕES IMPORTANTES */}
                   <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Exames Complementares (Laboratório e Imagem)</label>
-                    <textarea className="w-full p-2 mt-1 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Descreva os achados relevantes dos exames..." value={med.examesComplementares || ""} onChange={(e) => updateNested("medical", "examesComplementares", e.target.value)} rows={3} />
+                    <label className="text-[10px] font-black text-orange-600 uppercase tracking-wider">Observações Importantes</label>
+                    <textarea 
+                      className="w-full p-2 mt-1 border rounded text-xs bg-orange-50/30 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-orange-200" 
+                      placeholder="Anotações relevantes, pendências, avisos..." 
+                      value={med.observacoesImportantes || ""} 
+                      onChange={(e) => updateNested("medical", "observacoesImportantes", e.target.value)} 
+                      rows={3} 
+                    />
                   </div>
-                  <div className="md:col-span-2">
+
+                  {/* EXAMES COMPLEMENTARES */}
+                  <div className="md:col-span-2 mt-1">
+                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Exames Complementares (Laboratório e Imagem)</label>
+                    <textarea 
+                      className="w-full p-2 mt-1 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" 
+                      placeholder="Descreva os achados relevantes dos exames..." 
+                      value={med.examesComplementares || ""} 
+                      onChange={(e) => updateNested("medical", "examesComplementares", e.target.value)} 
+                      rows={3} 
+                    />
+                  </div>
+
+                  {/* CONDUTA / PLANO TERAPÊUTICO */}
+                  <div className="md:col-span-2 mt-1">
                     <label className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Conduta / Plano Terapêutico</label>
-                    <textarea className="w-full p-2 mt-1 border rounded text-xs bg-indigo-50/30 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200 font-medium" placeholder="Planejamento para as próximas 24h..." value={med.condutaPlano || ""} onChange={(e) => updateNested("medical", "condutaPlano", e.target.value)} rows={4} />
+                    <textarea 
+                      className="w-full p-2 mt-1 border rounded text-xs bg-indigo-50/30 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200 font-medium" 
+                      placeholder="Planejamento para as próximas 24h..." 
+                      value={med.condutaPlano || ""} 
+                      onChange={(e) => updateNested("medical", "condutaPlano", e.target.value)} 
+                      rows={4} 
+                    />
                   </div>
                 </div>
               </div>

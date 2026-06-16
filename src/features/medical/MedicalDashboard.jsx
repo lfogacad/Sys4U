@@ -242,10 +242,11 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               "Porto Velho", "Rio Crespo", "Vale do Anari", "Vilhena"
             ];
             
-            // 💡 UNIFICAÇÃO: Lê de qualquer um dos dois, mas a tela agora respeita uma fonte só
             const valorAtual = currentPatient.procedencia || currentPatient.origem || "";
             const isOutro = valorAtual && !origensLista.includes(valorAtual) && valorAtual !== " ";
 
+            // 🔥 CORREÇÃO: Removemos o setTimeout e o handleBlurSave daqui!
+            // Agora essa função apenas atualiza a tela instantaneamente.
             const handleAlterarSelect = (novoValor) => {
               if (valorAtual && valorAtual !== " " && valorAtual !== novoValor) {
                 if (!window.confirm("⚠️ Deseja mesmo alterar a procedência deste paciente? Isso afetará os indicadores epidemiológicos.")) {
@@ -253,48 +254,44 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
                 }
               }
               
-              // 🔥 Apenas UMA ordem direta! Acabou a corrida assíncrona.
               updateP("procedencia", novoValor);
-              
-              if (novoValor !== " ") {
-                setTimeout(() => handleBlurSave(`Médico: Alterou a procedência para ${novoValor}`), 200);
-              }
             };
 
             return (
-              <div className="flex gap-2">
-                <select 
-                  value={origensLista.includes(valorAtual) ? valorAtual : (valorAtual ? "Outro" : "")} 
-                  onChange={(e) => {
-                    if (e.target.value === "Outro") {
-                      handleAlterarSelect(" "); 
-                    } else {
-                      handleAlterarSelect(e.target.value);
+              <div className="flex flex-col gap-2">
+                <select
+                  className="w-full p-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-200 text-slate-700 font-semibold"
+                  value={isOutro ? "Outro" : valorAtual}
+                  onChange={(e) => handleAlterarSelect(e.target.value)}
+                  // 🔥 CORREÇÃO: O salvamento no banco de dados acontece no onBlur (quando clica fora)
+                  onBlur={(e) => {
+                    if (e.target.value && e.target.value !== " " && e.target.value !== "Outro") {
+                      handleBlurSave(`Médico: Alterou a procedência para ${e.target.value}`);
                     }
                   }}
-                  className={`p-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-teal-100 text-slate-700 transition-all ${isOutro ? 'w-1/3' : 'w-full'}`} 
+                  disabled={!isEditable}
                 >
-                  <option value="">-- Selecione --</option>
-                  {origensLista.map(cidade => (
-                    <option key={cidade} value={cidade}>{cidade}</option>
+                  <option value="">Selecione...</option>
+                  {origensLista.map(o => (
+                    <option key={o} value={o}>{o}</option>
                   ))}
-                  <option value="Outro">Outro...</option>
+                  <option value="Outro">Outro (Digitar)</option>
                 </select>
 
-                {/* CAMPO MANUAL PARA "OUTRO" */}
+                {/* CAMPO DE TEXTO PARA "OUTRO" */}
                 {isOutro && (
-                  <input 
-                    type="text" 
-                    className="w-2/3 p-2 border rounded-lg outline-none focus:ring-2 focus:ring-teal-100 text-slate-700 bg-white animate-fadeIn" 
-                    placeholder="Qual a procedência?" 
-                    value={valorAtual === " " ? "" : valorAtual} 
-                    onChange={(e) => {
-                      updateP("procedencia", e.target.value || " ");
-                    }} 
+                  <input
+                    type="text"
+                    placeholder="Digite a procedência..."
+                    className="w-full p-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-200 text-slate-700 font-semibold animate-fadeIn"
+                    value={valorAtual}
+                    onChange={(e) => updateP("procedencia", e.target.value)}
                     onBlur={(e) => {
-                      handleBlurSave(`Médico: Alterou a procedência manual para ${e.target.value}`);
+                      if (e.target.value && e.target.value.trim() !== "") {
+                        handleBlurSave(`Médico: Alterou a procedência para ${e.target.value}`);
+                      }
                     }}
-                    autoFocus
+                    disabled={!isEditable}
                   />
                 )}
               </div>

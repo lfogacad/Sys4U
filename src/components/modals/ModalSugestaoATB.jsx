@@ -75,7 +75,7 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
           return "500mg IV 8/8h" + tagAjuste;
 
         case "CEFTRIAXONA":
-          return isMeningiteOuGrave ? "2g IV 12/12h" : "2g IV 24/24h"; // Sem ajuste renal
+          return isMeningiteOuGrave ? "2g IV 12/12h" : "1g IV 12/12h"; // Sem ajuste renal
 
         case "AZITROMICINA": return "500mg VO 24/24h"; // Sem ajuste renal
         case "METRONIDAZOL": return "500mg IV 8/8h"; // Sem ajuste renal
