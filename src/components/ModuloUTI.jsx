@@ -1117,13 +1117,29 @@ const clearAntibiotic = (i) => {
   };
 
   const updateLab = (date, exam, value) => {
-    const up = [...patients];
-    const p = up[activeTab];
-    if (!p.examHistory[date]) p.examHistory[date] = {};
-    p.examHistory[date][exam] = value;
-    up[activeTab] = syncLabsFromHistory(p);
-    setPatients(up);
-};
+    setPatients((curr) => {
+      const up = [...curr];
+      // 1. Fazemos uma cópia profunda para não mutar o estado diretamente
+      const p = JSON.parse(JSON.stringify(up[activeTab]));
+      
+      // 2. Garante que as gavetas existem
+      if (!p.examHistory) p.examHistory = {};
+      if (!p.examHistory[date]) p.examHistory[date] = {};
+      
+      // 3. Se o valor for vazio, deletamos a chave para manter o banco limpo
+      if (value === "" || value === null) {
+        delete p.examHistory[date][exam];
+      } else {
+        p.examHistory[date][exam] = value;
+      }
+      
+      // 4. Sincroniza as colunas (today, yesterday, dayBefore)
+      up[activeTab] = syncLabsFromHistory(p);
+      
+      // Retorna a lista atualizada para a tela
+      return up;
+    });
+  };
 
   const updateAntibiotic = (i, f, v) => {
     setPatients(prev => {

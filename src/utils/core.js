@@ -560,8 +560,9 @@ export const mergePatientData = (def, db) => {
 };
 
 export const syncLabsFromHistory = (patient) => {
+  // Cópia profunda para evitar mutações acidentais
   const p = JSON.parse(JSON.stringify(patient));
-  // 👇 Adicionamos "Hemoglobina": "hb" no mapeamento
+  
   const mapFullToShort = { 
     "Hemoglobina": "hb", 
     "Leucócitos": "leuco", 
@@ -571,25 +572,41 @@ export const syncLabsFromHistory = (patient) => {
     "K (Potássio)": "k" 
   };
   
+  // Pega as datas corretas usando a função global
   const today = getManausDateStr();
   const yest = subtractDays(today, 1);
   const dbef = subtractDays(today, 2);
 
-  p.labs = { today: { date: today }, yesterday: { date: yest }, dayBefore: { date: dbef } };
+  // Inicializa a estrutura base
+  p.labs = { 
+    today: { date: today }, 
+    yesterday: { date: yest }, 
+    dayBefore: { date: dbef } 
+  };
   
+  // Zera todos os campos para não herdar lixo
   ["today", "yesterday", "dayBefore"].forEach((per) => {
     Object.keys(mapFullToShort).forEach((k) => p.labs[per][mapFullToShort[k]] = "");
   });
 
-  const periods = [{ k: "today", d: today }, { k: "yesterday", d: yest }, { k: "dayBefore", d: dbef }];
+  // Preenche com os dados do histórico
+  const periods = [
+    { k: "today", d: today }, 
+    { k: "yesterday", d: yest }, 
+    { k: "dayBefore", d: dbef }
+  ];
+  
   periods.forEach((per) => {
     if (p.examHistory && p.examHistory[per.d]) {
       Object.entries(mapFullToShort).forEach(([full, short]) => {
         const v = p.examHistory[per.d][full];
-        if (v !== undefined && v !== null && v !== "") p.labs[per.k][short] = v;
+        if (v !== undefined && v !== null && v !== "") {
+          p.labs[per.k][short] = v;
+        }
       });
     }
   });
+  
   return p;
 };
 
