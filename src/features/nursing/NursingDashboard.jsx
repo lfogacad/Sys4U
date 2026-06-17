@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, 
-Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit } from 'lucide-react';
+Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
+Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast,
+CheckCircle2, Printer } from 'lucide-react';
 import { ESCALA_DOR, PRECAUCOES, CARACTERISTICAS_DIURESE } from '../../constants/clinicalLists';
 import ModalChecklistEnfermagem from '../../components/modals/ModalChecklistEnfermagem';
 
@@ -21,6 +23,317 @@ const NursingDashboard = ({
 }) => {
 
   const [showNursingChecklistModal, setShowNursingChecklistModal] = useState(false);
+  const [showRegistrosDiarios, setShowRegistrosDiarios] = useState(false);
+  const [modalCurativo, setModalCurativo] = useState({
+    isOpen: false,
+    data: '',
+    horario: '',
+    lesaoId: '',
+    lesaoLocal: '',
+    tipoCurativo: '',
+    observacao: ''
+  });
+
+  const [modalAcessoPeriferico, setModalAcessoPeriferico] = useState({
+    isOpen: false,
+    horario: '',
+    local: '',
+    calibre: ''
+  });
+
+  const [modalCVC, setModalCVC] = useState({
+    isOpen: false,
+    horario: '',
+    tipoCateter: '',
+    indicacao: '',
+    passagem: '',
+    motivoTroca: '',
+    localInserção: '',
+    puncaoUnica: '',
+    quantasPuncoes: '',
+    dificuldades: [],
+    barreiras: {
+      higienizacao: false,
+      gorro: false,
+      avental: false,
+      mascara: false,
+      luvas: false,
+      campos: false,
+      assepsia: false,
+      tecnicaAssptica: false,
+      curativo24h: false
+    }
+  });
+
+  const [modalManutencaoCVC, setModalManutencaoCVC] = useState({
+    isOpen: false,
+    horario: '',
+    trocaCurativo: false,
+    motivoInfecao: '',
+    motivoObstrucao: '',
+    motivoTermino: '',
+    motivoObito: '',
+    motivoOutros: ''
+  });
+
+  const [modalSVD, setModalSVD] = useState({
+    isOpen: false,
+    horario: '',
+    indicacao: '',
+    justificativa: '',
+    genero: '',
+    itens: {
+      privacidade: false,
+      higienizacao: false,
+      epi: false,
+      higieneIntima: false,
+      higienizacaoPosHigiene: false,
+      pacoteAberto: false,
+      luvasEsteris: false,
+      antissepsia: false,
+      xilocaina: false,
+      xilocainaSeringa: false,
+      campoFenestrado: false,
+      introducao1op: false,
+      tecnicaAssptica: false,
+      insuflacaoBalao: false,
+      fixacao: false,
+      higienizacaoPos: false
+    },
+    observacao: ''
+  });
+
+  // Placeholders para botões de Ação (Modais serão criados em seguida)
+  const handleAcaoEnfermagem = (tipo) => {
+    if (tipo === 'Curativo') {
+      const hoje = new Date().toISOString().split('T')[0];
+      setModalCurativo({ isOpen: true, data: hoje, horario: '', lesaoId: '', lesaoLocal: '', tipoCurativo: '', observacao: '' });
+      return;
+    }
+    if (tipo === 'Acesso Periférico') {
+      setModalAcessoPeriferico({ isOpen: true, horario: '', local: '', calibre: '' });
+      return;
+    }
+    if (tipo === 'Inserção CVC') {
+      setModalCVC({ isOpen: true, horario: '', tipoCateter: '', indicacao: '', passagem: '', motivoTroca: '', localInserção: '', puncaoUnica: '', quantasPuncoes: '', dificuldades: [], barreiras: { higienizacao: false, gorro: false, avental: false, mascara: false, luvas: false, campos: false, assepsia: false, tecnicaAssptica: false, curativo24h: false } });
+      return;
+    }
+    if (tipo === 'Manutenção CVC') {
+      setModalManutencaoCVC({ isOpen: true, horario: '', trocaCurativo: '', motivoInfecao: '', motivoObstrucao: '', motivoTermino: '', motivoObito: '', motivoOutros: '' });
+      return;
+    }
+    if (tipo === 'SVD') {
+      setModalSVD({ isOpen: true, horario: '', indicacao: '', justificativa: '', genero: '', observacao: '', itens: { privacidade: false, higienizacao: false, epi: false, higieneIntima: false, higienizacaoPosHigiene: false, pacoteAberto: false, luvasEsteris: false, antissepsia: false, xilocaina: false, xilocainaSeringa: false, campoFenestrado: false, introducao1op: false, tecnicaAssptica: false, insuflacaoBalao: false, fixacao: false, higienizacaoPos: false } });
+      return;
+    }
+  };
+
+  const salvarCurativo = () => {
+    if (!modalCurativo.horario || !modalCurativo.lesaoId || !modalCurativo.tipoCurativo) return;
+    
+    const now = new Date();
+    const dataRegistro = modalCurativo.data || `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    
+    // Busca as lesões atuais
+    const lesoes = [...(currentPatient.enfermagem?.lesoes || [])];
+    
+    // Atualiza o curativo da lesão selecionada
+    const lesoesAtualizadas = lesoes.map(l => {
+      if (l.id === modalCurativo.lesaoId) {
+        const historico = l.historicoCurativos || [];
+        return {
+          ...l,
+          curativo: modalCurativo.tipoCurativo,
+          ultimoCurativoData: dataRegistro,
+          ultimoCurativoHorario: modalCurativo.horario,
+          observacaoCurativo: modalCurativo.observacao || l.observacaoCurativo || '',
+          historicoCurativos: [
+            ...historico,
+            { data: dataRegistro, horario: modalCurativo.horario, tipo: modalCurativo.tipoCurativo, obs: modalCurativo.observacao }
+          ]
+        };
+      }
+      return l;
+    });
+    
+    updateNested("enfermagem", "lesoes", lesoesAtualizadas);
+    handleBlurSave(`Enfermagem: Curativo realizado em ${modalCurativo.lesaoLocal} - ${modalCurativo.tipoCurativo}`);
+    setModalCurativo({ ...modalCurativo, isOpen: false });
+  };
+
+  const salvarAcessoPeriferico = () => {
+    if (!modalAcessoPeriferico.horario || !modalAcessoPeriferico.local || !modalAcessoPeriferico.calibre) return;
+
+    updateNested("enfermagem", "avpLocal", modalAcessoPeriferico.local);
+    updateNested("enfermagem", "avpCalibre", modalAcessoPeriferico.calibre);
+    updateNested("enfermagem", "avpHorario", modalAcessoPeriferico.horario);
+    const hoje = new Date();
+    const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+    updateNested("enfermagem", "avpData", dataISO);
+    handleBlurSave(`Enfermagem: Acesso Periférico em ${modalAcessoPeriferico.local} - ${modalAcessoPeriferico.calibre}`);
+    setModalAcessoPeriferico({ ...modalAcessoPeriferico, isOpen: false });
+  };
+
+  const salvarCVC = () => {
+    if (!modalCVC.horario || !modalCVC.tipoCateter || !modalCVC.localInserção) return;
+
+    const hoje = new Date();
+    const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+
+    const barreirasArray = Object.entries(modalCVC.barreiras).map(([key, value]) => ({
+      item: key,
+      label: {
+        higienizacao: 'Higienização das mãos',
+        gorro: 'Gorro/Touca',
+        avental: 'Avental Cirúrgico',
+        mascara: 'Máscara',
+        luvas: 'Luvas Estéreis',
+        campos: 'Campos Estéreis Grandes',
+        assepsia: 'Assepsia com Clorexidina Alcoólica 0,5%',
+        tecnicaAssptica: 'Técnica Asséptica',
+        curativo24h: 'Curativo com Gaze e Micropore a cada 24h'
+      }[key] || key,
+      cumprida: value
+    }));
+
+    const totalBarreiras = barreirasArray.length;
+    const barreirasFeitas = barreirasArray.filter(b => b.cumprida).length;
+    const todasBarreirasOK = barreirasFeitas === totalBarreiras;
+
+    const registro = {
+      tipo: 'Inserção CVC',
+      data: dataISO,
+      horario: modalCVC.horario,
+      tipoCateter: modalCVC.tipoCateter,
+      indicacao: modalCVC.indicacao,
+      passagem: modalCVC.passagem,
+      motivoTroca: modalCVC.motivoTroca || '',
+      localInserção: modalCVC.localInserção,
+      puncaoUnica: modalCVC.puncaoUnica,
+      quantasPuncoes: modalCVC.quantasPuncoes || '',
+      dificuldades: modalCVC.dificuldades,
+      
+      // ✅ ESTRUTURA PARA RELATÓRIO DE CONFORMIDADE
+      barreiras: {
+        itens: barreirasArray,
+        total: totalBarreiras,
+        cumpridas: barreirasFeitas,
+        todasCumpridas: todasBarreirasOK,
+        resumo: `${barreirasFeitas}/${totalBarreiras}${todasBarreirasOK ? ' ✅' : ' ❌'}`
+      }
+    };
+
+    // Histórico do paciente
+    const historico = [...(currentPatient.enfermagem?.historicoCVC || []), registro];
+    updateNested("enfermagem", "historicoCVC", historico);
+    updateNested("enfermagem", "ultimoCVC", registro);
+
+    // Sincroniza com a nursingdashboard
+    let localExibicao = modalCVC.localInserção;
+    if (modalCVC.tipoCateter === 'Shiley') {
+      const mapaShiley = {
+        'Subclávia D': 'VSCD', 'Subclávia E': 'VSCE',
+        'Jugular D': 'VJID', 'Jugular E': 'VJIE',
+        'Femoral D': 'VFID', 'Femoral E': 'VFIE'
+      };
+      localExibicao = mapaShiley[modalCVC.localInserção] || modalCVC.localInserção;
+      updateNested("enfermagem", "shileyLocal", localExibicao);
+      updateNested("enfermagem", "shileyData", dataISO);
+    } else {
+      updateNested("enfermagem", "cvcLocal", modalCVC.localInserção);
+      updateNested("enfermagem", "cvcData", dataISO);
+    }
+
+    handleBlurSave(`Enfermagem: Inserção ${modalCVC.tipoCateter} em ${modalCVC.localInserção} - Barreiras: ${barreirasFeitas}/${totalBarreiras}`);
+    setModalCVC({ ...modalCVC, isOpen: false });
+  };
+
+  const salvarManutencaoCVC = () => {
+    if (!modalManutencaoCVC.horario) return;
+
+    const hoje = new Date();
+    const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+
+    const manutencao = {
+      tipo: 'Manutenção CVC',
+      data: dataISO,
+      horario: modalManutencaoCVC.horario,
+      trocaCurativo: modalManutencaoCVC.trocaCurativo,
+      motivo: {
+        infeccao: modalManutencaoCVC.motivoInfecao,
+        obstrucao: modalManutencaoCVC.motivoObstrucao,
+        terminoTerapia: modalManutencaoCVC.motivoTermino,
+        obito: modalManutencaoCVC.motivoObito,
+        outros: modalManutencaoCVC.motivoOutros
+      }
+    };
+
+    const historico = [...(currentPatient.enfermagem?.historicoManutencaoCVC || []), manutencao];
+    updateNested("enfermagem", "historicoManutencaoCVC", historico);
+
+    handleBlurSave(`Enfermagem: Manutenção CVC - Troca curativo: ${modalManutencaoCVC.trocaCurativo ? 'Sim' : 'Não'}`);
+    setModalManutencaoCVC({ ...modalManutencaoCVC, isOpen: false });
+  };
+
+  const salvarSVD = () => {
+    if (!modalSVD.horario) return;
+
+    const hoje = new Date();
+    const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+
+    const itensArray = Object.entries(modalSVD.itens).map(([key, value]) => ({
+      item: key,
+      label: {
+        privacidade: 'Privacidade do paciente garantida',
+        higienizacao: 'Higienização das mãos',
+        epi: 'Uso correto de EPI (gorro, máscara, luvas)',
+        higieneIntima: 'Higiene íntima com água e sabão',
+        higienizacaoPosHigiene: 'Higienização das mãos após higiene íntima',
+        pacoteAberto: 'Pacote de cateterismo aberto corretamente',
+        luvasEsteris: 'Luvas estéreis na técnica correta',
+        antissepsia: 'Antissepsia da genitália com Clorexidina aquosa',
+        xilocaina: 'Xilocaína estéril de uso único',
+        xilocainaSeringa: 'Sondagem masculina (20ml xilocaína na seringa)',
+        campoFenestrado: 'Campo estéril fenestrado entre MMII',
+        introducao1op: 'Introdução da sonda na 1ª oportunidade',
+        tecnicaAssptica: 'Inserção do cateter na técnica asséptica',
+        insuflacaoBalao: 'Insuflação do balão',
+        fixacao: 'Fixação da sonda',
+        higienizacaoPos: 'Higienização das mãos pós-procedimento'
+      }[key] || key,
+      cumprida: value
+    }));
+
+    const total = itensArray.length;
+    const cumpridos = itensArray.filter(i => i.cumprida).length;
+
+    const registro = {
+      tipo: 'Passagem SVD',
+      data: dataISO,
+      horario: modalSVD.horario,
+      indicacao: modalSVD.indicacao,
+      justificativa: modalSVD.justificativa,
+      genero: modalSVD.genero,
+      itens: {
+        lista: itensArray,
+        total,
+        cumpridos,
+        todosCumpridos: cumpridos === total,
+        resumo: `${cumpridos}/${total}${cumpridos === total ? ' ✅' : ' ❌'}`
+      },
+      observacao: modalSVD.observacao
+    };
+
+    const historico = [...(currentPatient.enfermagem?.historicoSVD || []), registro];
+    updateNested("enfermagem", "historicoSVD", registro);
+    updateNested("enfermagem", "ultimoSVD", registro);
+    
+    // 🔥 SINCRONIZA COM A NURSINGDASHBOARD
+    updateNested("enfermagem", "svdData", dataISO);
+
+    handleBlurSave(`Enfermagem: Passagem SVD - ${cumpridos}/${total} itens`);
+    setModalSVD({ ...modalSVD, isOpen: false });
+  };
 
 return (
     <div className="space-y-6 animate-fadeIn text-left">
@@ -70,7 +383,96 @@ return (
             </button>
 
           </div>
+
           {/* ======================================================== */}
+          {/* REGISTROS DIÁRIOS (RETRÁTIL) + BOTÕES DE AÇÃO            */}
+          {/* ======================================================== */}
+          <div className="mb-4 p-4 bg-white border border-slate-200 rounded-xl print:hidden">
+            
+            {/* BOTÃO QUE ABRE/FECHA A SEÇÃO */}
+            <button 
+              onClick={() => setShowRegistrosDiarios(!showRegistrosDiarios)} 
+              className="flex items-center gap-2 font-bold text-slate-700 w-full text-left"
+            >
+              {showRegistrosDiarios ? <ChevronDown size={20} className="text-indigo-600" /> : <ChevronRight size={20} className="text-slate-400" />} 
+              <ClipboardList className={showRegistrosDiarios ? "text-indigo-600" : "text-slate-400"} size={18} />
+              Registros Diários
+            </button>
+
+            {showRegistrosDiarios && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+
+                  <button onClick={() => handleAcaoEnfermagem('Inserção CVC')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Syringe size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Inserção<br/>CVC</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Manutenção CVC')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Syringe size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Manutenção<br/>CVC</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('SVD')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Droplets size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Inserção SVD</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Manutenção SVD')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Droplets size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Manutenção<br/>SVD</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Carrinho de EMG')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Ambulance size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Carrinho<br/>de EMG</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Curativo')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Bandage size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Curativo</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Gasometria')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <TestTube size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Gasometria</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Hemotransfusão')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Droplet size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Hemotransfusão</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('ECG')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Activity size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">ECG</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Acesso Periférico')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Syringe size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Acesso<br/>Periférico</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Fleet Enema')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Podcast size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Fleet<br/>Enema</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('NPT')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Milk size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">NPT</span>
+                  </button>
+
+                  <button onClick={() => handleAcaoEnfermagem('Aspiração Traqueal')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Wind size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Aspiração<br/>Traqueal</span>
+                  </button>
+
+                </div>
+              </div>
+            )}
+
+          </div>
 
           {(() => {
             const reqBraden = ["braden_percepcao", "braden_umidade", "braden_atividade", "braden_mobilidade", "braden_nutricao", "braden_friccao"];
@@ -564,6 +966,579 @@ return (
         handleBlurSave={handleBlurSave}
         onGenerateAI={generateNursingAI_Evolution}
       />
+      
+      {/* ======================================================== */}
+      {/* MODAL: CURATIVO                                           */}
+      {/* ======================================================== */}
+      {modalCurativo.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-emerald-500/20 my-auto">
+            <div className="bg-emerald-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Bandage size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Curativo</h2>
+              </div>
+              <button onClick={() => setModalCurativo({ ...modalCurativo, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+
+              {/* DATA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Data do Curativo</label>
+                <input 
+                  type="date" 
+                  value={modalCurativo.data}
+                  onChange={(e) => setModalCurativo({ ...modalCurativo, data: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-emerald-300 font-bold text-center"
+                />
+              </div>
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário do Curativo</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-emerald-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalCurativo.horario ? modalCurativo.horario.split(':')[0] : "00"} onChange={(e) => setModalCurativo({ ...modalCurativo, horario: `${e.target.value}:${modalCurativo.horario ? modalCurativo.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-emerald-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalCurativo.horario ? modalCurativo.horario.split(':')[1] : "00"} onChange={(e) => setModalCurativo({ ...modalCurativo, horario: `${modalCurativo.horario ? modalCurativo.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* LOCAL DA LESÃO — GRID OU LESÃO EXISTENTE */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Local da Lesão</label>
+                
+              {/* GRID DE LOCAIS PRÉ-DEFINIDOS */}
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                {['Ferida Operatória', 'Acesso Periférico', 'Acesso Central', 'Cateter de HD', 'Dreno de Tórax', 'Dreno Abdominal', 'MSD', 'MSE', 'MID', 'MIE', 'Cabeça', 'Dorso'].map(local => (
+                    <button key={local} onClick={() => setModalCurativo({ ...modalCurativo, lesaoLocal: local, lesaoId: `novo_${local}` })} className={`p-2.5 rounded-xl border-2 font-bold text-[11px] uppercase tracking-wide transition-all ${modalCurativo.lesaoLocal === local ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200'}`}>{local}</button>
+                  ))}
+                </div>
+
+                {/* DIVISÓRIA "OU" */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ou selecione uma lesão existente</span>
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                </div>
+
+                {/* LESÕES EXISTENTES */}
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {(currentPatient?.enfermagem?.lesoes || []).length === 0 ? (
+                    <p className="text-sm text-slate-400 italic text-center py-2">Nenhuma lesão registrada.</p>
+                  ) : (
+                    currentPatient?.enfermagem?.lesoes?.map(lesao => (
+                      <button 
+                        key={lesao.id} 
+                        onClick={() => setModalCurativo({ ...modalCurativo, lesaoId: lesao.id, lesaoLocal: lesao.localizacao })} 
+                        className={`w-full p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all text-left ${modalCurativo.lesaoId === lesao.id ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200'}`}
+                      >
+                        <span className="block text-[10px] font-bold text-slate-400">{lesao.origem === 'incidencia' ? 'ADQUIRIDA NA UTI' : 'PRÉVIA'}</span>
+                        <span className="block text-sm">{lesao.localizacao}</span>
+                        {lesao.curativo && <span className="block text-[10px] text-slate-400 mt-1">Último curativo: {lesao.curativo}</span>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* TIPO DE CURATIVO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Curativo</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['AGE', 'Hidrocoloide', 'Hidrogel', 'Alginato', 'Carvão Ativado', 'Filme Transparente', 'Espuma', 'Soro Fisiológico', 'Papaina', 'Colagenase', 'Óleo de Girassol', 'Sulfadiazina', 'Outro'].map(tipo => (
+                    <button key={tipo} onClick={() => setModalCurativo({ ...modalCurativo, tipoCurativo: tipo })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCurativo.tipoCurativo === tipo ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200'}`}>{tipo}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* OBSERVAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Observação (opcional)</label>
+                <textarea 
+                  value={modalCurativo.observacao}
+                  onChange={(e) => setModalCurativo({ ...modalCurativo, observacao: e.target.value })}
+                  placeholder="Ex: Aspecto da lesão, bordas, exsudato..."
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-emerald-300 text-sm resize-none h-20"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalCurativo({ ...modalCurativo, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalCurativo.horario || !modalCurativo.lesaoLocal || !modalCurativo.tipoCurativo} onClick={salvarCurativo} className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: ACESSO PERIFÉRICO (Enfermagem)                     */}
+      {/* ======================================================== */}
+      {modalAcessoPeriferico.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Syringe size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Acesso Periférico</h2>
+              </div>
+              <button onClick={() => setModalAcessoPeriferico({ ...modalAcessoPeriferico, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Punção</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalAcessoPeriferico.horario ? modalAcessoPeriferico.horario.split(':')[0] : "00"} onChange={(e) => setModalAcessoPeriferico({ ...modalAcessoPeriferico, horario: `${e.target.value}:${modalAcessoPeriferico.horario ? modalAcessoPeriferico.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalAcessoPeriferico.horario ? modalAcessoPeriferico.horario.split(':')[1] : "00"} onChange={(e) => setModalAcessoPeriferico({ ...modalAcessoPeriferico, horario: `${modalAcessoPeriferico.horario ? modalAcessoPeriferico.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* LOCAL */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Local da Punção</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['MSD', 'MSE', 'MID', 'MIE', 'Jugular Externa D', 'Jugular Externa E'].map(local => (
+                    <button key={local} onClick={() => setModalAcessoPeriferico({ ...modalAcessoPeriferico, local })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalAcessoPeriferico.local === local ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{local}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* CALIBRE */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Calibre do Jelco</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { val: '14G', cor: 'bg-orange-500' }, { val: '16G', cor: 'bg-gray-400' }, 
+                    { val: '18G', cor: 'bg-green-500' }, { val: '20G', cor: 'bg-pink-400' }, 
+                    { val: '22G', cor: 'bg-blue-500' }, { val: '24G', cor: 'bg-yellow-400' }
+                  ].map(cal => (
+                    <button key={cal.val} onClick={() => setModalAcessoPeriferico({ ...modalAcessoPeriferico, calibre: cal.val })} className={`relative p-3 rounded-xl border-2 font-black text-sm transition-all overflow-hidden ${modalAcessoPeriferico.calibre === cal.val ? 'border-indigo-500 text-indigo-800 shadow-md scale-105' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200'}`}>
+                      <div className={`absolute top-0 left-0 w-full h-1 ${cal.cor}`}></div>
+                      {cal.val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalAcessoPeriferico({ ...modalAcessoPeriferico, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalAcessoPeriferico.horario || !modalAcessoPeriferico.local || !modalAcessoPeriferico.calibre} onClick={salvarAcessoPeriferico} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: INSERÇÃO CVC                                       */}
+      {/* ======================================================== */}
+      {modalCVC.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-blue-500/20 my-auto">
+            <div className="bg-blue-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Syringe size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Inserção CVC</h2>
+              </div>
+              <button onClick={() => setModalCVC({ ...modalCVC, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-5 overflow-y-auto max-h-[70vh]">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário do Procedimento</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-blue-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalCVC.horario ? modalCVC.horario.split(':')[0] : "00"} onChange={(e) => setModalCVC({ ...modalCVC, horario: `${e.target.value}:${modalCVC.horario ? modalCVC.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-blue-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalCVC.horario ? modalCVC.horario.split(':')[1] : "00"} onChange={(e) => setModalCVC({ ...modalCVC, horario: `${modalCVC.horario ? modalCVC.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* TIPO DE CATETER */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Cateter</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['CVC Duplo Lúmen', 'CVC Triplo Lúmen', 'Shiley'].map(tipo => (
+                    <button key={tipo} onClick={() => setModalCVC({ ...modalCVC, tipoCateter: tipo })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCVC.tipoCateter === tipo ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}>{tipo}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* INDICAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Indicação</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['Hemodiálise', 'DVA', 'NPT', 'Monitorização', 'Difícil Acesso'].map(ind => (
+                    <button key={ind} onClick={() => setModalCVC({ ...modalCVC, indicacao: ind })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCVC.indicacao === ind ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}>{ind}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* PASSAGEM */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Passagem</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {['Nova Punção', 'Troca'].map(p => (
+                    <button key={p} onClick={() => setModalCVC({ ...modalCVC, passagem: p, motivoTroca: p === 'Nova Punção' ? '' : modalCVC.motivoTroca })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCVC.passagem === p ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}>{p}</button>
+                  ))}
+                </div>
+                {modalCVC.passagem === 'Troca' && (
+                  <input 
+                    type="text" 
+                    placeholder="Motivo da troca..."
+                    value={modalCVC.motivoTroca}
+                    onChange={(e) => setModalCVC({ ...modalCVC, motivoTroca: e.target.value })}
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-blue-300 text-sm"
+                  />
+                )}
+              </div>
+
+              {/* LOCAL DA INSERÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Local da Inserção</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Subclávia D', val: 'Subclávia D' },
+                    { label: 'Subclávia E', val: 'Subclávia E' },
+                    { label: 'Jugular D', val: 'Jugular D' },
+                    { label: 'Jugular E', val: 'Jugular E' },
+                    { label: 'Femoral D', val: 'Femoral D' },
+                    { label: 'Femoral E', val: 'Femoral E' }
+                  ].map(local => (
+                    <button key={local.val} onClick={() => setModalCVC({ ...modalCVC, localInserção: local.val })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCVC.localInserção === local.val ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}>{local.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* MEDIDAS DE BARREIRA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Medidas de Barreira</label>
+                <div className="space-y-2">
+                  {[
+                    { key: 'higienizacao', label: 'Higienização das mãos' },
+                    { key: 'gorro', label: 'Gorro/Touca' },
+                    { key: 'avental', label: 'Avental Cirúrgico' },
+                    { key: 'mascara', label: 'Máscara' },
+                    { key: 'luvas', label: 'Luvas Estéreis' },
+                    { key: 'campos', label: 'Campos Estéreis Grandes' },
+                    { key: 'assepsia', label: 'Assepsia com Clorexidina Alcoólica 0,5%' },
+                    { key: 'tecnicaAssptica', label: 'Técnica Asséptica' },
+                    { key: 'curativo24h', label: 'Curativo com Gaze e Micropore a cada 24h' }
+                  ].map(item => (
+                    <button 
+                      key={item.key} 
+                      onClick={() => setModalCVC({ ...modalCVC, barreiras: { ...modalCVC.barreiras, [item.key]: !modalCVC.barreiras[item.key] } })}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl border-2 text-sm font-bold transition-all ${modalCVC.barreiras[item.key] ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}
+                    >
+                      <span>{item.label}</span>
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${modalCVC.barreiras[item.key] ? 'bg-green-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                        {modalCVC.barreiras[item.key] ? '✓' : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* PUNÇÃO ÚNICA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Punção Única</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {['Sim', 'Não'].map(p => (
+                    <button key={p} onClick={() => setModalCVC({ ...modalCVC, puncaoUnica: p })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCVC.puncaoUnica === p ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}>{p}</button>
+                  ))}
+                </div>
+                {modalCVC.puncaoUnica === 'Não' && (
+                  <input 
+                    type="number" 
+                    min="1"
+                    placeholder="Quantas punções?"
+                    value={modalCVC.quantasPuncoes}
+                    onChange={(e) => setModalCVC({ ...modalCVC, quantasPuncoes: e.target.value })}
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-blue-300 text-sm text-center"
+                  />
+                )}
+              </div>
+
+              {/* DIFICULDADES */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Dificuldades</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Anatomia', 'Material', 'Técnica', 'Consentimento', 'Sem dificuldades'].map(d => {
+                    const isSelected = modalCVC.dificuldades.includes(d);
+                    return (
+                      <button key={d} onClick={() => {
+                        if (d === 'Sem dificuldades') {
+                          setModalCVC({ ...modalCVC, dificuldades: isSelected ? [] : ['Sem dificuldades'] });
+                        } else {
+                          let novas = isSelected 
+                            ? modalCVC.dificuldades.filter(item => item !== d)
+                            : [...modalCVC.dificuldades.filter(item => item !== 'Sem dificuldades'), d];
+                          setModalCVC({ ...modalCVC, dificuldades: novas });
+                        }
+                      }} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${isSelected ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'}`}>{d}</button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalCVC({ ...modalCVC, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button onClick={() => window.print()} className="px-4 py-4 bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold rounded-xl transition-colors flex items-center gap-2"><Printer size={16} /> Imprimir</button>
+                <button disabled={!modalCVC.horario || !modalCVC.tipoCateter || !modalCVC.localInserção} onClick={salvarCVC} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: MANUTENÇÃO CVC                                     */}
+      {/* ======================================================== */}
+      {modalManutencaoCVC.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-sky-500/20 my-auto">
+            <div className="bg-sky-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Syringe size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Manutenção CVC</h2>
+              </div>
+              <button onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-5 overflow-y-auto max-h-[70vh]">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Manutenção</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalManutencaoCVC.horario ? modalManutencaoCVC.horario.split(':')[0] : "00"} onChange={(e) => setModalManutencaoCVC({ ...modalManutencaoCVC, horario: `${e.target.value}:${modalManutencaoCVC.horario ? modalManutencaoCVC.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalManutencaoCVC.horario ? modalManutencaoCVC.horario.split(':')[1] : "00"} onChange={(e) => setModalManutencaoCVC({ ...modalManutencaoCVC, horario: `${modalManutencaoCVC.horario ? modalManutencaoCVC.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* TROCA DE CURATIVO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Troca de Curativo</label>
+                <div className="grid grid-cols-1 gap-2">
+                  {[
+                    { label: 'Gaze e micropore', val: 'Gaze e micropore' },
+                    { label: 'Filme transparente', val: 'Filme transparente' },
+                    { label: 'Curativo estéril oclusivo', val: 'Curativo estéril oclusivo' }
+                  ].map(tipo => (
+                    <button key={tipo.val} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, trocaCurativo: tipo.val })} className={`w-full p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.trocaCurativo === tipo.val ? 'border-sky-500 bg-sky-50 text-sky-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200'}`}>{tipo.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* DIVISÓRIA */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-slate-200"></div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Motivo da Manutenção / Retirada</span>
+                <div className="flex-1 h-px bg-slate-200"></div>
+              </div>
+
+              {/* SUSPEITA DE INFECÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Suspeita de Infecção</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Sim', 'Não'].map(r => (
+                    <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoInfecao: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoInfecao === r ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>{r === 'Sim' ? '⚠️ Sim' : '✅ Não'}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* OBSTRUÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Obstrução</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Sim', 'Não'].map(r => (
+                    <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoObstrucao: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoObstrucao === r ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'}`}>{r === 'Sim' ? '🔴 Sim' : '✅ Não'}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* TÉRMINO DA TERAPIA IV */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Término da Terapia IV</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Sim', 'Não'].map(r => (
+                    <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoTermino: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoTermino === r ? 'border-green-500 bg-green-50 text-green-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-green-200'}`}>{r === 'Sim' ? '✅ Sim' : '— Não'}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ÓBITO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Óbito</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Sim', 'Não'].map(r => (
+                    <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoObito: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoObito === r ? 'border-gray-700 bg-gray-100 text-gray-800 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-gray-300'}`}>{r === 'Sim' ? '⚫ Sim' : '— Não'}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* OUTROS */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Outros Motivos</label>
+                <input 
+                  type="text" 
+                  placeholder="Descreva o motivo..."
+                  value={modalManutencaoCVC.motivoOutros}
+                  onChange={(e) => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoOutros: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 text-sm"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button onClick={() => window.print()} className="px-4 py-4 bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold rounded-xl transition-colors flex items-center gap-2"><Printer size={16} /> Imprimir</button>
+                <button disabled={!modalManutencaoCVC.horario} onClick={salvarManutencaoCVC} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: SVD (SONDA VESICAL DE DEMORA)                     */}
+      {/* ======================================================== */}
+      {modalSVD.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-orange-500/20 my-auto">
+            <div className="bg-orange-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Droplets size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Sonda Vesical de Demora</h2>
+              </div>
+              <button onClick={() => setModalSVD({ ...modalSVD, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-5 overflow-y-auto max-h-[70vh]">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário do Procedimento</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-orange-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalSVD.horario ? modalSVD.horario.split(':')[0] : "00"} onChange={(e) => setModalSVD({ ...modalSVD, horario: `${e.target.value}:${modalSVD.horario ? modalSVD.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-orange-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalSVD.horario ? modalSVD.horario.split(':')[1] : "00"} onChange={(e) => setModalSVD({ ...modalSVD, horario: `${modalSVD.horario ? modalSVD.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* INDICAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Indicação</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Demora', 'Alívio'].map(ind => (
+                    <button key={ind} onClick={() => setModalSVD({ ...modalSVD, indicacao: ind })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalSVD.indicacao === ind ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-orange-200'}`}>{ind}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* SEXO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Sexo do Paciente</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Masculino', 'Feminino'].map(g => (
+                    <button key={g} onClick={() => setModalSVD({ ...modalSVD, genero: g })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalSVD.genero === g ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-orange-200'}`}>{g}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* CHECKLIST DE SEGURANÇA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Checklist de Segurança</label>
+                <div className="space-y-2">
+                  {[
+                    { key: 'privacidade', label: 'Privacidade do paciente garantida' },
+                    { key: 'higienizacao', label: 'Higienização das mãos' },
+                    { key: 'epi', label: 'Uso correto de EPI (gorro, máscara, luvas)' },
+                    { key: 'higieneIntima', label: 'Higiene íntima com água e sabão' },
+                    { key: 'higienizacaoPosHigiene', label: 'Higienização das mãos após higiene íntima' },
+                    { key: 'pacoteAberto', label: 'Pacote de cateterismo aberto corretamente' },
+                    { key: 'luvasEsteris', label: 'Luvas estéreis na técnica correta' },
+                    { key: 'antissepsia', label: 'Antissepsia da genitália com Clorexidina aquosa' },
+                    { key: 'xilocaina', label: 'Xilocaína estéril de uso único' },
+                    { key: 'xilocainaSeringa', label: 'Sondagem masc: 20ml xilocaína na seringa' },
+                    { key: 'campoFenestrado', label: 'Campo estéril fenestrado entre MMII' },
+                    { key: 'introducao1op', label: 'Introdução da sonda na 1ª oportunidade' },
+                    { key: 'tecnicaAssptica', label: 'Inserção do cateter na técnica asséptica' },
+                    { key: 'insuflacaoBalao', label: 'Insuflação do balão' },
+                    { key: 'fixacao', label: 'Fixação da sonda' },
+                    { key: 'higienizacaoPos', label: 'Higienização das mãos pós-procedimento' }
+                  ].map(item => (
+                    <button 
+                      key={item.key} 
+                      onClick={() => setModalSVD({ ...modalSVD, itens: { ...modalSVD.itens, [item.key]: !modalSVD.itens[item.key] } })}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl border-2 text-sm font-bold transition-all ${modalSVD.itens[item.key] ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 bg-white text-slate-500 hover:border-orange-200'}`}
+                    >
+                      <span>{item.label}</span>
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${modalSVD.itens[item.key] ? 'bg-green-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                        {modalSVD.itens[item.key] ? '✓' : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* JUSTIFICATIVA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Justificativa (opcional)</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: Retenção urinária, controle de diurese..."
+                  value={modalSVD.justificativa}
+                  onChange={(e) => setModalSVD({ ...modalSVD, justificativa: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-orange-300 text-sm"
+                />
+              </div>
+
+              {/* OBSERVAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Observações (opcional)</label>
+                <textarea 
+                  value={modalSVD.observacao}
+                  onChange={(e) => setModalSVD({ ...modalSVD, observacao: e.target.value })}
+                  placeholder="Intercorrências, dificuldades..."
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-orange-300 text-sm resize-none h-16"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalSVD({ ...modalSVD, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button onClick={() => window.print()} className="px-4 py-4 bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold rounded-xl transition-colors flex items-center gap-2"><Printer size={16} /> Imprimir</button>
+                <button disabled={!modalSVD.horario} onClick={salvarSVD} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
