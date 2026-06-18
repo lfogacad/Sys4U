@@ -2966,22 +2966,19 @@ const getBestGlasgowForSOFA = (p) => {
   };
 
   // =======================================================================
-  // 🔄 ROBÔ DE TRANSFERÊNCIA DE LEITO (Blindado)
+  // 🔄 ROBÔ DE TRANSFERÊNCIA DE LEITO (USANDO O SEU MOTOR NATIVO 'save()')
   // =======================================================================
   const handleTransferirLeito = async () => {
-    // 1. Pergunta o destino
     const destinoStr = window.prompt(`Transferir ${currentPatient.nome} para qual leito?\nDigite um número (ex: 2):`);
-    if (!destinoStr) return; // Se o usuário cancelar, a função para aqui.
+    if (!destinoStr) return;
 
     const destinoNum = parseInt(destinoStr, 10);
-    // Valida se digitou um número válido entre 1 e o total de camas (ex: 10)
     if (isNaN(destinoNum) || destinoNum < 1 || destinoNum > patients.length) {
       return alert("Número de leito inválido.");
     }
 
-    const destIndex = destinoNum - 1; // A matemática do código (Leito 1 = índice 0)
+    const destIndex = destinoNum - 1;
 
-    // 2. Validações de Segurança
     if (destIndex === activeTab) {
       return alert("O paciente já está neste leito!");
     }
@@ -2997,30 +2994,33 @@ const getBestGlasgowForSOFA = (p) => {
     if (!confirmar) return;
 
     try {
-      // 3. Prepara os pacotes de dados
-      // Paciente vai para o novo leito (clonamos para não quebrar a memória do React)
+      // 1. CLONAGEM DO PACIENTE
       const pacienteTransferido = JSON.parse(JSON.stringify(currentPatient));
-      pacienteTransferido.id = leitoDestino.id; // Assume a placa de identificação da cama nova
-      pacienteTransferido.leito = destinoNum; // Atualiza o número do painel
-      
-      // Cama velha fica vazia (usando a sua vassoura digital)
-      const camaVelhaLimpa = defaultPatient(activeTab);
-      camaVelhaLimpa.id = currentPatient.id; // Mantém a placa da cama velha
+      // 🔥 BLINDAGEM DO ERRO: Forçamos o ID a ser um Texto (String) para o .includes() funcionar na sua função save!
+      pacienteTransferido.id = String(leitoDestino.id || `bed_${destinoNum}`);
+      pacienteTransferido.leito = destinoNum;
 
-      // 4. Atualiza a tela instantaneamente (Estado Local)
+      // 2. PREPARO DA CAMA VELHA (LIMPA)
+      const camaVelhaLimpa = defaultPatient(activeTab);
+      // 🔥 BLINDAGEM DO ERRO: Forçamos a cama velha a ser Texto (String) também
+      camaVelhaLimpa.id = String(currentPatient.id || `bed_${activeTab + 1}`);
+      camaVelhaLimpa.leito = activeTab + 1;
+
+      // 3. ATUALIZA A TELA INSTANTANEAMENTE (CENSO)
       const novaLista = [...patients];
       novaLista[destIndex] = pacienteTransferido;
       novaLista[activeTab] = camaVelhaLimpa;
       setPatients(novaLista);
 
-      // 5. Atualiza o Firebase (Faz as duas trocas simultaneamente)
-      const docDestinoId = leitoDestino.id.includes('bed_') ? leitoDestino.id : `bed_${leitoDestino.id}`;
-      const docOrigemId = currentPatient.id.includes('bed_') ? currentPatient.id : `bed_${currentPatient.id}`;
+      // 4. CHAMA O SEU MOTOR NATIVO DE SALVAR (Igualzinho ao botão da Lixeira)
+      if (typeof save === "function") {
+        save(pacienteTransferido); // Manda o paciente para a cama nova
+        save(camaVelhaLimpa);      // Esvazia a cama velha no Firebase
+      } else {
+        console.error("Aviso: Função 'save' não encontrada.");
+      }
 
-      await setDoc(doc(db, "leitos_uti", docDestinoId), pacienteTransferido);
-      await setDoc(doc(db, "leitos_uti", docOrigemId), camaVelhaLimpa);
-
-      // 6. Registra na Caixa Preta
+      // 5. CAIXA PRETA DE AUDITORIA
       if (typeof registrarLogAuditoria === "function") {
         registrarLogAuditoria(
           "TRANSFERÊNCIA DE LEITO",
@@ -3033,8 +3033,8 @@ const getBestGlasgowForSOFA = (p) => {
       alert(`✅ Sucesso! Paciente transferido para o Leito ${destinoNum}.`);
       
     } catch (error) {
-      console.error("Erro na transferência:", error);
-      alert("Erro crítico de conexão ao transferir no banco de dados.");
+      console.error("DETALHES DO ERRO DO ROBÔ:", error);
+      alert(`Erro na transferência: ${error.message}`);
     }
   };
 
