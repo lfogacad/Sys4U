@@ -56,7 +56,7 @@ import {
   ShieldAlert,
   Bug,
   Check,
-  Target,
+  Target, ArrowRightLeft, 
 } from "lucide-react";
 // 1. As ferramentas de Banco de Dados (Nativas do Firebase)
 import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion } from "firebase/firestore";
@@ -2950,6 +2950,7 @@ const getBestGlasgowForSOFA = (p) => {
     setPatients(up);
     save(up[activeTab]);
   };
+
   const handleClearData = () => {
     if (
       window.confirm(
@@ -2961,6 +2962,79 @@ const getBestGlasgowForSOFA = (p) => {
       up[activeTab] = r;
       setPatients(up);
       save(r);
+    }
+  };
+
+  // =======================================================================
+  // 🔄 ROBÔ DE TRANSFERÊNCIA DE LEITO (Blindado)
+  // =======================================================================
+  const handleTransferirLeito = async () => {
+    // 1. Pergunta o destino
+    const destinoStr = window.prompt(`Transferir ${currentPatient.nome} para qual leito?\nDigite um número (ex: 2):`);
+    if (!destinoStr) return; // Se o usuário cancelar, a função para aqui.
+
+    const destinoNum = parseInt(destinoStr, 10);
+    // Valida se digitou um número válido entre 1 e o total de camas (ex: 10)
+    if (isNaN(destinoNum) || destinoNum < 1 || destinoNum > patients.length) {
+      return alert("Número de leito inválido.");
+    }
+
+    const destIndex = destinoNum - 1; // A matemática do código (Leito 1 = índice 0)
+
+    // 2. Validações de Segurança
+    if (destIndex === activeTab) {
+      return alert("O paciente já está neste leito!");
+    }
+
+    const leitoDestino = patients[destIndex];
+    const isDestinoOcupado = leitoDestino.nome && leitoDestino.nome !== "Não Informado" && leitoDestino.nome !== "Leito Livre";
+
+    if (isDestinoOcupado) {
+      return alert(`❌ ERRO: O Leito ${destinoNum} já está ocupado por ${leitoDestino.nome}. Libere o leito de destino primeiro.`);
+    }
+
+    const confirmar = window.confirm(`Confirmar transferência de ${currentPatient.nome} para o Leito ${destinoNum}?`);
+    if (!confirmar) return;
+
+    try {
+      // 3. Prepara os pacotes de dados
+      // Paciente vai para o novo leito (clonamos para não quebrar a memória do React)
+      const pacienteTransferido = JSON.parse(JSON.stringify(currentPatient));
+      pacienteTransferido.id = leitoDestino.id; // Assume a placa de identificação da cama nova
+      pacienteTransferido.leito = destinoNum; // Atualiza o número do painel
+      
+      // Cama velha fica vazia (usando a sua vassoura digital)
+      const camaVelhaLimpa = defaultPatient(activeTab);
+      camaVelhaLimpa.id = currentPatient.id; // Mantém a placa da cama velha
+
+      // 4. Atualiza a tela instantaneamente (Estado Local)
+      const novaLista = [...patients];
+      novaLista[destIndex] = pacienteTransferido;
+      novaLista[activeTab] = camaVelhaLimpa;
+      setPatients(novaLista);
+
+      // 5. Atualiza o Firebase (Faz as duas trocas simultaneamente)
+      const docDestinoId = leitoDestino.id.includes('bed_') ? leitoDestino.id : `bed_${leitoDestino.id}`;
+      const docOrigemId = currentPatient.id.includes('bed_') ? currentPatient.id : `bed_${currentPatient.id}`;
+
+      await setDoc(doc(db, "leitos_uti", docDestinoId), pacienteTransferido);
+      await setDoc(doc(db, "leitos_uti", docOrigemId), camaVelhaLimpa);
+
+      // 6. Registra na Caixa Preta
+      if (typeof registrarLogAuditoria === "function") {
+        registrarLogAuditoria(
+          "TRANSFERÊNCIA DE LEITO",
+          `Transferido do Leito ${activeTab + 1} para o Leito ${destinoNum}`,
+          `Leito ${destinoNum}`,
+          pacienteTransferido.nome
+        );
+      }
+
+      alert(`✅ Sucesso! Paciente transferido para o Leito ${destinoNum}.`);
+      
+    } catch (error) {
+      console.error("Erro na transferência:", error);
+      alert("Erro crítico de conexão ao transferir no banco de dados.");
     }
   };
 
@@ -4666,13 +4740,14 @@ const navButtons = allNavButtons.filter((btn) => {
                   {currentPatient.nome || "LEITO DISPONÍVEL"}
                 </h2>
                 
-                {currentPatient.nome && (userProfile?.role === "Médico" || isAdmin) && (
+                {/* BOTÃO DE TRANSFERÊNCIA */}
+                {currentPatient.nome && (userProfile?.role === "Médico" || userProfile?.role === "Enfermeiro" || isAdmin) && (
                   <button
-                    onClick={handleClearData}
-                    className="text-slate-300 hover:text-red-500 transition-colors print:hidden flex-shrink-0"
-                    title="Excluir Paciente / Limpar Leito"
+                    onClick={handleTransferirLeito}
+                    className="text-slate-400 hover:text-blue-500 transition-colors print:hidden flex-shrink-0 bg-slate-50 hover:bg-blue-50 p-1.5 rounded-md border border-slate-200 hover:border-blue-200 shadow-sm"
+                    title="Transferir Paciente de Leito"
                   >
-                     <Trash2 size={18} />
+                     <ArrowRightLeft size={16} strokeWidth={2.5} />
                   </button>
                 )}
                 
