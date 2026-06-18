@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, arrayUnion, 
          onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
@@ -11,7 +11,7 @@ import {
   FolderInput, List, Copy, User, Search, ArrowLeft, X, PlusCircle,
   Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle,
   Loader2, ChevronRight, ChevronDown, Clock, RotateCcw, Filter,
-  CalendarX, UserPlus, LogOut
+  CalendarX, UserPlus, LogOut, ArrowRightLeft
 } from "lucide-react";
 
 import {
@@ -159,6 +159,21 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [checkData, setCheckData] = useState({ estadoGeral: "REG", usaDva: false, dvas: [], usaSedacao: false, sedativos: [], rass: "", glasgow: "", atbs: "" });
 
   const [patients, setPatients] = useState(Array(11).fill(null).map((_, i) => defaultPatient(i)));
+  // 🔥 LISTA COMPLETA DE LEITOS (1 a 11)
+  const leitosDisponiveis = useMemo(() => {
+    return ['1','2','3','4','5','6','7','8','9','10'];
+  }, []);
+
+  const pacientesPorLeito = useMemo(() => {
+    const mapa = {};
+    patients.forEach(p => {
+      if (p.nome) { // 🔥 SÓ MApeia se tiver nome (paciente real)
+        mapa[String(p.leito)] = p;
+      }
+    });
+    return mapa;
+  }, [patients]);
+
   const [showSepsisModal, setShowSepsisModal] = useState(false);
 
   const [admissionData, setAdmissionData] = useState({});
@@ -228,6 +243,11 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     fatoresContribuintes: '',
     medidasPreventivas: '',
     statusAnalise: 'Em Análise'
+  });
+
+  const [modalTrocaLeito, setModalTrocaLeito] = useState({
+    isOpen: false,
+    novoLeito: ''
   });
 
   // State para guardar quais dias foram destravados nesta sessão
@@ -4056,11 +4076,16 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   {currentPatient.nome && <FileText size={16} className="text-teal-400 opacity-50" />}
                 </button>
                 
-                {/* BOTÃO DA LIXEIRA */}
+                {/* BOTÃO DA LIXEIRA + TROCA DE LEITO */}
                   {currentPatient.nome && (userProfile?.perfil === "Enfermeiro" || userProfile?.role === "Enfermeiro" || userProfile?.perfil === "Desenvolvedor" || userProfile?.role === "Desenvolvedor") && (
-                    <button onClick={handleClearData} className="text-slate-300 hover:text-red-500 transition-colors" title="Liberar Leito">
-                      <Trash2 size={18} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setModalTrocaLeito({ isOpen: true, novoLeito: '' })} className="text-slate-300 hover:text-amber-500 transition-colors" title="Transferir para outro leito">
+                        <ArrowRightLeft size={18} />
+                      </button>
+                      <button onClick={handleClearData} className="text-slate-300 hover:text-red-500 transition-colors" title="Liberar Leito">
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   )}
 
                 {/* --- NOVA CÁPSULA DE IDADE --- */}
@@ -4911,6 +4936,111 @@ const userRole = userProfile?.role || userProfile?.perfil;
               >
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TROCA DE LEITO */}
+      {modalTrocaLeito.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-fade-in border-4 border-amber-500/20">
+            <div className="bg-amber-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><ArrowRightLeft size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">Transferir Paciente</h2>
+              </div>
+              <button onClick={() => setModalTrocaLeito({ ...modalTrocaLeito, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600 font-medium">
+                Selecione o leito de destino para <strong>{currentPatient.nome}</strong>:
+              </p>
+
+              {/* GRADE DE LEITOS */}
+              <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto p-1">
+                {leitosDisponiveis.map(leito => {
+                  const ocupado = pacientesPorLeito[leito] && pacientesPorLeito[leito].id !== currentPatient.id;
+                  const selected = modalTrocaLeito.novoLeito === leito;
+                  return (
+                    <button
+                      key={leito}
+                      disabled={ocupado}
+                      onClick={() => setModalTrocaLeito({ ...modalTrocaLeito, novoLeito: leito })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs text-center transition-all ${
+                        ocupado
+                          ? 'border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed line-through'
+                          : selected
+                            ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-md scale-105'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:bg-amber-50/50'
+                      }`}
+                    >
+                      {leito}
+                      {ocupado && <div className="text-[9px] font-normal text-slate-300 mt-0.5">Ocupado</div>}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* BOTÕES */}
+              <div className="flex gap-3 pt-2 border-t border-slate-200">
+                <button onClick={() => setModalTrocaLeito({ ...modalTrocaLeito, isOpen: false })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button
+                  disabled={!modalTrocaLeito.novoLeito}
+                  onClick={() => {
+                    const leitoDestino = modalTrocaLeito.novoLeito;
+                    const destinoNum = parseInt(leitoDestino, 10);
+                    const destIndex = destinoNum - 1;
+
+                    if (destIndex === activeTab) {
+                      setModalTrocaLeito({ isOpen: false, novoLeito: '' });
+                      return;
+                    }
+
+                    try {
+                      // 1. CLONAGEM DO PACIENTE (igual ao robô que funciona)
+                      const pacienteTransferido = JSON.parse(JSON.stringify(currentPatient));
+                      pacienteTransferido.id = String(patients[destIndex]?.id || `bed_${destinoNum}`);
+                      pacienteTransferido.leito = destinoNum;
+
+                      // 2. PREPARO DA CAMA VELHA (LIMPA)
+                      const camaVelhaLimpa = defaultPatient(activeTab);
+                      camaVelhaLimpa.id = String(currentPatient.id || `bed_${activeTab + 1}`);
+                      camaVelhaLimpa.leito = activeTab + 1;
+
+                      // 3. ATUALIZA A TELA INSTANTANEAMENTE
+                      const novaLista = [...patients];
+                      novaLista[destIndex] = pacienteTransferido;
+                      novaLista[activeTab] = camaVelhaLimpa;
+                      setPatients(novaLista);
+
+                      // 4. SALVA NO FIREBASE (motor nativo)
+                      if (typeof save === "function") {
+                        save(pacienteTransferido);
+                        save(camaVelhaLimpa);
+                      }
+
+                      // 5. LOG DE AUDITORIA
+                      if (typeof registrarLogAuditoria === "function") {
+                        registrarLogAuditoria(
+                          "TRANSFERÊNCIA DE LEITO",
+                          `Transferido do Leito ${activeTab + 1} para o Leito ${destinoNum}`,
+                          `Leito ${destinoNum}`,
+                          pacienteTransferido.nome
+                        );
+                      }
+
+                      setModalTrocaLeito({ isOpen: false, novoLeito: '' });
+                    } catch (error) {
+                      console.error("Erro na transferência:", error);
+                    }
+                  }}
+                  className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all uppercase tracking-wider"
+                >
+                  Transferir
+                </button>
+              </div>
             </div>
           </div>
         </div>
