@@ -2124,7 +2124,7 @@ const salvarFralda = () => {
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Característica</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {['Fluida', 'Espessa', 'Sanguinolenta'].map(carac => (
+                  {['Fluida', 'Espessa', 'Sanguinol.'].map(carac => (
                     <button 
                       key={carac}
                       onClick={() => setModalAspiracao({ ...modalAspiracao, caracteristica: carac })}
