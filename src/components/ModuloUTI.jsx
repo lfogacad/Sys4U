@@ -2626,6 +2626,98 @@ ${conduta}
       ...(p.enfermagem?.avpLocal ? [`- Acesso Venoso Periférico (AVP) em ${p.enfermagem.avpLocal}`] : []),
       ...(p.enfermagem?.drenoTipo ? [`- Dreno ${p.enfermagem.drenoTipo}`] : []),
     ].filter(Boolean);
+  
+    // 9. REGISTROS DE ENFERMAGEM (Eventos dos Modais - SOMENTE HOJE)
+    const hoje = new Date();
+    const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+    const eventosRegistros = [];
+
+    // Filtra eventos de HOJE e ordena por horário
+    const filtrarHoje = (historico) => {
+      if (!Array.isArray(historico)) return [];
+      return historico
+        .filter(e => e.data === hojeISO)
+        .sort((a, b) => (a.horario || a.horarioInicio || '').localeCompare(b.horario || b.horarioInicio || ''));
+    };
+
+    // Manutenção SVD
+    const svdsHoje = filtrarHoje(p.enfermagem?.historicoManutencaoSVD);
+    svdsHoje.forEach(ultimoSVD => {
+      const todosCumpridos = ultimoSVD.itens?.todosCumpridos ? '✅' : '❌';
+      eventosRegistros.push(`- Manutenção SVD ${ultimoSVD.horario} — ${ultimoSVD.itens?.resumo || 'N/A'} ${todosCumpridos}${ultimoSVD.unidadeInserção ? ` (inserido na ${ultimoSVD.unidadeInserção})` : ''}${ultimoSVD.tipoSonda ? ` — Sonda ${ultimoSVD.tipoSonda}` : ''}`);
+    });
+
+    // Gasometria
+    const gasesHoje = filtrarHoje(p.enfermagem?.historicoGasometria);
+    gasesHoje.forEach(gas => {
+      eventosRegistros.push(`- Gasometria ${gas.horario} — ${gas.tipoGasometria}`);
+    });
+
+    // Hemotransfusão
+    const hemosHoje = filtrarHoje(p.enfermagem?.historicoHemotransfusao);
+    hemosHoje.forEach(hemo => {
+      eventosRegistros.push(`- Hemotransfusão ${hemo.horarioInicio} — ${hemo.hemocomponente}${hemo.reacao ? ` — Reação: ${hemo.reacao}` : ''}${hemo.suspendeu ? ' ⚠️ Suspensa' : ''}`);
+    });
+
+    // ECG
+    const ecgsHoje = filtrarHoje(p.enfermagem?.historicoECG);
+    ecgsHoje.forEach(ecg => {
+      eventosRegistros.push(`- ECG ${ecg.horario}${ecg.posicionamentoV3R ? ' (com V3R/V4R)' : ''}`);
+    });
+
+    // Fleet Enema
+    const fleetsHoje = filtrarHoje(p.enfermagem?.historicoFleetEnema);
+    fleetsHoje.forEach(fleet => {
+      eventosRegistros.push(`- Fleet Enema ${fleet.horario}`);
+    });
+
+    // NPT
+    const nptsHoje = filtrarHoje(p.enfermagem?.historicoNPT);
+    nptsHoje.forEach(npt => {
+      eventosRegistros.push(`- NPT ${npt.horario}${npt.acessoCentralExclusivo ? ' (Acesso Central / Via Exclusiva ✅)' : ''}`);
+    });
+
+    // Aspiração Traqueal
+    const aspsHoje = filtrarHoje(p.enfermagem?.historicoAspiracao);
+    aspsHoje.forEach(asp => {
+      eventosRegistros.push(`- Aspiração Traqueal ${asp.horario} — ${asp.quantidade} / ${asp.caracteristica}${asp.viaAerea ? ` (${asp.viaAerea})` : ''}${asp.oxigenacaoPre ? ` — SatO₂ pré: ${asp.oxigenacaoPre}` : ''}`);
+    });
+
+    // Inserção CVC (historicoCVC)
+    const cvcsHoje = filtrarHoje(p.enfermagem?.historicoCVC);
+    cvcsHoje.forEach(cvc => {
+      eventosRegistros.push(`- Inserção CVC ${cvc.horario} — ${cvc.tipoCateter} em ${cvc.localInserção}${cvc.barreiras?.resumo ? ` (Barreiras: ${cvc.barreiras.resumo})` : ''}`);
+    });
+
+    // Manutenção CVC (historicoManutencaoCVC)
+    const manutCVCsHoje = filtrarHoje(p.enfermagem?.historicoManutencaoCVC);
+    manutCVCsHoje.forEach(mcvc => {
+      eventosRegistros.push(`- Manutenção CVC ${mcvc.horario}${mcvc.trocaCurativo ? ' — Troca de curativo' : ''}`);
+    });
+
+    // Inserção SVD (historicoSVD)
+    const svdsInsercaoHoje = filtrarHoje(p.enfermagem?.historicoSVD ? [p.enfermagem.historicoSVD] : []);
+    svdsInsercaoHoje.forEach(svd => {
+      eventosRegistros.push(`- Inserção SVD ${svd.horario} — ${svd.itens?.resumo || svd.indicacao || 'SVD'}`);
+    });
+
+    // Curativo (dentro de lesoes[].historicoCurativos)
+    const lesoes = p.enfermagem?.lesoes || [];
+    lesoes.forEach(lesao => {
+      const curativosHoje = filtrarHoje(lesao.historicoCurativos);
+      curativosHoje.forEach(cur => {
+        eventosRegistros.push(`- Curativo ${cur.horario} — ${lesao.localizacao || 'N/A'}: ${cur.tipo}${cur.obs ? ` (${cur.obs})` : ''}`);
+      });
+    });
+
+    // Acesso Periférico (campos avulsos — pega o último registro)
+    if (p.enfermagem?.avpData === hojeISO && p.enfermagem?.avpHorario) {
+      eventosRegistros.push(`- Acesso Periférico ${p.enfermagem.avpHorario} — ${p.enfermagem.avpLocal} (${p.enfermagem.avpCalibre || 'N/A'})`);
+    }
+
+    const eventosTexto = eventosRegistros.length > 0
+      ? eventosRegistros.join('\n')
+      : 'Nenhum registro adicional no período.';
 
     const intercorrencias = p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.";
     const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
@@ -2641,6 +2733,9 @@ DADOS ESTRUTURADOS:
 - PELE: ${tegumentarFrase}.
 DISPOSITIVOS ADICIONAIS:
 ${dispositivos.length > 0 ? dispositivos.join("\n") : "- Nenhum."}
+
+REGISTROS DE ENFERMAGEM:
+${eventosTexto}
 
 INSTRUÇÕES PARA A IA (Enfermeiro da UTI):
 Escreva a EVOLUÇÃO DE ENFERMAGEM baseada EXATAMENTE nos dados acima.
@@ -2663,6 +2758,9 @@ SISTEMA TEGUMENTAR: [Copia o texto do PELE]
 
 DISPOSITIVOS ADICIONAIS:
 [A lista fornecida no bloco de dados]
+
+REGISTROS DE ENFERMAGEM:
+[Os eventos registrados no período]
 
 INTERCORRÊNCIAS:
 ${intercorrencias}

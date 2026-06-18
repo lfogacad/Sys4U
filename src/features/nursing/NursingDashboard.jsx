@@ -470,7 +470,7 @@ const NursingDashboard = ({
     };
 
     const historico = [...(currentPatient.enfermagem?.historicoSVD || []), registro];
-    updateNested("enfermagem", "historicoSVD", registro);
+    updateNested("enfermagem", "historicoSVD", historico);
     updateNested("enfermagem", "ultimoSVD", registro);
     
     // 🔥 SINCRONIZA COM A NURSINGDASHBOARD
