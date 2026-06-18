@@ -4740,15 +4740,35 @@ const navButtons = allNavButtons.filter((btn) => {
                   {currentPatient.nome || "LEITO DISPONÍVEL"}
                 </h2>
                 
-                {/* BOTÃO DE TRANSFERÊNCIA */}
-                {currentPatient.nome && (userProfile?.role === "Médico" || userProfile?.role === "Enfermeiro" || isAdmin) && (
-                  <button
-                    onClick={handleTransferirLeito}
-                    className="text-slate-400 hover:text-blue-500 transition-colors print:hidden flex-shrink-0 bg-slate-50 hover:bg-blue-50 p-1.5 rounded-md border border-slate-200 hover:border-blue-200 shadow-sm"
-                    title="Transferir Paciente de Leito"
-                  >
-                     <ArrowRightLeft size={16} strokeWidth={2.5} />
-                  </button>
+                {/* ========================================== */}
+                {/* GRUPO DE AÇÕES RÁPIDAS (TRANSFERIR E LIMPAR) */}
+                {/* ========================================== */}
+                {currentPatient.nome && (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    
+                    {/* 1. BOTÃO DE TRANSFERÊNCIA */}
+                    {(userProfile?.role === "Médico" || userProfile?.role === "Enfermeiro" || isAdmin) && (
+                      <button
+                        onClick={handleTransferirLeito}
+                        className="text-slate-400 hover:text-blue-600 transition-colors print:hidden bg-white hover:bg-blue-50 p-1.5 rounded-md border border-slate-200 hover:border-blue-300 shadow-sm"
+                        title="Transferir Paciente de Leito"
+                      >
+                         <ArrowRightLeft size={16} strokeWidth={2.5} />
+                      </button>
+                    )}
+
+                    {/* 2. BOTÃO DA LIXEIRA (Limpar Leito) */}
+                    {(userProfile?.role === "Médico" || isAdmin) && (
+                      <button
+                        onClick={handleClearData}
+                        className="text-slate-400 hover:text-red-600 transition-colors print:hidden bg-white hover:bg-red-50 p-1.5 rounded-md border border-slate-200 hover:border-red-300 shadow-sm"
+                        title="Excluir Paciente / Limpar Leito"
+                      >
+                         <Trash2 size={16} strokeWidth={2.5} />
+                      </button>
+                    )}
+                    
+                  </div>
                 )}
                 
                 {currentPatient.nome && currentPatient.dataNascimento && (
