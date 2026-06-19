@@ -8,6 +8,8 @@ import ModalChecklistEnfermagem from '../../components/modals/ModalChecklistEnfe
 
 const NursingDashboard = ({
   currentPatient,
+  calculateAge,
+  userProfile,
   isEditable,
   handleNursingAdmission,
   handleViewNursingAdmission,
@@ -302,6 +304,19 @@ const NursingDashboard = ({
     });
     
     updateNested("enfermagem", "lesoes", lesoesAtualizadas);
+    
+    // 🔥 TAMBÉM salva em um histórico independente de curativos (para evolução)
+    const registroCurativo = {
+      tipo: 'Curativo',
+      data: dataRegistro,
+      horario: modalCurativo.horario,
+      local: modalCurativo.lesaoLocal || modalCurativo.local || 'N/A',
+      tipoCurativo: modalCurativo.tipoCurativo,
+      observacao: modalCurativo.observacao || ''
+    };
+    const historicoCurativos = [...(currentPatient.enfermagem?.historicoCurativos || []), registroCurativo];
+    updateNested("enfermagem", "historicoCurativos", historicoCurativos);
+    
     handleBlurSave(`Enfermagem: Curativo realizado em ${modalCurativo.lesaoLocal} - ${modalCurativo.tipoCurativo}`);
     setModalCurativo({ ...modalCurativo, isOpen: false });
   };
@@ -391,6 +406,12 @@ const NursingDashboard = ({
 
     handleBlurSave(`Enfermagem: Inserção ${modalCVC.tipoCateter} em ${modalCVC.localInserção} - Barreiras: ${barreirasFeitas}/${totalBarreiras}`);
     setModalCVC({ ...modalCVC, isOpen: false });
+    
+    const printWindow = window.open("", "_blank");
+    const profNome = userProfile?.nome || "_____________________________";
+    const profConselho = userProfile?.conselho || "CONSELHO";
+    const profNumero = userProfile?.numeroConselho || "_________________";
+    setTimeout(() => gerarPDF_CVC(registro, profNome, profConselho, profNumero, printWindow), 500);
   };
 
   const salvarManutencaoCVC = () => {
@@ -469,15 +490,22 @@ const NursingDashboard = ({
       observacao: modalSVD.observacao
     };
 
-    const historico = [...(currentPatient.enfermagem?.historicoSVD || []), registro];
-    updateNested("enfermagem", "historicoSVD", historico);
+    const historicoAntigo = currentPatient.enfermagem?.historicoSVD;
+    const historicoArray = Array.isArray(historicoAntigo) ? historicoAntigo : [];
+    const historico = [...historicoArray, registro];
+    updateNested("enfermagem", "historicoSVD", historico); // CORRIGIDO
     updateNested("enfermagem", "ultimoSVD", registro);
-    
-    // 🔥 SINCRONIZA COM A NURSINGDASHBOARD
     updateNested("enfermagem", "svdData", dataISO);
 
     handleBlurSave(`Enfermagem: Passagem SVD - ${cumpridos}/${total} itens`);
     setModalSVD({ ...modalSVD, isOpen: false });
+    
+    // 🔥 GERA PDF
+    const nomeProf = userProfile?.nome || "_____________________________";
+    const conselhoProf = userProfile?.conselho || "CONSELHO";
+    const numConselho = userProfile?.numeroConselho || "_________________";
+    const printWindow = window.open("", "_blank");
+    setTimeout(() => gerarPDF_InsercaoSVD(registro, nomeProf, conselhoProf, numConselho, printWindow), 500);
   };
 
   const salvarManutencaoSVD = () => {
@@ -590,6 +618,13 @@ const NursingDashboard = ({
 
     handleBlurSave(`Enfermagem: Hemotransfusão - ${modalHemotransfusao.hemocomponente}`);
     setModalHemotransfusao({ ...modalHemotransfusao, isOpen: false });
+    
+    // 🔥 GERA PDF
+    const nomeProf = userProfile?.nome || "_____________________________";
+    const conselhoProf = userProfile?.conselho || "CONSELHO";
+    const numConselho = userProfile?.numeroConselho || "_________________";
+    const printWindow = window.open("", "_blank");
+    setTimeout(() => gerarPDF_Hemotransfusao(registro, nomeProf, conselhoProf, numConselho, printWindow), 500);
   };
 
   const salvarECG = () => {
@@ -677,6 +712,453 @@ const NursingDashboard = ({
 
     handleBlurSave(`Enfermagem: Aspiração Traqueal - ${modalAspiracao.quantidade}/${modalAspiracao.caracteristica}`);
     setModalAspiracao({ ...modalAspiracao, isOpen: false });
+  };
+
+  // ==============================================================
+  // GERADOR DE PDF — CHECKLIST INSERÇÃO CVC
+  // ==============================================================
+  const imprimirChecklistCVC = () => {
+    if (!currentPatient) return;
+
+    const ultimo = currentPatient.enfermagem?.ultimoCVC;
+    if (!ultimo) {
+      alert("Nenhum registro de inserção de CVC encontrado para imprimir.");
+      return;
+    }
+
+    const idade = calculateAge(currentPatient.dataNascimento) || "__";
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const dataProcedimento = ultimo.data?.split('-').reverse().join('/') || hoje;
+
+    // Dados do profissional logado
+    const nomeProf = userProfile?.nome || "_____________________________";
+    const conselhoProf = userProfile?.conselho || "CONSELHO";
+    const numConselho = userProfile?.numeroConselho || "_________________";
+
+    // Barreiras
+    const barreiras = ultimo.barreiras?.itens || [];
+    const totalBarreiras = ultimo.barreiras?.total || 0;
+    const cumpridas = ultimo.barreiras?.cumpridas || 0;
+    const todasOK = ultimo.barreiras?.todasCumpridas || false;
+
+    // Motivo da troca (se houver)
+    const motivosTroca = [];
+    if (ultimo.motivoTroca === 'Infiltração') motivosTroca.push('Infiltração');
+    if (ultimo.motivoTroca === 'Obstrução') motivosTroca.push('Obstrução');
+    if (ultimo.motivoTroca === 'Suspeita de Infecção') motivosTroca.push('Suspeita de Infecção');
+    if (ultimo.motivoTroca === 'Término de Terapia') motivosTroca.push('Término de Terapia');
+    if (ultimo.motivoTroca === 'Óbito') motivosTroca.push('Óbito');
+    if (ultimo.motivoTroca === 'Outros') motivosTroca.push('Outros');
+
+    const printWindow = window.open("", "_blank");
+
+    let html = `<!DOCTYPE html>
+<html><head><title>Checklist Inserção CVC - ${currentPatient.nome}</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #222; }
+  .header { border-bottom: 3px solid #1a5276; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .header h1 { font-size: 16px; color: #1a5276; margin: 0 0 5px 0; text-transform: uppercase; }
+  .header-info { font-size: 11px; color: #555; line-height: 1.6; }
+  .paciente-box { background: #f0f4f8; border-left: 4px solid #1a5276; padding: 10px 15px; margin-bottom: 20px; border-radius: 0 6px 6px 0; }
+  .paciente-box table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .paciente-box td { padding: 3px 8px; }
+  .paciente-box .label { font-weight: bold; color: #1a5276; width: 100px; }
+  .section-title { font-size: 13px; font-weight: bold; color: #1a5276; margin: 18px 0 10px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; text-transform: uppercase; }
+  .info-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
+  .info-item { background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; flex: 1; min-width: 140px; }
+  .info-item .tag { font-size: 9px; text-transform: uppercase; color: #888; font-weight: bold; display: block; margin-bottom: 2px; }
+  .info-item .value { font-size: 13px; font-weight: bold; color: #333; }
+  table.checklist { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+  table.checklist th, table.checklist td { border: 1px solid #ccc; padding: 6px 8px; font-size: 11px; text-align: left; }
+  table.checklist th { background: #1a5276; color: white; font-size: 10px; text-transform: uppercase; }
+  table.checklist tr:nth-child(even) td { background: #f7f9fc; }
+  .status-ok { color: #27ae60; font-weight: bold; }
+  .status-no { color: #e74c3c; font-weight: bold; }
+  .resultado-box { background: ${todasOK ? '#eafaf1' : '#fdedec'}; border: 2px solid ${todasOK ? '#27ae60' : '#e74c3c'}; border-radius: 8px; padding: 12px 15px; text-align: center; margin: 15px 0; }
+  .resultado-box .big { font-size: 18px; font-weight: bold; color: ${todasOK ? '#27ae60' : '#e74c3c'}; }
+  .resultado-box .small { font-size: 11px; color: #555; margin-top: 2px; }
+  .observacao { background: #fffbf0; border: 1px solid #f0dca0; border-radius: 6px; padding: 10px 12px; margin: 15px 0; font-size: 11px; line-height: 1.5; }
+  .assinatura { margin-top: 40px; border-top: 2px solid #333; padding-top: 12px; display: flex; justify-content: space-between; font-size: 11px; }
+  .assinatura div { text-align: center; flex: 1; }
+  .assinatura .linha { margin-top: 35px; border-top: 1px solid #333; padding-top: 5px; font-weight: bold; }
+  .footer { margin-top: 25px; font-size: 9px; color: #999; text-align: center; border-top: 1px solid #ddd; padding-top: 8px; }
+</style></head><body>
+
+  <div class="header">
+    <div>
+      <h1>Checklist de Inserção de CVC</h1>
+      <div class="header-info">Data da impressão: ${hoje}</div>
+    </div>
+  </div>
+
+  <div class="paciente-box">
+    <table>
+      <tr><td class="label">Paciente:</td><td><strong>${currentPatient.nome?.toUpperCase() || "___________________"}</strong></td><td class="label">Leito:</td><td><strong>${currentPatient.leito}</strong></td></tr>
+      <tr><td class="label">Idade:</td><td>${idade} anos</td><td class="label">Data do Procedimento:</td><td><strong>${dataProcedimento}</strong></td></tr>
+      <tr><td class="label">Sexo:</td><td>${currentPatient.sexo === 'F' ? 'Feminino' : 'Masculino'}</td><td class="label">Horário:</td><td><strong>${ultimo.horario || "__________"}</strong></td></tr>
+    </table>
+  </div>
+
+  <div class="section-title">Dados do Procedimento</div>
+  <div class="info-grid">
+    <div class="info-item">
+      <span class="tag">Tipo de Cateter</span>
+      <span class="value">${ultimo.tipoCateter || "__________"}</span>
+    </div>
+    <div class="info-item">
+      <span class="tag">Local de Inserção</span>
+      <span class="value">${ultimo.localInserção || "__________"}</span>
+    </div>
+    <div class="info-item">
+      <span class="tag">Indicação</span>
+      <span class="value">${ultimo.indicacao || "__________"}</span>
+    </div>
+    <div class="info-item">
+      <span class="tag">Passagem</span>
+      <span class="value">${ultimo.passagem || "__________"}</span>
+    </div>
+    <div class="info-item">
+      <span class="tag">Punção Única</span>
+      <span class="value">${ultimo.puncaoUnica ? 'Sim ✅' : 'Não ❌'}</span>
+    </div>
+    ${ultimo.quantasPuncoes ? `<div class="info-item"><span class="tag">Nº de Pungões</span><span class="value">${ultimo.quantasPuncoes}</span></div>` : ''}
+    ${ultimo.dificuldades ? `<div class="info-item" style="flex:2"><span class="tag">Dificuldades</span><span class="value">${ultimo.dificuldades}</span></div>` : ''}
+    ${motivosTroca.length > 0 ? `<div class="info-item" style="flex:2"><span class="tag">Motivo da Troca</span><span class="value">${motivosTroca.join(', ')}</span></div>` : ''}
+  </div>
+
+  <div class="section-title">Barreiras de Prevenção — Conformidade</div>
+  <table class="checklist">
+    <thead><tr><th style="width:30px">#</th><th>Item</th><th style="width:100px;text-align:center">Cumprida</th></tr></thead>
+    <tbody>
+      ${barreiras.map((b, i) => `
+        <tr>
+          <td style="text-align:center">${i + 1}</td>
+          <td>${b.label || b.item || 'Item'}</td>
+          <td style="text-align:center">${b.cumprida ? '<span class="status-ok">✅ Sim</span>' : '<span class="status-no">❌ Não</span>'}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="resultado-box">
+    <div class="big">${cumpridas} / ${totalBarreiras} — ${todasOK ? '✅ CONFORME' : '❌ NÃO CONFORME'}</div>
+    <div class="small">Barreiras de prevenção de infecção relacionada a CVC</div>
+  </div>
+
+  ${ultimo.motivoTroca ? `<div class="section-title">Motivo da Troca</div><div class="info-grid"><div class="info-item" style="flex:3"><span class="tag">Motivo</span><span class="value">${ultimo.motivoTroca}</span></div></div>` : ''}
+
+  <div class="section-title">Assinatura do Profissional</div>
+  <div class="assinatura">
+    <div>
+      <div class="linha">${nomeProf}</div>
+      <div style="font-size:10px;color:#666;margin-top:3px;">Enfermeiro(a) Responsável</div>
+    </div>
+    <div>
+      <div class="linha">${conselhoProf} ${numConselho}</div>
+      <div style="font-size:10px;color:#666;margin-top:3px;">Nº do Conselho Profissional</div>
+    </div>
+    <div>
+      <div class="linha">${dataProcedimento}</div>
+      <div style="font-size:10px;color:#666;margin-top:3px;">Data do Procedimento</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Documento gerado pelo Sys4U - UTI Municipal de Ariquemes | ${hoje}
+  </div>
+
+</body></html>`;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 300);
+  };
+
+  // ==========================================
+  // GERAR PDF DO CHECKLIST CVC (usada após salvar)
+  // ==========================================
+  const gerarPDF_CVC = (registro, nomeProf, conselhoProf, numConselho, printWindow) => {
+    if (!currentPatient || !registro) return;
+
+    const idade = calculateAge(currentPatient.dataNascimento) || "__";
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const dataProcedimento = registro.data?.split('-').reverse().join('/') || hoje;
+
+    const barreiras = registro.barreiras?.itens || [];
+    const totalBarreiras = registro.barreiras?.total || 0;
+    const cumpridas = registro.barreiras?.cumpridas || 0;
+    const todasOK = registro.barreiras?.todasCumpridas || false;
+
+    let html = `<!DOCTYPE html>
+<html><head><title>Checklist Inserção CVC - ${currentPatient.nome}</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #222; }
+  .header { border-bottom: 3px solid #1a5276; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .header h1 { font-size: 16px; color: #1a5276; margin: 0 0 5px 0; text-transform: uppercase; }
+  .header-info { font-size: 11px; color: #555; line-height: 1.6; }
+  .paciente-box { background: #f0f4f8; border-left: 4px solid #1a5276; padding: 10px 15px; margin-bottom: 20px; border-radius: 0 6px 6px 0; }
+  .paciente-box table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .paciente-box td { padding: 3px 8px; }
+  .paciente-box .label { font-weight: bold; color: #1a5276; width: 100px; }
+  .section-title { font-size: 13px; font-weight: bold; color: #1a5276; margin: 18px 0 10px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; text-transform: uppercase; }
+  .info-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
+  .info-item { background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; flex: 1; min-width: 140px; }
+  .info-item .tag { font-size: 9px; text-transform: uppercase; color: #888; font-weight: bold; display: block; margin-bottom: 2px; }
+  .info-item .value { font-size: 13px; font-weight: bold; color: #333; }
+  table.checklist { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+  table.checklist th, table.checklist td { border: 1px solid #ccc; padding: 6px 8px; font-size: 11px; text-align: left; }
+  table.checklist th { background: #1a5276; color: white; font-size: 10px; text-transform: uppercase; }
+  table.checklist tr:nth-child(even) td { background: #f7f9fc; }
+  .status-ok { color: #27ae60; font-weight: bold; }
+  .status-no { color: #e74c3c; font-weight: bold; }
+  .resultado-box { background: ${todasOK ? '#eafaf1' : '#fdedec'}; border: 2px solid ${todasOK ? '#27ae60' : '#e74c3c'}; border-radius: 8px; padding: 12px 15px; text-align: center; margin: 15px 0; }
+  .resultado-box .big { font-size: 18px; font-weight: bold; color: ${todasOK ? '#27ae60' : '#e74c3c'}; }
+  .resultado-box .small { font-size: 11px; color: #555; margin-top: 2px; }
+  .assinatura { margin-top: 40px; border-top: 2px solid #333; padding-top: 12px; display: flex; justify-content: space-between; font-size: 11px; }
+  .assinatura div { text-align: center; flex: 1; }
+  .assinatura .linha { margin-top: 35px; border-top: 1px solid #333; padding-top: 5px; font-weight: bold; }
+  .footer { margin-top: 25px; font-size: 9px; color: #999; text-align: center; border-top: 1px solid #ddd; padding-top: 8px; }
+</style></head><body>
+
+  <div class="header">
+    <div>
+      <h1>Checklist de Inserção de CVC</h1>
+      <div class="header-info">Data da impressão: ${hoje}</div>
+    </div>
+  </div>
+
+  <div class="paciente-box">
+    <table>
+      <tr><td class="label">Paciente:</td><td><strong>${currentPatient.nome?.toUpperCase() || "___________________"}</strong></td><td class="label">Leito:</td><td><strong>${currentPatient.leito}</strong></td></tr>
+      <tr><td class="label">Idade:</td><td>${idade} anos</td><td class="label">Data do Procedimento:</td><td><strong>${dataProcedimento}</strong></td></tr>
+      <tr><td class="label">Sexo:</td><td>${currentPatient.sexo === 'F' ? 'Feminino' : 'Masculino'}</td><td class="label">Horário:</td><td><strong>${registro.horario || "__________"}</strong></td></tr>
+    </table>
+  </div>
+
+  <div class="section-title">Dados do Procedimento</div>
+  <div class="info-grid">
+    <div class="info-item">
+      <span class="tag">Tipo de Cateter</span>
+      <span class="value">${registro.tipoCateter || "__________"}</span>
+    </div>
+    <div class="info-item">
+      <span class="tag">Local de Inserção</span>
+      <span class="value">${registro.localInserção || "__________"}</span>
+    </div>
+    <div class="info-item">
+      <span class="tag">Indicação</span>
+      <span class="value">${registro.indicacao || "__________"}</span>
+    </div>
+    <div class="info-item">
+      <span class="tag">Passagem</span>
+      <span class="value">${registro.passagem || "__________"}</span>
+    </div>
+    <div class="info-item">
+      <span class="tag">Punção Única</span>
+      <span class="value">${registro.puncaoUnica ? 'Sim ✅' : 'Não ❌'}</span>
+    </div>
+    ${registro.quantasPuncoes ? `<div class="info-item"><span class="tag">Nº de Pungões</span><span class="value">${registro.quantasPuncoes}</span></div>` : ''}
+    ${registro.dificuldades ? `<div class="info-item" style="flex:2"><span class="tag">Dificuldades</span><span class="value">${registro.dificuldades}</span></div>` : ''}
+  </div>
+
+  <div class="section-title">Barreiras de Prevenção — Conformidade</div>
+  <table class="checklist">
+    <thead><tr><th style="width:30px">#</th><th>Item</th><th style="width:100px;text-align:center">Cumprida</th></tr></thead>
+    <tbody>
+      ${barreiras.map((b, i) => `
+        <tr>
+          <td style="text-align:center">${i + 1}</td>
+          <td>${b.label || b.item || 'Item'}</td>
+          <td style="text-align:center">${b.cumprida ? '<span class="status-ok">✅ Sim</span>' : '<span class="status-no">❌ Não</span>'}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="resultado-box">
+    <div class="big">${cumpridas} / ${totalBarreiras} — ${todasOK ? '✅ CONFORME' : '❌ NÃO CONFORME'}</div>
+    <div class="small">Barreiras de prevenção de infecção relacionada a CVC</div>
+  </div>
+
+  <div class="section-title">Assinatura do Profissional</div>
+  <div class="assinatura">
+    <div>
+      <div class="linha">${nomeProf}</div>
+      <div style="font-size:10px;color:#666;margin-top:3px;">Enfermeiro(a) Responsável</div>
+    </div>
+    <div>
+      <div class="linha">${conselhoProf} ${numConselho}</div>
+      <div style="font-size:10px;color:#666;margin-top:3px;">Nº do Conselho Profissional</div>
+    </div>
+    <div>
+      <div class="linha">${dataProcedimento}</div>
+      <div style="font-size:10px;color:#666;margin-top:3px;">Data do Procedimento</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Documento gerado pelo Sys4U - UTI Municipal de Ariquemes | ${hoje}
+  </div>
+
+</body></html>`;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 300);
+  };
+
+  const gerarPDF_InsercaoSVD = (registro, nomeProf, conselhoProf, numConselho, printWindow) => {
+    if (!currentPatient || !registro) return;
+    const idade = calculateAge(currentPatient.dataNascimento) || "__";
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const dataProcedimento = registro.data?.split('-').reverse().join('/') || hoje;
+
+    const itens = registro.itens?.lista || [];
+    const total = registro.itens?.total || 0;
+    const cumpridos = registro.itens?.cumpridos || 0;
+    const todasOK = registro.itens?.todosCumpridos || false;
+
+    const html = `<!DOCTYPE html>
+<html><head><title>Passagem SVD - ${currentPatient.nome}</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #222; }
+  .header { border-bottom: 3px solid #e67e22; padding-bottom: 10px; margin-bottom: 20px; }
+  .header h1 { font-size: 16px; color: #e67e22; margin: 0 0 5px 0; text-transform: uppercase; }
+  .header-info { font-size: 11px; color: #555; }
+  .paciente-box { background: #fef9f0; border-left: 4px solid #e67e22; padding: 10px 15px; margin-bottom: 20px; border-radius: 0 6px 6px 0; }
+  .paciente-box table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .paciente-box td { padding: 3px 8px; }
+  .paciente-box .label { font-weight: bold; color: #e67e22; width: 100px; }
+  .section-title { font-size: 13px; font-weight: bold; color: #e67e22; margin: 18px 0 10px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; text-transform: uppercase; }
+  .info-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
+  .info-item { background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; flex: 1; min-width: 140px; }
+  .info-item .tag { font-size: 9px; text-transform: uppercase; color: #888; font-weight: bold; display: block; margin-bottom: 2px; }
+  .info-item .value { font-size: 13px; font-weight: bold; color: #333; }
+  table.checklist { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 10px; }
+  table.checklist th, table.checklist td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
+  table.checklist th { background: #e67e22; color: white; font-size: 9px; text-transform: uppercase; }
+  table.checklist tr:nth-child(even) td { background: #fef9f0; }
+  .status-ok { color: #27ae60; font-weight: bold; } .status-no { color: #e74c3c; font-weight: bold; }
+  .resultado-box { background: ${todasOK ? '#eafaf1' : '#fdedec'}; border: 2px solid ${todasOK ? '#27ae60' : '#e74c3c'}; border-radius: 8px; padding: 12px 15px; text-align: center; margin: 15px 0; }
+  .resultado-box .big { font-size: 18px; font-weight: bold; color: ${todasOK ? '#27ae60' : '#e74c3c'}; }
+  .resultado-box .small { font-size: 11px; color: #555; margin-top: 2px; }
+  .obs-box { background: #fffbf0; border: 1px solid #f0dca0; border-radius: 6px; padding: 10px 12px; margin: 15px 0; font-size: 11px; }
+  .assinatura { margin-top: 40px; border-top: 2px solid #333; padding-top: 12px; display: flex; justify-content: space-between; font-size: 11px; }
+  .assinatura div { text-align: center; flex: 1; }
+  .assinatura .linha { margin-top: 35px; border-top: 1px solid #333; padding-top: 5px; font-weight: bold; }
+  .footer { margin-top: 25px; font-size: 9px; color: #999; text-align: center; border-top: 1px solid #ddd; padding-top: 8px; }
+</style></head><body>
+  <div class="header"><div><h1>Checklist de Passagem de SVD</h1><div class="header-info">Data da impressão: ${hoje}</div></div></div>
+  <div class="paciente-box"><table>
+    <tr><td class="label">Paciente:</td><td><strong>${currentPatient.nome?.toUpperCase() || "___________________"}</strong></td><td class="label">Leito:</td><td><strong>${currentPatient.leito}</strong></td></tr>
+    <tr><td class="label">Idade:</td><td>${idade} anos</td><td class="label">Data do Procedimento:</td><td><strong>${dataProcedimento}</strong></td></tr>
+    <tr><td class="label">Sexo:</td><td>${currentPatient.sexo === 'F' ? 'Feminino' : 'Masculino'}</td><td class="label">Horário:</td><td><strong>${registro.horario || "__________"}</strong></td></tr>
+  </table></div>
+  <div class="section-title">Dados do Procedimento</div>
+  <div class="info-grid">
+    ${registro.indicacao ? `<div class="info-item" style="flex:2"><span class="tag">Indicação</span><span class="value">${registro.indicacao}</span></div>` : ''}
+    ${registro.justificativa ? `<div class="info-item" style="flex:2"><span class="tag">Justificativa</span><span class="value">${registro.justificativa}</span></div>` : ''}
+    <div class="info-item"><span class="tag">Gênero</span><span class="value">${registro.genero || 'N/A'}</span></div>
+  </div>
+  <div class="section-title">Lista de Verificação — Conformidade</div>
+  <table class="checklist"><thead><tr><th style="width:30px">#</th><th>Item</th><th style="width:100px;text-align:center">Cumprida</th></tr></thead><tbody>
+    ${itens.map((b, i) => `<tr><td style="text-align:center">${i+1}</td><td>${b.label || b.item}</td><td style="text-align:center">${b.cumprida ? '<span class="status-ok">✅ Sim</span>' : '<span class="status-no">❌ Não</span>'}</td></tr>`).join('')}
+  </tbody></table>
+  <div class="resultado-box"><div class="big">${cumpridos} / ${total} — ${todasOK ? '✅ CONFORME' : '❌ NÃO CONFORME'}</div><div class="small">Checklist de passagem de SVD</div></div>
+  ${registro.observacao ? `<div class="section-title">Observações</div><div class="obs-box">${registro.observacao}</div>` : ''}
+  <div class="section-title">Assinatura do Profissional</div>
+  <div class="assinatura">
+    <div><div class="linha">${nomeProf}</div><div style="font-size:10px;color:#666;margin-top:3px;">Enfermeiro(a) Responsável</div></div>
+    <div><div class="linha">${conselhoProf} ${numConselho}</div><div style="font-size:10px;color:#666;margin-top:3px;">Nº do Conselho Profissional</div></div>
+    <div><div class="linha">${dataProcedimento}</div><div style="font-size:10px;color:#666;margin-top:3px;">Data do Procedimento</div></div>
+  </div>
+  <div class="footer">Documento gerado pelo Sys4U - UTI Municipal de Ariquemes | ${hoje}</div>
+</body></html>`;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => { printWindow.focus(); printWindow.print(); }, 300);
+  };
+
+  const gerarPDF_Hemotransfusao = (registro, nomeProf, conselhoProf, numConselho, printWindow) => {
+    if (!currentPatient || !registro) return;
+    const idade = calculateAge(currentPatient.dataNascimento) || "__";
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const dataProcedimento = registro.data?.split('-').reverse().join('/') || hoje;
+
+    const dc = registro.duplaChecagem || {};
+
+    const html = `<!DOCTYPE html>
+<html><head><title>Hemotransfusão - ${currentPatient.nome}</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #222; }
+  .header { border-bottom: 3px solid #c0392b; padding-bottom: 10px; margin-bottom: 20px; }
+  .header h1 { font-size: 16px; color: #c0392b; margin: 0 0 5px 0; text-transform: uppercase; }
+  .header-info { font-size: 11px; color: #555; }
+  .paciente-box { background: #fef5f3; border-left: 4px solid #c0392b; padding: 10px 15px; margin-bottom: 20px; border-radius: 0 6px 6px 0; }
+  .paciente-box table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .paciente-box td { padding: 3px 8px; }
+  .paciente-box .label { font-weight: bold; color: #c0392b; width: 100px; }
+  .section-title { font-size: 13px; font-weight: bold; color: #c0392b; margin: 18px 0 10px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; text-transform: uppercase; }
+  .info-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
+  .info-item { background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; flex: 1; min-width: 140px; }
+  .info-item .tag { font-size: 9px; text-transform: uppercase; color: #888; font-weight: bold; display: block; margin-bottom: 2px; }
+  .info-item .value { font-size: 13px; font-weight: bold; color: #333; }
+  table.checklist { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 10px; }
+  table.checklist th, table.checklist td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
+  table.checklist th { background: #c0392b; color: white; font-size: 9px; text-transform: uppercase; }
+  .status-ok { color: #27ae60; font-weight: bold; } .status-no { color: #e74c3c; font-weight: bold; }
+  .obs-box { background: #fffbf0; border: 1px solid #f0dca0; border-radius: 6px; padding: 10px 12px; margin: 15px 0; font-size: 11px; }
+  .assinatura { margin-top: 40px; border-top: 2px solid #333; padding-top: 12px; display: flex; justify-content: space-between; font-size: 11px; }
+  .assinatura div { text-align: center; flex: 1; }
+  .assinatura .linha { margin-top: 35px; border-top: 1px solid #333; padding-top: 5px; font-weight: bold; }
+  .footer { margin-top: 25px; font-size: 9px; color: #999; text-align: center; border-top: 1px solid #ddd; padding-top: 8px; }
+</style></head><body>
+  <div class="header"><div><h1>Registro de Hemotransfusão</h1><div class="header-info">Data da impressão: ${hoje}</div></div></div>
+  <div class="paciente-box"><table>
+    <tr><td class="label">Paciente:</td><td><strong>${currentPatient.nome?.toUpperCase() || "___________________"}</strong></td><td class="label">Leito:</td><td><strong>${currentPatient.leito}</strong></td></tr>
+    <tr><td class="label">Idade:</td><td>${idade} anos</td><td class="label">Data:</td><td><strong>${dataProcedimento}</strong></td></tr>
+  </table></div>
+  <div class="section-title">Dados do Hemocomponente</div>
+  <div class="info-grid">
+    <div class="info-item"><span class="tag">Hemocomponente</span><span class="value">${registro.hemocomponente || "__________"}</span></div>
+    <div class="info-item"><span class="tag">Nº da Bolsa</span><span class="value">${registro.numeroBolsa || "__________"}</span></div>
+    <div class="info-item"><span class="tag">Grupo ABO</span><span class="value">${registro.grupoABO || "__________"}</span></div>
+    <div class="info-item"><span class="tag">RH</span><span class="value">${registro.rh || "__________"}</span></div>
+    <div class="info-item"><span class="tag">Volume</span><span class="value">${registro.volume || "__________"} mL</span></div>
+    <div class="info-item"><span class="tag">Validade</span><span class="value">${registro.validade || "__________"}</span></div>
+    <div class="info-item"><span class="tag">Início</span><span class="value">${registro.horarioInicio || "__________"}</span></div>
+    ${registro.horarioTermino ? `<div class="info-item"><span class="tag">Término</span><span class="value">${registro.horarioTermino}</span></div>` : ''}
+    ${registro.volumeInfundido ? `<div class="info-item"><span class="tag">Volume Infundido</span><span class="value">${registro.volumeInfundido} mL</span></div>` : ''}
+  </div>
+  <div class="section-title">Dupla Checagem</div>
+  <table class="checklist"><thead><tr><th>Item</th><th style="width:100px;text-align:center">Conferido</th></tr></thead><tbody>
+    <tr><td>Crossmatch</td><td style="text-align:center">${dc.crossmatch ? '<span class="status-ok">✅</span>' : '<span class="status-no">❌</span>'}</td></tr>
+    <tr><td>Acesso Venoso Pérvio</td><td style="text-align:center">${dc.acessoVenoso ? '<span class="status-ok">✅</span>' : '<span class="status-no">❌</span>'}</td></tr>
+    <tr><td>Equipo com Filtro</td><td style="text-align:center">${dc.equipoFiltro ? '<span class="status-ok">✅</span>' : '<span class="status-no">❌</span>'}</td></tr>
+  </tbody></table>
+  ${registro.reacao ? `<div class="section-title">Reação Transfusional</div><div class="info-grid"><div class="info-item" style="flex:2"><span class="tag">Reação</span><span class="value">${registro.reacao}</span></div>${registro.reacaoDescricao ? `<div class="info-item" style="flex:2"><span class="tag">Descrição</span><span class="value">${registro.reacaoDescricao}</span></div>` : ''}${registro.suspendeu ? `<div class="info-item"><span class="tag">Suspensa</span><span class="value">Sim ⚠️</span></div>` : ''}${registro.conduta ? `<div class="info-item" style="flex:2"><span class="tag">Conduta</span><span class="value">${registro.conduta}</span></div>` : ''}</div>` : ''}
+  ${registro.observacao ? `<div class="section-title">Observações</div><div class="obs-box">${registro.observacao}</div>` : ''}
+  <div class="section-title">Assinatura do Profissional</div>
+  <div class="assinatura">
+    <div><div class="linha">${nomeProf}</div><div style="font-size:10px;color:#666;margin-top:3px;">Enfermeiro(a) Responsável</div></div>
+    <div><div class="linha">${conselhoProf} ${numConselho}</div><div style="font-size:10px;color:#666;margin-top:3px;">Nº do Conselho Profissional</div></div>
+    <div><div class="linha">${dataProcedimento}</div><div style="font-size:10px;color:#666;margin-top:3px;">Data do Procedimento</div></div>
+  </div>
+  <div class="footer">Documento gerado pelo Sys4U - UTI Municipal de Ariquemes | ${hoje}</div>
+</body></html>`;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => { printWindow.focus(); printWindow.print(); }, 300);
   };
 
 return (
@@ -1644,7 +2126,6 @@ return (
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalCVC({ ...modalCVC, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
-                <button onClick={() => window.print()} className="px-4 py-4 bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold rounded-xl transition-colors flex items-center gap-2"><Printer size={16} /> Imprimir</button>
                 <button disabled={!modalCVC.horario || !modalCVC.tipoCateter || !modalCVC.localInserção} onClick={salvarCVC} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>
@@ -1757,7 +2238,6 @@ return (
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
-                <button onClick={() => window.print()} className="px-4 py-4 bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold rounded-xl transition-colors flex items-center gap-2"><Printer size={16} /> Imprimir</button>
                 <button disabled={!modalManutencaoCVC.horario} onClick={salvarManutencaoCVC} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>
@@ -1876,7 +2356,6 @@ return (
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalSVD({ ...modalSVD, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
-                <button onClick={() => window.print()} className="px-4 py-4 bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold rounded-xl transition-colors flex items-center gap-2"><Printer size={16} /> Imprimir</button>
                 <button disabled={!modalSVD.horario} onClick={salvarSVD} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>
@@ -1971,7 +2450,6 @@ return (
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalManutencaoSVD({ ...modalManutencaoSVD, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
-                <button onClick={() => window.print()} className="px-4 py-4 bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold rounded-xl transition-colors flex items-center gap-2"><Printer size={16} /> Imprimir</button>
                 <button disabled={!modalManutencaoSVD.horario} onClick={salvarManutencaoSVD} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>
@@ -2223,7 +2701,6 @@ return (
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalHemotransfusao({ ...modalHemotransfusao, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
-                <button onClick={() => window.print()} className="px-4 py-4 bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold rounded-xl transition-colors flex items-center gap-2"><Printer size={16} /> Imprimir</button>
                 <button disabled={!modalHemotransfusao.horarioInicio || !modalHemotransfusao.hemocomponente} onClick={salvarHemotransfusao} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>

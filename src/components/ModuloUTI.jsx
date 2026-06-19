@@ -2636,7 +2636,12 @@ ${conduta}
     const filtrarHoje = (historico) => {
       if (!Array.isArray(historico)) return [];
       return historico
-        .filter(e => e.data === hojeISO)
+        .filter(e => {
+          // Aceita ambos os formatos: YYYY-MM-DD (ISO) ou DD/MM/YYYY (brasileiro)
+          const dataEvento = e.data || '';
+          const dataISO = dataEvento.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, '$3-$2-$1');
+          return dataISO === hojeISO;
+        })
         .sort((a, b) => (a.horario || a.horarioInicio || '').localeCompare(b.horario || b.horarioInicio || ''));
     };
 
@@ -2696,7 +2701,7 @@ ${conduta}
     });
 
     // Inserção SVD (historicoSVD)
-    const svdsInsercaoHoje = filtrarHoje(p.enfermagem?.historicoSVD ? [p.enfermagem.historicoSVD] : []);
+    const svdsInsercaoHoje = filtrarHoje(p.enfermagem?.historicoSVD || []);
     svdsInsercaoHoje.forEach(svd => {
       eventosRegistros.push(`- Inserção SVD ${svd.horario} — ${svd.itens?.resumo || svd.indicacao || 'SVD'}`);
     });
@@ -2708,6 +2713,12 @@ ${conduta}
       curativosHoje.forEach(cur => {
         eventosRegistros.push(`- Curativo ${cur.horario} — ${lesao.localizacao || 'N/A'}: ${cur.tipo}${cur.obs ? ` (${cur.obs})` : ''}`);
       });
+    });
+
+    // Curativos avulsos (histórico independente — pacientes sem lesão prévia)
+    const curativosAvulsosHoje = filtrarHoje(p.enfermagem?.historicoCurativos);
+    curativosAvulsosHoje.forEach(cur => {
+      eventosRegistros.push(`- Curativo ${cur.horario} — ${cur.local}: ${cur.tipoCurativo}${cur.observacao ? ` (${cur.observacao})` : ''}`);
     });
 
     // Acesso Periférico (campos avulsos — pega o último registro)
@@ -4356,6 +4367,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   {viewMode === "nursing" && (
                     <NursingDashboard
                       currentPatient={currentPatient}
+                      calculateAge={calculateAge}
+                      userProfile={userProfile}
                       isEditable={isEditable}
                       updateNested={updateNested}
                       handleBlurSave={handleBlurSave}
