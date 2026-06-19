@@ -3002,9 +3002,9 @@ const getBestGlasgowForSOFA = (p) => {
 
       // 2. PREPARO DA CAMA VELHA (LIMPA)
       const camaVelhaLimpa = defaultPatient(activeTab);
-      // 🔥 BLINDAGEM DO ERRO: Forçamos a cama velha a ser Texto (String) também
-      camaVelhaLimpa.id = String(currentPatient.id || `bed_${activeTab + 1}`);
-      camaVelhaLimpa.leito = activeTab + 1;
+      // 🔥 BLINDAGEM DO ERRO 51: Copiamos o número exato que a cama já tinha, sem fazer matemática!
+      camaVelhaLimpa.id = String(currentPatient.id);
+      camaVelhaLimpa.leito = Number(currentPatient.leito);
 
       // 3. ATUALIZA A TELA INSTANTANEAMENTE (CENSO)
       const novaLista = [...patients];
