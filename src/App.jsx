@@ -2957,11 +2957,32 @@ const getBestGlasgowForSOFA = (p) => {
         "Limpar leito? ATENÇÃO: Isso excluirá permanentemente os dados do paciente atual e disponibilizará o leito."
       )
     ) {
+      // 1. Passa a vassoura digital no leito atual
       const r = defaultPatient(activeTab);
+      
+      // 🔥 A SUTURA: Força o ID a ser Texto e o Leito a manter o número exato da cama atual
+      r.id = String(currentPatient.id);
+      r.leito = Number(currentPatient.leito);
+
+      // 2. Atualiza a tela local (Censo)
       const up = [...patients];
       up[activeTab] = r;
       setPatients(up);
-      save(r);
+
+      // 3. Salva no Firebase usando o seu motor nativo
+      if (typeof save === "function") {
+        save(r);
+      }
+
+      // 4. Registra a limpeza na Caixa Preta
+      if (typeof registrarLogAuditoria === "function") {
+        registrarLogAuditoria(
+          "LIMPEZA DE LEITO",
+          `Leito ${currentPatient.leito} foi limpo e esvaziado manualmente`,
+          `Leito ${currentPatient.leito}`,
+          currentPatient.nome || "N/A"
+        );
+      }
     }
   };
 
