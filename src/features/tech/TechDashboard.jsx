@@ -7,6 +7,8 @@ import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import CVCInsercaoModal from './CVCInsercaoModal';
+import SVDInsercaoModal from './SVDInsercaoModal';
 
 const TechDashboard = ({
   currentPatient,
@@ -36,6 +38,8 @@ const TechDashboard = ({
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
   const [registrosOpen, setRegistrosOpen] = useState(false);
+  const [showCVCModal, setShowCVCModal] = useState(false);
+  const [showSVDModal, setShowSVDModal] = useState(false);
 
   // =========================================================================
   // FUNÇÃO AUXILIAR: ARREDONDA A HORA ATUAL PARA 00, 15, 30 OU 45
@@ -1080,6 +1084,29 @@ const salvarFralda = () => {
             >
               <TestTube size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
               <span className="text-[10px] font-bold uppercase text-center">Insulina</span>
+            </button>
+
+            {/* --- NOVOS BOTÕES: CVC e SVD --- */}
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                setShowCVCModal({ isOpen: true, step: 1, horario: getHoraAtualArredondada(), tipoCateter: "", localInserção: "", indicacao: "", passagem: "", puncaoUnica: false, quantasPuncoes: "", dificuldades: "", motivoTroca: "", observacao: "", barreiras: null });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Syringe size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Inserção CVC</span>
+            </button>
+
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                setShowSVDModal({ isOpen: true, step: 1, horario: getHoraAtualArredondada(), indicacao: "", justificativa: "", genero: "", itens: {}, observacao: "" });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Droplets size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Inserção SVD</span>
             </button>
 
           </div>
@@ -2634,6 +2661,22 @@ const salvarFralda = () => {
           </div>
         </div>
       )}
+
+      <CVCInsercaoModal
+        isOpen={showCVCModal}
+        onClose={() => setShowCVCModal(false)}
+        currentPatient={currentPatient}
+        updateNested={updateNested}
+        handleBlurSave={handleBlurSave}
+      />
+  
+      <SVDInsercaoModal
+        isOpen={showSVDModal}
+        onClose={() => setShowSVDModal(false)}
+        currentPatient={currentPatient}
+        updateNested={updateNested}
+        handleBlurSave={handleBlurSave}
+      />
 
       </fieldset>
     </div>

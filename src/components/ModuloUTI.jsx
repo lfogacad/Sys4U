@@ -2691,7 +2691,7 @@ ${conduta}
     // Inserção CVC (historicoCVC)
     const cvcsHoje = filtrarHoje(p.enfermagem?.historicoCVC);
     cvcsHoje.forEach(cvc => {
-      eventosRegistros.push(`- Inserção CVC ${cvc.horario} — ${cvc.tipoCateter} em ${cvc.localInserção}${cvc.barreiras?.resumo ? ` (Barreiras: ${cvc.barreiras.resumo})` : ''}`);
+      eventosRegistros.push(`- Inserção CVC ${cvc.horario} — ${cvc.tipoCateter} em ${cvc.localInserção}${cvc.barreiras ? ` (Checklist: ${cvc.barreiras.cumpridas}/${cvc.barreiras.total})` : ''}`);
     });
 
     // Manutenção CVC (historicoManutencaoCVC)
@@ -2703,7 +2703,7 @@ ${conduta}
     // Inserção SVD (historicoSVD)
     const svdsInsercaoHoje = filtrarHoje(p.enfermagem?.historicoSVD || []);
     svdsInsercaoHoje.forEach(svd => {
-      eventosRegistros.push(`- Inserção SVD ${svd.horario} — ${svd.itens?.resumo || svd.indicacao || 'SVD'}`);
+      eventosRegistros.push(`- Inserção SVD ${svd.horario} — ${svd.genero || ''} (${svd.indicacao || 'N/I'}) — ${svd.itens?.resumo || ''}`);
     });
 
     // Curativo (dentro de lesoes[].historicoCurativos)

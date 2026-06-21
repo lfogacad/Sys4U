@@ -2279,7 +2279,7 @@ return (
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Indicação</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {['Demora', 'Alívio'].map(ind => (
+                  {['Retenção Urinária', 'Monitorização Débito Urinário', 'Cirurgia', 'Lesão Renal Aguda', 'Incontinência', 'Outra'].map(ind => (
                     <button key={ind} onClick={() => setModalSVD({ ...modalSVD, indicacao: ind })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalSVD.indicacao === ind ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-orange-200'}`}>{ind}</button>
                   ))}
                 </div>
@@ -2331,17 +2331,19 @@ return (
                 </div>
               </div>
 
-              {/* JUSTIFICATIVA */}
-              <div>
-                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Justificativa (opcional)</label>
-                <input 
-                  type="text" 
-                  placeholder="Ex: Retenção urinária, controle de diurese..."
-                  value={modalSVD.justificativa}
-                  onChange={(e) => setModalSVD({ ...modalSVD, justificativa: e.target.value })}
-                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-orange-300 text-sm"
-                />
-              </div>
+              {/* JUSTIFICATIVA (só aparece se "Outra") */}
+              {modalSVD.indicacao === 'Outra' && (
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Descreva a justificativa</label>
+                  <input 
+                    type="text" 
+                    placeholder="Descreva a justificativa..."
+                    value={modalSVD.justificativa}
+                    onChange={(e) => setModalSVD({ ...modalSVD, justificativa: e.target.value })}
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-orange-300 text-sm"
+                  />
+                </div>
+              )}
 
               {/* OBSERVAÇÃO */}
               <div>
