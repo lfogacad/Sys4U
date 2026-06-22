@@ -2737,6 +2737,16 @@ ${conduta}
       eventosRegistros.push(`- Acesso Periférico ${p.enfermagem.avpHorario} — ${p.enfermagem.avpLocal} (${p.enfermagem.avpCalibre || 'N/A'})`);
     }
 
+    // Carrinho de Emergência
+    const carrinhosHoje = filtrarHoje(p.enfermagem?.historicoCarrinhoEmergencia);
+    carrinhosHoje.forEach(car => {
+      const statusLaringo = car.laringoscopio === 'Funcionante' ? '✅' : '❌';
+      const statusCardio = car.cardioversor === 'Funcionante' ? '✅' : '❌';
+      const statusGel = car.gelCondutor === 'Sim' ? '✅' : '❌';
+      const statusTabua = car.tabua === 'Sim' ? '✅' : '❌';
+      eventosRegistros.push(`- Checklist Carrinho de Emergência ${car.horario} — Lacre Carrinho: ${car.lacreCarrinho || '—'} / Lacre Caixa: ${car.lacreCaixa || '—'} — Laringoscópio ${statusLaringo} | Cardioversor ${statusCardio} | Gel Condutor ${statusGel} | Tábua ${statusTabua}`);
+    });
+
     const eventosTexto = eventosRegistros.length > 0
       ? eventosRegistros.join('\n')
       : 'Nenhum registro adicional no período.';

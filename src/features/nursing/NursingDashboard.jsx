@@ -26,22 +26,6 @@ const NursingDashboard = ({
 
   const [showNursingChecklistModal, setShowNursingChecklistModal] = useState(false);
   const [showRegistrosDiarios, setShowRegistrosDiarios] = useState(false);
-  const [modalCurativo, setModalCurativo] = useState({
-    isOpen: false,
-    data: '',
-    horario: '',
-    lesaoId: '',
-    lesaoLocal: '',
-    tipoCurativo: '',
-    observacao: ''
-  });
-
-  const [modalAcessoPeriferico, setModalAcessoPeriferico] = useState({
-    isOpen: false,
-    horario: '',
-    local: '',
-    calibre: ''
-  });
 
   const [modalCVC, setModalCVC] = useState({
     isOpen: false,
@@ -125,6 +109,27 @@ const NursingDashboard = ({
     observacao: ''
   });
 
+  const [modalCurativo, setModalCurativo] = useState({
+    isOpen: false,
+    data: '',
+    horario: '',
+    lesaoId: '',
+    lesaoLocal: '',
+    tipoCurativo: '',
+    observacao: ''
+  });
+
+  const [modalCarrinhoEmergencia, setModalCarrinhoEmergencia] = useState({
+    isOpen: false,
+    horario: '',
+    lacreCarrinho: '',
+    lacreCaixa: '',
+    laringoscopio: '',
+    cardioversor: '',
+    gelCondutor: '',
+    tabua: ''
+  });
+
   const [modalGasometria, setModalGasometria] = useState({
     isOpen: false,
     horario: '',
@@ -165,6 +170,14 @@ const NursingDashboard = ({
     horario: '',
     posicionamentoV3R: false
   });
+
+  const [modalAcessoPeriferico, setModalAcessoPeriferico] = useState({
+    isOpen: false,
+    horario: '',
+    local: '',
+    calibre: ''
+  });
+
 
   const [modalFleetEnema, setModalFleetEnema] = useState({
     isOpen: false,
@@ -592,6 +605,43 @@ const NursingDashboard = ({
     handleBlurSave(`Enfermagem: Manutenção SVD - ${cumpridos}/${total} itens`);
     setModalManutencaoSVD({ ...modalManutencaoSVD, isOpen: false });
   };
+
+  const salvarCarrinhoEmergencia = () => {
+  const data = new Date().toISOString().split('T')[0];
+  const horario = modalCarrinhoEmergencia.horario;
+
+  if (!horario) {
+    alert('Selecione o horário da verificação.');
+    return;
+  }
+
+  const registro = {
+    data,
+    horario,
+    lacreCarrinho: modalCarrinhoEmergencia.lacreCarrinho,
+    lacreCaixa: modalCarrinhoEmergencia.lacreCaixa,
+    laringoscopio: modalCarrinhoEmergencia.laringoscopio,
+    cardioversor: modalCarrinhoEmergencia.cardioversor,
+    gelCondutor: modalCarrinhoEmergencia.gelCondutor,
+    tabua: modalCarrinhoEmergencia.tabua
+  };
+
+  const historicoAtual = currentPatient?.enfermagem?.historicoCarrinhoEmergencia || [];
+
+  updateNested('enfermagem', 'historicoCarrinhoEmergencia', [...historicoAtual, registro]);
+  handleBlurSave(`Enfermagem: Verificação do Carrinho de Emergência às ${horario}`);
+
+  setModalCarrinhoEmergencia({
+    isOpen: false,
+    horario: '',
+    lacreCarrinho: '',
+    lacreCaixa: '',
+    laringoscopio: '',
+    cardioversor: '',
+    gelCondutor: '',
+    tabua: ''
+  });
+};
 
   const salvarGasometria = () => {
     if (!modalGasometria.horario || !modalGasometria.tipo) return;
@@ -1293,7 +1343,7 @@ return (
                     <span className="text-[10px] font-bold uppercase leading-tight text-center">Manutenção<br/>SVD</span>
                   </button>
 
-                  <button onClick={() => handleAcaoEnfermagem('Carrinho de EMG')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                  <button onClick={() => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, isOpen: true })} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
                     <Ambulance size={20} className="text-slate-400" />
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Carrinho<br/>de EMG</span>
                   </button>
@@ -2508,6 +2558,117 @@ return (
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalManutencaoSVD({ ...modalManutencaoSVD, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
                 <button disabled={!modalManutencaoSVD.horario} onClick={salvarManutencaoSVD} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: CARRINHO DE EMERGÊNCIA                            */}
+      {/* ======================================================== */}
+      {modalCarrinhoEmergencia.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-red-500/20 my-auto">
+            <div className="bg-red-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Ambulance size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Verificação do Carrinho de Emergência</h2>
+              </div>
+              <button onClick={() => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-5 overflow-y-auto max-h-[70vh]">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Verificação</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalCarrinhoEmergencia.horario ? modalCarrinhoEmergencia.horario.split(':')[0] : "00"} onChange={(e) => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, horario: `${e.target.value}:${modalCarrinhoEmergencia.horario ? modalCarrinhoEmergencia.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalCarrinhoEmergencia.horario ? modalCarrinhoEmergencia.horario.split(':')[1] : "00"} onChange={(e) => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, horario: `${modalCarrinhoEmergencia.horario ? modalCarrinhoEmergencia.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* LACRE DO CARRINHO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">🔒 Nº do Lacre do Carrinho</label>
+                <input type="text" placeholder="Ex: 001234"
+                  value={modalCarrinhoEmergencia.lacreCarrinho}
+                  onChange={(e) => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, lacreCarrinho: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 text-sm"
+                />
+              </div>
+
+              {/* LACRE DA CAIXA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">🔒 Nº do Lacre da Caixa</label>
+                <input type="text" placeholder="Ex: 005678"
+                  value={modalCarrinhoEmergencia.lacreCaixa}
+                  onChange={(e) => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, lacreCaixa: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 text-sm"
+                />
+              </div>
+
+              {/* LARINGOSCÓPIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">🔦 Laringoscópio</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Funcionante', 'Não funcionante'].map(r => (
+                    <button key={r} onClick={() => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, laringoscopio: r })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCarrinhoEmergencia.laringoscopio === r ? (r === 'Funcionante' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>
+                      {r === 'Funcionante' ? '✅ Funcionante' : '❌ Não funcionante'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* CARDIOVERSOR */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">⚡ Cardioversor</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Funcionante', 'Não funcionante'].map(r => (
+                    <button key={r} onClick={() => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, cardioversor: r })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCarrinhoEmergencia.cardioversor === r ? (r === 'Funcionante' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>
+                      {r === 'Funcionante' ? '✅ Funcionante' : '❌ Não funcionante'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* GEL CONDUTOR */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">🧴 Gel Condutor</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Sim', 'Não'].map(r => (
+                    <button key={r} onClick={() => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, gelCondutor: r })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCarrinhoEmergencia.gelCondutor === r ? (r === 'Sim' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>
+                      {r === 'Sim' ? '✅ Sim' : '❌ Não'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* TÁBUA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">🪵 Tábua</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Sim', 'Não'].map(r => (
+                    <button key={r} onClick={() => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, tabua: r })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCarrinhoEmergencia.tabua === r ? (r === 'Sim' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>
+                      {r === 'Sim' ? '✅ Sim' : '❌ Não'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalCarrinhoEmergencia({ ...modalCarrinhoEmergencia, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalCarrinhoEmergencia.horario} onClick={salvarCarrinhoEmergencia} className="flex-1 py-4 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><Ambulance size={18} /> Salvar Verificação</button>
               </div>
             </div>
           </div>
