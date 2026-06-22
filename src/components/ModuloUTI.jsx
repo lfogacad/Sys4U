@@ -242,6 +242,11 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   });
   const [salvandoCarrinho, setSalvandoCarrinho] = useState(false);
 
+  const [listaCarrinhoEMG, setListaCarrinhoEMG] = useState([]);
+  const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
+  const [loadingCarrinhoEMG, setLoadingCarrinhoEMG] = useState(false);
+  const [modalDetalheCarrinho, setModalDetalheCarrinho] = useState({ isOpen: false, dia: '', registros: [] });
+
   // Guarda os pacientes internados para o modal de eventos cruzar os dados
   const [listaCenso, setListaCenso] = useState([]);
 
@@ -701,6 +706,37 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       carregarEventos();
     }
   }, [viewMode]);
+
+  // Sincroniza Carrinho de EMG (por mês selecionado)
+  useEffect(() => {
+    if (!db || !mesFiltroCarrinhoEMG) return;
+    
+    const fetchCarrinhoEMG = async () => {
+      setLoadingCarrinhoEMG(true);
+      try {
+        const [ano, mes] = mesFiltroCarrinhoEMG.split('-');
+        const primeiroDia = `${mesFiltroCarrinhoEMG}-01`;
+        const ultimoDia = new Date(Number(ano), Number(mes), 0);
+        const ultimoDiaStr = `${mesFiltroCarrinhoEMG}-${String(ultimoDia.getDate()).padStart(2, '0')}`;
+        
+        const q = query(
+          collection(db, "carrinho_emg"),
+          where("data", ">=", primeiroDia),
+          where("data", "<=", ultimoDiaStr)
+        );
+        
+        const snapshot = await getDocs(q);
+        const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setListaCarrinhoEMG(dados);
+      } catch (error) {
+        console.error("Erro ao buscar carrinho_emg:", error);
+      } finally {
+        setLoadingCarrinhoEMG(false);
+      }
+    };
+    
+    fetchCarrinhoEMG();
+  }, [mesFiltroCarrinhoEMG, db]);
 
   // ==============================================================
   // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" das 07h00)

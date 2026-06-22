@@ -7,7 +7,7 @@ import {
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
-  FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck
+  FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -49,6 +49,11 @@ const GestorDashboard = ({ userProfile }) => {
   const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
   const [extraTurno, setExtraTurno] = useState('DN');
   const [extraNome, setExtraNome] = useState('');
+
+  const [listaCarrinhoEMG, setListaCarrinhoEMG] = useState([]);
+  const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
+  const [loadingCarrinhoEMG, setLoadingCarrinhoEMG] = useState(false);
+  const [modalDetalheCarrinho, setModalDetalheCarrinho] = useState({ isOpen: false, dia: '', registros: [] });
 
   // Variáveis para o Módulo de IRAS (CCIH)
   const [formDDD, setFormDDD] = useState({ mes: new Date().toISOString().slice(0,7), atb: '', gramas: '' });
@@ -330,6 +335,37 @@ const GestorDashboard = ({ userProfile }) => {
     // Quando o senhor trocar de tela, ele desliga o radar para economizar memória e internet
     return () => unsubscribe();
   }, []);
+
+  // Sincroniza Carrinho de EMG (por mês selecionado)
+  useEffect(() => {
+    if (!db || !mesFiltroCarrinhoEMG) return;
+    
+    const fetchCarrinhoEMG = async () => {
+      setLoadingCarrinhoEMG(true);
+      try {
+        const [ano, mes] = mesFiltroCarrinhoEMG.split('-');
+        const primeiroDia = `${mesFiltroCarrinhoEMG}-01`;
+        const ultimoDia = new Date(Number(ano), Number(mes), 0);
+        const ultimoDiaStr = `${mesFiltroCarrinhoEMG}-${String(ultimoDia.getDate()).padStart(2, '0')}`;
+        
+        const q = query(
+          collection(db, "carrinho_emg"),
+          where("data", ">=", primeiroDia),
+          where("data", "<=", ultimoDiaStr)
+        );
+        
+        const snapshot = await getDocs(q);
+        const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setListaCarrinhoEMG(dados);
+      } catch (error) {
+        console.error("Erro ao buscar carrinho_emg:", error);
+      } finally {
+        setLoadingCarrinhoEMG(false);
+      }
+    };
+    
+    fetchCarrinhoEMG();
+  }, [mesFiltroCarrinhoEMG, db]);
 
   // BUSCA DADOS DE ESCALAS (ATIVOS E HISTÓRICO COM FILTRO DE DATA)
   useEffect(() => {
@@ -5649,6 +5685,15 @@ const GestorDashboard = ({ userProfile }) => {
             Checklist CVC
           </button>
 
+          {/* 💡 NOVA ABA: CARRINHO EMG */}
+          <button 
+            onClick={() => setAbaRiscoAtiva('carrinhoEMG')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'carrinhoEMG' ? 'border-amber-600 text-amber-700 bg-amber-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Ambulance size={18} />
+            Carrinho EMG
+          </button>
+
           {/* 💡 A NOVA ABA: CAIXA PRETA / AUDITORIA */}
           <button 
             onClick={() => setAbaRiscoAtiva('auditoria')}
@@ -5932,15 +5977,6 @@ const GestorDashboard = ({ userProfile }) => {
         )}
 
         {/* ============================================================== */}
-        {/* 💡 AQUI ENTRA A NOSSA NOVA ABA DA CAIXA PRETA / AUDITORIA      */}
-        {/* ============================================================== */}
-        {abaRiscoAtiva === 'auditoria' && (
-          <div className="animate-fadeIn">
-             <PainelAuditoriaTab />
-          </div>
-        )}
-
-        {/* ============================================================== */}
         {/* ABA: CHECKLIST CVC                                              */}
         {/* ============================================================== */}
         {abaRiscoAtiva === 'checklistCVC' && (
@@ -6079,6 +6115,152 @@ const GestorDashboard = ({ userProfile }) => {
 
           </div>
         )}
+
+        {/* ============================================================== */}
+        {/* ABA: CARRINHO EMG                                               */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'carrinhoEMG' && (
+          <div className="animate-fadeIn">
+            {/* CABEÇALHO */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Ambulance className="text-amber-600" /> Check-list Carrinho de Emergência
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Monitoramento da verificação diária do carrinho de emergência da UTI.</p>
+                </div>
+                <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <span className="text-xs font-bold text-slate-600 uppercase">Mês:</span>
+                  <input 
+                    type="month" 
+                    value={mesFiltroCarrinhoEMG} 
+                    onChange={(e) => setMesFiltroCarrinhoEMG(e.target.value)}
+                    className="bg-white border border-slate-200 p-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-amber-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* KPIs */}
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Dias com checklist</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">{listaCarrinhoEMG.filter((v,i,a) => a.findIndex(r => r.data === v.data) === i).length}</div>
+              </div>
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Total verificações</span>
+                <div className="text-2xl font-black text-amber-600 mt-1">{listaCarrinhoEMG.length}</div>
+              </div>
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Dias no mês</span>
+                <div className="text-2xl font-black text-slate-600 mt-1">
+                  {new Date(Number(mesFiltroCarrinhoEMG.split('-')[0]), Number(mesFiltroCarrinhoEMG.split('-')[1]), 0).getDate()}
+                </div>
+              </div>
+            </div>
+
+            {/* CALENDÁRIO */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              {loadingCarrinhoEMG ? (
+                <div className="text-center py-12 text-slate-400">
+                  <span className="animate-spin inline-block">⏳</span> Carregando...
+                </div>
+              ) : (
+                <>
+                  {/* Legenda */}
+                  <div className="flex items-center gap-4 mb-4 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></div>
+                      <span className="text-slate-500 font-medium">Checklist realizado</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded bg-slate-100 border border-slate-200"></div>
+                      <span className="text-slate-500 font-medium">Não realizado</span>
+                    </div>
+                  </div>
+
+                  {/* Grid do Calendário */}
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {/* Cabeçalho dos dias da semana */}
+                    {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+                      <div key={d} className="text-center text-[10px] font-bold text-slate-400 uppercase py-2">{d}</div>
+                    ))}
+
+                    {/* Dias em branco antes do dia 1 */}
+                    {(() => {
+                      const [ano, mes] = mesFiltroCarrinhoEMG.split('-').map(Number);
+                      const primeiroDiaSemana = new Date(ano, mes - 1, 1).getDay();
+                      return Array.from({ length: primeiroDiaSemana }, (_, i) => (
+                        <div key={`blank-${i}`} />
+                      ));
+                    })()}
+
+                    {/* Dias do mês */}
+                    {(() => {
+                      const [ano, mes] = mesFiltroCarrinhoEMG.split('-').map(Number);
+                      const diasNoMes = new Date(ano, mes, 0).getDate();
+                      
+                      return Array.from({ length: diasNoMes }, (_, i) => {
+                        const dia = i + 1;
+                        const diaStr = `${mesFiltroCarrinhoEMG}-${String(dia).padStart(2, '0')}`;
+                        const registrosHoje = listaCarrinhoEMG.filter(r => r.data === diaStr);
+                        const temRegistro = registrosHoje.length > 0;
+                        const isFuture = new Date(diaStr) > new Date();
+
+                        return (
+                          <button
+                            key={dia}
+                            onClick={() => {
+                              if (temRegistro) {
+                                setModalDetalheCarrinho({ isOpen: true, dia: diaStr, registros: registrosHoje });
+                              }
+                            }}
+                            disabled={isFuture || !temRegistro}
+                            className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center transition-all
+                              ${temRegistro 
+                                ? 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100 cursor-pointer' 
+                                : isFuture
+                                  ? 'bg-white border-slate-100 text-slate-200 cursor-default'
+                                  : 'bg-slate-50 border-slate-200 text-slate-400 cursor-default'
+                              }`}
+                          >
+                            <span className={`text-sm font-black ${temRegistro ? 'text-emerald-700' : isFuture ? 'text-slate-200' : 'text-slate-400'}`}>
+                              {dia}
+                            </span>
+                            {temRegistro && (
+                              <div className="flex gap-0.5 mt-0.5">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+
+                  {/* Mensagem vazia */}
+                  {listaCarrinhoEMG.length === 0 && (
+                    <div className="text-center py-6 text-slate-400 italic text-xs mt-4 border-t border-slate-100 pt-4">
+                      <Ambulance size={24} className="mx-auto mb-1 text-slate-300" />
+                      Nenhuma verificação registrada neste mês.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* 💡 AQUI ENTRA A NOSSA NOVA ABA DA CAIXA PRETA / AUDITORIA      */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'auditoria' && (
+          <div className="animate-fadeIn">
+             <PainelAuditoriaTab />
+          </div>
+        )}
+
 
         {/* ============================================================== */}
         {/* MODAL DE INVESTIGAÇÃO DE CAUSA RAIZ (CCIH/RT)                  */}
@@ -6243,6 +6425,76 @@ const GestorDashboard = ({ userProfile }) => {
             </div>
           </div>
         )}
+
+      {/* ======================================================== */}
+      {/* MODAL: DETALHES DO CARRINHO EMG POR DIA                  */}
+      {/* ======================================================== */}
+      {modalDetalheCarrinho.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-amber-500/20 my-auto">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Ambulance size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">
+                  Verificações de {new Date(modalDetalheCarrinho.dia + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}
+                </h2>
+              </div>
+              <button onClick={() => setModalDetalheCarrinho({ ...modalDetalheCarrinho, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              {modalDetalheCarrinho.registros.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 italic">Nenhum registro para esta data.</div>
+              ) : (
+                modalDetalheCarrinho.registros.map((reg, idx) => (
+                  <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    {/* Cabeçalho do registro */}
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                      <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                        🕐 {reg.horario}
+                      </span>
+                      <span className="text-xs font-bold text-slate-600">
+                        👤 {reg.preenchidoPor || 'Não identificado'}
+                      </span>
+                    </div>
+
+                    {/* Itens do checklist */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className={`p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${reg.laringoscopio === 'Funcionante' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                        🔦 Laringoscópio: {reg.laringoscopio === 'Funcionante' ? '✅' : '❌'}
+                      </div>
+                      <div className={`p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${reg.cardioversor === 'Funcionante' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                        ⚡ Cardioversor: {reg.cardioversor === 'Funcionante' ? '✅' : '❌'}
+                      </div>
+                      <div className={`p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${reg.gelCondutor === 'Sim' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                        🧴 Gel Condutor: {reg.gelCondutor === 'Sim' ? '✅' : '❌'}
+                      </div>
+                      <div className={`p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${reg.tabua === 'Sim' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                        🪵 Tábua: {reg.tabua === 'Sim' ? '✅' : '❌'}
+                      </div>
+                    </div>
+
+                    {/* Lacres */}
+                    <div className="flex gap-2 text-[10px] text-slate-500 bg-white rounded-lg p-2 border border-slate-100">
+                      <span className="font-bold">🔒 Lacre Carrinho:</span> {reg.lacreCarrinho || '—'}
+                      <span className="text-slate-200 mx-1">|</span>
+                      <span className="font-bold">🔒 Lacre Caixa:</span> {reg.lacreCaixa || '—'}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              <div className="pt-3">
+                <button onClick={() => setModalDetalheCarrinho({ ...modalDetalheCarrinho, isOpen: false })} className="w-full py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
 
         {/* ============================================================== */}
         {/* MODAL DE AUDITORIA DA ESCALA ESPECÍFICA                        */}
