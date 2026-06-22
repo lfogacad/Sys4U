@@ -59,7 +59,7 @@ export const EXAM_ROWS = [
   });
   export const BH_GAINS = [
     "Dieta Oral",
-    "Dieta SNE",
+    "Dieta SNE/GTT",
     "Água (VO/SNE)",
     "Soro Basal",
     "Diluição EV",

@@ -572,7 +572,7 @@ const salvarFralda = () => {
 
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
   const LIMITS = {
-    gains: { "Dieta SNE": { min: 0, max: 120 }, "Água": { min: 0, max: 999 }, "Soro basal": { min: 0, max: 500 }, "Diluição EV": { min: 0, max: 500 }, "Volume": { min: 0, max: 1000 }, "Midazolan": { min: 0, max: 100 }, "Fentanil": { min: 0, max: 100 }, "Noradrenalina": { min: 0, max: 100 }, "Dobutamina": { min: 0, max: 100 }, "Hemocomponentes": { min: 0, max: 500 } },
+    gains: { "Dieta SNE/GTT": { min: 0, max: 900 }, "Água": { min: 0, max: 999 }, "Soro basal": { min: 0, max: 500 }, "Diluição EV": { min: 0, max: 500 }, "Volume": { min: 0, max: 1000 }, "Midazolan": { min: 0, max: 100 }, "Fentanil": { min: 0, max: 100 }, "Noradrenalina": { min: 0, max: 100 }, "Dobutamina": { min: 0, max: 100 }, "Hemocomponentes": { min: 0, max: 500 } },
     losses: { "Diurese": { min: 0, max: 2000 }, "Drenos": { min: 0, max: 5000 }, "SNG/SNE": { min: 0, max: 999 }, "HD": { min: 0, max: 9999 } },
     vitals: { "Temp (ºC)": { min: 20, max: 45 }, "FC (bpm)": { min: 0, max: 350 }, "FR (irpm)": { min: 0, max: 99 }, "PAS": { min: 0, max: 300 }, "PAD": { min: 0, max: 200 }, "PAM": { min: 0, max: 250 }, "SpO2 (%)": { min: 0, max: 100 }, "HGT (mg/dL)": { min: 0, max: 600 } }
   };

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, 
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
 Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast,
-CheckCircle2, Printer } from 'lucide-react';
+CheckCircle2, Printer, BriefcaseMedical } from 'lucide-react';
 import { ESCALA_DOR, PRECAUCOES, CARACTERISTICAS_DIURESE } from '../../constants/clinicalLists';
 import ModalChecklistEnfermagem from '../../components/modals/ModalChecklistEnfermagem';
 
@@ -1235,7 +1235,7 @@ return (
                   </button>
 
                   <button onClick={() => handleAcaoEnfermagem('Manutenção CVC')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
-                    <Syringe size={20} className="text-slate-400" />
+                    <BriefcaseMedical size={20} className="text-slate-400" />
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Manutenção<br/>CVC</span>
                   </button>
 
@@ -1245,7 +1245,7 @@ return (
                   </button>
 
                   <button onClick={() => handleAcaoEnfermagem('Manutenção SVD')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
-                    <Droplets size={20} className="text-slate-400" />
+                    <BriefcaseMedical size={20} className="text-slate-400" />
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Manutenção<br/>SVD</span>
                   </button>
 
