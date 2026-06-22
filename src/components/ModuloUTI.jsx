@@ -246,6 +246,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
   const [loadingCarrinhoEMG, setLoadingCarrinhoEMG] = useState(false);
   const [modalDetalheCarrinho, setModalDetalheCarrinho] = useState({ isOpen: false, dia: '', registros: [] });
+  const [temCarrinhoEMGHoje, setTemCarrinhoEMGHoje] = useState(false);
 
   // Guarda os pacientes internados para o modal de eventos cruzar os dados
   const [listaCenso, setListaCenso] = useState([]);
@@ -737,6 +738,27 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     
     fetchCarrinhoEMG();
   }, [mesFiltroCarrinhoEMG, db]);
+
+  // Verifica se há carrinho EMG preenchido hoje (para bloquear evolução IA)
+  useEffect(() => {
+    if (!db) return;
+    const hoje = new Date().toISOString().split('T')[0];
+    const checkCarrinhoHoje = async () => {
+      try {
+        const snapshot = await getDocs(
+          query(
+            collection(db, "carrinho_emg"),
+            where("data", "==", hoje)
+          )
+        );
+        setTemCarrinhoEMGHoje(snapshot.docs.length > 0);
+      } catch (e) {
+        console.warn("Erro ao verificar carrinho EMG:", e);
+        setTemCarrinhoEMGHoje(true); // Se falhar, libera (não bloquear)
+      }
+    };
+    checkCarrinhoHoje();
+  }, [db, currentPatient?.nome]); // Recarrega se mudar de paciente
 
   // ==============================================================
   // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" das 07h00)
@@ -4542,6 +4564,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       isNursingRole={isNursingRole}
                       isGeneratingNursingAI={isGeneratingNursingAI}
                       handleViewNursingAdmission={handleViewNursingAdmission}
+                      temCarrinhoEMGHoje={temCarrinhoEMGHoje}
                     />
                   )}
                   {activeTab !== null && viewMode === "physio" && (

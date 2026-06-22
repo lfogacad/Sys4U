@@ -21,7 +21,8 @@ const NursingDashboard = ({
   registrarEventoAdverso,
   generateNursingAI_Evolution,
   isNursingRole,
-  isGeneratingNursingAI
+  isGeneratingNursingAI,
+  temCarrinhoEMGHoje = true
 }) => {
 
   const [showNursingChecklistModal, setShowNursingChecklistModal] = useState(false);
@@ -1804,9 +1805,9 @@ return (
               <button
                 type="button"
                 onClick={(e) => { e.preventDefault(); setShowNursingChecklistModal(true); }}
-                disabled={!isNursingRole || isGeneratingNursingAI}
+                disabled={!isNursingRole || isGeneratingNursingAI || !temCarrinhoEMGHoje}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden ${isGeneratingNursingAI ? "bg-slate-200 text-slate-500 cursor-not-allowed" : "bg-blue-100 text-blue-700 hover:bg-blue-200"} ${!isNursingRole ? "opacity-50 cursor-not-allowed" : ""}`}
-                title="Usar Inteligência Artificial para gerar evolução"
+                title={!temCarrinhoEMGHoje ? "⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução" : "Usar Inteligência Artificial para gerar evolução"}
               >
                 {isGeneratingNursingAI ? <><Loader2 className="animate-spin" size={14} /> Gerando...</> : <><BrainCircuit size={14} /> Evolução por IA</>}
               </button>
