@@ -3163,6 +3163,7 @@ const getBestGlasgowForSOFA = (p) => {
     }
 
     const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
+    r.leito = Number(activeTab) + 1;
     r.nome = admissionData.nome.trim().toUpperCase();
     r.sexo = admissionData.sexo || "";
     r.dataNascimento = admissionData.dataNascimento || "";
