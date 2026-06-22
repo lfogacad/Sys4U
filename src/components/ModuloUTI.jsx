@@ -1451,7 +1451,6 @@ const clearAntibiotic = (i) => {
     }
 
     const r = currentPatient.nome ? JSON.parse(JSON.stringify(currentPatient)) : defaultPatient(activeTab);
-    r.leito = Number(activeTab) + 1;
     
     // O CARIMBO ATÔMICO DE TEMPO
     if (!r.dataInternacaoISO) {
