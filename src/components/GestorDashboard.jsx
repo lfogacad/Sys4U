@@ -7,7 +7,7 @@ import {
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
-  FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon
+  FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
@@ -249,6 +249,9 @@ const GestorDashboard = ({ userProfile }) => {
   // ESTADOS DAS ESCALAS ASSISTENCIAIS (AUDITORIA)
   const [listaEscalas, setListaEscalas] = useState([]);
   const [modalEscala, setModalEscala] = useState(null);
+
+  const [mesFiltroCVC, setMesFiltroCVC] = useState(new Date().toISOString().slice(0, 7));
+  const [acessosMesCVC, setAcessosMesCVC] = useState(null);
 
   // =========================================================
   // 2. EFEITOS (useEffect) - OS SINCRONIZADORES (DADOS BRUTOS)
@@ -5580,6 +5583,32 @@ const GestorDashboard = ({ userProfile }) => {
       return a.dia.localeCompare(b.dia);
     });
 
+    // ==========================================
+    // CÁLCULOS DA ABA CHECKLIST CVC
+    // ==========================================
+    const calcularMetricasCVC = (mesReferencia) => {
+      // Junta pacientes ativos + histórico
+      const todosPacientes = [...leitosConfig, ...listaHistorico];
+      let totalChecklists = 0;
+      let total100Porcento = 0;
+
+      todosPacientes.forEach(pac => {
+        const historico = pac.enfermagem?.historicoCVC || [];
+        historico.forEach(registro => {
+          if (registro.data && registro.data.startsWith(mesReferencia)) {
+            totalChecklists++;
+            if (registro.barreiras?.todasCumpridas) {
+              total100Porcento++;
+            }
+          }
+        });
+      });
+
+      return { totalChecklists, total100Porcento };
+    };
+
+    const metricasCVC = calcularMetricasCVC(mesFiltroCVC);
+
     return (
       <div className="animate-fadeIn">
         {/* CABEÇALHO */}
@@ -5611,6 +5640,15 @@ const GestorDashboard = ({ userProfile }) => {
             Escalas Assistenciais
           </button>
 
+          {/* 💡 NOVA ABA: CHECKLIST CVC */}
+          <button 
+            onClick={() => setAbaRiscoAtiva('checklistCVC')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'checklistCVC' ? 'border-sky-600 text-sky-700 bg-sky-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Syringe size={18} />
+            Checklist CVC
+          </button>
+
           {/* 💡 A NOVA ABA: CAIXA PRETA / AUDITORIA */}
           <button 
             onClick={() => setAbaRiscoAtiva('auditoria')}
@@ -5619,6 +5657,7 @@ const GestorDashboard = ({ userProfile }) => {
             <ShieldAlert size={18} />
             Caixa Preta (Auditoria)
           </button>
+
         </div>
 
         {/* ============================================================== */}
@@ -5898,6 +5937,157 @@ const GestorDashboard = ({ userProfile }) => {
         {abaRiscoAtiva === 'auditoria' && (
           <div className="animate-fadeIn">
              <PainelAuditoriaTab />
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* ABA: CHECKLIST CVC                                              */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'checklistCVC' && (
+          <div className="animate-fadeIn">
+            {/* CABEÇALHO COM FILTRO DE MÊS */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Syringe className="text-sky-600" /> Checklist de Inserção CVC
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Monitoramento de conformidade dos checklists de inserção de CVC/PICC/Shiley.</p>
+                </div>
+                <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <span className="text-xs font-bold text-slate-600 uppercase">Mês:</span>
+                  <input 
+                    type="month" 
+                    value={mesFiltroCVC} 
+                    onChange={(e) => setMesFiltroCVC(e.target.value)}
+                    className="bg-white border border-slate-200 p-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-sky-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* CARDS DE MÉTRICAS */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              
+              {/* Card 1: Acessos Realizados (Editável Manualmente) */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-sky-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-sky-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-sky-600 uppercase tracking-wider flex items-center gap-1">
+                    <Syringe size={14} /> Acessos Realizados
+                  </span>
+                  <div className="flex items-center gap-3 mt-3">
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={acessosMesCVC !== null ? acessosMesCVC : metricasCVC.totalChecklists}
+                      onChange={(e) => setAcessosMesCVC(Number(e.target.value))}
+                      className="w-24 p-2 text-2xl font-black text-sky-700 bg-sky-50 border-2 border-sky-200 rounded-xl outline-none focus:border-sky-500 text-center"
+                    />
+                    <span className="text-xs text-slate-400 font-medium">
+                      Total de acessos<br/>no mês
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2 italic">* Campo editável — insira o total real de acessos do mês</p>
+                </div>
+              </div>
+
+              {/* Card 2: Checklists Preenchidos (Automático) */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1">
+                    <ClipboardList size={14} /> Checklists Preenchidos
+                  </span>
+                  <div className="text-4xl font-black text-blue-700 mt-3">
+                    {metricasCVC.totalChecklists}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {metricasCVC.totalChecklists === 1 ? '1 checklist' : `${metricasCVC.totalChecklists} checklists`} registrados no mês
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 3: 100% das Barreiras (Automático) */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
+                    <ShieldCheck size={14} /> 100% das Barreiras
+                  </span>
+                  <div className="flex items-end gap-3 mt-3">
+                    <span className="text-4xl font-black text-emerald-700">{metricasCVC.total100Porcento}</span>
+                    {metricasCVC.totalChecklists > 0 && (
+                      <span className="text-lg font-bold text-emerald-500 mb-1">
+                        ({Math.round((metricasCVC.total100Porcento / metricasCVC.totalChecklists) * 100)}%)
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${metricasCVC.totalChecklists > 0 ? (metricasCVC.total100Porcento / metricasCVC.totalChecklists) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {metricasCVC.totalChecklists > 0 
+                      ? `${metricasCVC.total100Porcento} de ${metricasCVC.totalChecklists} checklists cumpriram todos os critérios`
+                      : 'Nenhum checklist registrado no período'}
+                  </p>
+                </div>
+              </div>
+
+            </div>
+
+            {/* TAXA DE CONFORMIDADE */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <BarChart2 size={16} className="text-sky-500" /> Taxa de Conformidade
+              </h4>
+              
+              {metricasCVC.totalChecklists > 0 ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-xs font-bold text-slate-600">Barreiras Cumpridas</span>
+                        <span className="text-xs font-bold text-emerald-600">{Math.round((metricasCVC.total100Porcento / metricasCVC.totalChecklists) * 100)}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
+                        <div 
+                          className="bg-gradient-to-r from-sky-400 to-emerald-500 h-4 rounded-full transition-all duration-700"
+                          style={{ width: `${(metricasCVC.total100Porcento / metricasCVC.totalChecklists) * 100}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {acessosMesCVC > 0 && (
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="flex justify-between mb-1">
+                          <span className="text-xs font-bold text-slate-600">Cobertura (Checklists ÷ Acessos)</span>
+                          <span className="text-xs font-bold text-blue-600">{Math.round((metricasCVC.totalChecklists / acessosMesCVC) * 100)}%</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
+                          <div 
+                            className="bg-gradient-to-r from-blue-400 to-indigo-500 h-4 rounded-full transition-all duration-700"
+                            style={{ width: `${Math.min((metricasCVC.totalChecklists / acessosMesCVC) * 100, 100)}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">{metricasCVC.totalChecklists} checklists de {acessosMesCVC} acessos realizados</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400 italic">
+                  <ClipboardList size={32} className="mx-auto mb-2 text-slate-300" />
+                  Nenhum checklist de CVC registrado em {new Date(mesFiltroCVC + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}.
+                </div>
+              )}
+            </div>
+
           </div>
         )}
 
