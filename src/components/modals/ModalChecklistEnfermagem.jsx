@@ -206,6 +206,36 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       handleBlurSave(`Enfermagem: Checklist Diário (${auditMessages.join(', ')})`);
     }
 
+    // === BLOQUEIO POR MANUTENÇÃO PENDENTE (DEPOIS DE SALVAR DISPOSITIVOS) ===
+    const hoje = today; // já é a data ISO
+    const enf = currentPatient.enfermagem || {};
+    const pendentes = [];
+
+    // CVC: tem inserção, NÃO foi retirada agora, sem manutenção hoje
+    if (enf.cvcData && initialCvc && cvcActive) {
+      const temManut = (enf.historicoManutencaoCVC || []).some(m => m.data === hoje);
+      if (!temManut) pendentes.push('CVC');
+    }
+
+    // Shiley: tem inserção, NÃO foi retirada agora, sem manutenção hoje
+    if (enf.shileyData && initialShiley && shileyActive) {
+      const temManut = (enf.historicoManutencaoShiley || []).some(m => m.data === hoje);
+      if (!temManut) pendentes.push('Shiley');
+    }
+
+    // SVD: tem inserção, NÃO foi retirada agora, sem manutenção hoje
+    if (enf.svdData && initialSvd && svdActive) {
+      const temManut = (enf.historicoManutencaoSVD || []).some(m => m.data === hoje);
+      if (!temManut) pendentes.push('SVD');
+    }
+
+    if (pendentes.length > 0) {
+      alert(`⚠️ Manutenção pendente!\n\nO paciente possui dispositivos sem manutenção registrada hoje:\n${pendentes.map(d => `  • ${d}`).join('\n')}\n\nPreencha a manutenção diária ANTES de gerar a evolução.`);
+      onClose();
+      return; // ⛔ NÃO chama onGenerateAI
+    }
+    // ==========================================
+
     onGenerateAI();
     onClose();
   };

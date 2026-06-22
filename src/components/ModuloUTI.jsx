@@ -2783,6 +2783,7 @@ ${condutas}`;
 const generateNursingAI_Evolution = async () => {
     if (!currentPatient) return;
     if (isGeneratingNursingAI) return;
+    
     if (!window.confirm("A Inteligência Artificial irá escrever a evolução baseada nos dados clínicos. Isso apagará o texto existente. Continuar?")) return;
 
     setIsGeneratingNursingAI(true);

@@ -71,6 +71,7 @@ const NursingDashboard = ({
     isOpen: false,
     horario: '',
     trocaCurativo: false,
+    motivoTipo: '',
     motivoInfecao: '',
     motivoObstrucao: '',
     motivoTermino: '',
@@ -185,6 +186,41 @@ const NursingDashboard = ({
     oxigenacaoPre: '',
     intercorrencias: ''
   });
+
+  // === PULSADOR PARA MANUTENÇÃO ===
+  const pulseRedStyle = document.createElement('style');
+  pulseRedStyle.textContent = `
+    @keyframes pulse-soft-red {
+      0%, 100% { background-color: #fecaca; border-color: #fca5a5; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      50% { background-color: #fca5a5; border-color: #ef4444; box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    }
+    .pulse-manutencao {
+      animation: pulse-soft-red 1.5s ease-in-out infinite;
+    }
+  `;
+  document.head.appendChild(pulseRedStyle);
+
+  const precisaManutencaoHoje = (dataInsercao, historicoManutencao) => {
+    if (!dataInsercao) return false;
+    const hoje = new Date().toISOString().split('T')[0];
+    const temManutencaoHoje = historicoManutencao?.some(m => m.data === hoje);
+    return !temManutencaoHoje;
+  };
+
+  const svdPrecisaManut = precisaManutencaoHoje(
+    currentPatient?.enfermagem?.svdData,
+    currentPatient?.enfermagem?.historicoManutencaoSVD
+  );
+
+  const cvcPrecisaManut = precisaManutencaoHoje(
+    currentPatient?.enfermagem?.cvcData,
+    currentPatient?.enfermagem?.historicoManutencaoCVC
+  );
+
+  const shileyPrecisaManut = precisaManutencaoHoje(
+    currentPatient?.enfermagem?.shileyData,
+    currentPatient?.enfermagem?.historicoManutencaoShiley
+  );
 
   // Placeholders para botões de Ação (Modais serão criados em seguida)
   const handleAcaoEnfermagem = (tipo) => {
@@ -1234,9 +1270,13 @@ return (
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Inserção<br/>CVC</span>
                   </button>
 
-                  <button onClick={() => handleAcaoEnfermagem('Manutenção CVC')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
-                    <BriefcaseMedical size={20} className="text-slate-400" />
-                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Manutenção<br/>CVC</span>
+                  <button onClick={() => handleAcaoEnfermagem('Manutenção CVC')} className={`flex flex-col items-center justify-center gap-1.5 p-3 border rounded-xl transition-all ${
+                    cvcPrecisaManut
+                      ? 'pulse-manutencao bg-red-100 border-red-300 text-red-700'
+                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
+                  }`}>
+                    <BriefcaseMedical size={20} className={`${cvcPrecisaManut ? 'text-red-600' : 'text-slate-400'}`} />
+                    <span className="text-[10px] font-bold uppercase leading-tight text-center">Manutenção<br/>CVC</span>
                   </button>
 
                   <button onClick={() => handleAcaoEnfermagem('SVD')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
@@ -1244,9 +1284,13 @@ return (
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Inserção SVD</span>
                   </button>
 
-                  <button onClick={() => handleAcaoEnfermagem('Manutenção SVD')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
-                    <BriefcaseMedical size={20} className="text-slate-400" />
-                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Manutenção<br/>SVD</span>
+                  <button onClick={() => handleAcaoEnfermagem('Manutenção SVD')} className={`flex flex-col items-center justify-center gap-1.5 p-3 border rounded-xl transition-all ${
+                    svdPrecisaManut
+                      ? 'pulse-manutencao bg-red-100 border-red-300 text-red-700'
+                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
+                  }`}>
+                    <BriefcaseMedical size={20} className={`${svdPrecisaManut ? 'text-red-600' : 'text-slate-400'}`} />
+                    <span className="text-[10px] font-bold uppercase leading-tight text-center">Manutenção<br/>SVD</span>
                   </button>
 
                   <button onClick={() => handleAcaoEnfermagem('Carrinho de EMG')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
@@ -2177,64 +2221,75 @@ return (
                 </div>
               </div>
 
-              {/* DIVISÓRIA */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-slate-200"></div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Motivo da Manutenção / Retirada</span>
-                <div className="flex-1 h-px bg-slate-200"></div>
-              </div>
-
-              {/* SUSPEITA DE INFECÇÃO */}
+              {/* TIPO: MANUTENÇÃO OU RETIRADA */}
               <div>
-                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Suspeita de Infecção</label>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Registro</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {['Sim', 'Não'].map(r => (
-                    <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoInfecao: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoInfecao === r ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>{r === 'Sim' ? '⚠️ Sim' : '✅ Não'}</button>
-                  ))}
+                  <button onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoTipo: 'Manutenção' })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoTipo === 'Manutenção' ? 'border-sky-500 bg-sky-50 text-sky-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200'}`}>
+                    🔧 Manutenção
+                  </button>
+                  <button onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoTipo: 'Retirada' })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoTipo === 'Retirada' ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>
+                    🚫 Motivo da Retirada
+                  </button>
                 </div>
               </div>
 
-              {/* OBSTRUÇÃO */}
-              <div>
-                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Obstrução</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {['Sim', 'Não'].map(r => (
-                    <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoObstrucao: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoObstrucao === r ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'}`}>{r === 'Sim' ? '🔴 Sim' : '✅ Não'}</button>
-                  ))}
-                </div>
-              </div>
+              {/* ===== CAMPOS QUE SÓ APARECEM SE FOR "RETIRADA" ===== */}
+              {modalManutencaoCVC.motivoTipo === 'Retirada' && (
+                <>
+                  {/* SUSPEITA DE INFECÇÃO */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Suspeita de Infecção</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Sim', 'Não'].map(r => (
+                        <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoInfecao: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoInfecao === r ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>{r === 'Sim' ? '⚠️ Sim' : '✅ Não'}</button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* TÉRMINO DA TERAPIA IV */}
-              <div>
-                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Término da Terapia IV</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {['Sim', 'Não'].map(r => (
-                    <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoTermino: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoTermino === r ? 'border-green-500 bg-green-50 text-green-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-green-200'}`}>{r === 'Sim' ? '✅ Sim' : '— Não'}</button>
-                  ))}
-                </div>
-              </div>
+                  {/* OBSTRUÇÃO */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Obstrução</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Sim', 'Não'].map(r => (
+                        <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoObstrucao: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoObstrucao === r ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'}`}>{r === 'Sim' ? '🔴 Sim' : '✅ Não'}</button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* ÓBITO */}
-              <div>
-                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Óbito</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {['Sim', 'Não'].map(r => (
-                    <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoObito: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoObito === r ? 'border-gray-700 bg-gray-100 text-gray-800 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-gray-300'}`}>{r === 'Sim' ? '⚫ Sim' : '— Não'}</button>
-                  ))}
-                </div>
-              </div>
+                  {/* TÉRMINO DA TERAPIA IV */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Término da Terapia IV</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Sim', 'Não'].map(r => (
+                        <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoTermino: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoTermino === r ? 'border-green-500 bg-green-50 text-green-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-green-200'}`}>{r === 'Sim' ? '✅ Sim' : '— Não'}</button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* OUTROS */}
-              <div>
-                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Outros Motivos</label>
-                <input 
-                  type="text" 
-                  placeholder="Descreva o motivo..."
-                  value={modalManutencaoCVC.motivoOutros}
-                  onChange={(e) => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoOutros: e.target.value })}
-                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 text-sm"
-                />
-              </div>
+                  {/* ÓBITO */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Óbito</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Sim', 'Não'].map(r => (
+                        <button key={r} onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoObito: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalManutencaoCVC.motivoObito === r ? 'border-gray-700 bg-gray-100 text-gray-800 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-gray-300'}`}>{r === 'Sim' ? '⚫ Sim' : '— Não'}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* OUTROS */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Outros Motivos</label>
+                    <input 
+                      type="text" 
+                      placeholder="Descreva o motivo..."
+                      value={modalManutencaoCVC.motivoOutros}
+                      onChange={(e) => setModalManutencaoCVC({ ...modalManutencaoCVC, motivoOutros: e.target.value })}
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 text-sm"
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
