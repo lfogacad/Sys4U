@@ -6039,51 +6039,40 @@ const GestorDashboard = ({ userProfile }) => {
 
             </div>
 
-            {/* TAXA DE CONFORMIDADE */}
+            {/* TAXA DE COBERTURA */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
               <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
-                <BarChart2 size={16} className="text-sky-500" /> Taxa de Conformidade
+                <BarChart2 size={16} className="text-sky-500" /> Taxa de Cobertura (Checklists × Acessos)
               </h4>
+              <p className="text-xs text-slate-500 mb-4">Relação entre checklists preenchidos e o total de acessos realizados no mês.</p>
               
-              {metricasCVC.totalChecklists > 0 ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <div className="flex justify-between mb-1">
-                        <span className="text-xs font-bold text-slate-600">Barreiras Cumpridas</span>
-                        <span className="text-xs font-bold text-emerald-600">{Math.round((metricasCVC.total100Porcento / metricasCVC.totalChecklists) * 100)}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
-                        <div 
-                          className="bg-gradient-to-r from-sky-400 to-emerald-500 h-4 rounded-full transition-all duration-700"
-                          style={{ width: `${(metricasCVC.total100Porcento / metricasCVC.totalChecklists) * 100}%` }}
-                        ></div>
-                      </div>
-                    </div>
+              {metricasCVC.totalChecklists > 0 && (acessosMesCVC ?? metricasCVC.totalChecklists) > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <span className="text-xs font-bold text-slate-600">Cobertura</span>
+                    <span className="text-2xl font-black text-blue-600">
+                      {Math.round((metricasCVC.totalChecklists / (acessosMesCVC ?? metricasCVC.totalChecklists)) * 100)}%
+                    </span>
                   </div>
-
-                  {acessosMesCVC > 0 && (
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1">
-                        <div className="flex justify-between mb-1">
-                          <span className="text-xs font-bold text-slate-600">Cobertura (Checklists ÷ Acessos)</span>
-                          <span className="text-xs font-bold text-blue-600">{Math.round((metricasCVC.totalChecklists / acessosMesCVC) * 100)}%</span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
-                          <div 
-                            className="bg-gradient-to-r from-blue-400 to-indigo-500 h-4 rounded-full transition-all duration-700"
-                            style={{ width: `${Math.min((metricasCVC.totalChecklists / acessosMesCVC) * 100, 100)}%` }}
-                          ></div>
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-1">{metricasCVC.totalChecklists} checklists de {acessosMesCVC} acessos realizados</p>
-                      </div>
-                    </div>
+                  <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden">
+                    <div 
+                      className="bg-gradient-to-r from-blue-400 to-indigo-500 h-5 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.min((metricasCVC.totalChecklists / (acessosMesCVC ?? metricasCVC.totalChecklists)) * 100, 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>{metricasCVC.totalChecklists} checklists preenchidos</span>
+                    <span>{(acessosMesCVC ?? metricasCVC.totalChecklists)} acessos realizados</span>
+                  </div>
+                  {(acessosMesCVC ?? metricasCVC.totalChecklists) > metricasCVC.totalChecklists && (
+                    <p className="text-[10px] text-amber-600 font-bold mt-2">
+                      ⚠️ {(acessosMesCVC ?? metricasCVC.totalChecklists) - metricasCVC.totalChecklists} acessos sem checklist registrado
+                    </p>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-8 text-slate-400 italic">
-                  <ClipboardList size={32} className="mx-auto mb-2 text-slate-300" />
-                  Nenhum checklist de CVC registrado em {new Date(mesFiltroCVC + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}.
+                <div className="text-center py-6 text-slate-400 italic text-xs">
+                  Aguardando dados de checklists e acessos do mês.
                 </div>
               )}
             </div>

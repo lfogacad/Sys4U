@@ -11,7 +11,7 @@ import {
   FolderInput, List, Copy, User, Search, ArrowLeft, X, PlusCircle,
   Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle,
   Loader2, ChevronRight, ChevronDown, Clock, RotateCcw, Filter,
-  CalendarX, UserPlus, LogOut, ArrowRightLeft
+  CalendarX, UserPlus, LogOut, ArrowRightLeft, Ambulance, Save
 } from "lucide-react";
 
 import {
@@ -159,7 +159,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [checkData, setCheckData] = useState({ estadoGeral: "REG", usaDva: false, dvas: [], usaSedacao: false, sedativos: [], rass: "", glasgow: "", atbs: "" });
 
   const [patients, setPatients] = useState(Array(11).fill(null).map((_, i) => defaultPatient(i)));
-  // 🔥 LISTA COMPLETA DE LEITOS (1 a 11)
+  
   const leitosDisponiveis = useMemo(() => {
     return ['1','2','3','4','5','6','7','8','9','10'];
   }, []);
@@ -229,6 +229,18 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     acoesImediatas: '',
     impactoPaciente: ''
   });
+
+  const [modalCarrinhoAberto, setModalCarrinhoAberto] = useState(false);
+  const [formCarrinho, setFormCarrinho] = useState({
+    horario: '',
+    lacreCarrinho: '',
+    lacreCaixa: '',
+    laringoscopio: '',
+    cardioversor: '',
+    gelCondutor: '',
+    tabua: ''
+  });
+  const [salvandoCarrinho, setSalvandoCarrinho] = useState(false);
 
   // Guarda os pacientes internados para o modal de eventos cruzar os dados
   const [listaCenso, setListaCenso] = useState([]);
@@ -690,7 +702,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     }
   }, [viewMode]);
 
-    // ==============================================================
+  // ==============================================================
   // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" das 07h00)
   // ==============================================================
   useEffect(() => {
@@ -1034,6 +1046,51 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       spo2: admissionVitals.spo2 || p.admissaoSpO2 || 95,
       isFallback: !hasAdmissionData
     };
+  };
+
+  const salvarCarrinhoEMG = async () => {
+    if (!formCarrinho.horario) {
+      alert('Selecione o horário da verificação.');
+      return;
+    }
+
+    setSalvandoCarrinho(true);
+
+    try {
+      const hoje = new Date().toISOString().split('T')[0];
+      const registro = {
+        data: hoje,
+        horario: formCarrinho.horario,
+        lacreCarrinho: formCarrinho.lacreCarrinho || '',
+        lacreCaixa: formCarrinho.lacreCaixa || '',
+        laringoscopio: formCarrinho.laringoscopio || '',
+        cardioversor: formCarrinho.cardioversor || '',
+        gelCondutor: formCarrinho.gelCondutor || '',
+        tabua: formCarrinho.tabua || '',
+        preenchidoPor: userProfile?.nome || 'Não identificado',
+        criadoEm: new Date()
+      };
+
+      await addDoc(collection(db, "carrinho_emg"), registro);
+
+      handleBlurSave(`Carrinho EMG: Verificação às ${formCarrinho.horario} por ${userProfile?.nome || 'N/I'}`);
+
+      setModalCarrinhoAberto(false);
+      setFormCarrinho({
+        horario: '',
+        lacreCarrinho: '',
+        lacreCaixa: '',
+        laringoscopio: '',
+        cardioversor: '',
+        gelCondutor: '',
+        tabua: ''
+      });
+    } catch (error) {
+      console.error("Erro ao salvar carrinho:", error);
+      alert('Erro ao salvar. Tente novamente.');
+    } finally {
+      setSalvandoCarrinho(false);
+    }
   };
 
 const clearAntibiotic = (i) => {
@@ -2479,7 +2536,7 @@ ${conduta}
   // ==========================================
   // IA DA ENFERMAGEM (PROMPT E API)
   // ==========================================
-  const buildNursingAIPrompt = (p) => {
+  const buildNursingAIPrompt = (p, registrosCarrinho = []) => {
     if (!p) return "";
 
     const safeNum = (val) => {
@@ -2737,9 +2794,8 @@ ${conduta}
       eventosRegistros.push(`- Acesso Periférico ${p.enfermagem.avpHorario} — ${p.enfermagem.avpLocal} (${p.enfermagem.avpCalibre || 'N/A'})`);
     }
 
-    // Carrinho de Emergência
-    const carrinhosHoje = filtrarHoje(p.enfermagem?.historicoCarrinhoEmergencia);
-    carrinhosHoje.forEach(car => {
+    // Carrinho de Emergência (da coleção carrinhos_emg)
+    registrosCarrinho.forEach(car => {
       const statusLaringo = car.laringoscopio === 'Funcionante' ? '✅' : '❌';
       const statusCardio = car.cardioversor === 'Funcionante' ? '✅' : '❌';
       const statusGel = car.gelCondutor === 'Sim' ? '✅' : '❌';
@@ -2820,9 +2876,23 @@ const generateNursingAI_Evolution = async () => {
       if (!currentKey || currentKey.length < 10 || currentKey === "undefined") {
         throw new Error(`Chave da Enfermagem ausente ou inválida.`);
       }
-      // 👆 ======================== 👆
 
-      const promptText = buildNursingAIPrompt(currentPatient);
+      // Busca registros do carrinho de EMG de hoje
+      const hoje = new Date().toISOString().split('T')[0];
+      let registrosCarrinhoHoje = [];
+      try {
+        const carrinhoSnapshot = await getDocs(
+          query(
+            collection(db, "carrinho_emg"),
+            where("data", "==", hoje)
+          )
+        );
+        registrosCarrinhoHoje = carrinhoSnapshot.docs.map(doc => doc.data());
+      } catch (e) {
+        console.warn("Erro ao buscar carrinho_emg para evolução:", e);
+      }
+
+      const promptText = buildNursingAIPrompt(currentPatient, registrosCarrinhoHoje);
       
       const modelsToTry = ["gemini-2.5-flash"];
 
@@ -4152,6 +4222,39 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 })}
 
                 {/* ========================================================= */}
+                {/* BOTÃO DO CARRINHO DE EMERGÊNCIA                          */}
+                {/* ========================================================= */}
+                <div
+                  id="nav-carrinho"
+                  style={{ zIndex: 5 }} 
+                  className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out hover:z-[100] mt-0 md:mt-4`}
+                >
+                  <button
+                    onClick={() => setModalCarrinhoAberto(true)}
+                    className={`flex items-center h-16 md:h-12 min-w-[4rem] md:min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
+                      bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100
+                      w-16 md:w-12 md:hover:w-[190px]
+                    `}
+                    title="Carrinho de Emergência"
+                  >
+                    <div className="flex-shrink-0 flex items-center justify-center w-16 h-16 md:w-12 md:h-12 transition-transform duration-300">
+                      <div className="scale-125 md:scale-100">
+                        <Ambulance size={22} className="text-amber-600 group-hover:scale-110 transition-transform" />
+                      </div>
+                    </div>
+                    <div
+                      className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+                        opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100
+                      `}
+                    >
+                      <span className="text-sm font-bold tracking-wide text-amber-700">
+                        Carrinho EMG
+                      </span>
+                    </div>
+                  </button>
+                </div>
+
+                {/* ========================================================= */}
                 {/* O NOVO BOTÃO DE NOTIFICAÇÃO DE EVENTOS (Fixo no final)    */}
                 {/* ========================================================= */}
                 <div
@@ -4798,6 +4901,133 @@ const userRole = userProfile?.role || userProfile?.perfil;
         handleBlurSave={handleBlurSave}
         handleSepsisResponse={handleSepsisResponse}
       />
+
+      {/* ======================================================== */}
+      {/* MODAL: CARRINHO DE EMERGÊNCIA                            */}
+      {/* ======================================================== */}
+      {modalCarrinhoAberto && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-amber-500/20 my-auto">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Ambulance size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Verificação do Carrinho de Emergência</h2>
+              </div>
+              <button onClick={() => setModalCarrinhoAberto(false)} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-5 overflow-y-auto max-h-[70vh]">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Verificação</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-amber-300 font-black text-center text-2xl cursor-pointer appearance-none"
+                    value={formCarrinho.horario ? formCarrinho.horario.split(':')[0] : "00"}
+                    onChange={(e) => setFormCarrinho({ ...formCarrinho, horario: `${e.target.value}:${formCarrinho.horario ? formCarrinho.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-amber-300 font-black text-center text-2xl cursor-pointer appearance-none"
+                    value={formCarrinho.horario ? formCarrinho.horario.split(':')[1] : "00"}
+                    onChange={(e) => setFormCarrinho({ ...formCarrinho, horario: `${formCarrinho.horario ? formCarrinho.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* LACRE DO CARRINHO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">🔒 Nº do Lacre do Carrinho</label>
+                <input type="text" placeholder="Ex: 001234"
+                  value={formCarrinho.lacreCarrinho}
+                  onChange={(e) => setFormCarrinho({ ...formCarrinho, lacreCarrinho: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-amber-300 text-sm"
+                />
+              </div>
+
+              {/* LACRE DA CAIXA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">🔒 Nº do Lacre da Caixa</label>
+                <input type="text" placeholder="Ex: 005678"
+                  value={formCarrinho.lacreCaixa}
+                  onChange={(e) => setFormCarrinho({ ...formCarrinho, lacreCaixa: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-amber-300 text-sm"
+                />
+              </div>
+
+              {/* LARINGOSCÓPIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">🔦 Laringoscópio</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Funcionante', 'Não funcionante'].map(r => (
+                    <button key={r} onClick={() => setFormCarrinho({ ...formCarrinho, laringoscopio: r })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${formCarrinho.laringoscopio === r ? (r === 'Funcionante' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'}`}>
+                      {r === 'Funcionante' ? '✅ Funcionante' : '❌ Não funcionante'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* CARDIOVERSOR */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">⚡ Cardioversor</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Funcionante', 'Não funcionante'].map(r => (
+                    <button key={r} onClick={() => setFormCarrinho({ ...formCarrinho, cardioversor: r })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${formCarrinho.cardioversor === r ? (r === 'Funcionante' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'}`}>
+                      {r === 'Funcionante' ? '✅ Funcionante' : '❌ Não funcionante'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* GEL CONDUTOR */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">🧴 Gel Condutor</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Sim', 'Não'].map(r => (
+                    <button key={r} onClick={() => setFormCarrinho({ ...formCarrinho, gelCondutor: r })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${formCarrinho.gelCondutor === r ? (r === 'Sim' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'}`}>
+                      {r === 'Sim' ? '✅ Sim' : '❌ Não'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* TÁBUA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">🪵 Tábua</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Sim', 'Não'].map(r => (
+                    <button key={r} onClick={() => setFormCarrinho({ ...formCarrinho, tabua: r })}
+                      className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${formCarrinho.tabua === r ? (r === 'Sim' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]' : 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'}`}>
+                      {r === 'Sim' ? '✅ Sim' : '❌ Não'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ENFERMEIRO */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <span className="text-[10px] font-bold text-amber-700 uppercase">Preenchido por</span>
+                <div className="text-sm font-bold text-slate-700 mt-1">{userProfile?.nome || 'Usuário'}</div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalCarrinhoAberto(false)} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!formCarrinho.horario || salvandoCarrinho} onClick={salvarCarrinhoEMG} className="flex-1 py-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider">
+                  {salvandoCarrinho ? (
+                    <><span className="animate-spin">⏳</span> Salvando...</>
+                  ) : (
+                    <><Save size={18} /> Salvar Verificação</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
           {/* ============================================== */}
           {/* MODAL GLOBAL DE EVENTOS ADVERSOS                 */}
