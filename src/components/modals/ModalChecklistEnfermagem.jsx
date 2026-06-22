@@ -179,6 +179,8 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       auditMessages.push("CVC instalado");
     } else if (initialCvc && !cvcActive) {
       updateNested("enfermagem", "cvcRetiradaData", today);
+      // Mutação direta no currentPatient para o buildNursingAIPrompt enxergar
+      currentPatient.enfermagem.cvcRetiradaData = today;
       auditMessages.push("CVC retirado");
     }
 
@@ -189,6 +191,8 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       auditMessages.push("Shiley instalado");
     } else if (initialShiley && !shileyActive) {
       updateNested("enfermagem", "shileyRetiradaData", today);
+      // Mutação direta no currentPatient para o buildNursingAIPrompt enxergar
+      currentPatient.enfermagem.shileyRetiradaData = today;
       auditMessages.push("Shiley retirado");
     }
 
@@ -199,6 +203,8 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       auditMessages.push("SVD instalada");
     } else if (initialSvd && !svdActive) {
       updateNested("enfermagem", "svdRetiradaData", today);
+      // Mutação direta no currentPatient para o buildNursingAIPrompt enxergar
+      currentPatient.enfermagem.svdRetiradaData = today;
       auditMessages.push("SVD retirada");
     }
 
@@ -207,7 +213,7 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
     }
 
     // === BLOQUEIO POR MANUTENÇÃO PENDENTE (DEPOIS DE SALVAR DISPOSITIVOS) ===
-    const hoje = today; // já é a data ISO
+    const hoje = today;
     const enf = currentPatient.enfermagem || {};
     const pendentes = [];
 
@@ -232,9 +238,8 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
     if (pendentes.length > 0) {
       alert(`⚠️ Manutenção pendente!\n\nO paciente possui dispositivos sem manutenção registrada hoje:\n${pendentes.map(d => `  • ${d}`).join('\n')}\n\nPreencha a manutenção diária ANTES de gerar a evolução.`);
       onClose();
-      return; // ⛔ NÃO chama onGenerateAI
+      return;
     }
-    // ==========================================
 
     onGenerateAI();
     onClose();
