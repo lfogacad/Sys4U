@@ -2706,6 +2706,17 @@ ${conduta}
       eventosRegistros.push(`- Inserção SVD ${svd.horario} — ${svd.genero || ''} (${svd.indicacao || 'N/I'}) — ${svd.itens?.resumo || ''}`);
     });
 
+    // Retirada de dispositivos (checklist de dispositivos)
+    if (p.enfermagem?.cvcRetiradaData === hojeISO) {
+      eventosRegistros.push(`- Retirado CVC de ${p.enfermagem.cvcLocal || 'local não especificado'}`);
+    }
+    if (p.enfermagem?.shileyRetiradaData === hojeISO) {
+      eventosRegistros.push(`- Retirado Shiley de ${p.enfermagem.shileyLocal || 'local não especificado'}`);
+    }
+    if (p.enfermagem?.svdRetiradaData === hojeISO) {
+      eventosRegistros.push(`- Retirado SVD`);
+    }
+
     // Curativo (dentro de lesoes[].historicoCurativos)
     const lesoes = p.enfermagem?.lesoes || [];
     lesoes.forEach(lesao => {
