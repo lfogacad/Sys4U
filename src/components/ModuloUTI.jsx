@@ -2736,15 +2736,30 @@ ${conduta}
       : "Pele íntegra";
 
     // 8. DISPOSITIVOS E INTERCORRÊNCIAS
+    const hoje = new Date();
+    const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+
     const dispositivos = [
-      ...(p.enfermagem?.cvcLocal ? [`- Cateter Venoso Central (CVC) em ${p.enfermagem.cvcLocal}`] : []),
-      ...(p.enfermagem?.avpLocal ? [`- Acesso Venoso Periférico (AVP) em ${p.enfermagem.avpLocal}`] : []),
+      // AVP
+      ...(p.enfermagem?.avpLocal ? [`- Acesso Venoso Periférico (AVP) em ${p.enfermagem.avpLocal}${p.enfermagem.avpCalibre ? ` (${p.enfermagem.avpCalibre})` : ''}`] : []),
+      
+      // CVC / PICC (só se NÃO foi retirado hoje)
+      ...(p.enfermagem?.cvcLocal && p.enfermagem?.cvcRetiradaData !== hojeISO ? [`- ${p.enfermagem.cvcTipo === 'PICC' ? 'Cateter de Inserção Periférica (PICC)' : 'Cateter Venoso Central (CVC)'} em ${p.enfermagem.cvcLocal}`] : []),
+      
+      // Shiley / Traqueostomia (só se NÃO foi retirado hoje)
+      ...(p.enfermagem?.shileyLocal && p.enfermagem?.shileyRetiradaData !== hojeISO ? [`- Traqueostomia (Shiley) em ${p.enfermagem.shileyLocal}`] : []),
+      
+      // SVD (só se NÃO foi retirado hoje)
+      ...(p.enfermagem?.svd && p.enfermagem?.svdRetiradaData !== hojeISO ? ['- Sonda Vesical de Demora (SVD) em uso'] : []),
+      
+      // SNE
+      ...(p.enfermagem?.sneData ? [`- Sonda Nasoenteral (SNE) a ${p.enfermagem.sneCm || 'NT'}cm`] : []),
+      
+      // Dreno
       ...(p.enfermagem?.drenoTipo ? [`- Dreno ${p.enfermagem.drenoTipo}`] : []),
     ].filter(Boolean);
   
     // 9. REGISTROS DE ENFERMAGEM (Eventos dos Modais - SOMENTE HOJE)
-    const hoje = new Date();
-    const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
     const eventosRegistros = [];
 
     // Filtra eventos de HOJE e ordena por horário
