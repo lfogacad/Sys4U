@@ -40,6 +40,7 @@ const initialForm = {
   indicacao: '',
   justificativa: '',
   genero: '',
+  enfermeiroResponsavel: '',
   itens: ITENS_CHECKLIST.reduce((acc, item) => {
     acc[item.key] = false;
     return acc;
@@ -47,7 +48,7 @@ const initialForm = {
   observacao: ''
 };
 
-const SVDInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, handleBlurSave, userProfile }) => {
+const SVDInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, handleBlurSave, userProfile, listaProfissionais = [] }) => {
   const [form, setForm] = useState(initialForm);
 
   useEffect(() => {
@@ -93,6 +94,7 @@ const SVDInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, handl
       indicacao: form.indicacao,
       justificativa: form.indicacao === 'Outra' ? form.justificativa : '',
       genero: form.genero,
+      enfermeiroResponsavel: form.enfermeiroResponsavel,
       itens: {
         itens: itensArray,
         total,
@@ -179,6 +181,7 @@ const SVDInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, handl
   <div class="info-grid">
     ${registro.indicacao ? `<div class="info-item" style="flex:2"><span class="tag">Indicação</span><span class="value">${registro.indicacao}</span></div>` : ''}
     ${registro.justificativa ? `<div class="info-item" style="flex:2"><span class="tag">Justificativa</span><span class="value">${registro.justificativa}</span></div>` : ''}
+    ${registro.enfermeiroResponsavel ? `<div class="info-item" style="flex:2"><span class="tag">Enfermeiro(a) Responsável</span><span class="value">${registro.enfermeiroResponsavel}</span></div>` : ''}
     <div class="info-item"><span class="tag">Gênero</span><span class="value">${registro.genero || 'N/A'}</span></div>
   </div>
   <div class="section-title">Lista de Verificação — Conformidade</div>
@@ -308,6 +311,26 @@ const SVDInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, handl
                 );
               })}
             </div>
+          </div>
+
+          {/* ENFERMEIRO(A) RESPONSÁVEL */}
+          <div>
+            <label className="text-xs font-bold text-slate-600 mb-3 block text-center">
+              Enfermeiro(a) que realizou o procedimento
+            </label>
+            <select
+              className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-bold text-center"
+              value={form.enfermeiroResponsavel || ''}
+              onChange={(e) => setForm({ ...form, enfermeiroResponsavel: e.target.value })}
+            >
+              <option value="">Selecione o profissional...</option>
+              {listaProfissionais
+                .filter(prof => prof.categoria?.toLowerCase() === 'enfermeiro')
+                .map(prof => (
+                  <option key={prof.id} value={prof.nome}>{prof.nome}</option>
+                ))
+              }
+            </select>
           </div>
 
           <div>

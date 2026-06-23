@@ -3043,12 +3043,15 @@ const GestorDashboard = ({ userProfile }) => {
             // 2. DIAGNÓSTICO APLICADO: O banco omite a tag "status" quando o leito enche.
             // Agora verificamos o "nome" do paciente e o "statusInternacao".
             const ocupadosAgora = leitosValidos.filter(l => {
+              // Critério principal: tem nome de paciente
               const temNome = l.nome && String(l.nome).trim() !== '';
-              const statusInternacaoOcupado = l.statusInternacao && String(l.statusInternacao).toLowerCase() !== 'livre';
-              const statusOcupado = l.status && String(l.status).toLowerCase() !== 'livre';
               
-              // Se qualquer uma dessas for verdade, há um paciente no leito
-              return temNome || statusInternacaoOcupado || statusOcupado;
+              // Só considera status se REALMENTE houver um paciente (status de ocupação válido)
+              const statusComPaciente = l.statusInternacao && 
+                ['internado', 'ocupado', 'aguardando admissão médica', 'aguardando admisão médica', 'aguardando alta']
+                  .includes(String(l.statusInternacao).toLowerCase().trim());
+              
+              return temNome || (statusComPaciente && temNome === false && l.nome === undefined);
             }).length;
             
             // 3. Matemática exata do momento
@@ -6172,10 +6175,14 @@ const GestorDashboard = ({ userProfile }) => {
                   <div className="flex items-center gap-4 mb-4 text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></div>
-                      <span className="text-slate-500 font-medium">Checklist realizado</span>
+                      <span className="text-slate-500 font-medium">2 verificações</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 rounded bg-slate-100 border border-slate-200"></div>
+                      <div className="w-3 h-3 rounded bg-amber-100 border border-amber-300"></div>
+                      <span className="text-slate-500 font-medium">1 verificação</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded bg-red-100 border border-red-200"></div>
                       <span className="text-slate-500 font-medium">Não realizado</span>
                     </div>
                   </div>
@@ -6205,32 +6212,67 @@ const GestorDashboard = ({ userProfile }) => {
                         const dia = i + 1;
                         const diaStr = `${mesFiltroCarrinhoEMG}-${String(dia).padStart(2, '0')}`;
                         const registrosHoje = listaCarrinhoEMG.filter(r => r.data === diaStr);
-                        const temRegistro = registrosHoje.length > 0;
+                        const qtd = registrosHoje.length;
                         const isFuture = new Date(diaStr) > new Date();
+
+                        // Função que avalia se UM registro está tudo OK
+                        const todosItensOk = (reg) => {
+                          const itens = [
+                            reg.laringoscopio,
+                            reg.cardioversor,
+                            reg.gelCondutor,
+                            reg.tabua
+                          ];
+                          // Se algum campo não está preenchido, considera como não ok
+                          return itens.every(item => item === 'Funcionante' || item === 'Sim');
+                        };
+
+                        // Determina a cor de cada pontinho individualmente
+                        const coresPontinhos = registrosHoje.map(reg =>
+                          todosItensOk(reg) ? 'bg-emerald-500' : 'bg-amber-500'
+                        );
+
+                        // Define fundo do quadrado baseado na quantidade
+                        let bgColor, textColor, podeClicar;
+
+                        if (qtd === 2) {
+                          bgColor = 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100';
+                          textColor = 'text-emerald-700';
+                          podeClicar = true;
+                        } else if (qtd === 1) {
+                          bgColor = 'bg-amber-50 border-amber-300 hover:bg-amber-100';
+                          textColor = 'text-amber-700';
+                          podeClicar = true;
+                        } else if (isFuture) {
+                          bgColor = 'bg-white border-slate-100';
+                          textColor = 'text-slate-200';
+                          podeClicar = false;
+                        } else {
+                          bgColor = 'bg-red-50 border-red-200';
+                          textColor = 'text-red-400';
+                          podeClicar = false;
+                        }
 
                         return (
                           <button
                             key={dia}
                             onClick={() => {
-                              if (temRegistro) {
+                              if (podeClicar) {
                                 setModalDetalheCarrinho({ isOpen: true, dia: diaStr, registros: registrosHoje });
                               }
                             }}
-                            disabled={isFuture || !temRegistro}
-                            className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center transition-all
-                              ${temRegistro 
-                                ? 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100 cursor-pointer' 
-                                : isFuture
-                                  ? 'bg-white border-slate-100 text-slate-200 cursor-default'
-                                  : 'bg-slate-50 border-slate-200 text-slate-400 cursor-default'
-                              }`}
+                            disabled={!podeClicar}
+                            className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center transition-all ${bgColor} ${podeClicar ? 'cursor-pointer' : 'cursor-default'}`}
                           >
-                            <span className={`text-sm font-black ${temRegistro ? 'text-emerald-700' : isFuture ? 'text-slate-200' : 'text-slate-400'}`}>
+                            <span className={`text-sm font-black ${textColor}`}>
                               {dia}
                             </span>
-                            {temRegistro && (
+                            {/* Pontinhos baseados na quantidade + conteúdo */}
+                            {qtd > 0 && (
                               <div className="flex gap-0.5 mt-0.5">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                {coresPontinhos.map((cor, idx) => (
+                                  <div key={idx} className={`w-1.5 h-1.5 rounded-full ${cor}`}></div>
+                                ))}
                               </div>
                             )}
                           </button>
@@ -6450,8 +6492,8 @@ const GestorDashboard = ({ userProfile }) => {
                   <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
                     {/* Cabeçalho do registro */}
                     <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                      <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                        🕐 {reg.horario}
+                      <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        🚑 Carrinho {reg.carrinhoNumero || '—'} • 🕐 {reg.horario}
                       </span>
                       <span className="text-xs font-bold text-slate-600">
                         👤 {reg.preenchidoPor || 'Não identificado'}
@@ -7168,13 +7210,26 @@ const GestorDashboard = ({ userProfile }) => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {leitosConfig.map(leito => (
+                    {[...leitosConfig].sort((a, b) => {
+                      // Usa o ID do documento (bed_1, bed_2, ..., bed_10) que nunca muda
+                      const numA = parseInt(String(a.id || '').replace(/\D/g, '')) || 999;
+                      const numB = parseInt(String(b.id || '').replace(/\D/g, '')) || 999;
+                      return numA - numB;
+                    }).map(leito => (
                       <div key={leito.id} className={`p-4 rounded-xl border flex flex-col gap-3 transition-colors ${leito.bloqueado ? 'bg-slate-100 border-slate-200 opacity-75' : leito.ignorarEstatistica ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200 shadow-sm'}`}>
                         
                         <div className="flex justify-between items-center">
                           <div className="flex items-center gap-2">
                             <h4 className="font-black text-slate-800 flex items-center gap-2">
-                              <Bed size={16} className={leito.bloqueado ? 'text-slate-400' : 'text-blue-500'} /> {leito.nome}
+                              <Bed size={16} className={leito.bloqueado ? 'text-slate-400' : 'text-blue-500'} /> 
+                              {leito.nome || (() => {
+                                // Extrai o número do ID (ex: "bed_1" → "01")
+                                const num = parseInt(String(leito.id || '').replace(/\D/g, '')) || 0;
+                                return `Leito ${String(num).padStart(2, '0')}`;
+                              })()}
+                              {!leito.nome && (
+                                <span className="text-[10px] font-bold text-slate-400">(vazio)</span>
+                              )}
                             </h4>
                             {/* Badge Visual de Isolamento */}
                             {leito.isIsolamento && (

@@ -233,6 +233,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [modalCarrinhoAberto, setModalCarrinhoAberto] = useState(false);
   const [formCarrinho, setFormCarrinho] = useState({
     horario: '',
+    carrinhoNumero: '1',
     lacreCarrinho: '',
     lacreCaixa: '',
     laringoscopio: '',
@@ -247,6 +248,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [loadingCarrinhoEMG, setLoadingCarrinhoEMG] = useState(false);
   const [modalDetalheCarrinho, setModalDetalheCarrinho] = useState({ isOpen: false, dia: '', registros: [] });
   const [temCarrinhoEMGHoje, setTemCarrinhoEMGHoje] = useState(false);
+
+  const [leitosConfig, setLeitosConfig] = useState([]);
 
   // Guarda os pacientes internados para o modal de eventos cruzar os dados
   const [listaCenso, setListaCenso] = useState([]);
@@ -760,6 +763,18 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     checkCarrinhoHoje();
   }, [db, currentPatient?.nome]); // Recarrega se mudar de paciente
 
+  // Busca configuração dos leitos para bloquear botão de Puxar Paciente
+  useEffect(() => {
+    if (!db) return;
+    const unsubscribe = onSnapshot(collection(db, "leitos_uti"), (snapshot) => {
+      const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setLeitosConfig(dados);
+    }, (error) => {
+      console.error("Erro ao buscar leitos_uti:", error);
+    });
+    return () => unsubscribe();
+  }, [db]);
+
   // ==============================================================
   // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" das 07h00)
   // ==============================================================
@@ -1119,6 +1134,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       const registro = {
         data: hoje,
         horario: formCarrinho.horario,
+        carrinhoNumero: formCarrinho.carrinhoNumero || '1',
         lacreCarrinho: formCarrinho.lacreCarrinho || '',
         lacreCaixa: formCarrinho.lacreCaixa || '',
         laringoscopio: formCarrinho.laringoscopio || '',
@@ -1136,6 +1152,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       setModalCarrinhoAberto(false);
       setFormCarrinho({
         horario: '',
+        carrinhoNumero: '1',
         lacreCarrinho: '',
         lacreCaixa: '',
         laringoscopio: '',
@@ -4433,7 +4450,37 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       <div className="flex flex-col items-center gap-3 mt-4 w-full max-w-sm mx-auto">
                         <button
                           onClick={() => handleOpenQueue(activeTab)}
-                          className="w-full bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-colors"
+                          disabled={(() => {
+                            // Encontra o leito do paciente atual pelo número do leito
+                            const leitoAtual = patients[activeTab]?.leito;
+                            const configLeito = leitosConfig.find(l => {
+                              const numLeito = parseInt(String(l.id || '').replace(/\D/g, ''));
+                              return numLeito === Number(leitoAtual);
+                            });
+                            return configLeito?.bloqueado === true;
+                          })()}
+                          className={`w-full px-8 py-3 rounded-xl font-bold shadow-md transition-colors ${
+                            (() => {
+                              const leitoAtual = patients[activeTab]?.leito;
+                              const configLeito = leitosConfig.find(l => {
+                                const numLeito = parseInt(String(l.id || '').replace(/\D/g, ''));
+                                return numLeito === Number(leitoAtual);
+                              });
+                              return configLeito?.bloqueado === true
+                                ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                : 'bg-teal-600 hover:bg-teal-700 text-white';
+                            })()
+                          }`}
+                          title={(() => {
+                            const leitoAtual = patients[activeTab]?.leito;
+                            const configLeito = leitosConfig.find(l => {
+                              const numLeito = parseInt(String(l.id || '').replace(/\D/g, ''));
+                              return numLeito === Number(leitoAtual);
+                            });
+                            return configLeito?.bloqueado === true
+                              ? 'Leito bloqueado — não é possível puxar paciente'
+                              : 'Puxar paciente da fila para este leito';
+                          })()}
                         >
                           Puxar Paciente da Fila
                         </button>
@@ -5007,6 +5054,26 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     onChange={(e) => setFormCarrinho({ ...formCarrinho, horario: `${formCarrinho.horario ? formCarrinho.horario.split(':')[0] : '00'}:${e.target.value}` })}>
                     {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
+                </div>
+              </div>
+
+              {/* CARRINHO NÚMERO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Carrinho de Emergência</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {['1', '2'].map(num => (
+                    <button
+                      key={num}
+                      onClick={() => setFormCarrinho({ ...formCarrinho, carrinhoNumero: num })}
+                      className={`p-4 rounded-xl border-2 font-black text-lg transition-all ${
+                        formCarrinho.carrinhoNumero === num
+                          ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-md scale-[1.02]'
+                          : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'
+                      }`}
+                    >
+                      🚑 Carrinho {num}
+                    </button>
+                  ))}
                 </div>
               </div>
 

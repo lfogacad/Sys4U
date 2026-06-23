@@ -27,13 +27,14 @@ const initialForm = {
   puncaoUnica: 'Sim',
   quantasPuncoes: '',
   dificuldades: [],
+  medicoResponsavel: '',
   barreiras: BARREIRAS_LIST.reduce((acc, item) => {
     acc[item.key] = false;
     return acc;
   }, {}),
 };
 
-const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerarPDF, handleBlurSave, userProfile }) => {
+const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerarPDF, handleBlurSave, userProfile, listaProfissionais = [] }) => {
   const [form, setForm] = useState(initialForm);
 
   useEffect(() => {
@@ -95,6 +96,7 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
       puncaoUnica: form.puncaoUnica === 'Sim',
       quantasPuncoes: form.puncaoUnica === 'Não' ? form.quantasPuncoes : '',
       dificuldades: form.dificuldades.join(', '),
+      medicoResponsavel: form.medicoResponsavel,
       barreiras: {
         itens,
         total,
@@ -235,6 +237,7 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
     </div>
     ${registro.quantasPuncoes ? `<div class="info-item"><span class="tag">Nº de Pungões</span><span class="value">${registro.quantasPuncoes}</span></div>` : ''}
     ${registro.dificuldades ? `<div class="info-item" style="flex:2"><span class="tag">Dificuldades</span><span class="value">${registro.dificuldades}</span></div>` : ''}
+    ${registro.medicoResponsavel ? `<div class="info-item" style="flex:2"><span class="tag">Médico Responsável</span><span class="value">${registro.medicoResponsavel}</span></div>` : ''}
   </div>
 
   <div class="section-title">Barreiras de Prevenção — Conformidade</div>
@@ -465,6 +468,26 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
                 );
               })}
             </div>
+          </div>
+
+          {/* MÉDICO RESPONSÁVEL */}
+          <div>
+            <label className="text-xs font-bold text-slate-600 mb-3 block text-center">
+              Médico que realizou o procedimento
+            </label>
+            <select
+              className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-blue-300 font-bold text-center"
+              value={form.medicoResponsavel || ''}
+              onChange={(e) => setForm({ ...form, medicoResponsavel: e.target.value })}
+            >
+              <option value="">Selecione o médico...</option>
+              {listaProfissionais
+                .filter(prof => prof.categoria?.toLowerCase() === 'médico')
+                .map(med => (
+                  <option key={med.id} value={med.nome}>{med.nome}</option>
+                ))
+              }
+            </select>
           </div>
 
           <div>

@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, 
          Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar, Coffee, ArrowRight, CheckCircle2,
          ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
          FileText, Copy, Syringe, Scissors, Snowflake, TestTube, ChevronDown, ChevronRight } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import CVCInsercaoModal from './CVCInsercaoModal';
 import SVDInsercaoModal from './SVDInsercaoModal';
@@ -40,6 +40,7 @@ const TechDashboard = ({
   const [registrosOpen, setRegistrosOpen] = useState(false);
   const [showCVCModal, setShowCVCModal] = useState(false);
   const [showSVDModal, setShowSVDModal] = useState(false);
+  const [listaProfissionais, setListaProfissionais] = useState([]);
 
   // =========================================================================
   // FUNÇÃO AUXILIAR: ARREDONDA A HORA ATUAL PARA 00, 15, 30 OU 45
@@ -569,6 +570,17 @@ const salvarFralda = () => {
 
     setModalRelatorio({ isOpen: true, texto: relatorio });
   };
+
+  useEffect(() => {
+    if (!db) return;
+    const unsubscribe = onSnapshot(collection(db, "profissionais"), (snapshot) => {
+      const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setListaProfissionais(dados);
+    }, (error) => {
+      console.error("Erro ao buscar profissionais:", error);
+    });
+    return () => unsubscribe;
+  }, []);
 
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
   const LIMITS = {
@@ -2668,6 +2680,7 @@ const salvarFralda = () => {
         currentPatient={currentPatient}
         updateNested={updateNested}
         handleBlurSave={handleBlurSave}
+        listaProfissionais={listaProfissionais}
       />
   
       <SVDInsercaoModal
@@ -2676,6 +2689,7 @@ const salvarFralda = () => {
         currentPatient={currentPatient}
         updateNested={updateNested}
         handleBlurSave={handleBlurSave}
+        listaProfissionais={listaProfissionais}
       />
 
       </fieldset>

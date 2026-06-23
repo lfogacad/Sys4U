@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, 
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
 Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast,
 CheckCircle2, Printer, BriefcaseMedical } from 'lucide-react';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { ESCALA_DOR, PRECAUCOES, CARACTERISTICAS_DIURESE } from '../../constants/clinicalLists';
 import ModalChecklistEnfermagem from '../../components/modals/ModalChecklistEnfermagem';
 
@@ -27,6 +29,7 @@ const NursingDashboard = ({
 
   const [showNursingChecklistModal, setShowNursingChecklistModal] = useState(false);
   const [showRegistrosDiarios, setShowRegistrosDiarios] = useState(false);
+  const [listaProfissionais, setListaProfissionais] = useState([]);
 
   const [modalCVC, setModalCVC] = useState({
     isOpen: false,
@@ -189,6 +192,17 @@ const NursingDashboard = ({
     oxigenacaoPre: '',
     intercorrencias: ''
   });
+
+  useEffect(() => {
+    if (!db) return;
+    const unsubscribe = onSnapshot(collection(db, "profissionais"), (snapshot) => {
+      const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setListaProfissionais(dados);
+    }, (error) => {
+      console.error("Erro ao buscar profissionais:", error);
+    });
+    return () => unsubscribe;
+  }, [db]);
 
   // === PULSADOR PARA MANUTENÇÃO ===
   const pulseRedStyle = document.createElement('style');
@@ -408,6 +422,7 @@ const NursingDashboard = ({
       passagem: modalCVC.passagem,
       motivoTroca: modalCVC.motivoTroca || '',
       localInserção: modalCVC.localInserção,
+      medicoResponsavel: modalCVC.medicoResponsavel || '',
       puncaoUnica: modalCVC.puncaoUnica,
       quantasPuncoes: modalCVC.quantasPuncoes || '',
       dificuldades: modalCVC.dificuldades,
@@ -863,6 +878,7 @@ const NursingDashboard = ({
     </div>
     ${ultimo.quantasPuncoes ? `<div class="info-item"><span class="tag">Nº de Pungões</span><span class="value">${ultimo.quantasPuncoes}</span></div>` : ''}
     ${ultimo.dificuldades ? `<div class="info-item" style="flex:2"><span class="tag">Dificuldades</span><span class="value">${ultimo.dificuldades}</span></div>` : ''}
+    ${ultimo.medicoResponsavel ? `<div class="info-item" style="flex:2"><span class="tag">Médico Responsável</span><span class="value">${ultimo.medicoResponsavel}</span></div>` : ''}
     ${motivosTroca.length > 0 ? `<div class="info-item" style="flex:2"><span class="tag">Motivo da Troca</span><span class="value">${motivosTroca.join(', ')}</span></div>` : ''}
   </div>
 
@@ -1003,6 +1019,7 @@ const NursingDashboard = ({
     </div>
     ${registro.quantasPuncoes ? `<div class="info-item"><span class="tag">Nº de Pungões</span><span class="value">${registro.quantasPuncoes}</span></div>` : ''}
     ${registro.dificuldades ? `<div class="info-item" style="flex:2"><span class="tag">Dificuldades</span><span class="value">${registro.dificuldades}</span></div>` : ''}
+    ${registro.medicoResponsavel ? `<div class="info-item" style="flex:2"><span class="tag">Médico Responsável</span><span class="value">${registro.medicoResponsavel}</span></div>` : ''}
   </div>
 
   <div class="section-title">Barreiras de Prevenção — Conformidade</div>
@@ -2093,6 +2110,24 @@ return (
                     <button key={local.val} onClick={() => setModalCVC({ ...modalCVC, localInserção: local.val })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalCVC.localInserção === local.val ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}>{local.label}</button>
                   ))}
                 </div>
+              </div>
+
+              {/* MÉDICO RESPONSÁVEL */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Médico que realizou o procedimento</label>
+                <select
+                  value={modalCVC.medicoResponsavel || ''}
+                  onChange={(e) => setModalCVC({ ...modalCVC, medicoResponsavel: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-blue-300 font-bold text-center"
+                >
+                  <option value="">Selecione o médico...</option>
+                  {listaProfissionais
+                    .filter(prof => prof.categoria?.toLowerCase() === 'médico')
+                    .map(med => (
+                      <option key={med.id} value={med.nome}>{med.nome}</option>
+                    ))
+                  }
+                </select>
               </div>
 
               {/* MEDIDAS DE BARREIRA */}

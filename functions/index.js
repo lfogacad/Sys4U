@@ -80,20 +80,22 @@ exports.gerarCensoUTI = onSchedule({
         // ====================================================================
         if (isFechamentoDiario) {
           
-          // Reset de Segurança da Enfermagem
+          // Reset de Segurança da Enfermagem (SEMPRE, inclusive morador)
           updatePayload["enfermagem.identificacaoCorreta"] = false;
 
-          // 1. DADOS ASSISTENCIAIS DO CENSO DIÁRIO
-          contadores.totalLeitosOcupados++;
-          if (p.enfermagem?.identificacaoCorreta === true) contadores.pacientesIdentificados++;
-          
-          if (p.physio?.suporte === "VM" || p.fisioterapia?.suporte === "VM" || (p.dataIntubacao && !p.dataExtubacao)) {
-              contadores.pacientesEmVM++;
-          }
-
-          if (p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData) contadores.pacientesComCVC++;
-          if (p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData) contadores.pacientesComSVD++;
-          if (p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData) contadores.pacientesComShiley++;
+          // 🔥 CENSO DIÁRIO: Exclui moradores das estatísticas
+          if (p.ignorarEstatistica !== true) {
+            contadores.totalLeitosOcupados++;
+            if (p.enfermagem?.identificacaoCorreta === true) contadores.pacientesIdentificados++;
+            
+            if (p.physio?.suporte === "VM" || p.fisioterapia?.suporte === "VM" || (p.dataIntubacao && !p.dataExtubacao)) {
+                contadores.pacientesEmVM++;
+            }
+            
+            if (p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData) contadores.pacientesComCVC++;
+            if (p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData) contadores.pacientesComSVD++;
+            if (p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData) contadores.pacientesComShiley++;
+          } // 🔚 Fim do filtro de morador
 
           // 2. SNIFFER DE SUSPEITA DE PAV (ANVISA)
           let dataIntStr = p.dataIntubacao || p.dataTraqueostomia;
