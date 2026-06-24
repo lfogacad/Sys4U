@@ -754,14 +754,86 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                   <tr className="bg-slate-200 text-slate-700">
                     <th className="p-2 text-left sticky left-0 bg-slate-200 border-r border-slate-300 z-10 shadow-[1px_0_0_0_#cbd5e1]">PARÂMETRO</th>
                     {isEditable && (
-                      <th className="p-0 border-r border-slate-300 bg-blue-100 min-w-[40px]"><button onClick={(e) => { e.preventDefault(); const dataInput = prompt("Data da gasometria (DD/MM):"); if (!dataInput || !dataInput.trim()) return; const horaInput = prompt("Horário (HH:MM):"); if (!horaInput || !horaInput.trim()) return; const dataLimpa = dataInput.trim(); const horaLimpa = horaInput.trim(); const up = [...patients]; const p = JSON.parse(JSON.stringify(up[activeTab])); if (!p.customGasometriaCols) p.customGasometriaCols = []; if (!p.gasometriaHistory) p.gasometriaHistory = {}; let nomeColuna = dataLimpa; let contador = 1; while (p.customGasometriaCols.includes(nomeColuna)) { contador++; nomeColuna = `${dataLimpa}_${contador}`; } p.customGasometriaCols.push(nomeColuna); if (!p.gasometriaHistory[nomeColuna]) p.gasometriaHistory[nomeColuna] = {}; p.gasometriaHistory[nomeColuna]["_hora"] = horaLimpa; up[activeTab] = p; setPatients(up); save(up[activeTab], `Fisioterapia: Adicionou gasometria em ${nomeColuna} às ${horaLimpa}`); }} className="text-blue-600 hover:text-blue-800 w-full h-full flex items-center justify-center p-2 transition-colors" title="Adicionar Gasometria extra"><PlusCircle size={18} /></button></th>
+                      <th className="p-0 border-r border-slate-300 bg-blue-100 min-w-[40px]">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            const dataInput = prompt("Data da gasometria (DD/MM):");
+                            if (!dataInput || !dataInput.trim()) return;
+                            const horaInput = prompt("Horário (HH:MM):");
+                            if (!horaInput || !horaInput.trim()) return;
+                            const dataLimpa = dataInput.trim();
+                            const horaLimpa = horaInput.trim();
+                            const up = [...patients];
+                            if (!up[activeTab].customGasometriaCols) up[activeTab].customGasometriaCols = [];
+                            if (!up[activeTab].gasometriaHistory) up[activeTab].gasometriaHistory = {};
+                            if (!up[activeTab].customGasometriaCols.includes(dataLimpa)) {
+                              up[activeTab].customGasometriaCols.unshift(dataLimpa);
+                            }
+                            if (!up[activeTab].gasometriaHistory[dataLimpa]) up[activeTab].gasometriaHistory[dataLimpa] = {};
+                            up[activeTab].gasometriaHistory[dataLimpa]["_hora"] = horaLimpa;
+                            setPatients(up);
+                            save(up[activeTab], `Fisioterapia: Adicionou gasometria em ${dataLimpa} às ${horaLimpa}`);
+                          }}
+                          className="text-blue-600 hover:text-blue-800 w-full h-full flex items-center justify-center p-2 transition-colors"
+                          title="Adicionar Gasometria extra"
+                        >
+                          <PlusCircle size={18} />
+                        </button>
+                      </th>
                     )}
                     {sortedGasoCols.map((col) => (
                       <th key={col} className="p-2 border-l border-slate-300 min-w-[80px] align-top">
                         <div className="flex items-center justify-between gap-1">
+                          {isEditable && (
+                            <input
+                              type="time"
+                              value={editingHora[col] ?? currentPatient.gasometriaHistory?.[col]?.["_hora"] ?? ""}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                setEditingHora(prev => ({ ...prev, [col]: e.target.value }));
+                              }}
+                              onBlur={(e) => {
+                                const val = e.target.value;
+                                if (val !== (currentPatient.gasometriaHistory?.[col]?.["_hora"] || "")) {
+                                  const up = [...patients];
+                                  if (!up[activeTab].gasometriaHistory) up[activeTab].gasometriaHistory = {};
+                                  if (!up[activeTab].gasometriaHistory[col]) up[activeTab].gasometriaHistory[col] = {};
+                                  up[activeTab].gasometriaHistory[col]["_hora"] = val;
+                                  setPatients(up);
+                                  save(up[activeTab], `Fisioterapia: Horário definido para ${col}`);
+                                }
+                                setEditingHora(prev => {
+                                  const next = { ...prev };
+                                  delete next[col];
+                                  return next;
+                                });
+                              }}
+                              className="w-full text-[10px] p-0.5 text-center border border-slate-200 rounded bg-white mt-1"
+                            />
+                          )}
+                          {!isEditable && currentPatient.gasometriaHistory?.[col]?.["_hora"] && (
+                            <div className="text-[10px] font-bold text-slate-500 mt-1">
+                              🕐 {currentPatient.gasometriaHistory[col]["_hora"]}
+                            </div>
+                          )}
                           <span className="text-[10px] leading-tight">{col.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(col) : col}</span>
                           {currentPatient.customGasometriaCols?.includes(col) && isEditable && (
-                            <button onClick={(e) => { e.preventDefault(); if (window.confirm(`Excluir a coluna "${col}"?`)) { const up = [...patients]; up[activeTab].customGasometriaCols = (up[activeTab].customGasometriaCols || []).filter((c) => c !== col); if (up[activeTab].gasometriaHistory) delete up[activeTab].gasometriaHistory[col]; setPatients(up); save(up[activeTab], `Fisioterapia: Excluiu coluna de Gasometria (${col})`); } }} className="text-slate-400 hover:text-red-500 transition-colors" title="Excluir Coluna"><X size={10} /></button>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                if (window.confirm(`Excluir a coluna "${col}"?`)) {
+                                  const up = [...patients];
+                                  up[activeTab].customGasometriaCols = up[activeTab].customGasometriaCols.filter((c) => c !== col);
+                                  if (up[activeTab].gasometriaHistory) delete up[activeTab].gasometriaHistory[col];
+                                  setPatients(up);
+                                  save(up[activeTab], `Fisioterapia: Excluiu coluna de Gasometria (${col})`);
+                                }
+                              }}
+                              className="text-slate-400 hover:text-red-500 transition-colors" title="Excluir Coluna"
+                            >
+                              <X size={12} />
+                            </button>
                           )}
                         </div>
                         {/* Campo de hora manual */}
