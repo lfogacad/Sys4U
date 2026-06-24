@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, ClipboardSignature, 
          Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History, RefreshCw } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
@@ -8,6 +8,8 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   
   // 🔥 NOVO: Estado para controlar as sub-abas da Fisioterapia
   const [activePhysioTab, setActivePhysioTab] = useState('suporte');
+
+  const [editingHora, setEditingHora] = useState({}); // { "23/06 (Adm)": "10:00", ... }
 
   // =========================================================================
   // ESTADOS E FUNÇÕES DO MODAL DE TROCA DE VIA AÉREA
@@ -116,7 +118,20 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
     return 0;
   };
 
-  const sortedGasoCols = [...(uniqueGasoCols || [])].sort((a, b) => parseDateForSort(b) - parseDateForSort(a));
+  const sortedGasoCols = [...(uniqueGasoCols || [])].sort((a, b) => {
+    const diff = parseDateForSort(b) - parseDateForSort(a);
+    if (diff !== 0) return diff;
+
+    // Desempate pelo campo _hora (se existir)
+    const horaA = currentPatient.gasometriaHistory?.[a]?.["_hora"] || "";
+    const horaB = currentPatient.gasometriaHistory?.[b]?.["_hora"] || "";
+
+    if (horaA && horaB) {
+      return horaB.localeCompare(horaA); // Mais recente primeiro
+    }
+
+    return horaB ? 1 : horaA ? -1 : 0;
+  });
 
   const handleCustomPrintGasometria = () => {
     const printWindow = window.open("", "_blank");
@@ -537,7 +552,7 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                   />
                 </div>
                 <div className="flex flex-col flex-1">
-                  <label className="text-[10px] md:text-xs font-semibold text-gray-700 mb-1 leading-tight truncate">Tempo Total:</label>
+                  <label className="text-[10px] md:text-xs font-semibold text-gray-700 mb-1 leading-tight truncate">Tempo Total de VM:</label>
                   <input
                     type="text"
                     readOnly
@@ -730,7 +745,7 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
           {/* GASOMETRIA ARTERIAL */}
           <div className="p-4 bg-slate-50 border rounded-xl border-slate-200">
             <div className="flex justify-between items-center mb-3">
-              <h4 className="font-bold text-slate-700 flex items-center gap-2"><Activity size={16} /> Gasometria Arterial</h4>
+              <h4 className="font-bold text-slate-700 flex items-center gap-2"><Activity size={16} /> Gasometria</h4>
               <button onClick={handleCustomPrintGasometria} className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 print:hidden shadow transition-colors"><Printer size={14} /> Imprimir Relatório</button>
             </div>
             <fieldset disabled={!isEditable} className="overflow-x-auto rounded-lg border border-slate-200 min-w-0 border-0 p-0 m-0">
@@ -739,10 +754,57 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                   <tr className="bg-slate-200 text-slate-700">
                     <th className="p-2 text-left sticky left-0 bg-slate-200 border-r border-slate-300 z-10 shadow-[1px_0_0_0_#cbd5e1]">PARÂMETRO</th>
                     {isEditable && (
-                      <th className="p-0 border-r border-slate-300 bg-blue-100 min-w-[40px]"><button onClick={(e) => { e.preventDefault(); const n = prompt("Identificação da nova gasometria (ex: 17/04 - 14h):"); if (n && n.trim()) { const up = [...patients]; if (!up[activeTab].customGasometriaCols) up[activeTab].customGasometriaCols = []; if (!up[activeTab].customGasometriaCols.includes(n.trim())) { up[activeTab].customGasometriaCols.push(n.trim()); setPatients(up); save(up[activeTab], "Fisioterapia: Adicionou nova coluna de Gasometria"); } } }} className="text-blue-600 hover:text-blue-800 w-full h-full flex items-center justify-center p-2 transition-colors" title="Adicionar Gasometria extra"><PlusCircle size={18} /></button></th>
+                      <th className="p-0 border-r border-slate-300 bg-blue-100 min-w-[40px]"><button onClick={(e) => { e.preventDefault(); const dataInput = prompt("Data da gasometria (DD/MM):"); if (!dataInput || !dataInput.trim()) return; const horaInput = prompt("Horário (HH:MM):"); if (!horaInput || !horaInput.trim()) return; const dataLimpa = dataInput.trim(); const horaLimpa = horaInput.trim(); const up = [...patients]; const p = JSON.parse(JSON.stringify(up[activeTab])); if (!p.customGasometriaCols) p.customGasometriaCols = []; if (!p.gasometriaHistory) p.gasometriaHistory = {}; let nomeColuna = dataLimpa; let contador = 1; while (p.customGasometriaCols.includes(nomeColuna)) { contador++; nomeColuna = `${dataLimpa}_${contador}`; } p.customGasometriaCols.push(nomeColuna); if (!p.gasometriaHistory[nomeColuna]) p.gasometriaHistory[nomeColuna] = {}; p.gasometriaHistory[nomeColuna]["_hora"] = horaLimpa; up[activeTab] = p; setPatients(up); save(up[activeTab], `Fisioterapia: Adicionou gasometria em ${nomeColuna} às ${horaLimpa}`); }} className="text-blue-600 hover:text-blue-800 w-full h-full flex items-center justify-center p-2 transition-colors" title="Adicionar Gasometria extra"><PlusCircle size={18} /></button></th>
                     )}
                     {sortedGasoCols.map((col) => (
-                      <th key={col} className="p-2 border-l border-slate-300 min-w-[80px]"><div className="flex items-center justify-between gap-1"><span>{col.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(col) : col}</span>{currentPatient.customGasometriaCols?.includes(col) && isEditable && ( <button onClick={(e) => { e.preventDefault(); if (window.confirm(`Excluir a coluna "${col}"?`)) { const up = [...patients]; up[activeTab].customGasometriaCols = up[activeTab].customGasometriaCols.filter((c) => c !== col); if (up[activeTab].gasometriaHistory) delete up[activeTab].gasometriaHistory[col]; setPatients(up); save(up[activeTab], `Fisioterapia: Excluiu coluna de Gasometria (${col})`); } }} className="text-slate-400 hover:text-red-500 transition-colors" title="Excluir Coluna"><X size={12} /></button> )}</div></th>
+                      <th key={col} className="p-2 border-l border-slate-300 min-w-[80px] align-top">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] leading-tight">{col.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(col) : col}</span>
+                          {currentPatient.customGasometriaCols?.includes(col) && isEditable && (
+                            <button onClick={(e) => { e.preventDefault(); if (window.confirm(`Excluir a coluna "${col}"?`)) { const up = [...patients]; up[activeTab].customGasometriaCols = (up[activeTab].customGasometriaCols || []).filter((c) => c !== col); if (up[activeTab].gasometriaHistory) delete up[activeTab].gasometriaHistory[col]; setPatients(up); save(up[activeTab], `Fisioterapia: Excluiu coluna de Gasometria (${col})`); } }} className="text-slate-400 hover:text-red-500 transition-colors" title="Excluir Coluna"><X size={10} /></button>
+                          )}
+                        </div>
+                        {/* Campo de hora manual */}
+                        {isEditable && (
+                          <input
+                            type="time"
+                            value={editingHora[col] ?? currentPatient.gasometriaHistory?.[col]?.["_hora"] ?? ""}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              // Atualiza SOMENTE o state local — sem reordenar
+                              setEditingHora(prev => ({ ...prev, [col]: e.target.value }));
+                            }}
+                            onBlur={(e) => {
+                              const val = e.target.value;
+                              if (val !== (currentPatient.gasometriaHistory?.[col]?.["_hora"] || "")) {
+                                // Só commita se mudou — isso dispara o re-sort
+                                setPatients(prev => {
+                                  const up = [...prev];
+                                  const p = JSON.parse(JSON.stringify(up[activeTab]));
+                                  if (!p.gasometriaHistory) p.gasometriaHistory = {};
+                                  if (!p.gasometriaHistory[col]) p.gasometriaHistory[col] = {};
+                                  p.gasometriaHistory[col]["_hora"] = val;
+                                  up[activeTab] = p;
+                                  return up;
+                                });
+                              }
+                              // Limpa o estado de edição local
+                              setEditingHora(prev => {
+                                const next = { ...prev };
+                                delete next[col];
+                                return next;
+                              });
+                              handleBlurSave(`Gasometria: Horário definido para ${col}`);
+                            }}
+                            className="w-full text-[10px] p-0.5 text-center border border-slate-200 rounded bg-white mt-1"
+                          />
+                        )}
+                        {!isEditable && currentPatient.gasometriaHistory?.[col]?.["_hora"] && (
+                          <div className="text-[10px] font-bold text-slate-500 mt-1">
+                            🕐 {currentPatient.gasometriaHistory[col]["_hora"]}
+                          </div>
+                        )}
+                      </th>
                     ))}
                   </tr>
                 </thead>

@@ -639,34 +639,63 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   useEffect(() => {
     if (!db) return;
 
-    // Criamos uma escuta na coleção de leitos
     const q = collection(db, "leitos_uti");
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      // 1. Pegamos todos os documentos que existem no Firebase
       const firestoreBeds = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
-      // 2. Ordenamos pelo número do leito para não ficarem bagunçados (1, 2, 3...)
       firestoreBeds.sort((a, b) => {
         const numA = parseInt(a.id.replace('bed_', ''));
         const numB = parseInt(b.id.replace('bed_', ''));
         return numA - numB;
       });
 
-      // 3. Garantimos que cada dado do Firebase passe pelo mergePatientData
       const updatedPatients = firestoreBeds.map(bedData => {
         const index = parseInt(bedData.id.replace('bed_', '')) - 1;
         return mergePatientData(defaultPatient(index), bedData);
       });
 
       console.log("Leitos sincronizados dinamicamente!");
-      setPatients(updatedPatients);
+      setPatients(prev => {
+        // Verifica se o state local tem edições mais recentes que o snapshot
+        // Compara os timestamps de última modificação
+        let hasLocalEdits = false;
+        
+        for (let i = 0; i < updatedPatients.length; i++) {
+          if (!prev[i] || !updatedPatients[i]) continue;
+          
+          const prevCustom = JSON.stringify(prev[i]?.customGasometriaCols || []);
+          const newCustom = JSON.stringify(updatedPatients[i]?.customGasometriaCols || []);
+          const prevHistory = JSON.stringify(prev[i]?.gasometriaHistory || {});
+          const newHistory = JSON.stringify(updatedPatients[i]?.gasometriaHistory || {});
+          
+          // Se o state local tem MENOS colunas que o Firebase, é exclusão local pendente
+          const prevColCount = (prev[i]?.customGasometriaCols || []).length;
+          const newColCount = (updatedPatients[i]?.customGasometriaCols || []).length;
+          
+          if (prevColCount < newColCount && prevCustom !== newCustom) {
+            hasLocalEdits = true;
+            break;
+          }
+          
+          // Se o state local tem MAIS colunas que o Firebase, é adição local pendente
+          if (prevColCount > newColCount && prevCustom !== newCustom) {
+            hasLocalEdits = true;
+            break;
+          }
+        }
+        
+        // Se tem edições locais pendentes, mantém o state local
+        if (hasLocalEdits) return prev;
+        
+        // Caso contrário, atualiza com os dados do Firebase
+        return updatedPatients;
+      });
     });
 
-    // Para de ouvir quando o componente for fechado (logout)
     return () => unsubscribe();
   }, []);
 
@@ -928,8 +957,33 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     }
   }, [location.state, admissionData.nome]);
 
-  const gasoCols = [...Object.keys(currentPatient.gasometriaHistory || {}), ...(currentPatient.customGasometriaCols || []), ...getLast10Days()];
-  const uniqueGasoCols = [...new Set(gasoCols)].sort().reverse();
+  // ==============================================================
+  // MOTOR DE ORDENAÇÃO DE GASOMETRIA
+  // ==============================================================
+  const parseDateForSort = (str) => {
+    if (!str) return 0;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const [y, m, d] = str.split('-');
+      return new Date(y, m - 1, d, 0, 0).getTime();
+    }
+    const dMatch = str.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (dMatch) {
+      const day = parseInt(dMatch[1], 10);
+      const month = parseInt(dMatch[2], 10) - 1;
+      let year = dMatch[3] ? (dMatch[3].length === 2 ? 2000 + parseInt(dMatch[3], 10) : parseInt(dMatch[3], 10)) : new Date().getFullYear();
+      let hour = 0, min = 0;
+      const tMatch = str.match(/(?:-|\s|às)\s*(\d{1,2})(?:[hH:](\d{2})?)?/i);
+      if (tMatch) {
+        hour = parseInt(tMatch[1], 10);
+        min = tMatch[2] ? parseInt(tMatch[2], 10) : 0;
+      }
+      return new Date(year, month, day, hour, min).getTime();
+    }
+    return 0;
+  };
+
+  const gasoCols = [...Object.keys(currentPatient.gasometriaHistory || {}), ...(currentPatient.customGasometriaCols || [])];
+  const uniqueGasoCols = [...new Set(gasoCols)].sort((a, b) => parseDateForSort(b) - parseDateForSort(a));
 
   // --- FUNÇÕES DE PERSISTÊNCIA ---
   const save = async (updatedPatient, logMsg = "Alteração no Prontuário") => {
@@ -1765,7 +1819,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       mrcScore: "", ims: "", gasoHora: "", gaso_pH: "", gaso_pCO2: "", gaso_PaO2: "", gaso_BE: "", gaso_HCO3: "", gaso_SatO2: "", gaso_FiO2: "", gaso_PF: "",
       suporte: "", parametro: "", peep: "", fiO2: "", volCorrente: "", pressaoControlada: "", pressaoSuporte: "", fr: "", tIns: "", relIE: "",
       filtroHMEF: false, dataTrocaHMEF: "", sistemaFechado: false, dataTrocaSistemaFechado: "", cuff: "",
-      condutas: `CONDUTAS FISIOTERAPÊUTICAS:\n• Monitorização contínua de sinais vitais e vigilância respiratória;\n• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;\n• Avaliação de mecânica ventilatória e parâmetros do ventilador;\n• Ajuste e monitorização de parâmetros ventilatórios (desmame/correção assincronias/correção gasometria);\n• Higiene brônquica com vibração/compressão torácica/AFE/drenagem postural/estímulo de tosse/bag squeezing;\n• Aspiração de vias aéreas sistema aberto/fechado, com retirada de secreção [descrever];\n• Técnicas de reexpansão pulmonar com exercícios ventilatórios/EPAP/CPAP recrutamento;\n• Mobilização [passiva/ativo-assistida/ativa] de MMSS e MMII (3x10 repetições);\n• Sedestação no leito/à beira do leito/poltrona - ortostatismo/marcha assistida/deambulação;\n\nPaciente apresentou boa tolerância às manobras, sem intercorrências hemodinâmicas. Melhora discreta da expansibilidade torácica e redução de secreção espessa em vias aéreas. Mantida estabilidade dos sinais vitais durante todo atendimento.`,
+      condutas: `• Monitorização contínua de sinais vitais e vigilância respiratória;\n• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;\n• Avaliação de mecânica ventilatória e parâmetros do ventilador;\n• Ajuste e monitorização de parâmetros ventilatórios (desmame/correção assincronias/correção gasometria);\n• Higiene brônquica com vibração/compressão torácica/AFE/drenagem postural/estímulo de tosse/bag squeezing;\n• Aspiração de vias aéreas sistema aberto/fechado, com retirada de secreção [descrever];\n• Técnicas de reexpansão pulmonar com exercícios ventilatórios/EPAP/CPAP recrutamento;\n• Mobilização [passiva/ativo-assistida/ativa] de MMSS e MMII (3x10 repetições);\n• Sedestação no leito/à beira do leito/poltrona - ortostatismo/marcha assistida/deambulação;\n\nPaciente apresentou boa tolerância às manobras, sem intercorrências hemodinâmicas. Melhora discreta da expansibilidade torácica e redução de secreção espessa em vias aéreas. Mantida estabilidade dos sinais vitais durante todo atendimento.`,
       dataIntubacao: "", numeroTOT: "", rimaFixacao: "", secrecao: false, secrecaoAspecto: "", secrecaoColoracao: "", secrecaoQtd: ""
     };
 
@@ -1848,9 +1902,9 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       tIns: physioData.tIns,
       relIE: physioData.relIE,
       filtroHMEF: physioData.filtroHMEF,
-      dataHMEF: physioData.dataTrocaHMEF,
+      dataHMEF: physioData.dataHMEF,
       sistemaFechado: physioData.sistemaFechado,
-      dataSFA: physioData.dataTrocaSistemaFechado,
+      dataSFA: physioData.dataSFA,
       cuff: physioData.cuff,
       admissao_condutas: physioData.condutas,
       totNumero: physioData.numeroTOT,
@@ -1877,7 +1931,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       
       // 💡 CORREÇÃO: Formato exato da tabela (ex: "27/05 - 10:00 (Adm)")
       const horaLimpa = physioData.gasoHora.replace(':', 'h');
-      const colName = `${dd}/${mm} - ${physioData.gasoHora} (Adm)`; 
+      const colName = `${dd}/${mm} (Adm)`; 
 
       // Garante que a coluna entra na ordem correta do array
       if (!r.customGasometriaCols.includes(colName)) {
@@ -1885,7 +1939,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       }
 
       if (!r.gasometriaHistory[colName]) r.gasometriaHistory[colName] = {};
-
+      if (physioData.gasoHora) r.gasometriaHistory[colName]["_hora"] = physioData.gasoHora;
       if (physioData.gaso_pH) r.gasometriaHistory[colName]["pH"] = physioData.gaso_pH;
       if (physioData.gaso_pCO2) r.gasometriaHistory[colName]["pCO2"] = physioData.gaso_pCO2;
       if (physioData.gaso_PaO2) r.gasometriaHistory[colName]["PaO2"] = physioData.gaso_PaO2;

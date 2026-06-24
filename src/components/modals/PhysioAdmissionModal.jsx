@@ -13,6 +13,22 @@ const PhysioAdmissionModal = ({
   isReadOnly
 }) => {
   console.log("Dados recebidos no Modal:", physioData);
+
+  // Cálculo automático da P/F sempre que PaO2 ou FiO2 mudam
+  useEffect(() => {
+    const pao2 = parseFloat(physioData.gaso_PaO2?.replace(',', '.'));
+    const fio2 = parseFloat(physioData.gaso_FiO2?.replace(',', '.'));
+    
+    if (!isNaN(pao2) && !isNaN(fio2) && fio2 > 0) {
+      const pf = pao2 / (fio2 / 100);
+      const pfArredondado = Math.round(pf);
+      
+      // Só atualiza se o valor calculado for diferente do atual
+      if (physioData.gaso_PF !== String(pfArredondado)) {
+        setPhysioData(prev => ({ ...prev, gaso_PF: String(pfArredondado) }));
+      }
+    }
+  }, [physioData.gaso_PaO2, physioData.gaso_FiO2]);
   
   return (
     <div className="fixed inset-0 bg-slate-900/80 z-[80] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
@@ -358,7 +374,16 @@ const PhysioAdmissionModal = ({
                   {id: "gaso_HCO3", label: "HCO3"}, {id: "gaso_SatO2", label: "SatO2"}, {id: "gaso_FiO2", label: "FiO2"}, {id: "gaso_PF", label: "P/F"}].map(param => (
                   <div key={param.id} className="flex flex-col">
                     <span className="text-[9px] font-bold text-slate-500 text-center mb-0.5">{param.label}</span>
-                    <input type="text" className="w-full p-1.5 border rounded bg-slate-50 text-xs text-center" value={physioData[param.id] || ""} onChange={(e) => setPhysioData({ ...physioData, [param.id]: e.target.value })} onBlur={(e) => !isReadOnly && handleSyncGasometriaAdmissao && handleSyncGasometriaAdmissao({ ...physioData, [param.id]: e.target.value })} disabled={isReadOnly}/>
+                    {param.id === "gaso_PF" ? (
+                      <input 
+                        type="text" 
+                        className="w-full p-1.5 border rounded bg-cyan-50 text-xs text-center font-bold text-cyan-700" 
+                        value={physioData.gaso_PF || ""} 
+                        disabled={true}
+                      />
+                    ) : (
+                      <input type="text" className="w-full p-1.5 border rounded bg-slate-50 text-xs text-center" value={physioData[param.id] || ""} onChange={(e) => setPhysioData({ ...physioData, [param.id]: e.target.value })} onBlur={(e) => !isReadOnly && handleSyncGasometriaAdmissao && handleSyncGasometriaAdmissao({ ...physioData, [param.id]: e.target.value })} disabled={isReadOnly}/>
+                    )}
                   </div>
                 ))}
               </div>
