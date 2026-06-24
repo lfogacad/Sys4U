@@ -661,28 +661,12 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       });
 
       console.log("Leitos sincronizados dinamicamente!");
-        setPatients(prev => {
-          // Se tem edição local pendente, não sobrescrever
-          if (localEditRef.current) {
-            return prev;
-          }
-          
-          // Só atualiza se realmente houver diferença
-          const hasRealChange = updatedPatients.some((p, i) => {
-            if (!prev[i]) return true;
-            const prevStr = JSON.stringify({
-              cols: prev[i]?.customGasometriaCols || [],
-              history: prev[i]?.gasometriaHistory || {}
-            });
-            const newStr = JSON.stringify({
-              cols: p?.customGasometriaCols || [],
-              history: p?.gasometriaHistory || {}
-            });
-            return prevStr !== newStr;
-          });
-          
-          return hasRealChange ? updatedPatients : prev;
-        });
+      setPatients(prev => {
+        if (localEditRef.current) {
+          return prev;
+        }
+        return updatedPatients;
+      });
     });
 
     return () => unsubscribe();
