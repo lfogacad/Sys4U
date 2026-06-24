@@ -11,6 +11,24 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
 
   const [editingHora, setEditingHora] = useState({}); // { "23/06 (Adm)": "10:00", ... }
 
+  const [showEvolucaoModal, setShowEvolucaoModal] = useState(false);
+  const [evolucaoData, setEvolucaoData] = useState({
+    estadoGeral: "",
+    sistemaNervoso: "",
+    sistemaRespiratorio: "",
+    sistemaCardiovascular: "",
+    sistemaDigestivo: "",
+    sistemaMusculoesqueletico: "",
+    intercorrencias: "",
+    condutas: "",
+    planoMetas: "",
+    // Mobilização como array (para os checkboxes)
+    mobilizacao: [],
+    // Escalas
+    mrcScore: "",
+    ims: ""
+  });
+
   // =========================================================================
   // ESTADOS E FUNÇÕES DO MODAL DE TROCA DE VIA AÉREA
   // =========================================================================
@@ -288,18 +306,6 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
           className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${activePhysioTab === 'suporte' ? 'text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
         >
           Suporte e Via Aérea
-        </button>
-        <button 
-          onClick={(e) => { e.preventDefault(); setActivePhysioTab('mobilizacao'); }}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${activePhysioTab === 'mobilizacao' ? 'text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-        >
-          Mobilização
-        </button>
-        <button 
-          onClick={(e) => { e.preventDefault(); setActivePhysioTab('evolucao'); }}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${activePhysioTab === 'evolucao' ? 'text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-        >
-          Evolução e Plano
         </button>
       </div>
 
@@ -866,76 +872,214 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
             </fieldset>
           </div>
 
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* ABA 2: MOBILIZAÇÃO E MOTOR */}
-      {/* ============================================================== */}
-      {activePhysioTab === 'mobilizacao' && (
-        <div className="space-y-6 animate-fadeIn">
-          
-          {/* MOBILIZAÇÃO E CONDUTA MOTORA */}
-          <div className="p-4 border border-cyan-100 rounded-xl bg-cyan-50/30 shadow-sm flex flex-col">
-            <h4 className="font-bold text-cyan-800 text-xs uppercase mb-4 flex items-center gap-2 shrink-0"><Move size={16} /> Mobilização / Conduta Motora</h4>
-            <div className="grid grid-cols-2 gap-3 mb-6 flex-1">
-              {MOBILIZACAO.map((m) => {
-                const mobArray = Array.isArray(currentPatient.physio?.mobilizacao) ? currentPatient.physio.mobilizacao : [];
-                return (
-                  <label key={m} className="flex items-center gap-2 text-xs font-semibold text-cyan-900 cursor-pointer hover:bg-cyan-100/50 p-1 rounded transition-colors">
-                    <input type="checkbox" className="w-3.5 h-3.5 text-cyan-600 rounded focus:ring-cyan-500" checked={mobArray.includes(m)} onChange={() => toggleArrayItem("physio", "mobilizacao", m)} onBlur={() => handleBlurSave(`Fisioterapia: Alterou Conduta Motora (${m})`)} />
-                    {m}
-                  </label>
-                );
-              })}
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4 border-t border-cyan-200 pt-4 mt-auto shrink-0">
-              <div><label className="block text-[10px] font-bold text-cyan-700 uppercase mb-1">Escore MRC (0-60)</label><input type="text" className="w-full p-2 border border-cyan-200 rounded bg-white text-xs text-center font-bold text-cyan-900 outline-none focus:ring-2 focus:ring-cyan-400" placeholder="Ex: 48, NT" value={currentPatient.physio?.mrcScore || ""} onChange={(e) => updateNested("physio", "mrcScore", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Escore MRC")} /></div>
-              <div><label className="block text-[10px] font-bold text-cyan-700 uppercase mb-1">IMS (Escala Mobilidade)</label><select className="w-full p-2 border border-cyan-200 rounded bg-white text-xs font-bold text-cyan-900 outline-none focus:ring-2 focus:ring-cyan-400" value={currentPatient.physio?.icuMobilityScale || ""} onChange={(e) => updateNested("physio", "icuMobilityScale", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Avaliou Escala IMS")}><option value="">Selecione...</option>{ICU_MOBILITY_SCALE.map((scale) => <option key={scale} value={scale}>{scale}</option>)}</select></div>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* ABA 3: EVOLUÇÃO E PLANO */}
-      {/* ============================================================== */}
-      {activePhysioTab === 'evolucao' && (
-        <div className="space-y-6 animate-fadeIn">
-          
-          {/* EVOLUÇÃO SISTÊMICA */}
-          <div className="w-full p-4 border border-slate-200 rounded-xl bg-white shadow-sm">
-            <h4 className="font-bold text-slate-700 text-sm uppercase mb-6 flex items-center gap-2 border-b border-slate-100 pb-3"><Activity size={18} className="text-cyan-600" /> Evolução Sistêmica e Plano Terapêutico</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              {[
-                { id: "estadoGeral", label: "Estado Geral" },
-                { id: "sistemaNervoso", label: "Sistema Nervoso" },
-                { id: "sistemaRespiratorio", label: "Sistema Respiratório" },
-                { id: "sistemaCardiovascular", label: "Sistema Cardiovascular" },
-                { id: "sistemaDigestivo", label: "Sistema Digestivo" },
-                { id: "sistemaMusculoesqueletico", label: "Sis. Musculoesquelético" }
-              ].map((sys) => (
-                <div key={sys.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200 shadow-sm flex flex-col"><label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">{sys.label}</label><textarea className="w-full p-2 border rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200 flex-1 resize-y min-h-[80px]" value={currentPatient.physio?.[sys.id] || ""} onChange={(e) => updateNested("physio", sys.id, e.target.value)} onBlur={() => handleBlurSave(`Fisioterapia: Evoluiu ${sys.label}`)} placeholder={`Evolução diária - ${sys.label}...`} /></div>
-              ))}
-            </div>
-            
-            <div className="space-y-4 border-t border-slate-100 pt-6">
-              <div className="bg-red-50 p-4 rounded-lg border border-red-100 shadow-sm"><label className="text-xs font-bold text-red-600 uppercase mb-2 block flex items-center gap-1"><Shield size={14} /> Intercorrências do Plantão</label><textarea className="w-full p-3 border border-red-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-red-300 h-20 resize-y" value={currentPatient.physio?.intercorrencias || ""} onChange={(e) => updateNested("physio", "intercorrencias", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Intercorrências")} placeholder="Descreva quedas de saturação, autoextubação, rolhas, instabilidade hemodinâmica nas manobras..." /></div>
-              <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-100 shadow-sm"><label className="text-xs font-bold text-cyan-700 uppercase mb-2 block flex items-center gap-1"><ClipboardCheck size={14} /> Condutas Fisioterapêuticas Realizadas</label><textarea className="w-full p-3 border border-cyan-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 h-28 resize-y" value={currentPatient.physio?.condutas || currentPatient.physio?.admissao_condutas || ""} onChange={(e) => updateNested("physio", "condutas", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Condutas Realizadas")} /></div>
-              <div className="bg-green-50 p-4 rounded-lg border border-green-100 shadow-sm"><label className="text-xs font-bold text-green-700 uppercase mb-2 block flex items-center gap-1"><Target size={14} /> Plano / Metas para o Próximo Plantão</label><textarea className="w-full p-3 border border-green-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-green-300 h-24 resize-y" value={currentPatient.physio?.planoMetas || ""} onChange={(e) => updateNested("physio", "planoMetas", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Plano/Metas")} placeholder="Ex: Iniciar protocolo de desmame, tentar sedestação à beira leito amanhã de manhã, discutir extubação no round..." /></div>
-            </div>
-          </div>
-
           {/* GERAR EVOLUÇÃO */}
           <div className="mt-8 mb-6 border-t-2 border-slate-200 pt-6">
-            <button onClick={(e) => { e.preventDefault(); handleGeneratePhysioEvo(); }} className="w-full p-4 bg-gradient-to-r from-cyan-700 to-blue-800 text-white font-black rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-all flex justify-center items-center gap-3 uppercase tracking-wider text-sm"><FileText size={20} className="text-cyan-200" /> Gerar Evolução Diária</button>
+            <button onClick={(e) => {
+              e.preventDefault();
+              setEvolucaoData({
+                estadoGeral: currentPatient.physio?.estadoGeral || "",
+                sistemaNervoso: currentPatient.physio?.sistemaNervoso || "",
+                sistemaRespiratorio: currentPatient.physio?.sistemaRespiratorio || "",
+                sistemaCardiovascular: currentPatient.physio?.sistemaCardiovascular || "",
+                sistemaDigestivo: currentPatient.physio?.sistemaDigestivo || "",
+                sistemaMusculoesqueletico: currentPatient.physio?.sistemaMusculoesqueletico || "",
+                intercorrencias: currentPatient.physio?.intercorrencias || "",
+                condutas: currentPatient.physio?.condutas || currentPatient.physio?.admissao_condutas || "",
+                planoMetas: currentPatient.physio?.planoMetas || "",
+                mobilizacao: [],
+                mrcScore: "",
+                ims: ""
+              });
+              setShowEvolucaoModal(true);
+            }} 
+            className="w-full p-4 bg-gradient-to-r from-cyan-700 to-blue-800 text-white font-black rounded-xl shadow-lg hover:from-cyan-600 hover:to-blue-700 transition-all flex justify-center items-center gap-3 uppercase tracking-wider text-sm"><FileText size={20} className="text-cyan-200" /> Gerar Evolução Diária
+            </button>
           </div>
+
+          {/* MODAL DE EVOLUÇÃO DIÁRIA */}
+          {showEvolucaoModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowEvolucaoModal(false)}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="sticky top-0 bg-gradient-to-r from-cyan-700 to-blue-800 text-white p-4 rounded-t-2xl flex justify-between items-center">
+                  <h3 className="font-bold text-lg flex items-center gap-2"><FileText size={20} /> Gerar Evolução Diária</h3>
+                  <button onClick={() => setShowEvolucaoModal(false)} className="text-white/80 hover:text-white"><X size={20} /></button>
+                </div>
+                
+                <div className="p-6 space-y-4">
+                  {/* Campos pré-preenchidos */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                      { id: "estadoGeral", label: "Estado Geral" },
+                      { id: "sistemaNervoso", label: "Sistema Nervoso" },
+                      { id: "sistemaRespiratorio", label: "Sistema Respiratório" },
+                      { id: "sistemaCardiovascular", label: "Sistema Cardiovascular" },
+                      { id: "sistemaDigestivo", label: "Sistema Digestivo" },
+                      { id: "sistemaMusculoesqueletico", label: "Sis. Musculoesquelético" }
+                    ].map((sys) => (
+                      <div key={sys.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">{sys.label}</label>
+                        <textarea
+                          className="w-full p-2 border rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-cyan-200 resize-y min-h-[60px]"
+                          value={evolucaoData[sys.id]}
+                          onChange={(e) => setEvolucaoData(prev => ({ ...prev, [sys.id]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Intercorrências */}
+                  <div className="bg-red-50 p-4 rounded-lg border border-red-100">
+                    <label className="text-xs font-bold text-red-600 uppercase mb-2 block flex items-center gap-1"><Shield size={14} /> Intercorrências do Plantão</label>
+                    <textarea
+                      className="w-full p-3 border border-red-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-red-300 h-20 resize-y"
+                      value={evolucaoData.intercorrencias}
+                      onChange={(e) => setEvolucaoData(prev => ({ ...prev, intercorrencias: e.target.value }))}
+                    />
+                  </div>
+                  
+                  {/* Condutas */}
+                  <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-100">
+                    <label className="text-xs font-bold text-cyan-700 uppercase mb-2 block flex items-center gap-1"><ClipboardCheck size={14} /> Condutas Fisioterapêuticas Realizadas</label>
+                    <textarea
+                      className="w-full p-3 border border-cyan-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 h-28 resize-y"
+                      value={evolucaoData.condutas}
+                      onChange={(e) => setEvolucaoData(prev => ({ ...prev, condutas: e.target.value }))}
+                    />
+                  </div>
+                  
+                  {/* Plano */}
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                    <label className="text-xs font-bold text-green-700 uppercase mb-2 block flex items-center gap-1"><Target size={14} /> Plano / Metas para o Próximo Plantão</label>
+                    <textarea
+                      className="w-full p-3 border border-green-200 rounded bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-green-300 h-24 resize-y"
+                      value={evolucaoData.planoMetas}
+                      onChange={(e) => setEvolucaoData(prev => ({ ...prev, planoMetas: e.target.value }))}
+                    />
+                  </div>
+                  
+                  {/* MOBILIZAÇÃO E ESCALAS */}
+                  <div className="p-4 border border-cyan-100 rounded-xl bg-cyan-50/30 shadow-sm">
+                    <h4 className="font-bold text-cyan-800 text-xs uppercase mb-4 flex items-center gap-2"><Move size={16} /> Mobilização / Conduta Motora</h4>
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                      {MOBILIZACAO.map((m) => {
+                        const mobArray = Array.isArray(evolucaoData.mobilizacao) ? evolucaoData.mobilizacao : [];
+                        return (
+                          <label key={m} className="flex items-center gap-2 text-xs font-semibold text-cyan-900 cursor-pointer hover:bg-cyan-100/50 p-1 rounded transition-colors">
+                            <input
+                              type="checkbox"
+                              className="w-3.5 h-3.5 text-cyan-600 rounded focus:ring-cyan-500"
+                              checked={mobArray.includes(m)}
+                              onChange={() => {
+                                setEvolucaoData(prev => ({
+                                  ...prev,
+                                  mobilizacao: mobArray.includes(m)
+                                    ? mobArray.filter(item => item !== m)
+                                    : [...mobArray, m]
+                                }));
+                              }}
+                            />
+                            {m}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 border-t border-cyan-200 pt-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-cyan-700 uppercase mb-1">Escore MRC (0-60)</label>
+                        <input
+                          type="text"
+                          className="w-full p-2 border border-cyan-200 rounded bg-white text-xs text-center font-bold text-cyan-900 outline-none focus:ring-2 focus:ring-cyan-400"
+                          placeholder="Ex: 48, NT"
+                          value={evolucaoData.mrcScore || ""}
+                          onChange={(e) => setEvolucaoData(prev => ({ ...prev, mrcScore: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-cyan-700 uppercase mb-1">IMS (Escala Mobilidade)</label>
+                        <select
+                          className="w-full p-2 border border-cyan-200 rounded bg-white text-xs font-bold text-cyan-900 outline-none focus:ring-2 focus:ring-cyan-400"
+                          value={evolucaoData.ims || ""}
+                          onChange={(e) => setEvolucaoData(prev => ({ ...prev, ims: e.target.value }))}
+                        >
+                          <option value="">Selecione...</option>
+                          {ICU_MOBILITY_SCALE.map((scale) => (
+                            <option key={scale} value={scale}>{scale}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Botão Finalizar */}
+                <div className="sticky bottom-0 bg-slate-50 p-4 rounded-b-2xl border-t border-slate-200">
+                  <button
+                    onClick={() => {
+                      // Monta os textos de mobilização e escalas
+                      const mobText = Array.isArray(evolucaoData.mobilizacao) && evolucaoData.mobilizacao.length > 0
+                        ? `\nMobilização: ${evolucaoData.mobilizacao.join(", ")}`
+                        : "";
+                      const mrcText = evolucaoData.mrcScore ? `\nEscore MRC: ${evolucaoData.mrcScore}` : "";
+                      const imsText = evolucaoData.ims ? `\nIMS: ${evolucaoData.ims}` : "";
+                      
+                      // Monta o texto completo
+                      const texto = `EVOLUÇÃO FISIOTERAPÊUTICA\n\n` +
+                        `Estado Geral: ${evolucaoData.estadoGeral}\n` +
+                        `Sistema Nervoso: ${evolucaoData.sistemaNervoso}\n` +
+                        `Sistema Respiratório: ${evolucaoData.sistemaRespiratorio}\n` +
+                        `Sistema Cardiovascular: ${evolucaoData.sistemaCardiovascular}\n` +
+                        `Sistema Digestivo: ${evolucaoData.sistemaDigestivo}\n` +
+                        `Sistema Musculoesquelético: ${evolucaoData.sistemaMusculoesqueletico}\n\n` +
+                        `Intercorrências: ${evolucaoData.intercorrencias}\n\n` +
+                        `Condutas Realizadas: ${evolucaoData.condutas}\n\n` +
+                        `Plano/Metas: ${evolucaoData.planoMetas}` +
+                        `${mobText}${mrcText}${imsText}`;
+                      
+                      // Salva os dados editados no physio
+                      const up = [...patients];
+                      if (!up[activeTab].physio) up[activeTab].physio = {};
+                      Object.keys(evolucaoData).forEach(key => {
+                        if (key !== "mobilizacao" && key !== "mrcScore" && key !== "ims") {
+                          up[activeTab].physio[key] = evolucaoData[key];
+                        }
+                      });
+                      // Salva mobilizacao, mrcScore e ims
+                      if (Array.isArray(evolucaoData.mobilizacao)) {
+                        up[activeTab].physio.mobilizacao = evolucaoData.mobilizacao;
+                      }
+                      const hoje = new Date().toLocaleDateString('pt-BR'); // "24/06/2026"
+
+                      if (evolucaoData.mrcScore) {
+                        if (!up[activeTab].physio.mrcScore || typeof up[activeTab].physio.mrcScore === 'string') {
+                          up[activeTab].physio.mrcScore = {};
+                        }
+                        up[activeTab].physio.mrcScore[hoje] = evolucaoData.mrcScore;
+                      }
+                      if (evolucaoData.ims) {
+                        if (!up[activeTab].physio.icuMobilityScale || typeof up[activeTab].physio.icuMobilityScale === 'string') {
+                          up[activeTab].physio.icuMobilityScale = {};
+                        }
+                        up[activeTab].physio.icuMobilityScale[hoje] = evolucaoData.ims;
+                      }
+                      setPatients(up);
+                      save(up[activeTab], "Fisioterapia: Evolução gerada");
+                      
+                      setShowEvolucaoModal(false);
+                      handleGeneratePhysioEvo();
+                    }}
+                    className="w-full p-3 bg-gradient-to-r from-cyan-600 to-blue-700 text-white font-bold rounded-xl hover:from-cyan-500 hover:to-blue-600 transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                  >
+                    <FileText size={18} /> Finalizar e Gerar Evolução
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       )}
-    
+
       {/* MODAL DE GRÁFICO EVOLUTIVO DE O2 */}
       {showO2History && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">

@@ -1824,7 +1824,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     setShowPhysioModal(true);
   };
 
-  const handleFinalizePhysioAdmission = () => {
+const handleFinalizePhysioAdmission = () => {
     // ========================================================
     // 🚧 O LEÃO DE CHÁCARA: Bloqueia a finalização se faltar a hora da gaso
     // ========================================================
@@ -1833,15 +1833,15 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
     if (temDadoGaso && !physioData.gasoHora) {
       alert("⚠️ Atenção Fisio: O Horário da Gasometria é OBRIGATÓRIO para finalizar a admissão.");
-      return; // 🛑 Função morre aqui! Não salva nada e não fecha o modal.
+      return;
     }
 
-    // 1. O CLONE PROFUNDO DA MÉDICA (Rompe o vínculo de memória com outros leitos)
+    // 1. O CLONE PROFUNDO DA MÉDICA
     const pacienteBase = patients[activeTab];
     const r = pacienteBase ? JSON.parse(JSON.stringify(pacienteBase)) : {};
 
     // ========================================================
-    // 2. O COFRE DA FISIOTERAPIA (Congela a imagem inicial na raiz)
+    // 2. O COFRE DA FISIOTERAPIA
     // ========================================================
     if (!r.admissaoFisioterapia) {
       r.admissaoFisioterapia = {
@@ -1853,8 +1853,11 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     // ========================================================
     // 3. ABASTECENDO A LOUSA DE EVOLUÇÃO DIÁRIA
     // ========================================================
+    const hoje = new Date().toLocaleDateString('pt-BR');
+
     r.physio = {
       ...(r.physio || {}),
+      // Campos com prefixo (já existentes)
       admissao_estadoGeral: physioData.estadoGeral,
       admissao_sistemaNervoso: physioData.sistemaNervoso,
       admissao_sistemaRespiratorio: physioData.sistemaRespiratorio,
@@ -1862,8 +1865,19 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       admissao_sistemaDigestivo: physioData.sistemaDigestivo,
       admissao_sistemaMusculoesqueletico: physioData.sistemaMusculoesqueletico,
       admissao_funcionalidade: physioData.funcionalidade,
-      mrcScore: physioData.mrcScore,
-      icuMobilityScale: physioData.ims,
+      
+      // 🔥 CAMPOS SEM PREFIXO (para preencher a aba Evolução)
+      estadoGeral: physioData.estadoGeral,
+      sistemaNervoso: physioData.sistemaNervoso,
+      sistemaRespiratorio: physioData.sistemaRespiratorio,
+      sistemaCardiovascular: physioData.sistemaCardiovascular,
+      sistemaDigestivo: physioData.sistemaDigestivo,
+      sistemaMusculoesqueletico: physioData.sistemaMusculoesqueletico,
+      funcionalidade: physioData.funcionalidade,
+      
+      // Campos já existentes
+      mrcScore: physioData.mrcScore ? { [hoje]: physioData.mrcScore } : (r.physio?.mrcScore || {}),
+      icuMobilityScale: physioData.ims ? { [hoje]: physioData.ims } : (r.physio?.icuMobilityScale || {}),
       suporte: physioData.suporte,
       parametro: physioData.parametro,
       peep: physioData.peep,
@@ -1888,7 +1902,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       secrecaoQtd: physioData.secrecaoQtd
     };
 
-    // Tratamento isolado para a data de intubação (raiz do paciente)
+    // Tratamento isolado para a data de intubação
     if (physioData.dataIntubacao) {
       r.dataIntubacao = physioData.dataIntubacao;
     }
@@ -1902,11 +1916,8 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       const dd = String(today.getDate()).padStart(2, '0');
       const mm = String(today.getMonth() + 1).padStart(2, '0');
       
-      // 💡 CORREÇÃO: Formato exato da tabela (ex: "27/05 - 10:00 (Adm)")
-      const horaLimpa = physioData.gasoHora.replace(':', 'h');
-      const colName = `${dd}/${mm} (Adm)`; 
+      const colName = `${dd}/${mm} (Adm)`;
 
-      // Garante que a coluna entra na ordem correta do array
       if (!r.customGasometriaCols.includes(colName)) {
         r.customGasometriaCols.push(colName);
       }
@@ -1928,13 +1939,13 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     up[activeTab] = r;
     setPatients(up);
 
-    // 5. A CAIXA PRETA: Carimba a admissão da fisio no Firebase
+    // 5. SALVA NO FIREBASE
     if (typeof save === "function") {
       save(r, "Fisioterapia: Realizou a Admissão Completa (Avaliação Inicial, Parâmetros Ventilatórios e Escalas)");
     }
 
     // =========================================================================
-    // 💡 AUDITORIA GLOBAL: Registo da Admissão da Fisioterapia
+    // 💡 AUDITORIA GLOBAL
     // =========================================================================
     const auditoriaFn = typeof registrarLogAuditoria === "function" 
       ? registrarLogAuditoria 
@@ -1950,7 +1961,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     }
 
     // ========================================================
-    // 6. GERADOR DE TEXTO (Mantido exato)
+    // 6. GERADOR DE TEXTO
     // ========================================================
     const mrcText = physioData.mrcScore ? `\nESCORE MRC: ${physioData.mrcScore}` : "";
     const imsText = physioData.ims ? `\nICU MOBILITY SCALE (IMS): ${physioData.ims}` : "";
@@ -1994,7 +2005,6 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
     const gasoText = physioData.gasoHora ? `\n\nGASOMETRIA DE ADMISSÃO (${physioData.gasoHora}):\npH: ${physioData.gaso_pH || "-"} | pCO2: ${physioData.gaso_pCO2 || "-"} | PaO2: ${physioData.gaso_PaO2 || "-"} | BE: ${physioData.gaso_BE || "-"} | HCO3: ${physioData.gaso_HCO3 || "-"} | SatO2: ${physioData.gaso_SatO2 || "-"} | FiO2: ${physioData.gaso_FiO2 || "-"} | P/F: ${physioData.gaso_PF || "-"}` : "";
 
-    // --- BUSCANDO DADOS MÉDICOS DA ADMISSÃO ---
     const adm = r.admissionData || r.admissoes || {};
     const historiaMedica = adm.historia || "Não descrita no sistema.";
     const diagAgudos = r.diagnostico || adm.diagAgudos || "Não descritos no sistema.";
@@ -3057,21 +3067,18 @@ const generateNursingAI_Evolution = async () => {
   // ==============================================================
   // GERADOR AUTOMÁTICO DE EVOLUÇÃO (FISIOTERAPIA - MODELO OFICIAL)
   // ==============================================================
-  const handleGeneratePhysioEvo = () => {
+const handleGeneratePhysioEvo = () => {
     const p = patients[activeTab];
     if (!p) return;
 
     const phy = p.physio || {};
+    const hoje = new Date().toLocaleDateString('pt-BR');
 
-    // 👇 SUPER REDE DE CAPTURA ATUALIZADA COM AS CHAVES EXATAS DO MEDICAL ADMISSION
     const getField = (key) => {
-      // Ele procura o dado na raiz (p), dentro de medical (p.medical), ou outras variações.
       const val = p[key] || p.medical?.[key] || p.admissionData?.[key] || p.admissao?.[key];
-      // Se existir e não for vazio, retorna o valor. Senão, retorna aviso padrão.
       return (val && val.trim() !== "") ? val : "Não registrado na aba médica.";
     };
 
-    // --- FUNÇÕES AUXILIARES DE DATA PARA O TEXTO ---
     const formatDt = (iso) => {
       if (!iso) return "___/___/___";
       const [y, m, d] = iso.split('-');
@@ -3088,7 +3095,6 @@ const generateNursingAI_Evolution = async () => {
       return `${dd}/${mm}/${yy}`;
     };
 
-    // Ordenador interno de gasometria (para pegar a mais recente)
     const parseDateForSort = (str) => {
       if (!str) return 0;
       if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
@@ -3108,29 +3114,24 @@ const generateNursingAI_Evolution = async () => {
       return 0;
     };
 
-    // 🔥 NOVO BLOCO: CAPTURA TODAS AS GASOMETRIAS DO DIA (OMITINDO 00:00)
+    // 🔥 GASOMETRIAS DO DIA
     let gasoTxt = "";
     if (p.gasometriaHistory) {
-      // Define o início e o fim do dia de hoje (meia-noite até 23:59:59)
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
       const endOfToday = startOfToday + 24 * 60 * 60 * 1000 - 1;
 
-      // Pega todas as chaves e ordena da mais ANTIGA para a mais RECENTE (cronológica)
       const keys = Object.keys(p.gasometriaHistory).sort((a, b) => parseDateForSort(a) - parseDateForSort(b));
       
-      // Filtra apenas as chaves que caem no intervalo de hoje
       const keysHoje = keys.filter(k => {
         const t = parseDateForSort(k);
         return t >= startOfToday && t <= endOfToday;
       });
 
       if (keysHoje.length > 0) {
-        // Monta a linha de cada gasometria encontrada hoje
         keysHoje.forEach(k => {
           const g = p.gasometriaHistory[k];
           
-          // Converte o timestamp para extrair data e hora
           const dateObj = new Date(parseDateForSort(k));
           const dd = String(dateObj.getDate()).padStart(2, '0');
           const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -3138,7 +3139,6 @@ const generateNursingAI_Evolution = async () => {
           const hh = String(dateObj.getHours()).padStart(2, '0');
           const min = String(dateObj.getMinutes()).padStart(2, '0');
           
-          // Se for exatamente meia-noite, omite o horário. Caso contrário, exibe "às HH:mm"
           let dataFormatada = `${dd}-${mm}-${yyyy}`;
           if (hh !== '00' || min !== '00') {
             dataFormatada += ` às ${hh}:${min}`;
@@ -3153,7 +3153,6 @@ const generateNursingAI_Evolution = async () => {
       gasoTxt = "Nenhuma gasometria registrada no sistema.\n";
     }
     
-    // Remove a última quebra de linha extra
     gasoTxt = gasoTxt.trim();
 
     // --- CONSTRUÇÃO DO TEXTO ---
@@ -3165,7 +3164,6 @@ const generateNursingAI_Evolution = async () => {
     evo += `HPP:\n${getField('diagCronicos')}\n\n`;
     evo += `MEDICAMENTOS DE USO HABITUAL:\n${getField('medicamentos')}\n\n`;
     
-    // Consciência e mobilidade não precisam de quebra de linha longa
     const consc = getField('conscienciaBasal');
     evo += `NÍVEL DE CONSCIÊNCIA BASAL: ${consc === "Não registrado na aba médica." ? "Não registrado." : consc}\n`;
     const mob = getField('mobilidadeBasal');
@@ -3188,7 +3186,6 @@ const generateNursingAI_Evolution = async () => {
     evo += `Parâmetros: Modo: ${phy.parametro || "-"} | PEEP: ${phy.peep || "-"} | FiO2: ${phy.fiO2 || "-"}%\n`;
     evo += `Ajustes realizados: [ DIGITE AQUI OS AJUSTES REALIZADOS NO PLANTÃO ]\n\n`;
 
-    // 👇 AJUSTADO COM AS VARIÁVEIS dataHMEF e dataSFA
     evo += `Filtro HMEF:\n`;
     evo += `- Instalação: ${formatDt(phy.dataHMEF)}\n`;
     evo += `- Troca Prevista (7 dias): ${getTroca7d(phy.dataHMEF)}\n\n`;
@@ -3202,10 +3199,32 @@ const generateNursingAI_Evolution = async () => {
 
     evo += `--- CONDUTAS E PLANOS ---\n`;
     evo += `INTERCORRÊNCIAS DO PLANTÃO:\n${phy.intercorrencias || "Sem intercorrências no plantão."}\n\n`;
-    evo += `CONDUTAS FISIOTERAPÊUTICAS REALIZADAS:\n${phy.condutas || phy.admissao_condutas || "Não registrado."}\n\n`;
+
+    // 🔥 Condutas + Mobilização (sem espaço entre eles)
+    let condutasTexto = phy.condutas || phy.admissao_condutas || "Não registrado.";
+    const mobArray = Array.isArray(phy.mobilizacao) ? phy.mobilizacao : [];
+    if (mobArray.length > 0) {
+      condutasTexto += `\n\nFoi realizado as seguintes condutas motoras:\n${mobArray.map(m => `• ${m}`).join('\n')}`;
+    }
+    evo += `CONDUTAS FISIOTERAPÊUTICAS REALIZADAS:\n${condutasTexto}\n\n`;
+
+    // 🔥 Escalas (pulando uma linha após condutas)
+    const mrcHoje = typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : (phy.mrcScore || "");
+    const imsHoje = typeof phy.icuMobilityScale === 'object' ? (phy.icuMobilityScale[hoje] || "") : (phy.icuMobilityScale || "");
+    
+    let escalasTexto = "";
+    if (mrcHoje) {
+      escalasTexto += `ESCORE MRC: ${mrcHoje}\n`;
+    }
+    if (imsHoje) {
+      escalasTexto += `IMS (ICU Mobility Scale): ${imsHoje}`;
+    }
+    if (escalasTexto) {
+      evo += `${escalasTexto}\n\n`;
+    }
+
     evo += `PLANO / METAS PARA O PRÓXIMO PLANTÃO:\n${phy.planoMetas || "Manter condutas atuais."}`;
 
-    // Atualiza o estado e abre o modal
     setPhysioEvoText(evo);
     setShowPhysioEvoModal(true);
   };
