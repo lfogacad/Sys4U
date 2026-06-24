@@ -148,6 +148,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const navScrollRef = useRef(null);
   const [isGeneratingNursingAI, setIsGeneratingNursingAI] = useState(false);
 
+  const localEditRef = useRef(false);
+
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
   const [showNursingModal, setShowNursingModal] = useState(false);
   const [showPhysioModal, setShowPhysioModal] = useState(false);
@@ -659,41 +661,28 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       });
 
       console.log("Leitos sincronizados dinamicamente!");
-      setPatients(prev => {
-        // Verifica se o state local tem edições mais recentes que o snapshot
-        // Compara os timestamps de última modificação
-        let hasLocalEdits = false;
-        
-        for (let i = 0; i < updatedPatients.length; i++) {
-          if (!prev[i] || !updatedPatients[i]) continue;
-          
-          const prevCustom = JSON.stringify(prev[i]?.customGasometriaCols || []);
-          const newCustom = JSON.stringify(updatedPatients[i]?.customGasometriaCols || []);
-          const prevHistory = JSON.stringify(prev[i]?.gasometriaHistory || {});
-          const newHistory = JSON.stringify(updatedPatients[i]?.gasometriaHistory || {});
-          
-          // Se o state local tem MENOS colunas que o Firebase, é exclusão local pendente
-          const prevColCount = (prev[i]?.customGasometriaCols || []).length;
-          const newColCount = (updatedPatients[i]?.customGasometriaCols || []).length;
-          
-          if (prevColCount < newColCount && prevCustom !== newCustom) {
-            hasLocalEdits = true;
-            break;
+        setPatients(prev => {
+          // Se tem edição local pendente, não sobrescrever
+          if (localEditRef.current) {
+            return prev;
           }
           
-          // Se o state local tem MAIS colunas que o Firebase, é adição local pendente
-          if (prevColCount > newColCount && prevCustom !== newCustom) {
-            hasLocalEdits = true;
-            break;
-          }
-        }
-        
-        // Se tem edições locais pendentes, mantém o state local
-        if (hasLocalEdits) return prev;
-        
-        // Caso contrário, atualiza com os dados do Firebase
-        return updatedPatients;
-      });
+          // Só atualiza se realmente houver diferença
+          const hasRealChange = updatedPatients.some((p, i) => {
+            if (!prev[i]) return true;
+            const prevStr = JSON.stringify({
+              cols: prev[i]?.customGasometriaCols || [],
+              history: prev[i]?.gasometriaHistory || {}
+            });
+            const newStr = JSON.stringify({
+              cols: p?.customGasometriaCols || [],
+              history: p?.gasometriaHistory || {}
+            });
+            return prevStr !== newStr;
+          });
+          
+          return hasRealChange ? updatedPatients : prev;
+        });
     });
 
     return () => unsubscribe();
@@ -4694,8 +4683,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       save={save}
                       handlePhysioAdmission={handlePhysioAdmission}
                       handleViewPhysioAdmission={handleViewPhysioAdmission}
-
-                      // 👇 As calculadoras e ferramentas que estavam faltando:
+                      localEditRef={localEditRef}
                       clearDate={clearDate}
                       updateP={updateP}
                       updateNested={updateNested}
