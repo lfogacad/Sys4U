@@ -1777,26 +1777,78 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
   };
 
 
-  // --- INICIAR ADMISSÃO DA FISIOTERAPIA (Campo Estéril) ---
+// --- INICIAR ADMISSÃO DA FISIOTERAPIA (Campos Estruturados v2) ---
   const handlePhysioAdmission = () => {
-    console.log("🟢 MOTOR: Injetando Template Estéril para NOVA Admissão");
-    // 1. Primeiro, injetamos o template (Limpando qualquer lixo anterior)
-    const templateLimpo = {
-      estadoGeral: "BEG/REG/MEG,\nLOTE, cooperativo, sem queixas sistêmicas no momento da avaliação.",
-      sistemaNervoso: "Paciente sedado/sem sedação, sob protocolo de sedação contínua, em uso de xx em x ml/h e xx em x ml/h (BIC), RASS: xx/ escala de Coma de Glasgow: (AO: 4 – RV: 5 – RM:6) = 15T. Paciente consciente e orientado/ rebaixado. Pupilas: Isocóricas / anisocóricas, fotorreagentes / não fotorreagentes, simétricas ou assimétricas, reflexos preservados/ausentes.",
-      sistemaRespiratorio: "Paciente em ventilação mecânica invasiva, TOT/TQT, N° x, rima x / oxigenoterapia / ar ambiente. Padrão respiratório eupneico/taquipneico/bradipneico. Apresenta expansibilidade torácica simétrica/assimétrica, com predomínio costal/abdominal/misto. Ausculta pulmonar: murmúrio vesicular presente/abolido/diminuído bilateralmente, com presença de estertores crepitantes/roncos/sibilos em bases/apex/hemitorax D ou E. Apresenta tosse eficaz/ineficaz/ausente, com presença/ausência de secreção traqueobrônquica, de aspecto fluido/espesso, coloração clara/amarelada/esverdeada/purulenta/sanguinolenta, em pequena/média/grande quantidade. Paciente com uso/não uso de musculatura acessória, sem sinais de desconforto respiratório/ com sinais de desconforto respiratório (batimento de asa de nariz, tiragem intercostal). SpO₂ mantida em torno de xx%, com suporte ventilatório adequado no momento.",
-      sistemaCardiovascular: "Paciente sob monitorização cardíaca contínua, apresentando ritmo cardíaco regular/irregular. Estável/instável hemodinamicamente em uso/não uso de drogas vasoativas: xx em x ml/h (BIC) com FC em torno de x bpm,  PA: 95/76 mmHg, PAM: 98mmHg, Tº: 34.7°. Perfusão periférica adequada/reduzida, com extremidades aquecidas/frias, sem cianose, tempo de enchimento capilar </> 3 segundos. Presença/ausência de edema em membros inferiores/superiores (grau ___).",
-      sistemaDigestivo: "Paciente com abdômen plano/globoso/distendido/flácido/semigloboso, indolor/doloroso à palpação. Ruídos hidroaéreos presentes/diminuídos/ausentes. Em uso de dieta oral/enteral/parenteral, por via oral/sonda nasoenteral/nasogástrica/gastrostomia. Paciente com risco baixo/moderado/alto para broncoaspiração, anictérico.",
-      sistemaMusculoesqueletico: "Força muscular reduzida/preservada (avaliada quando possível). Tônus muscular normotônico/hipotônico/hipertônico. Amplitude de movimento preservada/reduzida em x. Presença de imobilidade no leito, com risco para fraqueza muscular adquirida na UTI. Sem/com sinais de retrações musculares. Independência prévia: x",
-      funcionalidade: "Paciente dependente parcialmente/dependente/independente para mudanças de decúbito e atividades funcionais no leito. Não deambula. Apresenta limitações funcionais decorrentes do estado clínico atual/tempo de internação em UTI.",
-      mrcScore: "", ims: "", gasoHora: "", gaso_pH: "", gaso_pCO2: "", gaso_PaO2: "", gaso_BE: "", gaso_HCO3: "", gaso_SatO2: "", gaso_FiO2: "", gaso_PF: "",
-      suporte: "", parametro: "", peep: "", fiO2: "", volCorrente: "", pressaoControlada: "", pressaoSuporte: "", fr: "", tIns: "", relIE: "",
-      filtroHMEF: false, dataTrocaHMEF: "", sistemaFechado: false, dataTrocaSistemaFechado: "", cuff: "",
-      condutas: `• Monitorização contínua de sinais vitais e vigilância respiratória;\n• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;\n• Avaliação de mecânica ventilatória e parâmetros do ventilador;\n• Ajuste e monitorização de parâmetros ventilatórios (desmame/correção assincronias/correção gasometria);\n• Higiene brônquica com vibração/compressão torácica/AFE/drenagem postural/estímulo de tosse/bag squeezing;\n• Aspiração de vias aéreas sistema aberto/fechado, com retirada de secreção [descrever];\n• Técnicas de reexpansão pulmonar com exercícios ventilatórios/EPAP/CPAP recrutamento;\n• Mobilização [passiva/ativo-assistida/ativa] de MMSS e MMII (3x10 repetições);\n• Sedestação no leito/à beira do leito/poltrona - ortostatismo/marcha assistida/deambulação;\n\nPaciente apresentou boa tolerância às manobras, sem intercorrências hemodinâmicas. Melhora discreta da expansibilidade torácica e redução de secreção espessa em vias aéreas. Mantida estabilidade dos sinais vitais durante todo atendimento.`,
-      dataIntubacao: "", numeroTOT: "", rimaFixacao: "", secrecao: false, secrecaoAspecto: "", secrecaoColoracao: "", secrecaoQtd: ""
+    console.log("🟢 MOTOR: Injetando Template Estruturado para NOVA Admissão v2");
+    
+    // 1. Inicializamos o objeto com os novos campos limpos ou com os padrões desejados
+    const templateLimpoV2 = {
+      // Bloco 1: Avaliação Respiratória
+      expansibilidadeTipo: "",        // Select (Simétrica / Assimétrica)
+      expansibilidadePredominio: "",  // Select (Costal / Abdominal / Misto)
+      
+      // O texto que você queria escrito de verdade para edição direta (sem ser placeholder)
+      auscultaPulmonar: "Murmúrio vesicular presente. Sem ruídos adventícios.", 
+      
+      tosse: "",                      // Select (Eficaz / Ineficaz / Ausente)
+      secrecao: false,                // Checkbox (true / false)
+      secrecaoAspecto: "",            // Select baseado em constantes
+      secrecaoColoracao: "",          // Select baseado em constantes
+      secrecaoQtd: "",                // Select baseado em constantes
+      desconfortoRespiratorio: false, // Checkbox (true / false)
+      sinaisDesconforto: [],          // Array para armazenar os múltiplos checkboxes de sinais
+
+      // Bloco 2: Avaliação Musculoesquelética
+      tonusMuscular: "",              // Select (Normotônico / Hipotônico / Hipertônico)
+      amplitudeMovimento: "",         // Select (Preservada / Reduzida)
+      amplitudeDescricao: "",         // Textarea de limitação (caso seja reduzida)
+      retracoesMusculares: false,     // Checkbox (true / false)
+
+      // Bloco 3: Escalas Funcionais
+      mrcScore: "",                   // Input numérico obrigatório
+      ims: "",                        // Select obrigatório baseado em constantes
+
+      // Bloco 4: Suporte Ventilatório
+      suporte: "",                    // Select obrigatório (VM, VNI, etc)
+      parametro: "",                  // Modo de VM ou Tipo de VNI / Fluxo O2
+      volCorrente: "",                // Parâmetro Vt (ml)
+      pressaoControlada: "",          // Parâmetro PC (cmH2O)
+      pressaoSuporte: "",             // Parâmetro PS (cmH2O)
+      peep: "",                       // PEEP
+      fiO2: "",                       // FiO2 (%)
+      fr: "",                         // FR (irpm)
+      tIns: "",                       // T. Ins (s)
+      relIE: "",                      // I:E (1:2)
+      
+      // Dispositivos da Via Aérea
+      dataIntubacao: "",              // Data da IOT
+      numeroTOT: "",                  // Nº do TOT
+      rimaFixacao: "",                // Rima (cm)
+      filtroHMEF: false,              // Checkbox Filtro HMEF
+      dataHMEF: "",                   // Data da troca do Filtro HMEF
+      sistemaFechado: false,          // Checkbox SFA
+      dataSFA: "",                    // Data da troca do SFA
+      cuff: "",                       // Pressão do cuff
+
+      // Bloco 5: Gasometria de Admissão
+      gasoHora: "",                   // Horário da Gaso
+      gaso_pH: "",
+      gaso_pCO2: "",
+      gaso_PaO2: "",
+      gaso_BE: "",
+      gaso_HCO3: "",
+      gaso_SatO2: "",
+      gaso_FiO2: "",
+      gaso_PF: "",                    // Calculado automaticamente pelo useEffect do modal
+
+      // Bloco 6: Condutas Fisioterapêuticas (Mantido o texto padrão sugerido)
+      condutas: `• Monitorização contínua de sinais vitais e vigilância respiratória;\n• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;\n• Avaliação de mecânica ventilatória e parâmetros do ventilador.`
     };
 
-    setPhysioData(templateLimpo);
+    // 2. Atualiza o estado no modulouti.jsx enviando o objeto correto
+    setPhysioData(templateLimpoV2);
+    
+    // 3. Abre o modal na tela
     setShowPhysioModal(true);
   };
 
@@ -1836,12 +1888,12 @@ const handleFinalizePhysioAdmission = () => {
       return;
     }
 
-    // 1. O CLONE PROFUNDO DA MÉDICA
+    // 1. O CLONE PROFUNDO DO PACIENTE
     const pacienteBase = patients[activeTab];
     const r = pacienteBase ? JSON.parse(JSON.stringify(pacienteBase)) : {};
 
     // ========================================================
-    // 2. O COFRE DA FISIOTERAPIA
+    // 2. SALVANDO OS DADOS NO COFRE DA FISIOTERAPIA
     // ========================================================
     if (!r.admissaoFisioterapia) {
       r.admissaoFisioterapia = {
@@ -1850,32 +1902,10 @@ const handleFinalizePhysioAdmission = () => {
       };
     }
 
-    // ========================================================
-    // 3. ABASTECENDO A LOUSA DE EVOLUÇÃO DIÁRIA
-    // ========================================================
     const hoje = new Date().toLocaleDateString('pt-BR');
 
     r.physio = {
       ...(r.physio || {}),
-      // Campos com prefixo (já existentes)
-      admissao_estadoGeral: physioData.estadoGeral,
-      admissao_sistemaNervoso: physioData.sistemaNervoso,
-      admissao_sistemaRespiratorio: physioData.sistemaRespiratorio,
-      admissao_sistemaCardiovascular: physioData.sistemaCardiovascular,
-      admissao_sistemaDigestivo: physioData.sistemaDigestivo,
-      admissao_sistemaMusculoesqueletico: physioData.sistemaMusculoesqueletico,
-      admissao_funcionalidade: physioData.funcionalidade,
-      
-      // 🔥 CAMPOS SEM PREFIXO (para preencher a aba Evolução)
-      estadoGeral: physioData.estadoGeral,
-      sistemaNervoso: physioData.sistemaNervoso,
-      sistemaRespiratorio: physioData.sistemaRespiratorio,
-      sistemaCardiovascular: physioData.sistemaCardiovascular,
-      sistemaDigestivo: physioData.sistemaDigestivo,
-      sistemaMusculoesqueletico: physioData.sistemaMusculoesqueletico,
-      funcionalidade: physioData.funcionalidade,
-      
-      // Campos já existentes
       mrcScore: physioData.mrcScore ? { [hoje]: physioData.mrcScore } : (r.physio?.mrcScore || {}),
       icuMobilityScale: physioData.ims ? { [hoje]: physioData.ims } : (r.physio?.icuMobilityScale || {}),
       suporte: physioData.suporte,
@@ -1902,26 +1932,18 @@ const handleFinalizePhysioAdmission = () => {
       secrecaoQtd: physioData.secrecaoQtd
     };
 
-    // Tratamento isolado para a data de intubação
-    if (physioData.dataIntubacao) {
-      r.dataIntubacao = physioData.dataIntubacao;
-    }
+    if (physioData.dataIntubacao) r.dataIntubacao = physioData.dataIntubacao;
 
     // --- MÁGICA DA GASOMETRIA AUTOMÁTICA ---
     if (physioData.gasoHora) {
       if (!r.gasometriaHistory) r.gasometriaHistory = {};
       if (!r.customGasometriaCols) r.customGasometriaCols = [];
-
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, '0');
       const mm = String(today.getMonth() + 1).padStart(2, '0');
-      
       const colName = `${dd}/${mm} (Adm)`;
 
-      if (!r.customGasometriaCols.includes(colName)) {
-        r.customGasometriaCols.push(colName);
-      }
-
+      if (!r.customGasometriaCols.includes(colName)) r.customGasometriaCols.push(colName);
       if (!r.gasometriaHistory[colName]) r.gasometriaHistory[colName] = {};
       if (physioData.gasoHora) r.gasometriaHistory[colName]["_hora"] = physioData.gasoHora;
       if (physioData.gaso_pH) r.gasometriaHistory[colName]["pH"] = physioData.gaso_pH;
@@ -1934,115 +1956,221 @@ const handleFinalizePhysioAdmission = () => {
       if (physioData.gaso_PF) r.gasometriaHistory[colName]["P/F"] = physioData.gaso_PF;
     }
 
-    // 4. ATUALIZAÇÃO IMEDIATA DA TELA
     const up = [...patients];
     up[activeTab] = r;
     setPatients(up);
 
-    // 5. SALVA NO FIREBASE
     if (typeof save === "function") {
       save(r, "Fisioterapia: Realizou a Admissão Completa (Avaliação Inicial, Parâmetros Ventilatórios e Escalas)");
     }
 
     // =========================================================================
-    // 💡 AUDITORIA GLOBAL
+    // 🧠 MÁGICA DE INTELIGÊNCIA CLÍNICA DO TEXTO (GERADOR)
     // =========================================================================
-    const auditoriaFn = typeof registrarLogAuditoria === "function" 
-      ? registrarLogAuditoria 
-      : (typeof registarLogAuditoria === "function" ? registarLogAuditoria : null);
-    
-    if (auditoriaFn) {
-      auditoriaFn(
-        "ADMISSÃO FISIOTERAPÊUTICA FINALIZADA", 
-        `Suporte inicial: ${physioData.suporte || "Ar ambiente"}. Funcionalidade: ${physioData.funcionalidade || "Não avaliada"}.`, 
-        `Leito ${activeTab + 1}`, 
-        r.nome || "Paciente não identificado"
-      );
-    }
 
-    // ========================================================
-    // 6. GERADOR DE TEXTO
-    // ========================================================
-    const mrcText = physioData.mrcScore ? `\nESCORE MRC: ${physioData.mrcScore}` : "";
-    const imsText = physioData.ims ? `\nICU MOBILITY SCALE (IMS): ${physioData.ims}` : "";
-
-    let suporteText = "";
-    if (physioData.suporte) {
-      if (physioData.suporte === "VM") {
-        let paramText = "-";
-        if (physioData.parametro === "VCV") paramText = `Vt: ${physioData.volCorrente || "-"}ml`;
-        else if (physioData.parametro === "PCV") paramText = `PC: ${physioData.pressaoControlada || "-"}cmH2O`;
-        else if (physioData.parametro === "PSV") paramText = `PS: ${physioData.pressaoSuporte || "-"}cmH2O`;
-
-        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | ${paramText} | PEEP: ${physioData.peep || "-"} | FR: ${physioData.fr || "-"} | T.ins: ${physioData.tIns || "-"} | I:E: ${physioData.relIE || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
-      } else if (physioData.suporte === "VNI") {
-        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}\nModo: ${physioData.parametro || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
-      } else if (physioData.suporte === "Venturi") {
-        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte} - FiO2: ${physioData.fiO2 || "-"}%`;
-      } else if (physioData.suporte === "Cateter Nasal" || physioData.suporte === "Máscara não reinalante" || physioData.suporte === "Tubo T") {
-        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte} - Fluxo: ${physioData.parametro || "-"} L/min`;
-      } else {
-        suporteText = `\n\nSUPORTE VENTILATÓRIO: ${physioData.suporte}`;
+    // 1. SISTEMA RESPIRATÓRIO (Buscando a 1ª FR registrada em bh.vitals)
+    let padraoRespiratorio = "Padrão respiratório eupneico";
+    if (r.bh && r.bh.vitals) {
+      const hoursArray = Object.keys(r.bh.vitals).sort(); // Ordena horas, ex: "08:00", "10:00"
+      if (hoursArray.length > 0) {
+        const earliestHour = hoursArray[0];
+        const frValueStr = r.bh.vitals[earliestHour]["FR (irpm)"];
+        if (frValueStr) {
+          const frValue = parseInt(frValueStr);
+          if (frValue < 12) padraoRespiratorio = "Padrão respiratório bradipneico";
+          else if (frValue > 20) padraoRespiratorio = "Padrão respiratório taquipneico";
+        }
       }
     }
 
-    let airwayText = "";
-    let itensAirway = [];
+    // =========================================================================
+    // 🧠 AJUSTE DE FLUXO E CONCORDÂNCIA CLÍNICA (TOSSE E SECREÇÃO)
+    // =========================================================================
+    let tosseESecrecaoText = "";
 
+    const tosseStatus = physioData.tosse?.toLowerCase(); // "eficaz", "ineficaz", "ausente"
+
+    if (tosseStatus === "ausente") {
+      if (physioData.secrecao) {
+        // Cenário raro, mas possível (ex: paciente não tosse, mas aspira secreção em via aérea)
+        tosseESecrecaoText = `Ausência de tosse espontânea, porém com presença de secreção traqueobrônquica de aspecto ${physioData.secrecaoAspecto?.toLowerCase() || "..."}, coloração ${physioData.secrecaoColoracao?.toLowerCase() || "..."}, em ${physioData.secrecaoQtd?.toLowerCase() || "pouca"} quantidade.`;
+      } else {
+        // Cenário padrão ouro: sem tosse e sem secreção
+        tosseESecrecaoText = "Ausência de tosse e de secreção traqueobrônquica.";
+      }
+    } else {
+      // Se a tosse for Eficaz ou Ineficaz
+      const detalheSecrecao = physioData.secrecao
+        ? `com presença de secreção traqueobrônquica de aspecto ${physioData.secrecaoAspecto?.toLowerCase() || "..."}, coloração ${physioData.secrecaoColoracao?.toLowerCase() || "..."}, em ${physioData.secrecaoQtd?.toLowerCase() || "pouca"} quantidade.`
+        : "com ausência de secreção traqueobrônquica.";
+        
+      tosseESecrecaoText = `Apresenta tosse ${tosseStatus || "não avaliada"}, ${detalheSecrecao}`;
+    }
+
+    const desconfortoText = physioData.desconfortoRespiratorio
+      ? `com uso de musculatura acessória, com sinais de desconforto respiratório (${Array.isArray(physioData.sinaisDesconforto) ? physioData.sinaisDesconforto.join(", ") : "não especificado"}).`
+      : "sem uso de musculatura acessória, sem sinais de desconforto respiratório.";
+
+    // 2. SISTEMA CARDIOVASCULAR (Nova Lógica Baseada em DVA + 1ª PAM do Dia)
+    const usaDVA = r.cardio?.dva === true;
+    const isFem = r.sexo === "F"; 
+    
+    // Padrão inicial caso não encontre a PAM na base
+    let hemodinamicaStatus = usaDVA 
+      ? (isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado") 
+      : "Hemodinamicamente estável";
+
+    // Busca o valor da primeira PAM inserida no balanço hídrico
+    if (r.bh && r.bh.vitals) {
+      const hoursArray = Object.keys(r.bh.vitals).sort(); // Ordena os horários ("10:00", "11:00"...)
+      if (hoursArray.length > 0) {
+        const earliestHour = hoursArray[0];
+        const pamValueStr = r.bh.vitals[earliestHour]["PAM"]; // Puxa a PAM do primeiro horário
+        
+        if (pamValueStr) {
+          const pamValue = parseInt(pamValueStr);
+          
+          if (!usaDVA) {
+            hemodinamicaStatus = "Hemodinamicamente estável";
+          } else if (usaDVA && pamValue >= 65) {
+            hemodinamicaStatus = isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado";
+          } else if (usaDVA && pamValue < 65) {
+            hemodinamicaStatus = "Hemodinamicamente instável";
+          }
+        }
+      }
+    }
+    
+    const dvaText = usaDVA ? `em uso de DVA (${r.cardio?.drogasDVA?.join(", ") || "não especificadas"})` : "sem uso de DVA";
+
+    // 3. SISTEMA NERVOSO
+    // Tenta pegar do r.admissionData, r.admissaoMedica ou r.neuro
+    const nivelConsciencia = r.admissionData?.conscienciaBasal || r.admissaoMedica?.conscienciaBasal || r.neuro?.glasgowBasalText || "Nível de consciência não informado";
+    const sedado = r.neuro?.sedacao === true || r.neuro?.sedacao === "Sim" || r.admissaoMedica?.sedacao === "Sim";
+    const sedadoText = sedado ? "sedado" : "sem sedação";
+    
+    const drogasSedativas = r.neuro?.drogasSedacao || r.admissaoMedica?.drogasSedacao || [];
+    const drogasSedText = sedado && drogasSedativas.length > 0 ? `, em uso de ${drogasSedativas.join(" e ")} em BIC` : "";
+    
+    // Lógica Inteligente RASS vs Glasgow
+    let rassGcs = "Glasgow não avaliado";
+    const rassValue = r.neuro?.rass || r.admissaoMedica?.rass;
+
+    if (rassValue) {
+      rassGcs = `RASS ${rassValue}`;
+    } else {
+      // Extrator de números do Firebase (ex: "4 - Espontânea" -> 4)
+      const getGcsVal = (s) => parseInt(s?.split(" ")[0]) || 0;
+      
+      const aoStr = r.admissaoMedica?.ecg_ao || r.neuro?.glasgowAO;
+      const rvStr = r.admissaoMedica?.ecg_rv || r.neuro?.glasgowRV;
+      const rmStr = r.admissaoMedica?.ecg_rm || r.neuro?.glasgowRM;
+
+      if (aoStr || rvStr || rmStr) {
+        const ao = getGcsVal(aoStr);
+        const rm = getGcsVal(rmStr);
+        
+        let rv = 0;
+        let rvDisplay = "";
+        
+        // Verifica se o paciente está intubado (1T)
+        if (rvStr?.startsWith("1T") || rvStr?.startsWith("T")) {
+           rv = 1; 
+           rvDisplay = "T";
+        } else {
+           rv = getGcsVal(rvStr);
+           rvDisplay = rv.toString();
+        }
+        
+        const totalGcs = ao + rv + rm;
+        rassGcs = `Glasgow ${totalGcs} (AO:${ao} RV:${rvDisplay} RM:${rm})`;
+      }
+    }
+
+    const pupilasText = r.admissionData?.pupilas || r.admissaoMedica?.pupilas || "não descritas";
+
+    // 4. SISTEMA MUSCULOESQUELÉTICO E TEMPO VM
+    const mrcScoreInt = parseInt(physioData.mrcScore);
+    const forcaMuscularText = (!isNaN(mrcScoreInt) && mrcScoreInt < 48) ? "Força muscular reduzida" : "Força muscular preservada";
+
+    let tempoVMText = "";
+    if (physioData.suporte === "VM" && physioData.dataIntubacao) {
+      const dataIOT = new Date(physioData.dataIntubacao + "T00:00:00");
+      const diffTime = Math.abs(new Date() - dataIOT);
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      tempoVMText = `\nTempo de VM: D${diffDays}`;
+    }
+
+    // 5. PARÂMETROS E DISPOSITIVOS
+    let paramText = "-";
     if (physioData.suporte === "VM") {
-      if (physioData.dataIntubacao) itensAirway.push(`Intubação: ${physioData.dataIntubacao}`);
-      if (physioData.numeroTOT) itensAirway.push(`TOT Nº: ${physioData.numeroTOT}`);
-      if (physioData.rimaFixacao) itensAirway.push(`Rima: ${physioData.rimaFixacao}cm`);
+      if (physioData.parametro === "VCV") paramText = `Vt: ${physioData.volCorrente || "-"}ml | PEEP: ${physioData.peep || "-"} | FR: ${physioData.fr || "-"} | T.ins: ${physioData.tIns || "-"} | I:E: ${physioData.relIE || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
+      else if (physioData.parametro === "PCV") paramText = `PC: ${physioData.pressaoControlada || "-"}cmH2O | PEEP: ${physioData.peep || "-"} | FR: ${physioData.fr || "-"} | T.ins: ${physioData.tIns || "-"} | I:E: ${physioData.relIE || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
+      else if (physioData.parametro === "PSV") paramText = `PS: ${physioData.pressaoSuporte || "-"}cmH2O | PEEP: ${physioData.peep || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
+    } else if (physioData.suporte === "VNI") {
+      paramText = `Modo: ${physioData.parametro || "-"} | FiO2: ${physioData.fiO2 || "-"}%`;
+    } else if (physioData.suporte === "Venturi") {
+      paramText = `FiO2: ${physioData.fiO2 || "-"}%`;
+    } else if (["Cateter Nasal", "Máscara não reinalante", "Macronebulização por TQT"].includes(physioData.suporte)) {
+      paramText = `Fluxo: ${physioData.parametro || "-"} L/min`;
     }
 
-    if (physioData.cuff) itensAirway.push(`Cuff: ${physioData.cuff} cmH2O`);
-    if (physioData.filtroHMEF) itensAirway.push(`Filtro HMEF (Troca: ${physioData.dataHMEF || "Não informada"})`);
-    if (physioData.sistemaFechado) itensAirway.push(`Sist. Fechado de Aspiração (Troca: ${physioData.dataSFA || "Não informada"})`);
+    const gasoText = physioData.gasoHora ? `${physioData.gasoHora}h - pH: ${physioData.gaso_pH || "-"} | pCO2: ${physioData.gaso_pCO2 || "-"} | PaO2: ${physioData.gaso_PaO2 || "-"} | BE: ${physioData.gaso_BE || "-"} | HCO3: ${physioData.gaso_HCO3 || "-"} | SatO2: ${physioData.gaso_SatO2 || "-"} | FiO2: ${physioData.gaso_FiO2 || "-"} | P/F: ${physioData.gaso_PF || "-"}` : "Não realizada.";
 
-    if (itensAirway.length > 0) {
-      airwayText = `\nVIA AÉREA E DISPOSITIVOS: ${itensAirway.join(" | ")}`;
-    }
+    let dispositivosText = [];
+    if (physioData.filtroHMEF) dispositivosText.push(`Filtro HMEF (Instalação: ${physioData.dataHMEF || "não informada"})`);
+    if (physioData.sistemaFechado) dispositivosText.push(`Sistema Fechado de Aspiração (Instalação: ${physioData.dataSFA || "não informada"})`);
+    if (physioData.cuff) dispositivosText.push(`Pressão do Cuff: ${physioData.cuff} cmH2O`);
+    const blocoDispositivos = dispositivosText.length > 0 ? `\n\nDISPOSITIVOS DE VIA AÉREA:\n${dispositivosText.join("\n")}` : "";
 
-    const gasoText = physioData.gasoHora ? `\n\nGASOMETRIA DE ADMISSÃO (${physioData.gasoHora}):\npH: ${physioData.gaso_pH || "-"} | pCO2: ${physioData.gaso_pCO2 || "-"} | PaO2: ${physioData.gaso_PaO2 || "-"} | BE: ${physioData.gaso_BE || "-"} | HCO3: ${physioData.gaso_HCO3 || "-"} | SatO2: ${physioData.gaso_SatO2 || "-"} | FiO2: ${physioData.gaso_FiO2 || "-"} | P/F: ${physioData.gaso_PF || "-"}` : "";
-
-    const adm = r.admissionData || r.admissoes || {};
-    const historiaMedica = adm.historia || "Não descrita no sistema.";
-    const diagAgudos = r.diagnostico || adm.diagAgudos || "Não descritos no sistema.";
-    const diagCronicos = r.comorbidades || adm.diagCronicos || "Não descritos no sistema.";
-
-    const text = `ADMISSÃO FISIOTERAPÊUTICA
-
+// =========================================================================
+// 6. GERADOR DE TEXTO (TEXTO FINAL EXATO)
+// =========================================================================
+const text = `ADMISSÃO FISIOTERAPÊUTICA
+ 
+--- HISTÓRIA E DIAGNÓSTICOS ---
 HISTÓRIA CLÍNICA:
-${historiaMedica}
-
+${r.admissionData?.historia || "Não informada no sistema médico."}
+ 
 DIAGNÓSTICOS AGUDOS:
-${diagAgudos}
+${r.admissionData?.diagAgudos || "Não informados no sistema médico."}
+ 
+HPP:
+${r.admissionData?.diagCronicos || "Não informados no sistema médico."}
+ 
+NÍVEL DE CONSCIÊNCIA BASAL: ${r.admissionData?.conscienciaBasal || "Não informado no sistema médico."}
 
-DIAGNÓSTICOS CRÔNICOS:
-${diagCronicos}
-
-ESTADO GERAL:
-${physioData.estadoGeral || "Não avaliado"}
-
-SISTEMA NERVOSO:
-${physioData.sistemaNervoso || "Não avaliado"}
+--- AVALIAÇÃO POR SISTEMAS ---
 
 SISTEMA RESPIRATÓRIO:
-${physioData.sistemaRespiratorio || "Não avaliado"}
-
+${padraoRespiratorio}.
+Expansibilidade torácica ${physioData.expansibilidadeTipo?.toLowerCase() || "não avaliada"}, com predomínio ${physioData.expansibilidadePredominio?.toLowerCase() || "não avaliado"}.
+Ausculta pulmonar: ${physioData.auscultaPulmonar || "Não avaliada."}
+${tosseESecrecaoText}
+Paciente ${desconfortoText}
+ 
 SISTEMA CARDIOVASCULAR:
-${physioData.sistemaCardiovascular || "Não avaliado"}
-
-SISTEMA DIGESTIVO:
-${physioData.sistemaDigestivo || "Não avaliado"}
-
+Paciente ${hemodinamicaStatus}, ${dvaText}.
+ 
+SISTEMA NERVOSO: 
+Paciente ${nivelConsciencia}, ${sedadoText}${drogasSedText}, ${rassGcs}. Pupilas: ${pupilasText}.
+ 
 SISTEMA MUSCULOESQUELÉTICO:
-${physioData.sistemaMusculoesqueletico || "Não avaliado"}
+${forcaMuscularText} (MRC: ${physioData.mrcScore || "não testado"}). Tônus muscular ${physioData.tonusMuscular?.toLowerCase() || "não avaliado"}. ${physioData.retracoesMusculares ? "Com" : "Sem"} sinais de retrações musculares.
+Amplitude de movimento ${physioData.amplitudeMovimento?.toLowerCase() || "não avaliada"} ${physioData.amplitudeMovimento === 'Reduzida' && physioData.amplitudeDescricao ? `em ${physioData.amplitudeDescricao}` : ""}.
+Mobilidade no leito (IMS): ${physioData.ims || "Não avaliada"}.
+ 
+FUNCIONALIDADE: 
+${r.admissionData?.mobilidadeBasal || "Não informada no sistema médico."}
+ 
+--- SUPORTE VENTILATÓRIO ---
+Suporte Atual: ${physioData.suporte || "Não informado"}${tempoVMText}
+Parâmetros: ${paramText}
+ 
+--- GASOMETRIA DE ADMISSÃO ---
+${gasoText}${blocoDispositivos}
 
-FUNCIONALIDADE:
-${physioData.funcionalidade || "Não avaliado"}${mrcText}${imsText}${suporteText}${airwayText}${gasoText}
-
-CONDUTAS FISIOTERAPÊUTICAS:
+--- CONDUTAS FISIOTERAPÊUTICAS ---
 ${physioData.condutas || "Nenhuma conduta descrita."}`;
 
     setShowPhysioModal(false);
@@ -2468,7 +2596,7 @@ CONDUTA:
 ${conduta}
 `;
 
-// =========================================================================
+            // =========================================================================
             // 🚨 LOGICA DA CCIH: REGISTRO DE CULTURAS (CORREÇÃO DE ESTRUTURA)
             // =========================================================================
             try {

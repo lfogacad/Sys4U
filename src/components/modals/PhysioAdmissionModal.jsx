@@ -93,7 +93,6 @@ const PhysioAdmissionModal = ({
                 value={physioData.auscultaPulmonar || ""}
                 onChange={(e) => setPhysioData({ ...physioData, auscultaPulmonar: e.target.value })}
                 disabled={isReadOnly}
-                placeholder="Murmúrio vesicular presente. Sem ruídos adventícios."
               />
             </div>
 
@@ -221,13 +220,13 @@ const PhysioAdmissionModal = ({
 
             {physioData.amplitudeMovimento === "Reduzida" && (
               <div className="mt-4 animate-fadeIn">
-                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Descreva as limitações</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Articulações comprometidas</label>
                 <textarea
                   className="w-full p-3 border border-slate-200 rounded-lg bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-emerald-200 resize-y h-16"
                   value={physioData.amplitudeDescricao || ""}
                   onChange={(e) => setPhysioData({ ...physioData, amplitudeDescricao: e.target.value })}
                   disabled={isReadOnly}
-                  placeholder="Descreva as limitações de amplitude encontradas..."
+                  placeholder="Relacione as articulações com ADM reduzida..."
                 />
               </div>
             )}
