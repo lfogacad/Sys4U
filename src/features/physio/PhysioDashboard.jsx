@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, ClipboardSignature, 
-         Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History, RefreshCw } from 'lucide-react';
+         Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History, RefreshCw, ChevronDown, ChevronRight,
+         Gauge, Timer, ArrowUpCircle, ClipboardList } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
 import { formatDateDDMM } from '../../utils/core';
 
@@ -10,6 +11,8 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   const [activePhysioTab, setActivePhysioTab] = useState('suporte');
 
   const [editingHora, setEditingHora] = useState({}); // { "23/06 (Adm)": "10:00", ... }
+
+  const [showAcoesFisio, setShowAcoesFisio] = useState(false);
 
   const [showEvolucaoModal, setShowEvolucaoModal] = useState(false);
   const [evolucaoData, setEvolucaoData] = useState({
@@ -28,6 +31,48 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
     mrcScore: "",
     ims: ""
   });
+
+  const [modalAspiracaoFisio, setModalAspiracaoFisio] = useState({
+  isOpen: false,
+  horario: "08:00", // Inicializa com um horário padrão fluido
+  sistema: "",      // Aberto / Fechado
+  viaAerea: "",      // TOT / TQT / VAS
+  quantidade: "",    // Pequena / Moderada / Grande / Abundante
+  caracteristica: "",// Fluida / Espessa / Mucoide...
+  coloracao: "",     // Transparente / Esbranquiçada...
+  oxigenacaoPre: "",
+  intercorrencias: ""
+});
+
+  const [modalVNI, setModalVNI] = useState({
+  isOpen: false,
+  horario: "08:00",
+  modo: "",       // BIPAP, CPAP, PSV
+  ipap: "",
+  epap: "",
+  peep: "",
+  ps: "",
+  o2: "",         // Serve para O2 (L/min) ou FiO2 (%) dependendo do modo
+  tempo: "",
+  unidadeTempo: "minutos",
+  fr: "",
+  spo2: ""
+});
+
+  const [modalTRE, setModalTRE] = useState({
+  isOpen: false,
+  horario: "08:00",
+  cuffLeakFeito: false,
+  cuffLeakResultado: "", // Positivo, Negativo
+  modo: "",              // Tubo T, PSV, CPAP
+  o2: "",                // Para Tubo T
+  ps: "",                // Para PSV
+  peep: "",              // Para PSV e CPAP
+  fio2: "",              // Para PSV e CPAP
+  duracao: "",           // em minutos
+  irrs: "",              // Índice de Respiração Rápida e Superficial (Tobin)
+  desfecho: ""           // Sucesso, Falha
+});
 
   // =========================================================================
   // ESTADOS E FUNÇÕES DO MODAL DE TROCA DE VIA AÉREA
@@ -110,6 +155,8 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
     updateNested("physio", "pressaoControlada", "");
     updateNested("physio", "pressaoSuporte", "");
   };
+
+  const handleAcaoFisio = (acao) => console.log("Abrir modal de:", acao);
 
   // ==============================================================
   // MOTOR DE ORDENAÇÃO DE GASOMETRIA
@@ -245,6 +292,106 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
     }
   };
 
+  const salvarAspiracaoFisio = () => {
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  
+  // Monta o texto descritivo que irá para o histórico/auditoria de procedimentos do leito
+  const textoProcedimento = `Realizada aspiração traqueal por sistema ${modalAspiracaoFisio.sistema?.toLowerCase()} via ${modalAspiracaoFisio.viaAerea}. Secreção em ${modalAspiracaoFisio.quantidade?.toLowerCase()} quantidade, aspecto ${modalAspiracaoFisio.caracteristica?.toLowerCase()} e coloração ${modalAspiracaoFisio.coloracao?.toLowerCase()}.${modalAspiracaoFisio.oxigenacaoPre ? ` SatO2 pré-procedimento: ${modalAspiracaoFisio.oxigenacaoPre}%.` : ''}${modalAspiracaoFisio.intercorrencias ? ` Intercorrências: ${modalAspiracaoFisio.intercorrencias}` : ' Sem intercorrências.'}`;
+
+  // Cria a estrutura para salvar no histórico de procedimentos da fisioterapia
+  const novoRegistro = {
+    tipo: "Aspiração Traqueal",
+    data: new Date().toISOString(),
+    horario: modalAspiracaoFisio.horario,
+    detalhes: modalAspiracaoFisio,
+    textoFormatado: textoProcedimento
+  };
+
+  // 1. Injeta no array de histórico de procedimentos do paciente (exemplo de estrutura padrão)
+  const historicoAtual = currentPatient.physio?.procedimentosDiarios || [];
+  const atualizado = [...historicoAtual, novoRegistro];
+
+  // 2. Salva no estado e no Firebase
+  updateNested("physio", "procedimentosDiarios", atualizado);
+  
+  // 3. Dispara o salvamento geral com o log clínico correto
+  if (typeof handleBlurSave === "function") {
+    handleBlurSave(`Fisioterapia: Registrou Aspiração Traqueal às ${modalAspiracaoFisio.horario}`);
+  }
+
+  // Fecha o modal
+  setModalAspiracaoFisio(prev => ({ ...prev, isOpen: false }));
+};
+
+  const salvarVNI = () => {
+  let paramText = "";
+  if (modalVNI.modo === "BIPAP") {
+    paramText = `IPAP: ${modalVNI.ipap || "-"} | EPAP: ${modalVNI.epap || "-"} | O2: ${modalVNI.o2 || "-"}`;
+  } else if (modalVNI.modo === "CPAP") {
+    paramText = `PEEP: ${modalVNI.peep || "-"} | O2: ${modalVNI.o2 || "-"}`;
+  } else if (modalVNI.modo === "PSV") {
+    paramText = `PS: ${modalVNI.ps || "-"} | PEEP: ${modalVNI.peep || "-"} | FiO2: ${modalVNI.o2 || "-"}%`;
+  }
+
+  const textoProcedimento = `Sessão de VNI em modo ${modalVNI.modo} (${paramText}). Tempo de utilização: ${modalVNI.tempo} ${modalVNI.unidadeTempo}. Durante a terapia: FR ${modalVNI.fr} irpm e SpO2 ${modalVNI.spo2}%.`;
+
+  const novoRegistro = {
+    tipo: "Sessão de VNI",
+    data: new Date().toISOString(),
+    horario: modalVNI.horario,
+    detalhes: modalVNI,
+    textoFormatado: textoProcedimento
+  };
+
+  const historicoAtual = currentPatient.physio?.procedimentosDiarios || [];
+  const atualizado = [...historicoAtual, novoRegistro];
+
+  updateNested("physio", "procedimentosDiarios", atualizado);
+  
+  if (typeof handleBlurSave === "function") {
+    handleBlurSave(`Fisioterapia: Registrou Sessão de VNI às ${modalVNI.horario}`);
+  }
+
+  setModalVNI(prev => ({ ...prev, isOpen: false }));
+};
+
+  const salvarTRE = () => {
+  let paramText = "";
+  if (modalTRE.modo === "Tubo T") {
+    paramText = `O2: ${modalTRE.o2 || "-"}`;
+  } else if (modalTRE.modo === "PSV") {
+    paramText = `PS: ${modalTRE.ps || "-"} | PEEP: ${modalTRE.peep || "-"} | FiO2: ${modalTRE.fio2 || "-"}%`;
+  } else if (modalTRE.modo === "CPAP") {
+    paramText = `PEEP: ${modalTRE.peep || "-"} | FiO2: ${modalTRE.fio2 || "-"}%`;
+  }
+
+  let cuffText = "";
+  if (modalTRE.cuffLeakFeito) {
+    cuffText = ` | Cuff Leak Test: ${modalTRE.cuffLeakResultado || "Não informado"}`;
+  }
+
+  const textoProcedimento = `Teste de Respiração Espontânea (TRE) em modo ${modalTRE.modo} (${paramText}). Duração: ${modalTRE.duracao} minutos. Índice de Tobin (IRRS): ${modalTRE.irrs || "-"}. Desfecho: ${modalTRE.desfecho.toUpperCase()}${cuffText}.`;
+
+  const novoRegistro = {
+    tipo: "TRE",
+    data: new Date().toISOString(),
+    horario: modalTRE.horario,
+    detalhes: modalTRE,
+    textoFormatado: textoProcedimento
+  };
+
+  const historicoAtual = currentPatient.physio?.procedimentosDiarios || [];
+  const atualizado = [...historicoAtual, novoRegistro];
+
+  updateNested("physio", "procedimentosDiarios", atualizado);
+  
+  if (typeof handleBlurSave === "function") {
+    handleBlurSave(`Fisioterapia: Registrou TRE às ${modalTRE.horario} - Desfecho: ${modalTRE.desfecho}`);
+  }
+
+  setModalTRE(prev => ({ ...prev, isOpen: false }));
+};
+
   // ==============================================================
   // 🔐 TELAS DE BLOQUEIO (PADRONIZADAS)
   // ==============================================================
@@ -299,67 +446,145 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
         </button>
       </div>
 
-      {/* 🔥 MENU DE SUB-ABAS DA FISIOTERAPIA */}
-      <div className="flex flex-wrap border-b border-slate-200 mb-6 gap-2 print:hidden">
+      {/* ======================================================== */}
+      {/* 1º BLOCO: REGISTROS DIÁRIOS (AGORA NO TOPO)             */}
+      {/* ======================================================== */}
+      <div className="mb-4 p-4 bg-white border border-slate-200 rounded-xl print:hidden shadow-sm">
+        
+        {/* BOTÃO QUE ABRE/FECHA A SEÇÃO */}
         <button 
-          onClick={(e) => { e.preventDefault(); setActivePhysioTab('suporte'); }}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${activePhysioTab === 'suporte' ? 'text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          onClick={(e) => { e.preventDefault(); setShowAcoesFisio(!showAcoesFisio); }} 
+          className="flex items-center gap-2 font-bold text-slate-700 w-full text-left"
         >
-          Suporte e Via Aérea
+          {showAcoesFisio ? <ChevronDown size={20} className="text-cyan-600" /> : <ChevronRight size={20} className="text-slate-400" />} 
+          <ClipboardList className={showAcoesFisio ? "text-cyan-600" : "text-slate-400"} size={18} />
+          Registros e Procedimentos Diários
         </button>
-      </div>
 
-      {/* ============================================================== */}
-      {/* ABA 1: SUPORTE E VIA AÉREA */}
-      {/* ============================================================== */}
-      {activePhysioTab === 'suporte' && (
-        <div className="space-y-6 animate-fadeIn">
-          
-          {/* ANTROPOMETRIA */}
-          <div className="grid md:grid-cols-2 gap-4 bg-lime-50/40 p-4 rounded-xl border border-lime-100">
-            <div>
-              <label className="text-xs font-bold text-lime-700">Altura (m/cm)</label>
-              <input
-                type="number"
-                step="0.01"
-                className="w-full p-2 border rounded bg-white outline-none focus:ring-2 focus:ring-lime-300"
-                value={currentPatient.nutri?.altura || ""}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  updateNested("nutri", "altura", val);
-                  if (val) {
-                    let h = parseFloat(val.replace(',', '.'));
-                    if (h > 0) {
-                      if (h < 3) h = h * 100;
-                      const sexo = currentPatient.sexo?.charAt(0).toUpperCase();
-                      let predito = 0;
-                      if (sexo === 'M') {
-                        predito = 50 + 0.91 * (h - 152.4);
-                      } else if (sexo === 'F') {
-                        predito = 45.5 + 0.91 * (h - 152.4);
-                      }
-                      if (predito > 0) {
-                        updateNested("nutri", "pesoPredito", predito.toFixed(1));
-                      }
-                    }
-                  }
-                }}
-                onBlur={() => handleBlurSave("Fisioterapia: Editou Altura e calculou Peso Predito")}
-              />
-              {!currentPatient.sexo && <p className="text-[9px] text-red-500 mt-1 font-bold">*Preencha o Sexo no cadastro para o cálculo automático.</p>}
-            </div>
-            <div>
-              <label className="text-xs font-bold text-lime-700">Peso Predito (kg)</label>
-              <input
-                type="number"
-                className="w-full p-2 border rounded bg-white font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-300"
-                value={currentPatient.nutri?.pesoPredito || ""}
-                onChange={(e) => updateNested("nutri", "pesoPredito", e.target.value)}
-                onBlur={() => handleBlurSave("Fisioterapia: Editou Peso Predito")}
-                title="Calculado automaticamente pela fórmula ARDSNet"
-              />
+        {showAcoesFisio && (
+          <div className="mt-4 pt-4 border-t border-slate-100 animate-fadeIn">
+            <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+
+              <button 
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  // Abre o modal pegando a hora atual do sistema arredondada para os minutos disponíveis
+                  const agora = new Date();
+                  const horaStr = String(agora.getHours()).padStart(2, '0');
+                  setModalAspiracaoFisio({
+                    isOpen: true,
+                    horario: `${horaStr}:00`,
+                    sistema: "", viaAerea: "", quantidade: "", caracteristica: "", coloracao: "",
+                    oxigenacaoPre: "", intercorrencias: ""
+                  });
+                }} 
+                className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
+              >
+                <Wind size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Aspiração<br/>Vias Aéreas</span>
+              </button>
+
+              <button 
+                type="button"
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  const agora = new Date();
+                  const horaStr = String(agora.getHours()).padStart(2, '0');
+                  setModalVNI({
+                    isOpen: true,
+                    horario: `${horaStr}:00`,
+                    modo: "", ipap: "", epap: "", peep: "", ps: "", o2: "",
+                    tempo: "", unidadeTempo: "minutos", fr: "", spo2: ""
+                  });
+                }} 
+                className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
+              >
+                <Gauge size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Sessão<br/>de VNI</span>
+              </button>
+
+              <button 
+                type="button"
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  const agora = new Date();
+                  const horaStr = String(agora.getHours()).padStart(2, '0');
+                  setModalTRE({
+                    isOpen: true,
+                    horario: `${horaStr}:00`,
+                    cuffLeakFeito: false, cuffLeakResultado: "",
+                    modo: "", o2: "", ps: "", peep: "", fio2: "",
+                    duracao: "", irrs: "", desfecho: ""
+                  });
+                }} 
+                className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
+              >
+                <Timer size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Teste de<br/>Resp. Espontânea</span>
+              </button>
+
+              <button onClick={(e) => { e.preventDefault(); handleAcaoFisio('Extubação'); }} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group">
+                <ArrowUpCircle size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Protocolo de<br/>Extubação</span>
+              </button>
+
+              <button onClick={(e) => { e.preventDefault(); handleAcaoFisio('Mobilização'); }} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group">
+                <Activity size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Mobilização<br/>Precoce</span>
+              </button>
+
             </div>
           </div>
+        )}
+      </div>
+
+      {/* ======================================================== */}
+      {/* 2º BLOCO: ANTROPOMETRIA (ABAIXO DOS REGISTROS)           */}
+      {/* ======================================================== */}
+      <div className="grid md:grid-cols-2 gap-4 bg-lime-50/40 p-4 rounded-xl border border-lime-100">
+        <div>
+          <label className="text-xs font-bold text-lime-700">Altura (m/cm)</label>
+          <input
+            type="number"
+            step="0.01"
+            className="w-full p-2 border rounded bg-white outline-none focus:ring-2 focus:ring-lime-300"
+            value={currentPatient.nutri?.altura || ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              updateNested("nutri", "altura", val);
+              if (val) {
+                let h = parseFloat(val.replace(',', '.'));
+                if (h > 0) {
+                  if (h < 3) h = h * 100;
+                  const sexo = currentPatient.sexo?.charAt(0).toUpperCase();
+                  let predito = 0;
+                  if (sexo === 'M') {
+                    predito = 50 + 0.91 * (h - 152.4);
+                  } else if (sexo === 'F') {
+                    predito = 45.5 + 0.91 * (h - 152.4);
+                  }
+                  if (predito > 0) {
+                    updateNested("nutri", "pesoPredito", predito.toFixed(1));
+                  }
+                }
+              }
+            }}
+            onBlur={() => handleBlurSave("Fisioterapia: Editou Altura e calculou Peso Predito")}
+          />
+          {!currentPatient.sexo && <p className="text-[9px] text-red-500 mt-1 font-bold">*Preencha o Sexo no cadastro para o cálculo automático.</p>}
+        </div>
+        <div>
+          <label className="text-xs font-bold text-lime-700">Peso Predito (kg)</label>
+          <input
+            type="number"
+            className="w-full p-2 border rounded bg-white font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-300"
+            value={currentPatient.nutri?.pesoPredito || ""}
+            onChange={(e) => updateNested("nutri", "pesoPredito", e.target.value)}
+            onBlur={() => handleBlurSave("Fisioterapia: Editou Peso Predito")}
+            title="Calculado automaticamente pela fórmula ARDSNet"
+          />
+        </div>
+      </div>
 
           {/* DATAS DE VIA AÉREA */}
           <div className="grid md:grid-cols-4 gap-4 bg-cyan-50 p-4 rounded-xl border border-cyan-100">
@@ -1077,10 +1302,7 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
             </div>
           )}
 
-        </div>
-      )}
-
-      {/* MODAL DE GRÁFICO EVOLUTIVO DE O2 */}
+{/* MODAL DE GRÁFICO EVOLUTIVO DE O2 */}
       {showO2History && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-fade-in">
@@ -1142,7 +1364,7 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
       {/* ========================================================================= */}
       {/* MODAL: ÚLTIMA TROCA DE VIA AÉREA                                          */}
       {/* ========================================================================= */}
-      {modalTrocaVA.isOpen && (
+      {modalTrocaVA?.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-cyan-500/20">
             
@@ -1176,6 +1398,425 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL EXCLUSIVO: ASPIRAÇÃO TRAQUEAL DA FISIOTERAPIA v2                     */}
+      {/* ========================================================================= */}
+      {modalAspiracaoFisio?.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
+            
+            {/* CABEÇALHO FIXO */}
+            <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Wind size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">Aspiração Traqueal (Fisio)</h2>
+              </div>
+              <button onClick={() => setModalAspiracaoFisio({ ...modalAspiracaoFisio, isOpen: false })} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* CORPO ROLÁVEL */}
+            <div className="p-5 bg-slate-50 space-y-6 overflow-y-auto">
+
+              {/* HORÁRIO DA ASPIRAÇÃO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário da Aspiração</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalAspiracaoFisio.horario ? modalAspiracaoFisio.horario.split(':')[0] : "08"} onChange={(e) => setModalAspiracaoFisio({ ...modalAspiracaoFisio, horario: `${e.target.value}:${modalAspiracaoFisio.horario ? modalAspiracaoFisio.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalAspiracaoFisio.horario ? modalAspiracaoFisio.horario.split(':')[1] : "00"} onChange={(e) => setModalAspiracaoFisio({ ...modalAspiracaoFisio, horario: `${modalAspiracaoFisio.horario ? modalAspiracaoFisio.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* SISTEMA E VIA AÉREA */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Sistema</label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {['Aberto', 'Fechado'].map(sist => (
+                      <button key={sist} type="button" onClick={() => setModalAspiracaoFisio({ ...modalAspiracaoFisio, sistema: sist })} className={`p-2.5 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalAspiracaoFisio.sistema === sist ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{sist}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Via Aérea</label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {['TOT', 'TQT', 'VAS'].map(via => (
+                      <button key={via} type="button" onClick={() => setModalAspiracaoFisio({ ...modalAspiracaoFisio, viaAerea: via })} className={`p-2.5 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalAspiracaoFisio.viaAerea === via ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{via}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* QUANTIDADE DE SECREÇÃO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Quantidade de Secreção</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {['Pequena', 'Moderada', 'Grande', 'Abundante'].map(qtd => (
+                    <button key={qtd} type="button" onClick={() => setModalAspiracaoFisio({ ...modalAspiracaoFisio, quantidade: qtd })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalAspiracaoFisio.quantidade === qtd ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{qtd}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* CARACTERÍSTICA */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Característica</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {['Fluida', 'Espessa', 'Mucoide', 'Mucopurul.', 'Hemoptoica', 'Hemática', 'Espumosa', 'Rolhas'].map(c => (
+                    <button key={c} type="button" onClick={() => setModalAspiracaoFisio({ ...modalAspiracaoFisio, caracteristica: c })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalAspiracaoFisio.caracteristica === c ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{c}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* COLORAÇÃO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Coloração</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {['Transparente', 'Esbranquiçada', 'Amarelada', 'Esverdeada', 'Acastanhada', 'Hemática'].map(cor => (
+                    <button key={cor} type="button" onClick={() => setModalAspiracaoFisio({ ...modalAspiracaoFisio, coloracao: cor })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalAspiracaoFisio.coloracao === cor ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{cor}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* OXIGENAÇÃO PRÉVIA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Oximetria (SatO₂ Pré)</label>
+                <div className="flex items-center justify-center gap-3">
+                  <input type="number" min="0" max="100" value={modalAspiracaoFisio.oxigenacaoPre || ""} onChange={(e) => setModalAspiracaoFisio({ ...modalAspiracaoFisio, oxigenacaoPre: e.target.value })} placeholder="Ex: 95" className="w-32 p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center text-lg font-bold" />
+                  <span className="text-xs font-bold text-slate-400 uppercase">%</span>
+                </div>
+              </div>
+
+              {/* INTERCORRÊNCIAS */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Intercorrências</label>
+                <textarea value={modalAspiracaoFisio.intercorrencias || ""} onChange={(e) => setModalAspiracaoFisio({ ...modalAspiracaoFisio, intercorrencias: e.target.value })} placeholder="Tosse, desconforto, sangramento, etc." className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm resize-none h-16" />
+              </div>
+            </div>
+
+            {/* RODAPÉ FIXO COM BOTÕES */}
+            <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setModalAspiracaoFisio({ ...modalAspiracaoFisio, isOpen: false })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                disabled={!modalAspiracaoFisio.horario || !modalAspiracaoFisio.sistema || !modalAspiracaoFisio.viaAerea || !modalAspiracaoFisio.quantidade || !modalAspiracaoFisio.caracteristica || !modalAspiracaoFisio.coloracao} 
+                onClick={salvarAspiracaoFisio} 
+                className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+              >
+                Salvar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: SESSÃO DE VNI                                                      */}
+      {/* ========================================================================= */}
+      {modalVNI?.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
+            
+            {/* CABEÇALHO FIXO */}
+            <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Gauge size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">Sessão de VNI</h2>
+              </div>
+              <button onClick={() => setModalVNI({ ...modalVNI, isOpen: false })} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* CORPO ROLÁVEL */}
+            <div className="p-5 bg-slate-50 space-y-6 overflow-y-auto">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalVNI.horario ? modalVNI.horario.split(':')[0] : "08"} onChange={(e) => setModalVNI({ ...modalVNI, horario: `${e.target.value}:${modalVNI.horario ? modalVNI.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalVNI.horario ? modalVNI.horario.split(':')[1] : "00"} onChange={(e) => setModalVNI({ ...modalVNI, horario: `${modalVNI.horario ? modalVNI.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* MODO VNI */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Modo</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['BIPAP', 'CPAP', 'PSV'].map(m => (
+                    <button key={m} type="button" onClick={() => setModalVNI({ ...modalVNI, modo: m })} className={`p-2.5 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalVNI.modo === m ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{m}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* PARÂMETROS DINÂMICOS CONFORME O MODO */}
+              {modalVNI.modo && (
+                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm animate-fadeIn">
+                  <label className="text-[10px] font-bold text-cyan-700 uppercase mb-3 block text-center border-b border-slate-100 pb-2">Parâmetros ({modalVNI.modo})</label>
+                  
+                  {modalVNI.modo === 'BIPAP' && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">IPAP</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalVNI.ipap} onChange={e => setModalVNI({...modalVNI, ipap: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">EPAP</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalVNI.epap} onChange={e => setModalVNI({...modalVNI, epap: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">O₂</label>
+                        <input type="text" placeholder="L/min" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalVNI.o2} onChange={e => setModalVNI({...modalVNI, o2: e.target.value})} />
+                      </div>
+                    </div>
+                  )}
+
+                  {modalVNI.modo === 'CPAP' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">PEEP</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalVNI.peep} onChange={e => setModalVNI({...modalVNI, peep: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">O₂</label>
+                        <input type="text" placeholder="L/min" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalVNI.o2} onChange={e => setModalVNI({...modalVNI, o2: e.target.value})} />
+                      </div>
+                    </div>
+                  )}
+
+                  {modalVNI.modo === 'PSV' && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">PS</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalVNI.ps} onChange={e => setModalVNI({...modalVNI, ps: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">PEEP</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalVNI.peep} onChange={e => setModalVNI({...modalVNI, peep: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">FiO₂ (%)</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalVNI.o2} onChange={e => setModalVNI({...modalVNI, o2: e.target.value})} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TEMPO DE UTILIZAÇÃO */}
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Tempo de utilização</label>
+                  <input type="number" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center font-bold" value={modalVNI.tempo} onChange={e => setModalVNI({...modalVNI, tempo: e.target.value})} />
+                </div>
+                <div className="flex-1">
+                  <select className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-bold appearance-none cursor-pointer text-center" value={modalVNI.unidadeTempo} onChange={e => setModalVNI({...modalVNI, unidadeTempo: e.target.value})}>
+                    <option value="minutos">Minutos</option>
+                    <option value="horas">Horas</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* SINAIS VITAIS DURANTE TERAPIA */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-cyan-50/50 rounded-xl border border-cyan-100">
+                <div>
+                  <label className="text-[10px] font-bold text-cyan-800 uppercase mb-2 block text-center">FR (irpm)</label>
+                  <input type="number" className="w-full p-3 bg-white border border-cyan-200 rounded-xl text-cyan-900 outline-none focus:ring-2 focus:ring-cyan-400 text-center font-black text-lg" value={modalVNI.fr} onChange={e => setModalVNI({...modalVNI, fr: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-cyan-800 uppercase mb-2 block text-center">SpO₂ (%)</label>
+                  <input type="number" className="w-full p-3 bg-white border border-cyan-200 rounded-xl text-cyan-900 outline-none focus:ring-2 focus:ring-cyan-400 text-center font-black text-lg" value={modalVNI.spo2} onChange={e => setModalVNI({...modalVNI, spo2: e.target.value})} />
+                </div>
+              </div>
+
+            </div>
+
+            {/* RODAPÉ FIXO */}
+            <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setModalVNI({ ...modalVNI, isOpen: false })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                disabled={!modalVNI.modo || !modalVNI.tempo || !modalVNI.fr || !modalVNI.spo2} 
+                onClick={salvarVNI} 
+                className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+              >
+                Salvar Sessão
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: TESTE DE RESPIRAÇÃO ESPONTÂNEA (TRE)                               */}
+      {/* ========================================================================= */}
+      {modalTRE?.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
+            
+            {/* CABEÇALHO FIXO */}
+            <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Timer size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">TRE</h2>
+              </div>
+              <button onClick={() => setModalTRE({ ...modalTRE, isOpen: false })} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* CORPO ROLÁVEL */}
+            <div className="p-5 bg-slate-50 space-y-6 overflow-y-auto">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTRE.horario ? modalTRE.horario.split(':')[0] : "08"} onChange={(e) => setModalTRE({ ...modalTRE, horario: `${e.target.value}:${modalTRE.horario ? modalTRE.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTRE.horario ? modalTRE.horario.split(':')[1] : "00"} onChange={(e) => setModalTRE({ ...modalTRE, horario: `${modalTRE.horario ? modalTRE.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* CUFF LEAK TEST */}
+              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Avaliação Pré-Extubação: Cuff Leak</label>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={modalTRE.cuffLeakFeito} onChange={(e) => {
+                      setModalTRE({ ...modalTRE, cuffLeakFeito: e.target.checked, cuffLeakResultado: e.target.checked ? modalTRE.cuffLeakResultado : "" })
+                    }} className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
+                    Feito
+                  </label>
+                </div>
+                {modalTRE.cuffLeakFeito && (
+                  <div className="grid grid-cols-2 gap-2 mt-2 animate-fadeIn">
+                    {['Positivo', 'Negativo'].map(res => (
+                      <button key={res} type="button" onClick={() => setModalTRE({ ...modalTRE, cuffLeakResultado: res })} className={`p-2 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTRE.cuffLeakResultado === res ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-cyan-200'}`}>{res}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* MODO TRE */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Modo do TRE</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['Tubo T', 'PSV', 'CPAP'].map(m => (
+                    <button key={m} type="button" onClick={() => setModalTRE({ ...modalTRE, modo: m })} className={`p-2.5 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTRE.modo === m ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{m}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* PARÂMETROS */}
+              {modalTRE.modo && (
+                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm animate-fadeIn">
+                  <label className="text-[10px] font-bold text-cyan-700 uppercase mb-3 block text-center border-b border-slate-100 pb-2">Parâmetros ({modalTRE.modo})</label>
+                  
+                  {modalTRE.modo === 'Tubo T' && (
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">O₂ (L/min)</label>
+                        <input type="text" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.o2} onChange={e => setModalTRE({...modalTRE, o2: e.target.value})} />
+                      </div>
+                    </div>
+                  )}
+
+                  {modalTRE.modo === 'PSV' && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PS</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.ps} onChange={e => setModalTRE({...modalTRE, ps: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PEEP</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.peep} onChange={e => setModalTRE({...modalTRE, peep: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">FiO₂ (%)</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.fio2} onChange={e => setModalTRE({...modalTRE, fio2: e.target.value})} />
+                      </div>
+                    </div>
+                  )}
+
+                  {modalTRE.modo === 'CPAP' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PEEP</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.peep} onChange={e => setModalTRE({...modalTRE, peep: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">FiO₂ (%)</label>
+                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.fio2} onChange={e => setModalTRE({...modalTRE, fio2: e.target.value})} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* DURAÇÃO E IRRS */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Duração (minutos)</label>
+                  <input type="number" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center font-bold text-lg" value={modalTRE.duracao} onChange={e => setModalTRE({...modalTRE, duracao: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center" title="Índice de Respiração Rápida e Superficial">IRRS (Tobin)</label>
+                  <input type="number" step="0.1" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center font-bold text-lg" value={modalTRE.irrs} onChange={e => setModalTRE({...modalTRE, irrs: e.target.value})} />
+                </div>
+              </div>
+
+              {/* DESFECHO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Desfecho</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setModalTRE({ ...modalTRE, desfecho: "Sucesso" })} className={`p-3 rounded-xl border-2 font-black text-sm uppercase tracking-wide transition-all ${modalTRE.desfecho === "Sucesso" ? 'border-green-500 bg-green-50 text-green-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-green-200'}`}>Sucesso</button>
+                  <button type="button" onClick={() => setModalTRE({ ...modalTRE, desfecho: "Falha" })} className={`p-3 rounded-xl border-2 font-black text-sm uppercase tracking-wide transition-all ${modalTRE.desfecho === "Falha" ? 'border-red-500 bg-red-50 text-red-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>Falha</button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* RODAPÉ FIXO */}
+            <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setModalTRE({ ...modalTRE, isOpen: false })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                disabled={!modalTRE.modo || !modalTRE.duracao || !modalTRE.desfecho || (modalTRE.cuffLeakFeito && !modalTRE.cuffLeakResultado)} 
+                onClick={salvarTRE} 
+                className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+              >
+                Salvar TRE
+              </button>
+            </div>
+
           </div>
         </div>
       )}
