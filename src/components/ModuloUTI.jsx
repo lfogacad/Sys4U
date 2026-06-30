@@ -1535,11 +1535,11 @@ const clearAntibiotic = (i) => {
 
       // 2. DADOS CLÍNICOS (Puxa do cofre se existir, senão inicia vazio)
       historia: dadosSalvos.historia || "", 
-      exameGeral: dadosSalvos.exameGeral || "", 
-      exameACV: dadosSalvos.exameACV || "", 
-      exameAR: dadosSalvos.exameAR || "",
-      exameABD: dadosSalvos.exameABD || "", 
-      exameExtremidades: dadosSalvos.exameExtremidades || "", 
+      exameGeral: dadosSalvos.exameGeral || "REG, normocorado, acianótico, anictérico.", 
+      exameACV: dadosSalvos.exameACV || "RCR 2T. S/S.", 
+      exameAR: dadosSalvos.exameAR || "MV+. S/ RA.",
+      exameABD: dadosSalvos.exameABD || "Flácido, indolor à palpação, sem VMG palpável. RHA +.", 
+      exameExtremidades: dadosSalvos.exameExtremidades || "Pulsos pérvios, sem edemas.",
       exameNeuro: dadosSalvos.exameNeuro || "",
       ecg_ao: dadosSalvos.ecg_ao || "", 
       ecg_rv: dadosSalvos.ecg_rv || "", 
@@ -3649,32 +3649,48 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
   // MAPA DE VENTILAÇÃO MECÂNICA (FISIOTERAPIA)
   // ========================================================================
 
-  const handleAddVmEntry = () => {
+const handleAddVmEntry = () => {
     const up = [...patients];
-    const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda segura
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
 
     if (!p.physio) p.physio = {};
     if (!Array.isArray(p.physio.vmFlowsheet)) p.physio.vmFlowsheet = [];
 
-    // Cria a etiqueta de tempo no formato "DD/MM - HH:MM"
     const now = new Date();
     const dataHora = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')} - ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    // Puxa os dados basais que já estão na admissão/painel principal da fisio
+    // 👇 PRÉ-CALCULA E CONGELA os valores no momento da criação
+    const diasUti = typeof getDaysD1 === 'function' 
+      ? getDaysD1(p.dataInternacao || p.dataAdmissao) 
+      : "";
+    const diasVm = typeof getTempoVMText === 'function' 
+      ? getTempoVMText(p) 
+      : "";
+
     const newEntry = {
       id: Date.now().toString(),
       dataHora: dataHora,
+      // 👇 Campos preenchidos automaticamente e congelados
+      suporte: p.physio.suporte || "",
+      diasUti: diasUti,
+      diasVm: diasVm,
+      // Campos copiados do painel principal
       modo: p.physio.parametro || "",
+      fluxo: p.physio.fluxo || "",
       fio2: p.physio.fiO2 || "",
       peep: p.physio.peep || "",
       vc: p.physio.volCorrente || "",
       pc: p.physio.pressaoControlada || "",
       ps: p.physio.pressaoSuporte || "",
-      fr: p.physio.fr || "",
-      pPico: "",
-      pPlato: "",
-      dp: "",
-      cst: "",
+      frSet: p.physio.fr || "",
+      frTotal: "",
+      // Campos que o modal agora suporta (todos inicializados vazios)
+      cuffM: "", cuffT: "", cuffN: "",
+      despertarS: false, despertarN: false,
+      vtPc: "", vm: "", fluxoInsp: "", tInsp: "", ie: "",
+      pPico: "", pPlato: "", dp: "", cst: "",
+      cdin: "", rva: "", autoPeep: "", p01: "", irrs: "",
+      dispositivo: "", satO2: "", ajustesDia: ""
     };
 
     p.physio.vmFlowsheet.push(newEntry);
@@ -3682,8 +3698,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     up[activeTab] = p;
     setPatients(up);
 
-    // Como criar uma coluna é uma ação de clique de botão, salvamos na hora!
-    save(p, "Fisioterapia: Adicionou nova coluna de avaliação no Mapa VM");
+    save(p, "Fisioterapia: Adicionou nova coluna de avaliação no Mapa de Suporte Ventilatório");
   };
 
   const updateVmEntry = (index, field, value) => {

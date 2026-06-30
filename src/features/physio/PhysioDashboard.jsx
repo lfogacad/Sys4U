@@ -74,6 +74,75 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   desfecho: ""           // Sucesso, Falha
 });
 
+  const [modalMobilizacao, setModalMobilizacao] = useState({
+  isOpen: false,
+  horario: "08:00",
+  tipoExercicio: "", // Ativo, Ativo-Assistido, Passivo
+  alongamentoFeito: false,
+  alongamentoSeries: "3",
+  alongamentoReps: "10",
+  selecionados: [], // Armazena apenas as strings dos exercícios marcados
+  parametros: {},   // Armazena { "Nome Exercicio": { series: "3", reps: "10", carga: "Livre" } }
+  outrosTronco: ""
+});
+
+// Função para marcar/desmarcar exercícios e inicializar seus parâmetros
+const toggleExercicio = (nome, isParametrizado = false) => {
+  setModalMobilizacao(prev => {
+    const jaSelecionado = prev.selecionados.includes(nome);
+    const novosSelecionados = jaSelecionado
+      ? prev.selecionados.filter(i => i !== nome)
+      : [...prev.selecionados, nome];
+
+    let novosParametros = { ...prev.parametros };
+    if (!jaSelecionado && isParametrizado) {
+      novosParametros[nome] = { series: "3", reps: "10", carga: "Livre" };
+    } else if (jaSelecionado && isParametrizado) {
+      delete novosParametros[nome];
+    }
+
+    return { ...prev, selecionados: novosSelecionados, parametros: novosParametros };
+  });
+};
+
+const updateParamExercicio = (nome, campo, valor) => {
+  setModalMobilizacao(prev => ({
+    ...prev,
+    parametros: {
+      ...prev.parametros,
+      [nome]: { ...prev.parametros[nome], [campo]: valor }
+    }
+  }));
+};
+
+// Listas estáticas baseadas no seu protocolo
+const LISTAS_MOBILIZACAO = {
+  mmss: ['Flexão e extensão de ombros', 'Abdução e adução de ombros', 'Flexão e extensão de cotovelos', 'Preensão palmar e abertura das mãos'],
+  mmiiParam: ['Flexão de quadril', 'Extensão de joelhos', 'Flexão de joelhos', 'Flexão plantar e dorsiflexão de tornozelos'],
+  mmiiSimples: ['Panturrilhas em pé', 'Senta-levanta', 'Miniagachamentos'],
+  tronco: ['Controle postural em sedestação', 'Deslocamentos laterais e ântero-posteriores', 'Alcance funcional', 'Rotação de tronco'],
+  condicionamento: ['Transferência leito-poltrona', 'Sedestação em poltrona', 'Ortostatismo assistido', 'Marcha estacionária', 'Deambulação assistida', 'Deambulação independente', 'Passeio externo']
+};
+
+  const [modalExtubacao, setModalExtubacao] = useState({
+  isOpen: false,
+  horario: "08:00",
+  // 1. Drive e Proteção
+  nivelConscienciaOk: false, // Paciente cooperativo / obedece comandos
+  tosseEficaz: false,       // Força de tosse adequada
+  secrecaoControlada: false, // Pouca/moderada aspiração nas últimash
+  // 2. Critérios do TRE e Balanço
+  treSucesso: false,         // Passou no TRE anterior
+  cuffLeakNegativo: false,   // Sem edema de glote detectado
+  balancoHidricoOk: false,   // Estável ou negativo nas últimas 24h
+  // 3. Preditivos Mecânicos
+  fio2Adequada: false,       // FiO2 <= 40% antes de desmamar
+  peepAdequada: false,       // PEEP <= 5-8 cmH2O
+  // 4. Desfecho Final
+  procedimentoRealizado: "", // "Extubado com sucesso", "Falha imediata / Reintubado", "Adiado por critérios de segurança"
+  dispositivoPosExtubacao: ""// Cateter de O2, Máscara de Venturi, VNI Profilática, VNI Terapêutica, Cateter de Alto Fluxo (CNAF)
+});
+
   // =========================================================================
   // ESTADOS E FUNÇÕES DO MODAL DE TROCA DE VIA AÉREA
   // =========================================================================
@@ -272,8 +341,8 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
     }
   };
 
-  const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
-    updateNested("physio", "parametro", novoFluxo);
+const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
+    updateNested("physio", "fluxo", novoFluxo); // 👈 TROCADO DE parametro PARA fluxo
     const fluxo = parseFloat(novoFluxo);
     if (!isNaN(fluxo)) {
       let fio2Calculada = "";
@@ -390,6 +459,100 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   }
 
   setModalTRE(prev => ({ ...prev, isOpen: false }));
+};
+
+  const salvarMobilizacao = () => {
+  const m = modalMobilizacao;
+  const selecionados = m.selecionados;
+  
+  let textoBlocos = [];
+
+  if (m.alongamentoFeito) {
+    textoBlocos.push(`Alongamentos (${m.alongamentoSeries} séries de ${m.alongamentoReps} repetições)`);
+  }
+
+  // Helper para formatar os selecionados em texto legível
+  const formatarGrupo = (listaBase, isParam = false) => {
+    const filtrados = selecionados.filter(item => listaBase.includes(item));
+    if (filtrados.length === 0) return null;
+    return filtrados.map(item => {
+      if (isParam && m.parametros[item]) {
+        const p = m.parametros[item];
+        return `${item} (${p.series}x${p.reps}, Carga: ${p.carga})`;
+      }
+      return item;
+    }).join("; ");
+  };
+
+  const strMMSS = formatarGrupo(LISTAS_MOBILIZACAO.mmss, true);
+  if (strMMSS) textoBlocos.push(`MMSS: ${strMMSS}`);
+
+  const strMMII = [formatarGrupo(LISTAS_MOBILIZACAO.mmiiParam, true), formatarGrupo(LISTAS_MOBILIZACAO.mmiiSimples, false)].filter(Boolean).join("; ");
+  if (strMMII) textoBlocos.push(`MMII: ${strMMII}`);
+
+  let strTronco = formatarGrupo(LISTAS_MOBILIZACAO.tronco, false);
+  if (m.outrosTronco) strTronco = strTronco ? `${strTronco}; Outros: ${m.outrosTronco}` : `Outros: ${m.outrosTronco}`;
+  if (strTronco) textoBlocos.push(`Tronco: ${strTronco}`);
+
+  const strCond = formatarGrupo(LISTAS_MOBILIZACAO.condicionamento, false);
+  if (strCond) textoBlocos.push(`Condicionamento: ${strCond}`);
+
+  const textoProcedimento = `Mobilização Precoce (${m.tipoExercicio || "Tipo não especificado"}). ` + (textoBlocos.length > 0 ? textoBlocos.join(". ") + "." : "Nenhum exercício detalhado.");
+
+  const novoRegistro = {
+    tipo: "Mobilização",
+    data: new Date().toISOString(),
+    horario: m.horario,
+    detalhes: m,
+    textoFormatado: textoProcedimento
+  };
+
+  const historicoAtual = currentPatient.physio?.procedimentosDiarios || [];
+  updateNested("physio", "procedimentosDiarios", [...historicoAtual, novoRegistro]);
+  
+  if (typeof handleBlurSave === "function") {
+    handleBlurSave(`Fisioterapia: Registrou Mobilização Precoce às ${m.horario}`);
+  }
+
+  setModalMobilizacao(prev => ({ ...prev, isOpen: false }));
+};
+
+  const salvarExtubacao = () => {
+  const ex = modalExtubacao;
+  
+  let textoChecklist = [];
+  if (ex.nivelConscienciaOk) textoChecklist.push("Nível de consciência adequado");
+  if (ex.tosseEficaz) textoChecklist.push("Tosse eficaz");
+  if (ex.secrecaoControlada) textoChecklist.push("Secreção controlada");
+  if (ex.treSucesso) textoChecklist.push("Sucesso no TRE");
+  if (ex.cuffLeakNegativo) textoChecklist.push("Cuff Leak Test negativo (sem estridor)");
+  if (ex.balancoHidricoOk) textoChecklist.push("Balanço hídrico compensado");
+  if (ex.fio2Adequada) textoChecklist.push("FiO2 <= 40%");
+  if (ex.peepAdequada) textoChecklist.push("PEEP estável");
+
+  let textoProcedimento = "";
+  if (ex.procedimentoRealizado === "Adiado") {
+    textoProcedimento = `Protocolo de Extubação avaliado às ${ex.horario}. Procedimento ADIADO por critérios de segurança hospitalar.`;
+  } else {
+    textoProcedimento = `Executado Protocolo de Extubação às ${ex.horario}. Checklist de segurança prévio contemplou: ${textoChecklist.join(", ")}. Conduta: Paciente submetido ao procedimento de extubação com desfecho: ${ex.procedimentoRealizado}. Instalado suporte de oxigenoterapia pós-extubação via ${ex.dispositivoPosExtubacao || "não especificado"}.`;
+  }
+
+  const novoRegistro = {
+    tipo: "Protocolo de Extubação",
+    data: new Date().toISOString(),
+    horario: ex.horario,
+    detalhes: ex,
+    textoFormatado: textoProcedimento
+  };
+
+  const historicoAtual = currentPatient.physio?.procedimentosDiarios || [];
+  updateNested("physio", "procedimentosDiarios", [...historicoAtual, novoRegistro]);
+  
+  if (typeof handleBlurSave === "function") {
+    handleBlurSave(`Fisioterapia: Registrou desfecho do Protocolo de Extubação - ${ex.procedimentoRealizado}`);
+  }
+
+  setModalExtubacao(prev => ({ ...prev, isOpen: false }));
 };
 
   // ==============================================================
@@ -523,12 +686,41 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                 <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Teste de<br/>Resp. Espontânea</span>
               </button>
 
-              <button onClick={(e) => { e.preventDefault(); handleAcaoFisio('Extubação'); }} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group">
+              <button 
+                type="button"
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  const agora = new Date();
+                  const horaStr = String(agora.getHours()).padStart(2, '0');
+                  setModalExtubacao({
+                    isOpen: true,
+                    horario: `${horaStr}:00`,
+                    nivelConscienciaOk: false, tosseEficaz: false, secrecaoControlada: false,
+                    treSucesso: false, cuffLeakNegativo: false, balancoHidricoOk: false,
+                    fio2Adequada: false, peepAdequada: false,
+                    procedimentoRealizado: "", dispositivoPosExtubacao: ""
+                  });
+                }} 
+                className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
+              >
                 <ArrowUpCircle size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
                 <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Protocolo de<br/>Extubação</span>
               </button>
 
-              <button onClick={(e) => { e.preventDefault(); handleAcaoFisio('Mobilização'); }} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group">
+              <button 
+                type="button"
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  const agora = new Date();
+                  const horaStr = String(agora.getHours()).padStart(2, '0');
+                  setModalMobilizacao({
+                    isOpen: true, horario: `${horaStr}:00`, tipoExercicio: "",
+                    alongamentoFeito: false, alongamentoSeries: "3", alongamentoReps: "10",
+                    selecionados: [], parametros: {}, outrosTronco: ""
+                  });
+                }} 
+                className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
+              >
                 <Activity size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
                 <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Mobilização<br/>Precoce</span>
               </button>
@@ -795,14 +987,12 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
               </div>
             </div>
 
-            {currentPatient.physio?.suporte === "VM" && (
-              <button
-                onClick={() => setShowVmFlowsheet(true)}
-                className="w-full mt-3 mb-4 p-2 bg-slate-800 text-white font-bold rounded-lg shadow flex justify-center items-center gap-2 hover:bg-slate-700 transition-colors uppercase text-xs"
-              >
-                <Activity size={16} className="text-cyan-400"/> Abrir Mapa de Ventilação Mecânica
-              </button>
-            )}
+            <button
+              onClick={() => setShowVmFlowsheet(true)}
+              className="w-full mt-3 mb-4 p-2 bg-cyan-600 text-white font-bold rounded-lg shadow flex justify-center items-center gap-2 hover:bg-cyan-500 transition-colors uppercase text-xs"
+            >
+              <Activity size={16} className="text-cyan-200"/> Abrir Mapa de Suporte Ventilatório
+            </button>
 
             <select
               className="w-full p-2 border rounded mb-4 font-bold"
@@ -815,6 +1005,8 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
             </select>
 
             {/* PARÂMETROS CONDICIONAIS */}
+            
+            {/* CATETER NASAL / MÁSCARA NÃO REINALANTE / MACRONEBULIZAÇÃO TQT */}
             {(currentPatient.physio?.suporte === "Cateter Nasal" || currentPatient.physio?.suporte === "Máscara não reinalante" || currentPatient.physio?.suporte === "Macronebulização por TQT") && (
               <div className="grid grid-cols-2 gap-4 mb-2 animate-fadeIn">
                 <div>
@@ -822,14 +1014,14 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                   <input
                     type="number"
                     className={`w-full p-2 border rounded outline-none transition-colors ${
-                      currentPatient.physio?.suporte === "Cateter Nasal" && Number(currentPatient.physio?.parametro) > 6 ? 'border-red-500 bg-red-50 text-red-700 focus:border-red-600' : 'border-slate-300 focus:border-cyan-500'
+                      currentPatient.physio?.suporte === "Cateter Nasal" && Number(currentPatient.physio?.fluxo) > 6 ? 'border-red-500 bg-red-50 text-red-700 focus:border-red-600' : 'border-slate-300 focus:border-cyan-500'
                     }`}
                     placeholder="Ex: 5"
-                    value={currentPatient.physio?.parametro || ""}
+                    value={currentPatient.physio?.fluxo || ""}
                     onChange={(e) => handleFluxoO2Change(e.target.value, currentPatient.physio?.suporte)}
                     onBlur={() => handleBlurSave("Fisioterapia: Editou Fluxo de O2")}
                   />
-                  {currentPatient.physio?.suporte === "Cateter Nasal" && Number(currentPatient.physio?.parametro) > 6 && (
+                  {currentPatient.physio?.suporte === "Cateter Nasal" && Number(currentPatient.physio?.fluxo) > 6 && (
                     <span className="text-[9px] text-red-600 font-bold mt-1 block">* Cateter Nasal idealmente até 6 L/min</span>
                   )}
                 </div>
@@ -848,20 +1040,35 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
               </div>
             )}
 
+            {/* VENTURI */}
             {currentPatient.physio?.suporte === "Venturi" && (
-              <div className="mb-2 animate-fadeIn">
-                <label className="text-xs font-bold text-slate-700">Porcentagem (%)</label>
-                <input
-                  type="number"
-                  className="w-full p-2 border rounded"
-                  placeholder="%"
-                  value={currentPatient.physio?.fiO2 || ""}
-                  onChange={(e) => updateNested("physio", "fiO2", e.target.value)}
-                  onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 Venturi")}
-                />
+              <div className="grid grid-cols-2 gap-4 mb-2 animate-fadeIn">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Fluxo (L/min)</label>
+                  <input
+                    type="number"
+                    className="w-full p-2 border rounded outline-none focus:border-cyan-500"
+                    placeholder="Ex: 5"
+                    value={currentPatient.physio?.fluxo || ""}
+                    onChange={(e) => updateNested("physio", "fluxo", e.target.value)}
+                    onBlur={() => handleBlurSave("Fisioterapia: Editou Fluxo Venturi")}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-cyan-800">FiO2 (%)</label>
+                  <input
+                    type="number"
+                    className="w-full p-2 border border-cyan-200 rounded outline-none focus:border-cyan-500 bg-cyan-50 text-cyan-900 font-bold"
+                    placeholder="%"
+                    value={currentPatient.physio?.fiO2 || ""}
+                    onChange={(e) => updateNested("physio", "fiO2", e.target.value)}
+                    onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 Venturi")}
+                  />
+                </div>
               </div>
             )}
 
+            {/* VNI */}
             {currentPatient.physio?.suporte === "VNI" && (
               <div className="grid grid-cols-2 gap-4 mb-2 animate-fadeIn">
                 <div>
@@ -872,6 +1079,7 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                     onChange={(e) => updateNested("physio", "parametro", e.target.value)}
                     onBlur={() => handleBlurSave("Fisioterapia: Alterou Modo VNI")}
                   >
+                    <option value="">Selecione...</option>
                     <option value="CPAP">CPAP</option>
                     <option value="BIPAP">BIPAP</option>
                   </select>
@@ -889,31 +1097,67 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
               </div>
             )}
 
+            {/* VM */}
             {currentPatient.physio?.suporte === "VM" && (
               <div className="animate-fadeIn">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
-                  <div><label className="text-[10px] font-bold text-slate-700 uppercase">Modo</label><select className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.parametro || ""} onChange={(e) => handleModoVMChange(e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Alterou Modo VM")}><option value="">...</option>{MODOS_VM && MODOS_VM.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 uppercase">Modo</label>
+                    <select className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.parametro || ""} onChange={(e) => handleModoVMChange(e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Alterou Modo VM")}>
+                      <option value="">...</option>
+                      {MODOS_VM && MODOS_VM.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
                   
                   {currentPatient.physio?.parametro === "VCV" ? (
-                    <div className="animate-fadeIn"><label className="text-[10px] font-bold text-blue-700 uppercase">Vt (ml)</label><input type="number" className="w-full p-2 border border-blue-200 rounded bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-400 text-xs font-bold" value={currentPatient.physio?.volCorrente || ""} onChange={(e) => updateNested("physio", "volCorrente", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Vol Corrente VM")} /></div>) : currentPatient.physio?.parametro === "PCV" ? (
-                    <div className="animate-fadeIn"><label className="text-[10px] font-bold text-emerald-700 uppercase">PC (cmH2O)</label><input type="number" className="w-full p-2 border border-emerald-200 rounded bg-emerald-50/30 outline-none focus:ring-2 focus:ring-emerald-400 text-xs font-bold" value={currentPatient.physio?.pressaoControlada || ""} onChange={(e) => updateNested("physio", "pressaoControlada", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Pressão Controlada VM")} /></div>) : currentPatient.physio?.parametro === "PSV" ? (
-                    <div className="animate-fadeIn"><label className="text-[10px] font-bold text-purple-700 uppercase">PS (cmH2O)</label><input type="number" className="w-full p-2 border border-purple-200 rounded bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-400 text-xs font-bold" value={currentPatient.physio?.pressaoSuporte || ""} onChange={(e) => updateNested("physio", "pressaoSuporte", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Pressão Suporte VM")} /></div>) : (
-                    <div className="opacity-60"><label className="text-[10px] font-bold text-slate-400 uppercase">Alvo</label><input type="text" disabled className="w-full p-2 border border-slate-200 rounded bg-slate-50 text-xs" /></div>)}
+                    <div className="animate-fadeIn">
+                      <label className="text-[10px] font-bold text-blue-700 uppercase">Vt (ml)</label>
+                      <input type="number" className="w-full p-2 border border-blue-200 rounded bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-400 text-xs font-bold" value={currentPatient.physio?.volCorrente || ""} onChange={(e) => updateNested("physio", "volCorrente", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Vol Corrente VM")} />
+                    </div>
+                  ) : currentPatient.physio?.parametro === "PCV" ? (
+                    <div className="animate-fadeIn">
+                      <label className="text-[10px] font-bold text-emerald-700 uppercase">PC (cmH2O)</label>
+                      <input type="number" className="w-full p-2 border border-emerald-200 rounded bg-emerald-50/30 outline-none focus:ring-2 focus:ring-emerald-400 text-xs font-bold" value={currentPatient.physio?.pressaoControlada || ""} onChange={(e) => updateNested("physio", "pressaoControlada", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Pressão Controlada VM")} />
+                    </div>
+                  ) : currentPatient.physio?.parametro === "PSV" ? (
+                    <div className="animate-fadeIn">
+                      <label className="text-[10px] font-bold text-purple-700 uppercase">PS (cmH2O)</label>
+                      <input type="number" className="w-full p-2 border border-purple-200 rounded bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-400 text-xs font-bold" value={currentPatient.physio?.pressaoSuporte || ""} onChange={(e) => updateNested("physio", "pressaoSuporte", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Pressão Suporte VM")} />
+                    </div>
+                  ) : (
+                    <div className="opacity-60">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Alvo</label>
+                      <input type="text" disabled className="w-full p-2 border border-slate-200 rounded bg-slate-50 text-xs" />
+                    </div>
+                  )}
                   
-                  <div><label className="text-[10px] font-bold text-slate-700 uppercase">PEEP</label><input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.peep || ""} onChange={(e) => updateNested("physio", "peep", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou PEEP VM")} /></div>
-                  <div><label className="text-[10px] font-bold text-slate-700 uppercase">FiO2 (%)</label><input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 VM")} /></div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 uppercase">PEEP</label>
+                    <input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.peep || ""} onChange={(e) => updateNested("physio", "peep", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou PEEP VM")} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 uppercase">FiO2 (%)</label>
+                    <input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 VM")} />
+                  </div>
                 </div>
 
                 {currentPatient.nutri?.pesoPredito ? (
-                  <div className="p-1.5 bg-slate-800 rounded-lg border border-slate-700 flex items-center gap-2 mb-4">
-                    <span className="text-[9px] font-black text-cyan-400 uppercase tracking-tighter ml-1">Meta VC (mL/kg):</span>
-                    <div className="flex-1 grid grid-cols-5 gap-1">
-                      {[4, 5, 6, 7, 8].map((ratio) => (
-                        <div key={ratio} className={`flex items-center justify-center gap-1 py-0.5 rounded border ${ratio === 6 ? 'bg-cyan-900/60 border-cyan-500' : 'bg-slate-700/30 border-slate-600'}`}>
-                          <span className={`text-[9px] font-bold ${ratio === 6 ? 'text-cyan-300' : 'text-slate-500'}`}>{ratio}</span>
-                          <span className={`text-[11px] font-black ${ratio === 6 ? 'text-white' : 'text-slate-200'}`}>{Math.round(currentPatient.nutri.pesoPredito * ratio)}</span>
-                        </div>
-                      ))}
+                  <div className="p-2 bg-gradient-to-r from-cyan-50 to-blue-50 rounded-xl border border-cyan-200 shadow-sm mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold text-cyan-700 uppercase tracking-wide">Meta VC (mL/kg)</span>
+                      <span className="text-[10px] text-slate-500 font-semibold">Peso Predito: <span className="text-cyan-700">{currentPatient.nutri.pesoPredito} kg</span></span>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1">
+                      {[4, 5, 6, 7, 8].map((ratio) => {
+                        const vc = Math.round(currentPatient.nutri.pesoPredito * ratio);
+                        const isSelected = ratio === 6;
+                        return (
+                          <div key={ratio} className={`flex flex-col items-center py-0.5 rounded-lg border transition-all ${isSelected ? 'bg-cyan-600 border-cyan-600 shadow-md shadow-cyan-200' : 'bg-white border-slate-200 hover:border-cyan-300'}`}>
+                            <span className={`text-[8px] font-bold ${isSelected ? 'text-cyan-200' : 'text-slate-400'}`}>{ratio} mL</span>
+                            <span className={`text-[11px] font-black ${isSelected ? 'text-white' : 'text-slate-700'}`}>{vc}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
@@ -956,7 +1200,7 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
               </div>
             </div>
 
-            {/* LINHA 3: SECREÇÃO (Movida para cá) */}
+            {/* LINHA 3: SECREÇÃO */}
             <div className="pt-3 border-t border-slate-100 mt-auto shrink-0">
               <h4 className="font-bold text-slate-700 text-[11px] uppercase mb-2">Secreção</h4>
               <label className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-600">
@@ -1814,6 +2058,297 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
                 className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
               >
                 Salvar TRE
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: MOBILIZAÇÃO PRECOCE                                                */}
+      {/* ========================================================================= */}
+      {modalMobilizacao?.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
+            
+            <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Activity size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">Mobilização Precoce</h2>
+              </div>
+              <button onClick={() => setModalMobilizacao({ ...modalMobilizacao, isOpen: false })} className="p-1 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-5 bg-slate-50 space-y-6 overflow-y-auto">
+
+              {/* HORÁRIO E TIPO DE EXERCÍCIO */}
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário</label>
+                  <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-xl shadow-inner">
+                    <select className="w-16 p-1 bg-transparent text-slate-700 outline-none font-black text-center text-xl appearance-none cursor-pointer" value={modalMobilizacao.horario.split(':')[0]} onChange={(e) => setModalMobilizacao({ ...modalMobilizacao, horario: `${e.target.value}:${modalMobilizacao.horario.split(':')[1]}` })}>
+                      {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                    </select>
+                    <span className="text-xl font-black text-slate-300">:</span>
+                    <select className="w-16 p-1 bg-transparent text-slate-700 outline-none font-black text-center text-xl appearance-none cursor-pointer" value={modalMobilizacao.horario.split(':')[1]} onChange={(e) => setModalMobilizacao({ ...modalMobilizacao, horario: `${modalMobilizacao.horario.split(':')[0]}:${e.target.value}` })}>
+                      {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Tipo Principal</label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {['Ativos', 'Ativo-Assist.', 'Passivos'].map(tipo => (
+                      <button key={tipo} type="button" onClick={() => setModalMobilizacao({ ...modalMobilizacao, tipoExercicio: tipo })} className={`p-2 rounded-lg border font-bold text-[10px] uppercase tracking-wide transition-all ${modalMobilizacao.tipoExercicio === tipo ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{tipo}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ALONGAMENTOS */}
+              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={modalMobilizacao.alongamentoFeito} onChange={(e) => setModalMobilizacao({ ...modalMobilizacao, alongamentoFeito: e.target.checked })} className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
+                  Alongamentos
+                </label>
+                {modalMobilizacao.alongamentoFeito && (
+                  <div className="flex items-center gap-2 mt-3 pl-6 animate-fadeIn">
+                    <select className="p-1 border border-slate-200 rounded text-xs font-bold bg-slate-50 outline-none" value={modalMobilizacao.alongamentoSeries} onChange={e => setModalMobilizacao({...modalMobilizacao, alongamentoSeries: e.target.value})}>
+                      {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                    <span className="text-[10px] text-slate-500 uppercase font-bold">séries de</span>
+                    <select className="p-1 border border-slate-200 rounded text-xs font-bold bg-slate-50 outline-none" value={modalMobilizacao.alongamentoReps} onChange={e => setModalMobilizacao({...modalMobilizacao, alongamentoReps: e.target.value})}>
+                      {[5,10,15,20,30].map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                    <span className="text-[10px] text-slate-500 uppercase font-bold">repetições.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* MMSS e MMII (Parametrizados) */}
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* MMSS */}
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 border-b border-slate-200 pb-1">MMSS</h4>
+                  <div className="space-y-2">
+                    {LISTAS_MOBILIZACAO.mmss.map(item => (
+                      <div key={item} className="p-2 bg-white border border-slate-200 rounded-lg">
+                        <label className="flex items-start gap-2 text-[11px] font-bold text-slate-700 cursor-pointer">
+                          <input type="checkbox" checked={modalMobilizacao.selecionados.includes(item)} onChange={() => toggleExercicio(item, true)} className="w-3.5 h-3.5 mt-0.5 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
+                          <span className="leading-tight">{item}</span>
+                        </label>
+                        {modalMobilizacao.selecionados.includes(item) && modalMobilizacao.parametros[item] && (
+                          <div className="grid grid-cols-3 gap-1 mt-2 pl-5 animate-fadeIn">
+                            <div>
+                              <span className="text-[8px] uppercase text-slate-400 block font-bold">Séries</span>
+                              <select className="w-full p-1 border rounded text-[10px] bg-slate-50 outline-none" value={modalMobilizacao.parametros[item].series} onChange={e => updateParamExercicio(item, 'series', e.target.value)}>
+                                {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="text-[8px] uppercase text-slate-400 block font-bold">Reps</span>
+                              <select className="w-full p-1 border rounded text-[10px] bg-slate-50 outline-none" value={modalMobilizacao.parametros[item].reps} onChange={e => updateParamExercicio(item, 'reps', e.target.value)}>
+                                {[5,8,10,12,15,20].map(v => <option key={v} value={v}>{v}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="text-[8px] uppercase text-slate-400 block font-bold">Carga</span>
+                              <select className="w-full p-1 border rounded text-[10px] bg-slate-50 outline-none" value={modalMobilizacao.parametros[item].carga} onChange={e => updateParamExercicio(item, 'carga', e.target.value)}>
+                                {['Livre', '0.5kg', '1kg', '2kg', 'Elástico'].map(v => <option key={v} value={v}>{v}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* MMII */}
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 border-b border-slate-200 pb-1">MMII</h4>
+                  <div className="space-y-2">
+                    {LISTAS_MOBILIZACAO.mmiiParam.map(item => (
+                      <div key={item} className="p-2 bg-white border border-slate-200 rounded-lg">
+                        <label className="flex items-start gap-2 text-[11px] font-bold text-slate-700 cursor-pointer">
+                          <input type="checkbox" checked={modalMobilizacao.selecionados.includes(item)} onChange={() => toggleExercicio(item, true)} className="w-3.5 h-3.5 mt-0.5 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
+                          <span className="leading-tight">{item}</span>
+                        </label>
+                        {modalMobilizacao.selecionados.includes(item) && modalMobilizacao.parametros[item] && (
+                          <div className="grid grid-cols-3 gap-1 mt-2 pl-5 animate-fadeIn">
+                            <div>
+                              <span className="text-[8px] uppercase text-slate-400 block font-bold">Séries</span>
+                              <select className="w-full p-1 border rounded text-[10px] bg-slate-50 outline-none" value={modalMobilizacao.parametros[item].series} onChange={e => updateParamExercicio(item, 'series', e.target.value)}>
+                                {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="text-[8px] uppercase text-slate-400 block font-bold">Reps</span>
+                              <select className="w-full p-1 border rounded text-[10px] bg-slate-50 outline-none" value={modalMobilizacao.parametros[item].reps} onChange={e => updateParamExercicio(item, 'reps', e.target.value)}>
+                                {[5,8,10,12,15,20].map(v => <option key={v} value={v}>{v}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="text-[8px] uppercase text-slate-400 block font-bold">Carga</span>
+                              <select className="w-full p-1 border rounded text-[10px] bg-slate-50 outline-none" value={modalMobilizacao.parametros[item].carga} onChange={e => updateParamExercicio(item, 'carga', e.target.value)}>
+                                {['Livre', '0.5kg', '1kg', '2kg', 'Elástico'].map(v => <option key={v} value={v}>{v}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {/* MMII Simples */}
+                    {LISTAS_MOBILIZACAO.mmiiSimples.map(item => (
+                      <label key={item} className="flex items-center gap-2 p-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={modalMobilizacao.selecionados.includes(item)} onChange={() => toggleExercicio(item, false)} className="w-3.5 h-3.5 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
+                        {item}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* TRONCO E CONDICIONAMENTO */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 border-b border-slate-200 pb-1">Tronco</h4>
+                  <div className="space-y-2">
+                    {LISTAS_MOBILIZACAO.tronco.map(item => (
+                      <label key={item} className="flex items-start gap-2 p-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={modalMobilizacao.selecionados.includes(item)} onChange={() => toggleExercicio(item, false)} className="w-3.5 h-3.5 mt-0.5 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
+                        <span className="leading-tight">{item}</span>
+                      </label>
+                    ))}
+                    <input type="text" placeholder="Outros..." value={modalMobilizacao.outrosTronco} onChange={e => setModalMobilizacao({...modalMobilizacao, outrosTronco: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-[11px] outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" />
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 border-b border-slate-200 pb-1">Condicionamento Funcional</h4>
+                  <div className="space-y-2">
+                    {LISTAS_MOBILIZACAO.condicionamento.map(item => (
+                      <label key={item} className="flex items-start gap-2 p-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={modalMobilizacao.selecionados.includes(item)} onChange={() => toggleExercicio(item, false)} className="w-3.5 h-3.5 mt-0.5 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
+                        <span className="leading-tight">{item}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setModalMobilizacao({ ...modalMobilizacao, isOpen: false })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+              <button type="button" disabled={!modalMobilizacao.tipoExercicio && modalMobilizacao.selecionados.length === 0} onClick={salvarMobilizacao} className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center uppercase tracking-wider">
+                Salvar Sessão
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: PROTOCOLO DE EXTUBAÇÃO                                             */}
+      {/* ========================================================================= */}
+      {modalExtubacao?.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
+            
+            {/* CABEÇALHO FIXO */}
+            <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><ArrowUpCircle size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">Protocolo de Extubação</h2>
+              </div>
+              <button onClick={() => setModalExtubacao({ ...modalExtubacao, isOpen: false })} className="p-1 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            {/* CORPO ROLÁVEL */}
+            <div className="p-5 bg-slate-50 space-y-5 overflow-y-auto">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário da Avaliação</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-16 p-1 bg-transparent text-slate-700 outline-none font-black text-center text-xl appearance-none cursor-pointer" value={modalExtubacao.horario.split(':')[0]} onChange={(e) => setModalExtubacao({ ...modalExtubacao, horario: `${e.target.value}:${modalExtubacao.horario.split(':')[1]}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-xl font-black text-slate-300">:</span>
+                  <select className="w-16 p-1 bg-transparent text-slate-700 outline-none font-black text-center text-xl appearance-none cursor-pointer" value={modalExtubacao.horario.split(':')[1]} onChange={(e) => setModalExtubacao({ ...modalExtubacao, horario: `${modalExtubacao.horario.split(':')[0]}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* CHECKLIST DE SEGURANÇA BÁSICA */}
+              <div className="space-y-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <label className="text-[10px] font-bold text-cyan-700 uppercase tracking-wider block border-b border-slate-100 pb-1.5 mb-2">Checklist Pré-Extubação</label>
+                
+                {/* Switchers Binários para facilitar seleção rápida beira-leito */}
+                {[
+                  { id: "nivelConscienciaOk", label: "Drive / Comando: Paciente alerta e cooperativo?" },
+                  { id: "tosseEficaz", label: "Mecânica: Apresenta tosse forte/eficaz?" },
+                  { id: "secrecaoControlada", label: "Vias Aéreas: Secreção fluida e controlada?" },
+                  { id: "treSucesso", label: "Desmame: Sucesso no TRE (Mínimo 30 min)?" },
+                  { id: "cuffLeakNegativo", label: "Edema: Cuff Leak Test Negativo (Sem Estridor)?" },
+                  { id: "balancoHidricoOk", label: "Cardiovascular: Estável e BH equilibrado/negativo?" },
+                  { id: "fio2Adequada", label: "Oxigenação: FiO₂ ≤ 40% tolerada?" },
+                  { id: "peepAdequada", label: "Pressão: PEEP entre 5 e 8 cmH₂O?" }
+                ].map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-2 py-1 border-b border-slate-50 last:border-0">
+                    <span className="text-[11px] font-bold text-slate-600 leading-tight flex-1">{item.label}</span>
+                    <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 shrink-0">
+                      <button type="button" onClick={() => setModalExtubacao({ ...modalExtubacao, [item.id]: true })} className={`px-2.5 py-1 text-[10px] font-black rounded-md transition-all ${modalExtubacao[item.id] === true ? 'bg-green-500 text-white shadow-sm' : 'text-slate-400'}`}>SIM</button>
+                      <button type="button" onClick={() => setModalExtubacao({ ...modalExtubacao, [item.id]: false })} className={`px-2.5 py-1 text-[10px] font-black rounded-md transition-all ${modalExtubacao[item.id] === false ? 'bg-slate-300 text-slate-600 shadow-sm' : 'text-slate-400'}`}>NÃO</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* DECISÃO DO PROCEDIMENTO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Conduta e Desfecho</label>
+                <div className="grid grid-cols-1 gap-2">
+                  {[
+                    { key: "Sucesso", label: "Extubado com Sucesso", color: "border-green-500 bg-green-50 text-green-700 font-bold" },
+                    { key: "Falha", label: "Falha Imediata / Reintubado", color: "border-red-500 bg-red-50 text-red-700 font-bold" },
+                    { key: "Adiado", label: "Adiado (Critérios Incompletos)", color: "border-amber-500 bg-amber-50 text-amber-700 font-bold" }
+                  ].map(op => (
+                    <button key={op.key} type="button" onClick={() => setModalExtubacao({ ...modalExtubacao, procedimentoRealizado: op.key, dispositivoPosExtubacao: op.key === "Adiado" ? "" : modalExtubacao.dispositivoPosExtubacao })} className={`p-2.5 rounded-xl border-2 font-black text-xs uppercase tracking-wide transition-all text-center ${modalExtubacao.procedimentoRealizado === op.key ? op.color + ' shadow-sm scale-[1.01]' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>{op.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* DISPOSITIVO INSTALADO PÓS-EXTUBAÇÃO (Somente se for extubado de fato) */}
+              {modalExtubacao.procedimentoRealizado && modalExtubacao.procedimentoRealizado !== "Adiado" && (
+                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm animate-fadeIn">
+                  <label className="text-[10px] font-bold text-cyan-700 uppercase mb-3 block text-center border-b border-slate-100 pb-2">Oxigenoterapia Pós-Extubação</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['Cateter Nasal de O2', 'Máscara de Venturi', 'VNI Profilática', 'VNI Terapêutica', 'Máscara não reinalante'].map(disp => (
+                      <button key={disp} type="button" onClick={() => setModalExtubacao({ ...modalExtubacao, dispositivoPosExtubacao: disp })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalExtubacao.dispositivoPosExtubacao === disp ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-cyan-200'}`}>{disp}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* RODAPÉ FIXO */}
+            <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setModalExtubacao({ ...modalExtubacao, isOpen: false })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                disabled={!modalExtubacao.procedimentoRealizado || (modalExtubacao.procedimentoRealizado !== "Adiado" && !modalExtubacao.dispositivoPosExtubacao)} 
+                onClick={salvarExtubacao} 
+                className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center uppercase tracking-wider text-xs"
+              >
+                {modalExtubacao.procedimentoRealizado === "Adiado" ? "Registrar Adiamento" : "Salvar Protocolo"}
               </button>
             </div>
 
