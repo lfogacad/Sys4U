@@ -1929,7 +1929,32 @@ const handleFinalizePhysioAdmission = () => {
       secrecao: physioData.secrecao,
       secrecaoAspecto: physioData.secrecaoAspecto,
       secrecaoColoracao: physioData.secrecaoColoracao,
-      secrecaoQtd: physioData.secrecaoQtd
+      secrecaoQtd: physioData.secrecaoQtd,
+      // ✅ NOVOS CAMPOS — Avaliação Respiratória
+      expansibilidadeTipo: physioData.expansibilidadeTipo || "",
+      expansibilidadePredominio: physioData.expansibilidadePredominio || "",
+      auscultaPulmonar: physioData.auscultaPulmonar || "",
+      tosse: physioData.tosse || "",
+      desconfortoRespiratorio: physioData.desconfortoRespiratorio || false,
+      sinaisDesconforto: Array.isArray(physioData.sinaisDesconforto) ? physioData.sinaisDesconforto : [],
+
+      // ✅ NOVOS CAMPOS — Avaliação Musculoesquelética
+      tonusMuscular: physioData.tonusMuscular || "",
+      retracoesMusculares: physioData.retracoesMusculares || false,
+      amplitudeMovimento: physioData.amplitudeMovimento || "",
+      amplitudeDescricao: physioData.amplitudeDescricao || "",
+
+      // ✅ NOVOS CAMPOS — Condutas
+      condutas: physioData.condutas || "",
+
+      // ✅ NOVOS CAMPOS — Fluxo de O2
+      fluxo: physioData.fluxo || "",
+      
+      // ✅ NOVOS CAMPOS — Escalas (valores planos, além do histórico)
+      mrcScore: physioData.mrcScore ? { [hoje]: physioData.mrcScore } : (r.physio?.mrcScore || {}),
+      mrcScore_plano: physioData.mrcScore || "",
+      ims: physioData.ims || "",
+      icuMobilityScale: physioData.ims ? { [hoje]: physioData.ims } : (r.physio?.icuMobilityScale || {}),
     };
 
     if (physioData.dataIntubacao) r.dataIntubacao = physioData.dataIntubacao;
@@ -3297,13 +3322,37 @@ const handleGeneratePhysioEvo = () => {
     const mob = getField('mobilidadeBasal');
     evo += `MOBILIDADE BASAL: ${mob === "Não registrado na aba médica." ? "Não registrado." : mob}\n\n`;
 
-    evo += `--- AVALIAÇÃO POR SISTEMAS ---\n`;
-    evo += `ESTADO GERAL: ${phy.estadoGeral || "Não registrado."}\n\n`;
-    evo += `NEUROLÓGICO: ${phy.sistemaNervoso || "Não registrado."}\n\n`;
-    evo += `RESPIRATÓRIO: ${phy.sistemaRespiratorio || "Não registrado."}\n\n`;
-    evo += `CARDIOVASCULAR: ${phy.sistemaCardiovascular || "Não registrado."}\n\n`;
-    evo += `GASTROINTESTINAL/ABDOME: ${phy.sistemaDigestivo || "Não registrado."}\n\n`;
-    evo += `MUSCULOESQUELÉTICO: ${phy.sistemaMusculoesqueletico || "Não registrado."}\n\n`;
+    evo += `--- AVALIAÇÃO RESPIRATÓRIA ---\n`;
+    const expansibilidadeTxt = phy.expansibilidadeTipo 
+      ? `Expansibilidade torácica ${phy.expansibilidadeTipo?.toLowerCase()}, com predomínio ${phy.expansibilidadePredominio?.toLowerCase() || "não informado"}.` 
+      : "Expansibilidade torácica não informada.";
+    evoTxt += `${expansibilidadeTxt}\n`;
+    evoTxt += `Ausculta pulmonar: ${phy.auscultaPulmonar || "Não informada."}\n`;
+    evoTxt += `Tosse: ${phy.tosse || "Não informada."}\n`;
+    const secrecaoTxt = phy.secrecao 
+      ? `Secreção presente (${phy.secrecaoAspecto || "..."} / ${phy.secrecaoColoracao || "..."} / ${phy.secrecaoQtd || "..."}).`
+      : "Sem secreção.";
+    evoTxt += `${secrecaoTxt}\n`;
+    const desconfortoTxt = phy.desconfortoRespiratorio 
+      ? `Com sinais de desconforto respiratório (${Array.isArray(phy.sinaisDesconforto) ? phy.sinaisDesconforto.join(", ") : "não especificado"}).`
+      : "Sem sinais de desconforto respiratório.";
+    evoTxt += `${desconfortoTxt}\n\n`;
+
+    evoTxt += `--- AVALIAÇÃO MUSCULOESQUELÉTICA ---\n`;
+    evoTxt += `Tônus muscular: ${phy.tonusMuscular || "Não informado."}\n`;
+    evoTxt += `Amplitude de movimento: ${phy.amplitudeMovimento || "Não informada."}`;
+    if (phy.amplitudeMovimento === "Reduzida" && phy.amplitudeDescricao) {
+      evoTxt += ` (articulações comprometidas: ${phy.amplitudeDescricao})`;
+    }
+    evoTxt += `\n`;
+    evoTxt += `${phy.retracoesMusculares ? "Com" : "Sem"} retrações musculares.\n\n`;
+
+    evoTxt += `--- ESCALAS FUNCIONAIS ---\n`;
+    const mrcPlano = phy.mrcScore_plano || (typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : phy.mrcScore || "");
+    const imsPlano = phy.ims || (typeof phy.icuMobilityScale === 'object' ? (phy.icuMobilityScale[hoje] || "") : phy.icuMobilityScale || "");
+    if (mrcPlano) evoTxt += `Escore MRC: ${mrcPlano}\n`;
+    if (imsPlano) evoTxt += `IMS (ICU Mobility Scale): ${imsPlano}\n`;
+    evoTxt += `\n`;
 
     evo += `--- GASOMETRIA ---\n`;
     evo += `${gasoTxt}\n\n`;
@@ -3326,6 +3375,9 @@ const handleGeneratePhysioEvo = () => {
     evo += `Manhã: ${phy.cuffM || "-"} | Tarde: ${phy.cuffT || "-"} | Noite: ${phy.cuffN || "-"}\n\n`;
 
     evo += `--- CONDUTAS E PLANOS ---\n`;
+    if (phy.observacoes) {
+    evo += `OBSERVAÇÕES IMPORTANTES:\n${phy.observacoes}\n\n`;
+    }
     evo += `INTERCORRÊNCIAS DO PLANTÃO:\n${phy.intercorrencias || "Sem intercorrências no plantão."}\n\n`;
 
     // 🔥 Condutas + Mobilização (sem espaço entre eles)
@@ -3337,7 +3389,7 @@ const handleGeneratePhysioEvo = () => {
     evo += `CONDUTAS FISIOTERAPÊUTICAS REALIZADAS:\n${condutasTexto}\n\n`;
 
     // 🔥 Escalas (pulando uma linha após condutas)
-    const mrcHoje = typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : (phy.mrcScore || "");
+    const mrcHoje = phy.mrcScore_plano || (typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : (phy.mrcScore || ""));
     const imsHoje = typeof phy.icuMobilityScale === 'object' ? (phy.icuMobilityScale[hoje] || "") : (phy.icuMobilityScale || "");
     
     let escalasTexto = "";
