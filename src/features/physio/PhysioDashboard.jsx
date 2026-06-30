@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, ClipboardSignature, 
          Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History, RefreshCw, ChevronDown, ChevronRight,
-         Gauge, Timer, ArrowUpCircle, ClipboardList } from 'lucide-react';
+         Gauge, Timer, ArrowUpCircle, ClipboardList, BicepsFlexed, Map } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
 import { formatDateDDMM } from '../../utils/core';
 
@@ -721,7 +721,7 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
                 }} 
                 className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
               >
-                <Activity size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <BicepsFlexed size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
                 <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Mobilização<br/>Precoce</span>
               </button>
 
@@ -991,7 +991,7 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
               onClick={() => setShowVmFlowsheet(true)}
               className="w-full mt-3 mb-4 p-2 bg-cyan-600 text-white font-bold rounded-lg shadow flex justify-center items-center gap-2 hover:bg-cyan-500 transition-colors uppercase text-xs"
             >
-              <Activity size={16} className="text-cyan-200"/> Abrir Mapa de Suporte Ventilatório
+              <Map size={16} className="text-cyan-200"/> Abrir Mapa de Suporte Ventilatório
             </button>
 
             <select

@@ -186,16 +186,6 @@ const getRowsBySuporte = () => {
     }, 250);
   };
 
-  // ==============================================================
-  // FUNÇÃO PARA ADICIONAR "AJUSTES DO DIA"
-  // ==============================================================
-  const handleAddAjustesDia = () => {
-    if (displayVmEntries.length > 0) {
-      const realIndex = currentPatient.physio?.vmFlowsheet?.length - 1;
-      updateVmEntry(realIndex, 'ajustesDia', '');
-    }
-  };
-
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[90] flex justify-center items-center p-4">
       <div className="bg-white w-full max-w-7xl rounded-2xl shadow-2xl flex flex-col h-[90vh] overflow-hidden animate-fadeIn">
@@ -234,16 +224,6 @@ const getRowsBySuporte = () => {
             </p>
             <div className="flex gap-2 flex-wrap">
               
-              {/* Botão Ajustes do Dia - só aparece se houver colunas */}
-              {displayVmEntries.length > 0 && (
-                <button
-                  onClick={handleAddAjustesDia}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow transition-colors flex items-center gap-2"
-                >
-                  <Plus size={14} /> Ajustes do Dia
-                </button>
-              )}
-              
               <button
                 onClick={handleCustomPrintVM}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow transition-colors flex items-center gap-2"
@@ -275,7 +255,7 @@ const getRowsBySuporte = () => {
                       const realIndex = totalItems - 1 - displayIndex;
 
                       return (
-                        <td key={entry.id || displayIndex} className="p-1 border-r border-slate-200 min-w-[120px]">
+                        <td key={entry.id || displayIndex} className={`p-1 border-r border-slate-200 ${rowDef.key === 'ajustesDia' ? 'min-w-[250px]' : 'min-w-[120px]'}`}>
                           {rowDef.key === 'cuff_row' ? (
                             <div className="flex gap-1 justify-center">
                               <input type="text" inputMode="numeric" className="w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400" placeholder="M" value={entry.cuffM || ""} onChange={(e) => updateVmEntry(realIndex, 'cuffM', e.target.value)} onBlur={(e) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffM", e.target.value); handleBlurSave(`Mapa SV: Editou Pressão Cuff (Manhã) - Coluna ${getEntryTime(entry)}`); }} />
@@ -305,6 +285,24 @@ const getRowsBySuporte = () => {
                             <input type="text" className="w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400" value={entry.dispositivo || ""} onChange={(e) => updateVmEntry(realIndex, 'dispositivo', e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou Dispositivo - Coluna ${getEntryTime(entry)}`)} placeholder="Tipo..." />
                           ) : rowDef.key === 'satO2' ? (
                             <input type="text" className="w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400" value={entry.satO2 || ""} onChange={(e) => updateVmEntry(realIndex, 'satO2', e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou SatO2 - Coluna ${getEntryTime(entry)}`)} placeholder="%" />
+                          ) : rowDef.key === 'ajustesDia' ? (
+                            <textarea
+                              className="w-full p-1 border rounded text-[10px] outline-none focus:ring-1 focus:ring-cyan-400 resize-none overflow-hidden min-h-[28px] leading-tight"
+                              value={entry.ajustesDia || ""}
+                              onChange={(e) => {
+                                updateVmEntry(realIndex, 'ajustesDia', e.target.value);
+                                // Auto-grow: ajusta a altura conforme o conteúdo
+                                e.target.style.height = 'auto';
+                                e.target.style.height = e.target.scrollHeight + 'px';
+                              }}
+                              onBlur={() => handleBlurSave(`Mapa SV: Editou Ajustes do Dia - Coluna ${getEntryTime(entry)}`)}
+                              placeholder="Digite os ajustes..."
+                              rows={1}
+                              onInput={(e) => {
+                                e.target.style.height = 'auto';
+                                e.target.style.height = e.target.scrollHeight + 'px';
+                              }}
+                            />
                           ) : (
                             <input type="text" className={`w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 ${rowDef.key === 'dp' ? 'bg-amber-100 font-bold text-amber-900' : ''} ${rowDef.key === 'cst' || rowDef.key === 'cdin' ? 'bg-blue-50 font-bold' : ''}`} value={entry[rowDef.key] || ""} onChange={(e) => updateVmEntry(realIndex, rowDef.key, e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou ${rowDef.label} - Coluna ${getEntryTime(entry)}`)} />
                           )}
