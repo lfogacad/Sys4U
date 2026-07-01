@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, X, Copy, Activity, Shield, ClipboardCheck, Target, Wind } from 'lucide-react';
+import { FileText, X, Copy, Activity, Shield, ClipboardCheck, Target } from 'lucide-react';
 import { ICU_MOBILITY_SCALE, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO } from '../../constants/clinicalLists';
 
 const PhysioEvoModal = ({
@@ -8,7 +8,9 @@ const PhysioEvoModal = ({
   currentPatient,
   updateNested,
   handleBlurSave,
-  handleGeneratePhysioEvo
+  handleGeneratePhysioEvo,
+  physioEvoText,
+  setPhysioEvoText
 }) => {
   const [evolucaoData, setEvolucaoData] = useState({});
   const [isSaving, setIsSaving] = useState(false);
@@ -17,6 +19,21 @@ const PhysioEvoModal = ({
   useEffect(() => {
     if (showPhysioEvoModal && currentPatient?.physio) {
       const physio = currentPatient.physio;
+      
+      // Função inteligente para ler o MRC e IMS (seja string ou histórico de datas)
+      const getLatest = (val) => {
+        if (val === null || val === undefined) return "";
+        if (typeof val === "string" || typeof val === "number") return String(val);
+        if (typeof val === "object" && !Array.isArray(val)) {
+          const hoje = new Date().toLocaleDateString('pt-BR');
+          if (val[hoje] !== undefined) return val[hoje];
+          const keys = Object.keys(val).sort();
+          if (keys.length === 0) return "";
+          return val[keys[keys.length - 1]];
+        }
+        return "";
+      };
+
       setEvolucaoData({
         // Avaliação Respiratória
         expansibilidadeTipo: physio.expansibilidadeTipo || "",
@@ -34,9 +51,9 @@ const PhysioEvoModal = ({
         retracoesMusculares: physio.retracoesMusculares || false,
         amplitudeMovimento: physio.amplitudeMovimento || "",
         amplitudeDescricao: physio.amplitudeDescricao || "",
-        // Escalas Funcionais
-        mrcScore: physio.mrcScore_plano || "",
-        ims: physio.ims || "",
+        // Escalas Funcionais (agora puxam corretamente)
+        mrcScore: physio.mrcScore_plano || getLatest(physio.mrcScore),
+        ims: physio.ims || getLatest(physio.icuMobilityScale),
         // Condutas e Planejamento
         condutas: physio.condutas || "",
         planoMetas: physio.planoMetas || "",
@@ -50,13 +67,13 @@ const PhysioEvoModal = ({
 
   const handleFinalize = () => {
     setIsSaving(true);
-    // Salva todos os campos no physio do paciente
+    
+    // 1. Salva os campos normais
     const campos = [
       'expansibilidadeTipo', 'expansibilidadePredominio', 'auscultaPulmonar',
       'tosse', 'secrecao', 'secrecaoAspecto', 'secrecaoColoracao', 'secrecaoQtd',
       'desconfortoRespiratorio', 'sinaisDesconforto',
       'tonusMuscular', 'retracoesMusculares', 'amplitudeMovimento', 'amplitudeDescricao',
-      'mrcScore', 'ims',
       'condutas', 'planoMetas', 'observacoes', 'intercorrencias'
     ];
 
@@ -64,62 +81,50 @@ const PhysioEvoModal = ({
       updateNested("physio", campo, evolucaoData[campo]);
     });
 
+    // 2. Salva MRC e IMS mantendo o histórico de datas
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const currentMrc = currentPatient?.physio?.mrcScore || {};
+    const currentIms = currentPatient?.physio?.icuMobilityScale || {};
+
+    const mrcObj = typeof currentMrc === 'object' ? { ...currentMrc, [hoje]: evolucaoData.mrcScore } : { [hoje]: evolucaoData.mrcScore };
+    const imsObj = typeof currentIms === 'object' ? { ...currentIms, [hoje]: evolucaoData.ims } : { [hoje]: evolucaoData.ims };
+
+    updateNested("physio", "mrcScore", mrcObj);
+    updateNested("physio", "icuMobilityScale", imsObj);
+    updateNested("physio", "mrcScore_plano", evolucaoData.mrcScore);
+    updateNested("physio", "ims", evolucaoData.ims);
+
     handleBlurSave("Fisioterapia: Evolução diária finalizada");
     
-    // Dispara a geração do texto de evolução
+    // 3. Dispara a geração do texto de evolução (sem fechar o modal)
     if (typeof handleGeneratePhysioEvo === 'function') {
       setTimeout(() => {
         handleGeneratePhysioEvo();
         setIsSaving(false);
-        setShowPhysioEvoModal(false);
-      }, 100);
+      }, 300);
     } else {
       setIsSaving(false);
-      setShowPhysioEvoModal(false);
     }
   };
 
-  const handleCopyToClipboard = () => {
-    // Monta o texto formatado da evolução
-    const mobText = Array.isArray(evolucaoData.mobilizacao) && evolucaoData.mobilizacao.length > 0
-      ? `Mobilização: ${evolucaoData.mobilizacao.join(", ")}`
-      : "";
-    const mrcText = evolucaoData.mrcScore ? `Escore MRC: ${evolucaoData.mrcScore}` : "";
-    const imsText = evolucaoData.ims ? `IMS: ${evolucaoData.ims}` : "";
+  const handleCopyGeneratedText = () => {
+    if (physioEvoText) {
+      navigator.clipboard.writeText(physioEvoText);
+      alert("Evolução copiada com sucesso! Cole no prontuário eletrônico do hospital.");
+    }
+  };
 
-    const sinaisTexto = Array.isArray(evolucaoData.sinaisDesconforto) && evolucaoData.sinaisDesconforto.length > 0
-      ? `Sinais de desconforto: ${evolucaoData.sinaisDesconforto.join("; ")}. `
-      : "Sem sinais de desconforto respiratório. ";
+  const handleBackToEdit = () => {
+    if (typeof setPhysioEvoText === 'function') {
+      setPhysioEvoText("");
+    }
+  };
 
-    const secrecaoTexto = evolucaoData.secrecao
-      ? `Secreção presente (${evolucaoData.secrecaoAspecto || ""} / ${evolucaoData.secrecaoColoracao || ""} / ${evolucaoData.secrecaoQtd || ""}). `
-      : "Sem secreção. ";
-
-    const texto = [
-      `EVOLUÇÃO FISIOTERAPÊUTICA`,
-      ``,
-      `Avaliação Respiratória: Expansibilidade ${evolucaoData.expansibilidadeTipo || "não avaliada"} (predomínio ${evolucaoData.expansibilidadePredominio || "não avaliado"}). ` +
-        `Ausculta pulmonar: ${evolucaoData.auscultaPulmonar || "sem alterações"}. ` +
-        `Tosse ${evolucaoData.tosse || "não avaliada"}. ${secrecaoTexto}` +
-        `${sinaisTexto}`,
-      ``,
-      `Avaliação Musculoesquelética: Tônus ${evolucaoData.tonusMuscular || "não avaliado"}. ` +
-        `Amplitude de movimento ${evolucaoData.amplitudeMovimento || "não avaliada"}. ` +
-        `${evolucaoData.retracoesMusculares ? "Retrações musculares presentes. " : ""}` +
-        `${evolucaoData.amplitudeDescricao ? `Articulações comprometidas: ${evolucaoData.amplitudeDescricao}. ` : ""}` +
-        `${mrcText ? mrcText + ". " : ""}` +
-        `${imsText ? imsText + "." : ""}`,
-      ``,
-      `Condutas Realizadas: ${evolucaoData.condutas || "condutas conforme avaliação"}`,
-      ``,
-      `Plano/Metas: ${evolucaoData.planoMetas || "manter condutas"}`,
-      `Observações: ${evolucaoData.observacoes || "sem observações adicionais"}`,
-      ``,
-      `Intercorrências: ${evolucaoData.intercorrencias || "nenhuma intercorrência no plantão"}`
-    ].join("\n");
-
-    navigator.clipboard.writeText(texto);
-    alert("Evolução copiada com sucesso! Cole no prontuário eletrônico do hospital.");
+  const handleClose = () => {
+    if (typeof setPhysioEvoText === 'function') {
+      setPhysioEvoText("");
+    }
+    setShowPhysioEvoModal(false);
   };
 
   const updateField = (field, value) => {
@@ -136,6 +141,71 @@ const PhysioEvoModal = ({
     });
   };
 
+  // =======================================================================
+  // TELA 2: TEXTO GERADO
+  // =======================================================================
+  if (physioEvoText) {
+    return (
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[90] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
+        <div className="bg-white w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl shadow-2xl flex flex-col">
+          
+          {/* HEADER */}
+          <div className="p-4 bg-gradient-to-r from-cyan-700 to-blue-800 text-white flex justify-between items-center sticky top-0 z-10 shadow shrink-0">
+            <h2 className="font-bold text-lg flex items-center gap-2">
+              <FileText size={20} className="text-cyan-300" />
+              Evolução Gerada - {currentPatient?.nome || "Paciente"}
+            </h2>
+            <button onClick={handleClose} className="hover:bg-black/20 p-1 rounded transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* CORPO */}
+          <div className="p-6 space-y-5 text-sm bg-slate-50 flex-1">
+            <div className="bg-white p-5 border border-sky-100 rounded-xl shadow-sm">
+              <h4 className="font-bold text-sky-800 text-xs uppercase mb-4 flex items-center gap-2 border-b border-sky-100 pb-3">
+                <FileText size={15} className="text-sky-600" /> Texto da Evolução Fisioterapêutica
+              </h4>
+              <textarea
+                className="w-full p-3 border border-slate-200 rounded-lg bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-sky-200 resize-y min-h-[400px] leading-relaxed font-mono"
+                value={physioEvoText}
+                onChange={(e) => setPhysioEvoText(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* RODAPÉ */}
+          <div className="p-4 bg-slate-100 border-t flex flex-col-reverse sm:flex-row justify-between items-center gap-3 sticky bottom-0 z-10 shrink-0">
+            <button
+              onClick={handleBackToEdit}
+              className="px-6 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto"
+            >
+              Voltar para Edição
+            </button>
+            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+              <button
+                onClick={handleClose}
+                className="px-6 py-3 bg-white border-2 border-slate-400 text-slate-600 rounded-xl font-bold hover:bg-slate-100 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={handleCopyGeneratedText}
+                className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-700 text-white rounded-xl font-bold hover:from-cyan-500 hover:to-blue-600 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg"
+              >
+                <Copy size={18} /> Copiar Texto
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // =======================================================================
+  // TELA 1: FORMULÁRIO DE EDIÇÃO
+  // =======================================================================
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[90] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
       <div className="bg-white w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl shadow-2xl flex flex-col">
@@ -146,7 +216,7 @@ const PhysioEvoModal = ({
             <FileText size={20} className="text-cyan-300" />
             Evolução Diária - {currentPatient?.nome || "Paciente"}
           </h2>
-          <button onClick={() => setShowPhysioEvoModal(false)} className="hover:bg-black/20 p-1 rounded transition-colors">
+          <button onClick={handleClose} className="hover:bg-black/20 p-1 rounded transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -154,15 +224,12 @@ const PhysioEvoModal = ({
         {/* CORPO */}
         <div className="p-6 space-y-5 text-sm bg-slate-50">
           
-          {/* ============================================================ */}
           {/* BLOCO 1: AVALIAÇÃO RESPIRATÓRIA */}
-          {/* ============================================================ */}
           <div className="bg-white p-5 border border-sky-100 rounded-xl shadow-sm">
             <h4 className="font-bold text-sky-800 text-xs uppercase mb-4 flex items-center gap-2 border-b border-sky-100 pb-3">
               <Activity size={15} className="text-sky-600" /> Avaliação Respiratória
             </h4>
 
-            {/* Expansibilidade Torácica */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Expansibilidade Torácica</label>
@@ -191,7 +258,6 @@ const PhysioEvoModal = ({
               </div>
             </div>
 
-            {/* Ausculta Pulmonar */}
             <div className="mb-4">
               <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Ausculta Pulmonar</label>
               <textarea
@@ -202,7 +268,6 @@ const PhysioEvoModal = ({
               />
             </div>
 
-            {/* Tosse */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Tosse</label>
@@ -219,7 +284,6 @@ const PhysioEvoModal = ({
               </div>
             </div>
 
-            {/* Secreção */}
             <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
               <label className="flex items-center gap-2 mb-2 text-xs text-slate-700 font-bold cursor-pointer">
                 <input type="checkbox" className="w-3.5 h-3.5" checked={evolucaoData.secrecao || false} onChange={(e) => updateField('secrecao', e.target.checked)} />
@@ -243,7 +307,6 @@ const PhysioEvoModal = ({
               )}
             </div>
 
-            {/* Sinais de Desconforto Respiratório */}
             <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-lg">
               <label className="flex items-center gap-2 mb-2 text-xs font-bold text-amber-800 cursor-pointer">
                 <input type="checkbox" className="w-3.5 h-3.5 text-amber-600" checked={evolucaoData.desconfortoRespiratorio || false} onChange={(e) => updateField('desconfortoRespiratorio', e.target.checked)} />
@@ -269,9 +332,7 @@ const PhysioEvoModal = ({
             </div>
           </div>
 
-          {/* ============================================================ */}
           {/* BLOCO 2: AVALIAÇÃO MUSCULOESQUELÉTICA */}
-          {/* ============================================================ */}
           <div className="bg-white p-5 border border-emerald-100 rounded-xl shadow-sm">
             <h4 className="font-bold text-emerald-800 text-xs uppercase mb-4 flex items-center gap-2 border-b border-emerald-100 pb-3">
               <Activity size={15} className="text-emerald-600" /> Avaliação Musculoesquelética
@@ -328,9 +389,7 @@ const PhysioEvoModal = ({
             )}
           </div>
 
-          {/* ============================================================ */}
           {/* BLOCO 3: ESCALAS FUNCIONAIS */}
-          {/* ============================================================ */}
           <div className="bg-white p-5 border border-purple-100 rounded-xl shadow-sm">
             <h4 className="font-bold text-purple-800 text-xs uppercase mb-4 flex items-center gap-2 border-b border-purple-100 pb-3">
               <Activity size={15} className="text-purple-600" /> Escalas Funcionais
@@ -366,11 +425,8 @@ const PhysioEvoModal = ({
             </div>
           </div>
 
-          {/* ============================================================ */}
           {/* BLOCO 4: CONDUTAS E PLANEJAMENTO */}
-          {/* ============================================================ */}
           <div className="space-y-4">
-            {/* Condutas Fisioterapêuticas */}
             <div className="bg-white p-5 border border-teal-100 rounded-xl shadow-sm">
               <h4 className="font-bold text-teal-800 text-xs uppercase mb-4 flex items-center gap-2 border-b border-teal-100 pb-3">
                 <ClipboardCheck size={15} className="text-teal-600" /> Condutas Fisioterapêuticas Realizadas
@@ -383,7 +439,6 @@ const PhysioEvoModal = ({
               />
             </div>
 
-            {/* Plano / Metas */}
             <div className="bg-white p-5 border border-green-100 rounded-xl shadow-sm">
               <h4 className="font-bold text-green-800 text-xs uppercase mb-4 flex items-center gap-2 border-b border-green-100 pb-3">
                 <Target size={15} className="text-green-600" /> Plano / Metas para o Próximo Plantão
@@ -396,7 +451,6 @@ const PhysioEvoModal = ({
               />
             </div>
 
-            {/* Observações Importantes */}
             <div className="bg-white p-5 border border-orange-100 rounded-xl shadow-sm">
               <h4 className="font-bold text-orange-800 text-xs uppercase mb-4 flex items-center gap-2 border-b border-orange-100 pb-3">
                 <FileText size={15} className="text-orange-600" /> Observações Importantes
@@ -409,7 +463,6 @@ const PhysioEvoModal = ({
               />
             </div>
 
-            {/* Intercorrências */}
             <div className="bg-white p-5 border border-red-100 rounded-xl shadow-sm">
               <h4 className="font-bold text-red-800 text-xs uppercase mb-4 flex items-center gap-2 border-b border-red-100 pb-3">
                 <Shield size={15} className="text-red-600" /> Intercorrências do Plantão
@@ -427,16 +480,10 @@ const PhysioEvoModal = ({
 
         {/* RODAPÉ */}
         <div className="p-4 bg-slate-100 border-t flex flex-col-reverse sm:flex-row justify-between items-center gap-3 sticky bottom-0 z-10 shrink-0">
-          <button onClick={() => setShowPhysioEvoModal(false)} className="px-6 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto">
+          <button onClick={handleClose} className="px-6 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto">
             Fechar
           </button>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-            <button
-              onClick={handleCopyToClipboard}
-              className="px-6 py-3 bg-white border-2 border-cyan-600 text-cyan-700 rounded-xl font-bold hover:bg-cyan-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
-            >
-              <Copy size={18} /> Copiar Texto
-            </button>
             <button
               onClick={handleFinalize}
               disabled={isSaving}

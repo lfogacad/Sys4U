@@ -3220,7 +3220,7 @@ const generateNursingAI_Evolution = async () => {
   // ==============================================================
   // GERADOR AUTOMÁTICO DE EVOLUÇÃO (FISIOTERAPIA - MODELO OFICIAL)
   // ==============================================================
-const handleGeneratePhysioEvo = () => {
+  const handleGeneratePhysioEvo = () => {
     const p = patients[activeTab];
     if (!p) return;
 
@@ -3236,16 +3236,6 @@ const handleGeneratePhysioEvo = () => {
       if (!iso) return "___/___/___";
       const [y, m, d] = iso.split('-');
       return `${d}/${m}/${y.slice(-2)}`;
-    };
-
-    const getTroca7d = (iso) => {
-      if (!iso) return "___/___/___";
-      const d = new Date(iso + 'T12:00:00');
-      d.setDate(d.getDate() + 7);
-      const dd = String(d.getDate()).padStart(2, '0');
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const yy = String(d.getFullYear()).slice(-2);
-      return `${dd}/${mm}/${yy}`;
     };
 
     const parseDateForSort = (str) => {
@@ -3267,15 +3257,124 @@ const handleGeneratePhysioEvo = () => {
       return 0;
     };
 
-    // 🔥 GASOMETRIAS DO DIA
+    // ========================================================
+    // 🧠 1. LÓGICA DO SISTEMA RESPIRATÓRIO (FR)
+    // ========================================================
+    let frTaquiCount = 0;
+    let frBradiCount = 0;
+    if (p.bh?.vitals && typeof BH_HOURS !== 'undefined') {
+      BH_HOURS.forEach(h => {
+        const frVal = p.bh.vitals[h]?.["FR (irpm)"];
+        if (frVal) {
+          const fr = parseInt(frVal);
+          if (fr > 20) frTaquiCount++;
+          if (fr > 0 && fr < 12) frBradiCount++;
+        }
+      });
+    }
+    let padraoResp = "Padrão respiratório eupneico";
+    if (frTaquiCount > 2) padraoResp = "Padrão respiratório taquipneico";
+    else if (frBradiCount > 2) padraoResp = "Padrão respiratório bradipneico";
+
+    const secrecaoTxt = phy.secrecao 
+      ? `com presença de secreção traqueobrônquica de aspecto ${phy.secrecaoAspecto?.toLowerCase() || "..."}, coloração ${phy.secrecaoColoracao?.toLowerCase() || "..."}, em ${phy.secrecaoQtd?.toLowerCase() || "pouca"} quantidade`
+      : "com ausência de secreção traqueobrônquica";
+
+    const desconfortoTxt = phy.desconfortoRespiratorio 
+      ? `com uso de musculatura acessória, com sinais de desconforto respiratório (${Array.isArray(phy.sinaisDesconforto) ? phy.sinaisDesconforto.join(", ") : "não especificado"})`
+      : "sem uso de musculatura acessória, sem sinais de desconforto respiratório";
+
+    // ========================================================
+    // 🧠 2. LÓGICA DO SISTEMA CARDIOVASCULAR (DVA)
+    // ========================================================
+    const usaDVA = p.cardio?.dva === true;
+    const isFem = p.sexo === "F";
+    let hemodinamicaStatus = usaDVA ? (isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado") : "Hemodinamicamente estável";
+    
+    if (p.bh?.gains && typeof BH_HOURS !== 'undefined') {
+      let noraVals = [];
+      BH_HOURS.forEach(h => {
+        const noraKey = Object.keys(p.bh.gains[h] || {}).find(k => k.toLowerCase().includes("nora"));
+        if (noraKey) {
+          const v = p.bh.gains[h][noraKey];
+          if (v) noraVals.push(parseFloat(v.replace(',', '.')) || 0);
+        }
+      });
+      if (noraVals.length >= 2) {
+        const last = noraVals[noraVals.length - 1];
+        const prev = noraVals[noraVals.length - 2];
+        if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável";
+      }
+    }
+    const dvaText = usaDVA ? `em uso de DVA (${p.cardio?.drogasDVA?.join(", ") || "não especificadas"})` : "sem uso de DVA";
+
+    // ========================================================
+    // 🧠 3. LÓGICA DO SISTEMA NERVOSO
+    // ========================================================
+    const nivelConsciencia = p.medical?.nivelConsciencia || p.neuro?.nivelConsciencia || p.admissionData?.exameNeuro || "Não informado";
+    const sedado = p.neuro?.sedacao ? "sedado" : "sem sedação";
+    const drogasSed = p.neuro?.sedacao && p.neuro?.drogasSedacao?.length > 0 ? `, em uso de ${p.neuro.drogasSedacao.join(" e ")} em BIC` : "";
+    
+    let rassGcs = "Glasgow não avaliado";
+    if (p.neuro?.rass) {
+      const rassNum = p.neuro.rass.split(" ")[0]; // Pega apenas o valor numérico (ex: "-3")
+      rassGcs = `RASS ${rassNum}`;
+    } else if (p.neuro?.glasgowAO || p.neuro?.glasgowRV || p.neuro?.glasgowRM) {
+      const ao = parseInt(p.neuro.glasgowAO) || 0;
+      const rm = parseInt(p.neuro.glasgowRM) || 0;
+      const rvStr = p.neuro.glasgowRV || "";
+      let rvDisplay = rvStr;
+      let rv = 0;
+      if (rvStr.startsWith("T") || rvStr.startsWith("1 - T")) {
+        rvDisplay = "T";
+      } else {
+        rv = parseInt(rvStr) || 0;
+        rvDisplay = rv.toString();
+      }
+      const total = rvDisplay === "T" ? `${ao + rm}T` : (ao + rm + rv);
+      rassGcs = `Glasgow ${total} (AO:${ao} RV:${rvDisplay} RM:${rm})`;
+    }
+    const pupilas = p.medical?.pupilas || p.admissionData?.pupilas || "não avaliadas";
+
+    // Evitar duplicação "Paciente SEDADO, sedado"
+    let neuroInicio = "";
+    if (nivelConsciencia.toUpperCase() === "SEDADO") {
+      neuroInicio = `Paciente ${sedado}`;
+    } else {
+      neuroInicio = `Paciente ${nivelConsciencia}, ${sedado}`;
+    }
+
+    // ========================================================
+    // 🧠 4. LÓGICA MUSCULOESQUELÉTICA E FUNCIONALIDADE
+    // ========================================================
+    const mrcPlano = phy.mrcScore_plano || (typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : phy.mrcScore || "");
+    const imsPlano = phy.ims || (typeof phy.icuMobilityScale === 'object' ? (phy.icuMobilityScale[hoje] || "") : phy.icuMobilityScale || "");
+    
+    const mrcVal = parseInt(mrcPlano);
+    const forcaMuscular = (!isNaN(mrcVal) && mrcVal < 48) ? "Força muscular reduzida" : "Força muscular preservada";
+    const mrcDisplay = mrcPlano ? ` (MRC: ${mrcPlano})` : "";
+
+    const imsVal = parseInt(imsPlano) || 0;
+    let funcText = "Funcionalidade não avaliada.";
+    if (imsPlano !== "") {
+      if (imsVal <= 3) {
+        funcText = "Paciente dependente para mudanças de decúbito e atividades funcionais no leito. Não deambula. Apresenta limitações funcionais decorrentes do estado clínico atual/tempo de internação em UTI.";
+      } else if (imsVal >= 4 && imsVal <= 8) {
+        funcText = "Paciente dependente parcialmente para mudanças de decúbito e atividades funcionais no leito. Deambula com auxílio. Apresenta limitações funcionais decorrentes do estado clínico atual/tempo de internação em UTI.";
+      } else if (imsVal >= 9) {
+        funcText = "Paciente independente para mudanças de decúbito e atividades funcionais no leito. Deambula sem auxílio.";
+      }
+    }
+
+    // ========================================================
+    // 🧠 5. LÓGICA DE GASOMETRIAS
+    // ========================================================
     let gasoTxt = "";
     if (p.gasometriaHistory) {
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
       const endOfToday = startOfToday + 24 * 60 * 60 * 1000 - 1;
-
       const keys = Object.keys(p.gasometriaHistory).sort((a, b) => parseDateForSort(a) - parseDateForSort(b));
-      
       const keysHoje = keys.filter(k => {
         const t = parseDateForSort(k);
         return t >= startOfToday && t <= endOfToday;
@@ -3284,19 +3383,10 @@ const handleGeneratePhysioEvo = () => {
       if (keysHoje.length > 0) {
         keysHoje.forEach(k => {
           const g = p.gasometriaHistory[k];
-          
           const dateObj = new Date(parseDateForSort(k));
-          const dd = String(dateObj.getDate()).padStart(2, '0');
-          const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-          const yyyy = dateObj.getFullYear();
           const hh = String(dateObj.getHours()).padStart(2, '0');
           const min = String(dateObj.getMinutes()).padStart(2, '0');
-          
-          let dataFormatada = `${dd}-${mm}-${yyyy}`;
-          if (hh !== '00' || min !== '00') {
-            dataFormatada += ` às ${hh}:${min}`;
-          }
-
+          let dataFormatada = (hh !== '00' || min !== '00') ? `${hh}:${min}h` : k;
           gasoTxt += `[${dataFormatada}] pH: ${g['pH']||'-'} | pCO2: ${g['pCO2']||'-'} | PaO2: ${g['PaO2']||'-'} | HCO3: ${g['HCO3']||'-'} | BE: ${g['BE']||'-'} | SatO2: ${g['SatO2']||'-'} | FiO2: ${g['FiO2']||'-'} | P/F: ${g['P/F']||'-'}\n`;
         });
       } else {
@@ -3305,105 +3395,122 @@ const handleGeneratePhysioEvo = () => {
     } else {
       gasoTxt = "Nenhuma gasometria registrada no sistema.\n";
     }
-    
-    gasoTxt = gasoTxt.trim();
 
-    // --- CONSTRUÇÃO DO TEXTO ---
+    // ========================================================
+    // 🧠 6. PARÂMETROS DO MAPA DE SUPORTE VENTILATÓRIO
+    // ========================================================
+    let paramText = "-";
+    if (phy.vmFlowsheet && phy.vmFlowsheet.length > 0) {
+      const lastEntry = phy.vmFlowsheet[phy.vmFlowsheet.length - 1];
+      const modo = lastEntry.modo || phy.parametro || "-";
+      paramText = `Modo: ${modo} | PEEP: ${lastEntry.peep || "-"} | FiO2: ${lastEntry.fio2 || "-"}%`;
+      if (lastEntry.vc) paramText += ` | VC: ${lastEntry.vc}`;
+      if (lastEntry.frSet) paramText += ` | FR: ${lastEntry.frSet}`;
+      if (lastEntry.tInsp) paramText += ` | T.Insp: ${lastEntry.tInsp}`;
+      if (lastEntry.ie) paramText += ` | I:E: ${lastEntry.ie}`;
+      if (lastEntry.ps) paramText += ` | PS: ${lastEntry.ps}`;
+      if (lastEntry.pc) paramText += ` | PC: ${lastEntry.pc}`;
+    } else {
+      paramText = `Modo: ${phy.parametro || "-"} | PEEP: ${phy.peep || "-"} | FiO2: ${phy.fiO2 || "-"}%`;
+    }
+
+    // ========================================================
+    // 🧠 7. CONDUTAS E MODAIS EXTRAS (Formatador Inteligente)
+    // ========================================================
+    let condutasTexto = phy.condutas || "Não registrado.";
+    const acoesExtras = [];
+    
+    const formatModal = (obj, type) => {
+      if (!obj) return null;
+      if (typeof obj === 'string') return obj;
+      let res = `[${obj.horario || '--:--'}] `;
+      if (type === 'aspiracao') res += `Via: ${obj.viaAerea || '-'}, Qtd: ${obj.quantidade || '-'}, Aspecto: ${obj.caracteristica || '-'} / ${obj.coloracao || '-'}`;
+      if (type === 'vni') res += `Modo: ${obj.modo || '-'}, IPAP: ${obj.ipap || '-'}, EPAP: ${obj.epap || '-'}, Tempo: ${obj.tempo || '-'} ${obj.unidadeTempo || 'min'}`;
+      if (type === 'tre') res += `Modo: ${obj.modo || '-'}, Duração: ${obj.duracao || '-'} min, Desfecho: ${obj.desfecho || '-'}`;
+      if (type === 'extubacao') res += `Desfecho: ${obj.procedimentoRealizado || '-'}, Dispositivo pós: ${obj.dispositivoPosExtubacao || '-'}`;
+      return res;
+    };
+
+    if (phy.aspiracao) acoesExtras.push(`• Aspiração de Vias Aéreas: ${formatModal(phy.aspiracao, 'aspiracao')}`);
+    if (phy.sessaoVni) acoesExtras.push(`• Sessão de VNI: ${formatModal(phy.sessaoVni, 'vni')}`);
+    if (phy.tre) acoesExtras.push(`• TRE: ${formatModal(phy.tre, 'tre')}`);
+    if (phy.extubacao) acoesExtras.push(`• Extubação: ${formatModal(phy.extubacao, 'extubacao')}`);
+    
+    if (phy.mobilizacao) {
+      if (Array.isArray(phy.mobilizacao.selecionados) && phy.mobilizacao.selecionados.length > 0) {
+        acoesExtras.push(`• Mobilização precoce: ${phy.mobilizacao.selecionados.join(", ")}`);
+      } else if (Array.isArray(phy.mobilizacao) && phy.mobilizacao.length > 0) {
+        acoesExtras.push(`• Mobilização precoce: ${phy.mobilizacao.join(", ")}`);
+      }
+    }
+
+    if (acoesExtras.length > 0) {
+      condutasTexto += `\n\nAções registradas no plantão:\n${acoesExtras.join("\n")}`;
+    }
+
+    // ========================================================
+    // 📝 CONSTRUÇÃO DO TEXTO FINAL (ESTRITAMENTE COMO SOLICITADO)
+    // ========================================================
     let evo = `EVOLUÇÃO FISIOTERAPÊUTICA\n\n`;
 
     evo += `--- HISTÓRIA E DIAGNÓSTICOS ---\n`;
-    evo += `História Clínica:\n${getField('historia')}\n\n`;
-    evo += `Diagnósticos Agudos:\n${getField('diagAgudos')}\n\n`;
+    evo += `HISTÓRIA CLÍNICA:\n${getField('historia')}\n\n`;
+    evo += `DIAGNÓSTICOS AGUDOS:\n${getField('diagAgudos')}\n\n`;
     evo += `HPP:\n${getField('diagCronicos')}\n\n`;
-    evo += `MEDICAMENTOS DE USO HABITUAL:\n${getField('medicamentos')}\n\n`;
-    
-    const consc = getField('conscienciaBasal');
-    evo += `NÍVEL DE CONSCIÊNCIA BASAL: ${consc === "Não registrado na aba médica." ? "Não registrado." : consc}\n`;
-    const mob = getField('mobilidadeBasal');
-    evo += `MOBILIDADE BASAL: ${mob === "Não registrado na aba médica." ? "Não registrado." : mob}\n\n`;
+    evo += `NÍVEL DE CONSCIÊNCIA BASAL: ${getField('conscienciaBasal')}\n\n`;
 
-    evo += `--- AVALIAÇÃO RESPIRATÓRIA ---\n`;
-    const expansibilidadeTxt = phy.expansibilidadeTipo 
-      ? `Expansibilidade torácica ${phy.expansibilidadeTipo?.toLowerCase()}, com predomínio ${phy.expansibilidadePredominio?.toLowerCase() || "não informado"}.` 
-      : "Expansibilidade torácica não informada.";
-    evoTxt += `${expansibilidadeTxt}\n`;
-    evoTxt += `Ausculta pulmonar: ${phy.auscultaPulmonar || "Não informada."}\n`;
-    evoTxt += `Tosse: ${phy.tosse || "Não informada."}\n`;
-    const secrecaoTxt = phy.secrecao 
-      ? `Secreção presente (${phy.secrecaoAspecto || "..."} / ${phy.secrecaoColoracao || "..."} / ${phy.secrecaoQtd || "..."}).`
-      : "Sem secreção.";
-    evoTxt += `${secrecaoTxt}\n`;
-    const desconfortoTxt = phy.desconfortoRespiratorio 
-      ? `Com sinais de desconforto respiratório (${Array.isArray(phy.sinaisDesconforto) ? phy.sinaisDesconforto.join(", ") : "não especificado"}).`
-      : "Sem sinais de desconforto respiratório.";
-    evoTxt += `${desconfortoTxt}\n\n`;
+    evo += `--- AVALIAÇÃO POR SISTEMAS ---\n`;
+    evo += `SISTEMA RESPIRATÓRIO:\n`;
+    evo += `${padraoResp}. Expansibilidade torácica ${phy.expansibilidadeTipo?.toLowerCase() || "não avaliada"}, com predomínio ${phy.expansibilidadePredominio?.toLowerCase() || "não avaliado"}. `;
+    evo += `Ausculta pulmonar: ${phy.auscultaPulmonar || "não informada"}. `;
+    evo += `Apresenta tosse ${phy.tosse?.toLowerCase() || "não informada"}, ${secrecaoTxt}. `;
+    evo += `Paciente ${desconfortoTxt}.\n\n`;
 
-    evoTxt += `--- AVALIAÇÃO MUSCULOESQUELÉTICA ---\n`;
-    evoTxt += `Tônus muscular: ${phy.tonusMuscular || "Não informado."}\n`;
-    evoTxt += `Amplitude de movimento: ${phy.amplitudeMovimento || "Não informada."}`;
-    if (phy.amplitudeMovimento === "Reduzida" && phy.amplitudeDescricao) {
-      evoTxt += ` (articulações comprometidas: ${phy.amplitudeDescricao})`;
-    }
-    evoTxt += `\n`;
-    evoTxt += `${phy.retracoesMusculares ? "Com" : "Sem"} retrações musculares.\n\n`;
+    evo += `SISTEMA CARDIOVASCULAR:\n`;
+    evo += `Paciente ${hemodinamicaStatus}, ${dvaText}.\n\n`;
 
-    evoTxt += `--- ESCALAS FUNCIONAIS ---\n`;
-    const mrcPlano = phy.mrcScore_plano || (typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : phy.mrcScore || "");
-    const imsPlano = phy.ims || (typeof phy.icuMobilityScale === 'object' ? (phy.icuMobilityScale[hoje] || "") : phy.icuMobilityScale || "");
-    if (mrcPlano) evoTxt += `Escore MRC: ${mrcPlano}\n`;
-    if (imsPlano) evoTxt += `IMS (ICU Mobility Scale): ${imsPlano}\n`;
-    evoTxt += `\n`;
+    evo += `SISTEMA NERVOSO:\n`;
+    evo += `${neuroInicio}${drogasSed}, ${rassGcs}. Pupilas: ${pupilas}.\n\n`;
 
-    evo += `--- GASOMETRIA ---\n`;
-    evo += `${gasoTxt}\n\n`;
+    evo += `SISTEMA MUSCULOESQUELÉTICO:\n`;
+    evo += `${forcaMuscular}${mrcDisplay}. Tônus muscular ${phy.tonusMuscular?.toLowerCase() || "não avaliado"}. ${phy.retracoesMusculares ? "Com" : "Sem"} sinais de retrações musculares. `;
+    evo += `Amplitude de movimento ${phy.amplitudeMovimento?.toLowerCase() || "não avaliada"}${phy.amplitudeMovimento === "Reduzida" && phy.amplitudeDescricao ? ` em ${phy.amplitudeDescricao}` : ""}.\n`;
+    evo += `Mobilidade (IMS): ${imsPlano || "não avaliada"}.\n\n`;
+
+    evo += `FUNCIONALIDADE:\n`;
+    evo += `${funcText}\n\n`;
 
     evo += `--- SUPORTE VENTILATÓRIO ---\n`;
-    evo += `Suporte Atual: ${phy.suporte || "Ar Ambiente"}\n`;
+    evo += `Suporte Atual: ${phy.suporte || "Não informado"}\n`;
     evo += `Tempo de VM: ${getTempoVMText(p) || "-"}\n`;
-    evo += `Parâmetros: Modo: ${phy.parametro || "-"} | PEEP: ${phy.peep || "-"} | FiO2: ${phy.fiO2 || "-"}%\n`;
-    evo += `Ajustes realizados: [ DIGITE AQUI OS AJUSTES REALIZADOS NO PLANTÃO ]\n\n`;
+    evo += `Parâmetros: ${paramText}\n\n`;
 
-    evo += `Filtro HMEF:\n`;
-    evo += `- Instalação: ${formatDt(phy.dataHMEF)}\n`;
-    evo += `- Troca Prevista (7 dias): ${getTroca7d(phy.dataHMEF)}\n\n`;
+    evo += `GASOMETRIA\n`;
+    evo += `${gasoTxt}\n`;
 
-    evo += `Sistema Fechado de Aspiração (Trach Care):\n`;
-    evo += `- Instalação: ${formatDt(phy.dataSFA)}\n`;
-    evo += `- Troca Prevista (7 dias): ${getTroca7d(phy.dataSFA)}\n\n`;
-
-    evo += `Pressão do Cuff (cmH2O):\n`;
-    evo += `Manhã: ${phy.cuffM || "-"} | Tarde: ${phy.cuffT || "-"} | Noite: ${phy.cuffN || "-"}\n\n`;
-
-    evo += `--- CONDUTAS E PLANOS ---\n`;
-    if (phy.observacoes) {
-    evo += `OBSERVAÇÕES IMPORTANTES:\n${phy.observacoes}\n\n`;
+    if (phy.dataHMEF) {
+      evo += `Filtro HMEF:\nData de instalação: ${formatDt(phy.dataHMEF)}\n\n`;
     }
-    evo += `INTERCORRÊNCIAS DO PLANTÃO:\n${phy.intercorrencias || "Sem intercorrências no plantão."}\n\n`;
-
-    // 🔥 Condutas + Mobilização (sem espaço entre eles)
-    let condutasTexto = phy.condutas || phy.admissao_condutas || "Não registrado.";
-    const mobArray = Array.isArray(phy.mobilizacao) ? phy.mobilizacao : [];
-    if (mobArray.length > 0) {
-      condutasTexto += `\n\nFoi realizado as seguintes condutas motoras:\n${mobArray.map(m => `• ${m}`).join('\n')}`;
+    if (phy.dataSFA) {
+      evo += `Sistema Fechado de Aspiração (Trach Care):\nData de instalação: ${formatDt(phy.dataSFA)}\n`;
     }
-    evo += `CONDUTAS FISIOTERAPÊUTICAS REALIZADAS:\n${condutasTexto}\n\n`;
-
-    // 🔥 Escalas (pulando uma linha após condutas)
-    const mrcHoje = phy.mrcScore_plano || (typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : (phy.mrcScore || ""));
-    const imsHoje = typeof phy.icuMobilityScale === 'object' ? (phy.icuMobilityScale[hoje] || "") : (phy.icuMobilityScale || "");
-    
-    let escalasTexto = "";
-    if (mrcHoje) {
-      escalasTexto += `ESCORE MRC: ${mrcHoje}\n`;
-    }
-    if (imsHoje) {
-      escalasTexto += `IMS (ICU Mobility Scale): ${imsHoje}`;
-    }
-    if (escalasTexto) {
-      evo += `${escalasTexto}\n\n`;
+    if (phy.cuffM || phy.cuffT || phy.cuffN) {
+      evo += `Pressão do Cuff (cmH2O):\nManhã: ${phy.cuffM || "-"} | Tarde: ${phy.cuffT || "-"} | Noite: ${phy.cuffN || "-"}\n\n`;
+    } else {
+      evo += `\n`; 
     }
 
-    evo += `PLANO / METAS PARA O PRÓXIMO PLANTÃO:\n${phy.planoMetas || "Manter condutas atuais."}`;
+    evo += `--- CONDUTAS FISIOTERAPÊUTICAS ---\n`;
+    evo += `${condutasTexto}\n\n`;
+
+    evo += `--- PLANO / METAS PARA PRÓXIMO PLANTÃO ---\n`;
+    evo += `${phy.planoMetas || "Não registrado."}\n\n`;
+
+    evo += `--- OBSERVAÇÕES IMPORTANTES ---\n`;
+    evo += `${phy.observacoes || "Sem observações."}\n\n`;
+
+    evo += `--- INTERCORRÊNCIAS ---\n`;
+    evo += `${phy.intercorrencias || "Sem intercorrências no plantão."}`;
 
     setPhysioEvoText(evo);
     setShowPhysioEvoModal(true);
