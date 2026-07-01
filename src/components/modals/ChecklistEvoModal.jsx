@@ -284,6 +284,19 @@ const ChecklistEvoModal = ({
                   <Stethoscope size={16} /> Exame Físico
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                  
+                  {/* NÍVEL DE CONSCIÊNCIA (novo campo no topo) */}
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">NÍVEL DE CONSCIÊNCIA</label>
+                    <textarea 
+                      className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" 
+                      value={med.nivelConsciencia || currentPatient?.neuro?.nivelConsciencia || currentPatient?.admissionData?.exameNeuro || ""} 
+                      onChange={(e) => updateNested("medical", "nivelConsciencia", e.target.value)} 
+                      rows={2} 
+                      placeholder="LOTE, TORPOROSO, SONOLENTO, SEDADO..."
+                    />
+                  </div>
+
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">GERAL</label>
                     <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameGeral || ""} onChange={(e) => updateNested("medical", "exameGeral", e.target.value)} rows={2} />
@@ -300,9 +313,23 @@ const ChecklistEvoModal = ({
                     <label className="text-[10px] font-bold text-slate-500 uppercase">ABD.</label>
                     <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameABD || ""} onChange={(e) => updateNested("medical", "exameABD", e.target.value)} rows={2} />
                   </div>
-                  <div className="md:col-span-2">
+                  
+                  {/* EXTREMIDADES */}
+                  <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">EXTREMIDADES</label>
                     <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameExtremidades || ""} onChange={(e) => updateNested("medical", "exameExtremidades", e.target.value)} rows={2} />
+                  </div>
+                  
+                  {/* PUPILAS */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">PUPILAS</label>
+                    <textarea 
+                      className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" 
+                      value={med.pupilas || currentPatient?.admissionData?.pupilas || ""} 
+                      onChange={(e) => updateNested("medical", "pupilas", e.target.value)} 
+                      rows={2} 
+                      placeholder="Fotorreagentes, isocóricas..."
+                    />
                   </div>
 
                   {/* OBSERVAÇÕES IMPORTANTES */}

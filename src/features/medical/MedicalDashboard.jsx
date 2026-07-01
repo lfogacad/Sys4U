@@ -455,6 +455,19 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         <div className="p-4 border rounded-xl bg-indigo-50/20">
           <h4 className="font-bold text-indigo-800 mb-4 flex items-center gap-2"><Brain size={16} /> Neurológico</h4>
           
+          {/* NOVO CAMPO: Nível de Consciência */}
+          <div className="mb-4">
+            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Nível de Consciência</label>
+            <input 
+              type="text"
+              className="w-full p-2 border rounded text-xs bg-white outline-none focus:ring-2 focus:ring-indigo-200" 
+              placeholder="LOTE, TORPOROSO, SONOLENTO, SEDADO..." 
+              value={currentPatient.neuro?.nivelConsciencia || currentPatient.admissionData?.exameNeuro || ""} 
+              onChange={(e) => updateNested("neuro", "nivelConsciencia", e.target.value)} 
+              onBlur={() => handleBlurSave("Médico: Editou Nível de Consciência")}
+            />
+          </div>
+          
           <div className="grid md:grid-cols-3 gap-2 mb-2">
             <select 
               className="p-2 border rounded text-xs" 
