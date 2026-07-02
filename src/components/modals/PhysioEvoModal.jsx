@@ -96,15 +96,21 @@ const PhysioEvoModal = ({
 
     handleBlurSave("Fisioterapia: Evolução diária finalizada");
     
-    // 3. Dispara a geração do texto de evolução (sem fechar o modal)
+    // 3. Monta o pacote de dados "frescos" para enviar direto ao gerador
+    const freshData = {
+      ...evolucaoData,
+      mrcScore: mrcObj,
+      icuMobilityScale: imsObj,
+      mrcScore_plano: evolucaoData.mrcScore,
+      ims: evolucaoData.ims
+    };
+
+    // 4. Dispara a geração IMEDIATAMENTE passando os dados novos
     if (typeof handleGeneratePhysioEvo === 'function') {
-      setTimeout(() => {
-        handleGeneratePhysioEvo();
-        setIsSaving(false);
-      }, 300);
-    } else {
-      setIsSaving(false);
+      handleGeneratePhysioEvo(freshData);
     }
+    
+    setIsSaving(false);
   };
 
   const handleCopyGeneratedText = () => {

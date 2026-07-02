@@ -93,7 +93,6 @@ const getRowsBySuporte = () => {
     { key: 'autoPeep', label: 'Auto PEEP' },
     { key: 'p01', label: 'P 0.1' },
     { key: 'irrs', label: 'IRRS (Tobin)' },
-    { key: 'dispositivo', label: 'Dispositivo O₂' },
     { key: 'satO2', label: 'SatO2 (%)' },
     { key: 'ajustesDia', label: 'Ajustes do Dia' }
   ];

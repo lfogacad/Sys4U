@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, ClipboardSignature, 
          Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History, RefreshCw, ChevronDown, ChevronRight,
-         Gauge, Timer, ArrowUpCircle, ClipboardList, BicepsFlexed, Map } from 'lucide-react';
-import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
+         Gauge, Timer, ArrowUpCircle, ClipboardList, BicepsFlexed, Map, ChartLine, TestTube } from 'lucide-react';
+import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, 
+         MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
 import { formatDateDDMM } from '../../utils/core';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import PhysioEvoModal from '../../components/modals/PhysioEvoModal';
 
 const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients, activeTab, setPatients, save, handlePhysioAdmission, handleViewPhysioAdmission, clearDate, updateP, updateNested, handleBlurSave, setShowVmFlowsheet, handleSuporteChange, toggleArrayItem, calculateExchangeDate, isDeviceExpired, handlePrintGasometria, handleGeneratePhysioEvo, getTempoVMText, isOverviewEditable, localEditRef }) => {
@@ -556,6 +558,180 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
   setModalExtubacao(prev => ({ ...prev, isOpen: false }));
 };
 
+  // Função auxiliar com nome diferente para não dar conflito com a do gerador de texto
+  const parseDateForChart = (str) => {
+    if (!str) return 0;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const [y, m, d] = str.split('-');
+      return new Date(y, m - 1, d, 0, 0).getTime();
+    }
+    const dMatch = str.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (dMatch) {
+      const day = parseInt(dMatch[1], 10);
+      const month = parseInt(dMatch[2], 10) - 1;
+      let year = dMatch[3] ? (dMatch[3].length === 2 ? 2000 + parseInt(dMatch[3], 10) : parseInt(dMatch[3], 10)) : new Date().getFullYear();
+      let hour = 0, min = 0;
+      const tMatch = str.match(/(?:-|\s|às)\s*(\d{1,2})(?:[hH:](\d{2})?)?/i);
+      if (tMatch) { hour = parseInt(tMatch[1], 10); min = tMatch[2] ? parseInt(tMatch[2], 10) : 0; }
+      return new Date(year, month, day, hour, min).getTime();
+    }
+    return 0;
+  };
+
+  // Monta os dados mesclando Gasometria e Physiodashboard
+  const getChartData = () => {
+    if (!currentPatient) return [];
+    
+    const gasoHistory = currentPatient.gasometriaHistory || {};
+    const vmFlowsheet = currentPatient.physio?.vmFlowsheet || [];
+    
+    // Usando um objeto simples para evitar conflito com o ícone <Map /> do lucide-react
+    const timeMap = {};
+    
+    // 1. Processa o Mapa de Suporte (Physio) para FiO2 e Suporte
+    vmFlowsheet.forEach(entry => {
+      const ts = parseDateForChart(entry.dataHora);
+      if (ts === 0) return;
+      
+      timeMap[ts] = {
+        timestamp: ts,
+        PaO2: null, 
+        PF: null,   
+        FiO2: parseFloat(entry.fio2?.toString().replace(',', '.')) || null,
+        suporte: entry.suporte || "-",
+        isInterpolated: false
+      };
+    });
+
+    // 2. Processa as Gasometrias
+    Object.keys(gasoHistory).forEach(key => {
+      const ts = parseDateForChart(key);
+      if (ts === 0) return;
+      
+      const g = gasoHistory[key];
+      const pao2 = parseFloat(g.PaO2?.toString().replace(',', '.')) || null;
+      const fio2 = parseFloat(g.FiO2?.toString().replace(',', '.')) || null;
+      const pf = parseFloat(g['P/F']?.toString().replace(',', '.')) || null;
+
+      if (timeMap[ts]) {
+        const existing = timeMap[ts];
+        if (pao2 !== null) existing.PaO2 = pao2;
+        if (pf !== null) existing.PF = pf;
+        if (fio2 !== null) existing.FiO2 = fio2; // Gaso tem prioridade na FiO2
+        existing.isInterpolated = false;
+      } else {
+        timeMap[ts] = {
+          timestamp: ts,
+          PaO2: pao2,
+          FiO2: fio2,
+          PF: pf,
+          suporte: "-",
+          isInterpolated: false
+        };
+      }
+    });
+    
+    // 3. Ordena cronologicamente
+    const sorted = Object.values(timeMap).sort((a, b) => a.timestamp - b.timestamp);
+    
+    // 4. Herda o suporte ventilatório para os pontos que vieram só da gaso
+    let lastSuporte = "-";
+    sorted.forEach(item => {
+      if (item.suporte !== "-") {
+        lastSuporte = item.suporte;
+      } else {
+        item.suporte = lastSuporte;
+      }
+    });
+
+    // 5. INTERPOLAÇÃO INTELIGENTE para conectar PaO2 e P/F
+    const gasos = sorted.filter(item => item.PaO2 !== null || item.PF !== null);
+    
+    sorted.forEach(item => {
+      if (item.PaO2 === null && item.PF === null) {
+        // Encontra a gasometria anterior e a próxima
+        const prevGaso = [...gasos].reverse().find(g => g.timestamp < item.timestamp);
+        const nextGaso = gasos.find(g => g.timestamp > item.timestamp);
+        
+        if (prevGaso && nextGaso) {
+          const dayPrev = new Date(prevGaso.timestamp).setHours(0,0,0,0);
+          const dayNext = new Date(nextGaso.timestamp).setHours(0,0,0,0);
+          const diffDays = Math.round((dayNext - dayPrev) / 86400000);
+          
+          // Se a diferença for <= 1 dia, significa que não pulou nenhum dia inteiro sem gasometria
+          if (diffDays <= 1) {
+            const ratio = (item.timestamp - prevGaso.timestamp) / (nextGaso.timestamp - prevGaso.timestamp);
+            if (prevGaso.PaO2 !== null && nextGaso.PaO2 !== null) {
+              item.PaO2 = prevGaso.PaO2 + (nextGaso.PaO2 - prevGaso.PaO2) * ratio;
+            }
+            if (prevGaso.PF !== null && nextGaso.PF !== null) {
+              item.PF = prevGaso.PF + (nextGaso.PF - prevGaso.PF) * ratio;
+            }
+            item.isInterpolated = true; // Flag para esconder no tooltip e não desenhar a bolinha
+          }
+        }
+      }
+    });
+
+    // 6. Formata os labels para o eixo X
+    return sorted.map(item => {
+      const dateObj = new Date(item.timestamp);
+      const dd = String(dateObj.getDate()).padStart(2, '0');
+      const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const hh = String(dateObj.getHours()).padStart(2, '0');
+      const min = String(dateObj.getMinutes()).padStart(2, '0');
+      
+      return {
+        ...item,
+        label: `${dd}/${mm} ${hh}:${min}`,
+      };
+    });
+  };
+
+  const chartData = getChartData();
+
+  // Componente customizado para o Eixo X (Data em cima, Suporte embaixo)
+  const CustomXAxisTick = ({ x, y, payload }) => {
+    const item = chartData.find(d => d.label === payload.value);
+    const suporte = item?.suporte || "";
+    
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text x={0} y={0} dy={10} textAnchor="end" fill="#64748b" fontSize={10} fontWeight="bold" transform="rotate(-35)">
+          {payload.value}
+        </text>
+        <text x={0} y={12} dy={10} textAnchor="end" fill="#0ea5e9" fontSize={9} transform="rotate(-35)">
+          {suporte}
+        </text>
+      </g>
+    );
+  };
+
+  // Componente customizado para o Tooltip (Hover do mouse)
+  const CustomTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white p-3 border border-slate-200 shadow-lg rounded-lg text-xs">
+          <p className="font-bold text-slate-800 border-b pb-1 mb-2">{data.label}</p>
+          <p className="text-slate-600 font-bold mb-2">Suporte: <span className="text-cyan-700">{data.suporte}</span></p>
+          {payload.map((entry, index) => {
+            // Se for PaO2 ou P/F e for um ponto interpolado, NÃO mostra no tooltip!
+            if ((entry.dataKey === 'PaO2' || entry.dataKey === 'PF') && data.isInterpolated) {
+              return null;
+            }
+            return (
+              <p key={index} style={{ color: entry.color }} className="font-bold">
+                {entry.name}: {entry.value !== null ? Number(entry.value).toFixed(1).replace('.0', '') : '-'}
+              </p>
+            );
+          })}
+        </div>
+      );
+    }
+    return null;
+  };
+
   // ==============================================================
   // 🔐 TELAS DE BLOQUEIO (PADRONIZADAS)
   // ==============================================================
@@ -944,14 +1120,6 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3 mb-4">
               <h4 className="font-bold text-cyan-800 flex items-center gap-2 shrink-0">
                 <Wind size={16} /> Suporte Ventilatório
-                 {/* 🔥 NOVO BOTÃO DE HISTÓRICO */}
-                <button 
-                  onClick={(e) => { e.preventDefault(); setShowO2History(true); }}
-                  className="ml-1 p-1 bg-cyan-100 text-cyan-700 hover:bg-cyan-600 hover:text-white rounded-lg transition-colors shadow-sm"
-                  title="Gráfico Evolutivo de O2"
-                >
-                  <History size={16} />
-                </button>
                 {(() => {
                   if (!currentPatient?.dataNascimento) return null;
                   const birthDate = new Date(currentPatient.dataNascimento);
@@ -1221,7 +1389,17 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
           {/* GASOMETRIA ARTERIAL */}
           <div className="p-4 bg-slate-50 border rounded-xl border-slate-200">
             <div className="flex justify-between items-center mb-3">
-              <h4 className="font-bold text-slate-700 flex items-center gap-2"><Activity size={16} /> Gasometria</h4>
+              <div className="flex items-center gap-2">
+                <h4 className="font-bold text-slate-700 flex items-center gap-2"><TestTube size={16} /> Gasometria</h4>
+                {/* 🔥 NOVO BOTÃO DE HISTÓRICO */}
+                <button 
+                  onClick={(e) => { e.preventDefault(); setShowO2History(true); }}
+                  className="p-1 bg-cyan-100 text-cyan-700 hover:bg-cyan-600 hover:text-white rounded-lg transition-colors shadow-sm"
+                  title="Gráfico Evolutivo de O2"
+                >
+                  <ChartLine size={16} />
+                </button>
+              </div>
               <button onClick={handleCustomPrintGasometria} className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 print:hidden shadow transition-colors"><Printer size={14} /> Imprimir Relatório</button>
             </div>
             <fieldset disabled={!isEditable} className="overflow-x-auto rounded-lg border border-slate-200 min-w-0 border-0 p-0 m-0">
@@ -1375,58 +1553,99 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
             handleGeneratePhysioEvo={handleGeneratePhysioEvo}
           />
 
-{/* MODAL DE GRÁFICO EVOLUTIVO DE O2 */}
+      {/* MODAL DE GRÁFICO EVOLUTIVO DE O2 (RECHARTS) */}
       {showO2History && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-fade-in">
-            <div className="bg-cyan-700 p-4 flex justify-between items-center text-white">
+          <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
+            <div className="bg-cyan-700 p-4 flex justify-between items-center text-white shrink-0">
               <div className="flex items-center gap-2">
-                <History size={24} />
-                <h2 className="text-lg font-black tracking-wide">Evolução do Suporte Ventilatório</h2>
+                <Activity size={24} />
+                <h2 className="text-lg font-black tracking-wide">Evolução de Oxigenação e Suporte</h2>
               </div>
               <button onClick={() => setShowO2History(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
                 <X size={24} />
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto bg-slate-50">
-              {currentPatient.historico_suporte_o2 && currentPatient.historico_suporte_o2.length > 0 ? (
-                <div className="space-y-4">
-                  {/* Gráfico Visual usando Tailwind */}
-                  {[...currentPatient.historico_suporte_o2].reverse().map((registro, idx) => {
-                    // Define a cor e o tamanho da barra baseado na gravidade do suporte
-                    let barWidth = "w-[20%]";
-                    let barColor = "bg-slate-300";
-                    let textColor = "text-slate-700";
-                    
-                    const sup = registro.suporte?.toLowerCase() || "";
-                    if (sup.includes("vm")) { barWidth = "w-full"; barColor = "bg-red-500"; textColor = "text-red-700"; }
-                    else if (sup.includes("vni")) { barWidth = "w-[80%]"; barColor = "bg-orange-500"; textColor = "text-orange-700"; }
-                    else if (sup.includes("venturi") || sup.includes("reinalante")) { barWidth = "w-[60%]"; barColor = "bg-amber-400"; textColor = "text-amber-700"; }
-                    else if (sup.includes("cateter") || sup.includes("tqt")) { barWidth = "w-[40%]"; barColor = "bg-green-400"; textColor = "text-green-700"; }
-                    else { barWidth = "w-[20%]"; barColor = "bg-blue-400"; textColor = "text-blue-700"; }
+            <div className="p-6 overflow-y-auto bg-slate-50 flex-1">
+              {chartData.length > 0 ? (
+                <div className="h-[450px] w-full bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 20, right: 10, left: -20, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      
+                      <XAxis 
+                        dataKey="label" 
+                        tick={<CustomXAxisTick />} 
+                        interval="preserveStartEnd"
+                      />
+                      
+                      {/* Eixo Y Esquerdo (PaO2 e P/F) */}
+                      <YAxis 
+                        yAxisId="left" 
+                        tick={{fontSize: 11, fill: '#64748b'}} 
+                        axisLine={false} 
+                        tickLine={false}
+                      />
+                      
+                      {/* Eixo Y Direito (FiO2 em %) - Cor Laranja */}
+                      <YAxis 
+                        yAxisId="right" 
+                        orientation="right" 
+                        domain={[20, 100]} 
+                        tick={{fontSize: 11, fill: '#ea580c', fontWeight: 'bold'}} 
+                        axisLine={false} 
+                        tickLine={false}
+                      />
+                      
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend verticalAlign="top" height={36} wrapperStyle={{ fontWeight: 'bold', fontSize: '12px' }}/>
+                      
+                      {/* 1º - FiO2: connectNulls={true}. Linha contínua sempre */}
+                      <Line 
+                        yAxisId="right" 
+                        type="monotone" 
+                        name="FiO2 (%)" 
+                        dataKey="FiO2" 
+                        stroke="#ea580c" 
+                        strokeWidth={3} 
+                        connectNulls={true} 
+                        dot={{r: 4, strokeWidth: 2}} 
+                        activeDot={{r: 6}} 
+                      />
 
-                    return (
-                      <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2">
-                        <div className="flex justify-between items-center">
-                          <div className="bg-cyan-50 text-cyan-800 px-2 py-1 rounded font-bold text-xs border border-cyan-100">
-                            {formatDateDDMM(registro.data)} - {registro.turno}
-                          </div>
-                          <span className={`font-black text-sm uppercase ${textColor}`}>{registro.suporte}</span>
-                        </div>
-                        {/* Barra do Gráfico */}
-                        <div className="w-full bg-slate-100 h-3.5 rounded-full overflow-hidden flex">
-                          <div className={`h-full rounded-full ${barWidth} ${barColor} transition-all duration-1000`}></div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      {/* 2º - PaO2: connectNulls={false}. As bolinhas somem nos pontos interpolados */}
+                      <Line 
+                        yAxisId="left" 
+                        type="monotone" 
+                        name="PaO2" 
+                        dataKey="PaO2" 
+                        stroke="#0284c7" 
+                        strokeWidth={3} 
+                        connectNulls={false} 
+                        dot={(props) => props.payload.isInterpolated ? null : <circle cx={props.cx} cy={props.cy} r={4} stroke={props.stroke} strokeWidth={2} fill="#fff" />} 
+                        activeDot={(props) => props.payload.isInterpolated ? null : <circle cx={props.cx} cy={props.cy} r={6} fill={props.stroke} stroke="#fff" strokeWidth={2} />} 
+                      />
+                      
+                      {/* 3º - P/F: connectNulls={false}. As bolinhas somem nos pontos interpolados */}
+                      <Line 
+                        yAxisId="left" 
+                        type="monotone" 
+                        name="P/F" 
+                        dataKey="PF" 
+                        stroke="#16a34a" 
+                        strokeWidth={3} 
+                        connectNulls={false} 
+                        dot={(props) => props.payload.isInterpolated ? null : <circle cx={props.cx} cy={props.cy} r={4} stroke={props.stroke} strokeWidth={2} fill="#fff" />} 
+                        activeDot={(props) => props.payload.isInterpolated ? null : <circle cx={props.cx} cy={props.cy} r={6} fill={props.stroke} stroke="#fff" strokeWidth={2} />} 
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               ) : (
                 <div className="text-center p-8 bg-white rounded-xl border border-slate-200">
                   <div className="flex justify-center mb-4"><Activity size={40} className="text-slate-300" /></div>
-                  <p className="text-slate-500 font-medium">Nenhum histórico registrado ainda.</p>
-                  <p className="text-xs text-slate-400 mt-2">O robô registrará o suporte automaticamente todos os dias às 12h e 00h.</p>
+                  <p className="text-slate-500 font-medium">Nenhum histórico de gasometria ou suporte registrado ainda.</p>
                 </div>
               )}
             </div>

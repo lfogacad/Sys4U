@@ -2384,6 +2384,15 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
       const egExtenso = egSalvo === "BEG" ? "BEG" : (egSalvo === "MEG" ? "MEG" : "REG");
       const sedacaoText = currentPatient.neuro?.sedacao ? (isFem ? "sedada" : "sedado") : "sem sedação";
+      const nivelConsciencia = currentPatient.medical?.nivelConsciencia || currentPatient.neuro?.nivelConsciencia || currentPatient.admissionData?.exameNeuro || "nível de consciência não informado";
+
+      // 👇 Lógica para omitir o Nível de Consciência se o paciente estiver sedado
+      const isSedado = currentPatient.neuro?.sedacao || nivelConsciencia.toUpperCase() === "SEDADO";
+      const formatoObrigatorioLinha1 = isSedado 
+        ? `${sexoPaciente} encontra-se em [ESTADO GERAL], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].`
+        : `${sexoPaciente} encontra-se em [ESTADO GERAL], [NÍVEL DE CONSCIÊNCIA], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].`;
+      
+      const dadosConsciencia = isSedado ? "" : `- [NÍVEL DE CONSCIÊNCIA]: ${nivelConsciencia}\n      `;
 
       // 3. RESPIRATÓRIO
       const suporte = currentPatient.physio?.suporte || "Ar ambiente";
@@ -2418,7 +2427,6 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       let renalStatus = "sem cálculo de função renal";
       
       if (!isNaN(crclNum)) {
-        // 🔥 MUDANÇA: A palavra "com" agora fica embutida aqui, apenas se houver cálculo
         if (crclNum >= 90) renalStatus = "com função renal normal";
         else if (crclNum >= 60) renalStatus = "com redução leve da função renal";
         else if (crclNum >= 30) renalStatus = "com falha moderada da função renal";
@@ -2440,7 +2448,6 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
 
       let leucoStatus = "sem dados recentes de leucometria";
       if (leucoVal > 0) {
-        // 🔥 MUDANÇA: A palavra "com" agora fica embutida aqui também
         if (leucoVal < 5000) leucoStatus = "com leucopenia";
         else if (leucoVal <= 10000) leucoStatus = "com leucometria normal";
         else if (leucoVal <= 12000) leucoStatus = "com leucocitose discreta";
@@ -2499,7 +2506,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       NÃO adicione introduções e não invente dados. Siga exatamente a estrutura fornecida.
 
       FORMATO OBRIGATÓRIO:
-      ${sexoPaciente} encontra-se em [ESTADO GERAL], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].
+      ${formatoObrigatorioLinha1}
       [HEMODINÂMICA], [DVA], apresenta-se [FC], [PA].
       [DIURESE], [FUNÇÃO RENAL].
       ${mantemSe} [TEMPERATURA], [LEUCOMETRIA] e [ATB].
@@ -2507,7 +2514,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
 
       DADOS CLÍNICOS REAIS:
       - [ESTADO GERAL]: ${egExtenso}
-      - [SEDAÇÃO]: ${sedacaoText}
+      ${dadosConsciencia}- [SEDAÇÃO]: ${sedacaoText}
       - [SUPORTE RESPIRATÓRIO]: ${suporteText}
       - [SPO2]: ${spo2Status}
       - [HEMODINÂMICA]: ${hemodinamicaStatus}
@@ -3220,11 +3227,12 @@ const generateNursingAI_Evolution = async () => {
   // ==============================================================
   // GERADOR AUTOMÁTICO DE EVOLUÇÃO (FISIOTERAPIA - MODELO OFICIAL)
   // ==============================================================
-  const handleGeneratePhysioEvo = () => {
+  const handleGeneratePhysioEvo = (freshData = null) => {
     const p = patients[activeTab];
     if (!p) return;
 
-    const phy = p.physio || {};
+    // Mescla o que já existia no paciente com os dados recém-saídos do modal
+    const phy = { ...(p.physio || {}), ...(freshData || {}) };
     const hoje = new Date().toLocaleDateString('pt-BR');
 
     const getField = (key) => {
@@ -3257,9 +3265,9 @@ const generateNursingAI_Evolution = async () => {
       return 0;
     };
 
-    // ========================================================
+    // ==============================================================
     // 🧠 1. LÓGICA DO SISTEMA RESPIRATÓRIO (FR)
-    // ========================================================
+    // ==============================================================
     let frTaquiCount = 0;
     let frBradiCount = 0;
     if (p.bh?.vitals && typeof BH_HOURS !== 'undefined') {
@@ -3284,9 +3292,9 @@ const generateNursingAI_Evolution = async () => {
       ? `com uso de musculatura acessória, com sinais de desconforto respiratório (${Array.isArray(phy.sinaisDesconforto) ? phy.sinaisDesconforto.join(", ") : "não especificado"})`
       : "sem uso de musculatura acessória, sem sinais de desconforto respiratório";
 
-    // ========================================================
+    // ==============================================================
     // 🧠 2. LÓGICA DO SISTEMA CARDIOVASCULAR (DVA)
-    // ========================================================
+    // ==============================================================
     const usaDVA = p.cardio?.dva === true;
     const isFem = p.sexo === "F";
     let hemodinamicaStatus = usaDVA ? (isFem ? "Hemodinamicamente compensada" : "Hemodinamicamente compensado") : "Hemodinamicamente estável";
@@ -3308,16 +3316,16 @@ const generateNursingAI_Evolution = async () => {
     }
     const dvaText = usaDVA ? `em uso de DVA (${p.cardio?.drogasDVA?.join(", ") || "não especificadas"})` : "sem uso de DVA";
 
-    // ========================================================
+    // ==============================================================
     // 🧠 3. LÓGICA DO SISTEMA NERVOSO
-    // ========================================================
+    // ==============================================================
     const nivelConsciencia = p.medical?.nivelConsciencia || p.neuro?.nivelConsciencia || p.admissionData?.exameNeuro || "Não informado";
     const sedado = p.neuro?.sedacao ? "sedado" : "sem sedação";
     const drogasSed = p.neuro?.sedacao && p.neuro?.drogasSedacao?.length > 0 ? `, em uso de ${p.neuro.drogasSedacao.join(" e ")} em BIC` : "";
     
     let rassGcs = "Glasgow não avaliado";
     if (p.neuro?.rass) {
-      const rassNum = p.neuro.rass.split(" ")[0]; // Pega apenas o valor numérico (ex: "-3")
+      const rassNum = p.neuro.rass.split(" ")[0]; 
       rassGcs = `RASS ${rassNum}`;
     } else if (p.neuro?.glasgowAO || p.neuro?.glasgowRV || p.neuro?.glasgowRM) {
       const ao = parseInt(p.neuro.glasgowAO) || 0;
@@ -3336,7 +3344,6 @@ const generateNursingAI_Evolution = async () => {
     }
     const pupilas = p.medical?.pupilas || p.admissionData?.pupilas || "não avaliadas";
 
-    // Evitar duplicação "Paciente SEDADO, sedado"
     let neuroInicio = "";
     if (nivelConsciencia.toUpperCase() === "SEDADO") {
       neuroInicio = `Paciente ${sedado}`;
@@ -3344,9 +3351,9 @@ const generateNursingAI_Evolution = async () => {
       neuroInicio = `Paciente ${nivelConsciencia}, ${sedado}`;
     }
 
-    // ========================================================
+    // ==============================================================
     // 🧠 4. LÓGICA MUSCULOESQUELÉTICA E FUNCIONALIDADE
-    // ========================================================
+    // ==============================================================
     const mrcPlano = phy.mrcScore_plano || (typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : phy.mrcScore || "");
     const imsPlano = phy.ims || (typeof phy.icuMobilityScale === 'object' ? (phy.icuMobilityScale[hoje] || "") : phy.icuMobilityScale || "");
     
@@ -3366,9 +3373,9 @@ const generateNursingAI_Evolution = async () => {
       }
     }
 
-    // ========================================================
+    // ==============================================================
     // 🧠 5. LÓGICA DE GASOMETRIAS
-    // ========================================================
+    // ==============================================================
     let gasoTxt = "";
     if (p.gasometriaHistory) {
       const now = new Date();
@@ -3396,9 +3403,9 @@ const generateNursingAI_Evolution = async () => {
       gasoTxt = "Nenhuma gasometria registrada no sistema.\n";
     }
 
-    // ========================================================
+    // ==============================================================
     // 🧠 6. PARÂMETROS DO MAPA DE SUPORTE VENTILATÓRIO
-    // ========================================================
+    // ==============================================================
     let paramText = "-";
     if (phy.vmFlowsheet && phy.vmFlowsheet.length > 0) {
       const lastEntry = phy.vmFlowsheet[phy.vmFlowsheet.length - 1];
@@ -3414,43 +3421,26 @@ const generateNursingAI_Evolution = async () => {
       paramText = `Modo: ${phy.parametro || "-"} | PEEP: ${phy.peep || "-"} | FiO2: ${phy.fiO2 || "-"}%`;
     }
 
-    // ========================================================
-    // 🧠 7. CONDUTAS E MODAIS EXTRAS (Formatador Inteligente)
-    // ========================================================
+    // ==============================================================
+    // 🧠 7. CONDUTAS E PROCEDIMENTOS DIÁRIOS (NOVO)
+    // ==============================================================
     let condutasTexto = phy.condutas || "Não registrado.";
-    const acoesExtras = [];
     
-    const formatModal = (obj, type) => {
-      if (!obj) return null;
-      if (typeof obj === 'string') return obj;
-      let res = `[${obj.horario || '--:--'}] `;
-      if (type === 'aspiracao') res += `Via: ${obj.viaAerea || '-'}, Qtd: ${obj.quantidade || '-'}, Aspecto: ${obj.caracteristica || '-'} / ${obj.coloracao || '-'}`;
-      if (type === 'vni') res += `Modo: ${obj.modo || '-'}, IPAP: ${obj.ipap || '-'}, EPAP: ${obj.epap || '-'}, Tempo: ${obj.tempo || '-'} ${obj.unidadeTempo || 'min'}`;
-      if (type === 'tre') res += `Modo: ${obj.modo || '-'}, Duração: ${obj.duracao || '-'} min, Desfecho: ${obj.desfecho || '-'}`;
-      if (type === 'extubacao') res += `Desfecho: ${obj.procedimentoRealizado || '-'}, Dispositivo pós: ${obj.dispositivoPosExtubacao || '-'}`;
-      return res;
-    };
+    // Filtra os procedimentos registrados apenas no dia de HOJE
+    const procedimentosDeHoje = (phy.procedimentosDiarios || []).filter(proc => {
+      if (!proc.data) return false;
+      const dataProc = new Date(proc.data).toLocaleDateString('pt-BR');
+      return dataProc === hoje;
+    });
 
-    if (phy.aspiracao) acoesExtras.push(`• Aspiração de Vias Aéreas: ${formatModal(phy.aspiracao, 'aspiracao')}`);
-    if (phy.sessaoVni) acoesExtras.push(`• Sessão de VNI: ${formatModal(phy.sessaoVni, 'vni')}`);
-    if (phy.tre) acoesExtras.push(`• TRE: ${formatModal(phy.tre, 'tre')}`);
-    if (phy.extubacao) acoesExtras.push(`• Extubação: ${formatModal(phy.extubacao, 'extubacao')}`);
-    
-    if (phy.mobilizacao) {
-      if (Array.isArray(phy.mobilizacao.selecionados) && phy.mobilizacao.selecionados.length > 0) {
-        acoesExtras.push(`• Mobilização precoce: ${phy.mobilizacao.selecionados.join(", ")}`);
-      } else if (Array.isArray(phy.mobilizacao) && phy.mobilizacao.length > 0) {
-        acoesExtras.push(`• Mobilização precoce: ${phy.mobilizacao.join(", ")}`);
-      }
+    if (procedimentosDeHoje.length > 0) {
+      const listaProcedimentos = procedimentosDeHoje.map(proc => `• [${proc.horario}] ${proc.textoFormatado}`);
+      condutasTexto += `\n\nProcedimentos registrados no plantão:\n${listaProcedimentos.join("\n")}`;
     }
 
-    if (acoesExtras.length > 0) {
-      condutasTexto += `\n\nAções registradas no plantão:\n${acoesExtras.join("\n")}`;
-    }
-
-    // ========================================================
-    // 📝 CONSTRUÇÃO DO TEXTO FINAL (ESTRITAMENTE COMO SOLICITADO)
-    // ========================================================
+    // ==============================================================
+    // 📝 CONSTRUÇÃO DO TEXTO FINAL
+    // ==============================================================
     let evo = `EVOLUÇÃO FISIOTERAPÊUTICA\n\n`;
 
     evo += `--- HISTÓRIA E DIAGNÓSTICOS ---\n`;
@@ -3475,7 +3465,7 @@ const generateNursingAI_Evolution = async () => {
     evo += `SISTEMA MUSCULOESQUELÉTICO:\n`;
     evo += `${forcaMuscular}${mrcDisplay}. Tônus muscular ${phy.tonusMuscular?.toLowerCase() || "não avaliado"}. ${phy.retracoesMusculares ? "Com" : "Sem"} sinais de retrações musculares. `;
     evo += `Amplitude de movimento ${phy.amplitudeMovimento?.toLowerCase() || "não avaliada"}${phy.amplitudeMovimento === "Reduzida" && phy.amplitudeDescricao ? ` em ${phy.amplitudeDescricao}` : ""}.\n`;
-    evo += `Mobilidade (IMS): ${imsPlano || "não avaliada"}.\n\n`;
+    evo += `Mobilidade no leito (IMS): ${imsPlano || "não avaliada"}.\n\n`;
 
     evo += `FUNCIONALIDADE:\n`;
     evo += `${funcText}\n\n`;
@@ -3485,14 +3475,14 @@ const generateNursingAI_Evolution = async () => {
     evo += `Tempo de VM: ${getTempoVMText(p) || "-"}\n`;
     evo += `Parâmetros: ${paramText}\n\n`;
 
-    evo += `GASOMETRIA\n`;
+    evo += `--- GASOMETRIA ---\n`;
     evo += `${gasoTxt}\n`;
 
     if (phy.dataHMEF) {
       evo += `Filtro HMEF:\nData de instalação: ${formatDt(phy.dataHMEF)}\n\n`;
     }
     if (phy.dataSFA) {
-      evo += `Sistema Fechado de Aspiração (Trach Care):\nData de instalação: ${formatDt(phy.dataSFA)}\n`;
+      evo += `Sistema Fechado de Aspiração (Trach Care):\nData de instalação: ${formatDt(phy.dataSFA)}\n\n`;
     }
     if (phy.cuffM || phy.cuffT || phy.cuffN) {
       evo += `Pressão do Cuff (cmH2O):\nManhã: ${phy.cuffM || "-"} | Tarde: ${phy.cuffT || "-"} | Noite: ${phy.cuffN || "-"}\n\n`;
@@ -3808,7 +3798,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
   // MAPA DE VENTILAÇÃO MECÂNICA (FISIOTERAPIA)
   // ========================================================================
 
-const handleAddVmEntry = () => {
+  const handleAddVmEntry = () => {
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
 
@@ -3843,13 +3833,17 @@ const handleAddVmEntry = () => {
       ps: p.physio.pressaoSuporte || "",
       frSet: p.physio.fr || "",
       frTotal: "",
-      // Campos que o modal agora suporta (todos inicializados vazios)
-      cuffM: "", cuffT: "", cuffN: "",
+      
+      // 👇 CORREÇÃO: Agora puxa os valores do cuff que já estão salvos na physiodashboard
+      cuffM: p.physio.cuffM || "", 
+      cuffT: p.physio.cuffT || "", 
+      cuffN: p.physio.cuffN || "",
+      
       despertarS: false, despertarN: false,
       vtPc: "", vm: "", fluxoInsp: "", tInsp: "", ie: "",
       pPico: "", pPlato: "", dp: "", cst: "",
       cdin: "", rva: "", autoPeep: "", p01: "", irrs: "",
-      dispositivo: "", satO2: "", ajustesDia: ""
+      satO2: "", ajustesDia: ""
     };
 
     p.physio.vmFlowsheet.push(newEntry);
