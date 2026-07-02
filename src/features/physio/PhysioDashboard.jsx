@@ -62,8 +62,10 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   spo2: ""
 });
 
-  const [modalTRE, setModalTRE] = useState({
+const [modalTRE, setModalTRE] = useState({
   isOpen: false,
+  step: 1,               // NOVO: Controla a tela (1 = Checklist, 2 = Parâmetros)
+  checklist: {},         // NOVO: Armazena as respostas do checklist
   horario: "08:00",
   cuffLeakFeito: false,
   cuffLeakResultado: "", // Positivo, Negativo
@@ -463,6 +465,19 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
 
   setModalTRE(prev => ({ ...prev, isOpen: false }));
 };
+
+const TRE_CHECKLIST = [
+  { id: 'causa', label: 'Causa da falência respiratória controlada' },
+  { id: 'pao2', label: 'PaO2 ≥ 60mmHg com FiO2 ≤ 0,4' },
+  { id: 'peep_ps', label: 'PEEP ≤ 8 e PS ≤ 12' },
+  { id: 'fc', label: 'FC ≥ 60 e ≤ 120' },
+  { id: 'fr', label: 'FR ≥ 12 e ≤ 22' },
+  { id: 'spo2', label: 'SpO2 ≥ 90% ou adequada para quadro clínico' },
+  { id: 'neuro', label: 'Glasgow ≥ 10 ou RASS de -2 a +1' },
+  { id: 'secrecao', label: 'Capacidade de mobilização de secreção' },
+  { id: 'dva', label: 'Dose estável de vasopressor ou em queda' },
+  { id: 'ph', label: 'pH maior que 7,30' }
+];
 
   const salvarMobilizacao = () => {
   const m = modalMobilizacao;
@@ -1971,144 +1986,215 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
             <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-full"><Timer size={20} /></div>
-                <h2 className="text-lg font-black tracking-wide">TRE</h2>
+                <h2 className="text-lg font-black tracking-wide">
+                  {(!modalTRE.step || modalTRE.step === 1) ? "Critérios para TRE" : "Parâmetros do TRE"}
+                </h2>
               </div>
-              <button onClick={() => setModalTRE({ ...modalTRE, isOpen: false })} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+              <button onClick={() => setModalTRE({ ...modalTRE, isOpen: false, step: 1, checklist: {} })} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
                 <X size={24} />
               </button>
             </div>
-
+            
             {/* CORPO ROLÁVEL */}
             <div className="p-5 bg-slate-50 space-y-6 overflow-y-auto">
-
-              {/* HORÁRIO */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário</label>
-                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
-                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTRE.horario ? modalTRE.horario.split(':')[0] : "08"} onChange={(e) => setModalTRE({ ...modalTRE, horario: `${e.target.value}:${modalTRE.horario ? modalTRE.horario.split(':')[1] : '00'}` })}>
-                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
-                  </select>
-                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
-                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTRE.horario ? modalTRE.horario.split(':')[1] : "00"} onChange={(e) => setModalTRE({ ...modalTRE, horario: `${modalTRE.horario ? modalTRE.horario.split(':')[0] : '00'}:${e.target.value}` })}>
-                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {/* CUFF LEAK TEST */}
-              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Avaliação Pré-Extubação: Cuff Leak</label>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
-                    <input type="checkbox" checked={modalTRE.cuffLeakFeito} onChange={(e) => {
-                      setModalTRE({ ...modalTRE, cuffLeakFeito: e.target.checked, cuffLeakResultado: e.target.checked ? modalTRE.cuffLeakResultado : "" })
-                    }} className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
-                    Feito
-                  </label>
-                </div>
-                {modalTRE.cuffLeakFeito && (
-                  <div className="grid grid-cols-2 gap-2 mt-2 animate-fadeIn">
-                    {['Positivo', 'Negativo'].map(res => (
-                      <button key={res} type="button" onClick={() => setModalTRE({ ...modalTRE, cuffLeakResultado: res })} className={`p-2 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTRE.cuffLeakResultado === res ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-cyan-200'}`}>{res}</button>
-                    ))}
+              
+              {(!modalTRE.step || modalTRE.step === 1) ? (
+                // =====================================================================
+                // FASE 1: CHECKLIST
+                // =====================================================================
+                <div className="space-y-3">
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-amber-800 text-xs font-bold text-center mb-4">
+                    Responda aos critérios de segurança antes de iniciar o TRE.
                   </div>
-                )}
-              </div>
-
-              {/* MODO TRE */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Modo do TRE</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['Tubo T', 'PSV', 'CPAP'].map(m => (
-                    <button key={m} type="button" onClick={() => setModalTRE({ ...modalTRE, modo: m })} className={`p-2.5 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTRE.modo === m ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{m}</button>
+                  
+                  {TRE_CHECKLIST.map((item, idx) => (
+                    <div key={item.id} className="bg-white p-3 border border-slate-200 rounded-xl shadow-sm flex flex-col gap-2">
+                      <span className="text-[11px] font-bold text-slate-700 leading-tight">
+                        {idx + 1}. {item.label}
+                      </span>
+                      <div className="flex gap-2">
+                        <button 
+                          type="button"
+                          onClick={() => setModalTRE(prev => ({ ...prev, checklist: { ...prev.checklist, [item.id]: 'Sim' } }))}
+                          className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${modalTRE.checklist?.[item.id] === 'Sim' ? 'bg-green-500 text-white border-green-600 shadow-inner' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+                        >
+                          Sim
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => setModalTRE(prev => ({ ...prev, checklist: { ...prev.checklist, [item.id]: 'Não' } }))}
+                          className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${modalTRE.checklist?.[item.id] === 'Não' ? 'bg-red-500 text-white border-red-600 shadow-inner' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+                        >
+                          Não
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
-              </div>
-
-              {/* PARÂMETROS */}
-              {modalTRE.modo && (
-                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm animate-fadeIn">
-                  <label className="text-[10px] font-bold text-cyan-700 uppercase mb-3 block text-center border-b border-slate-100 pb-2">Parâmetros ({modalTRE.modo})</label>
-                  
-                  {modalTRE.modo === 'Tubo T' && (
-                    <div className="grid grid-cols-1 gap-3">
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">O₂ (L/min)</label>
-                        <input type="text" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.o2} onChange={e => setModalTRE({...modalTRE, o2: e.target.value})} />
+              ) : (
+                // =====================================================================
+                // FASE 2: MODAL ORIGINAL (PARÂMETROS E DESFECHO)
+                // =====================================================================
+                <div className="space-y-6">
+                  {/* HORÁRIO */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário</label>
+                    <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                      <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTRE.horario ? modalTRE.horario.split(':')[0] : "08"} onChange={(e) => setModalTRE({ ...modalTRE, horario: `${e.target.value}:${modalTRE.horario ? modalTRE.horario.split(':')[1] : '00'}` })}>
+                        {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                      </select>
+                      <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                      <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTRE.horario ? modalTRE.horario.split(':')[1] : "00"} onChange={(e) => setModalTRE({ ...modalTRE, horario: `${modalTRE.horario ? modalTRE.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                        {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {/* CUFF LEAK TEST */}
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Avaliação Pré-Extubação: Cuff Leak</label>
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={modalTRE.cuffLeakFeito} onChange={(e) => {
+                          setModalTRE({ ...modalTRE, cuffLeakFeito: e.target.checked, cuffLeakResultado: e.target.checked ? modalTRE.cuffLeakResultado : "" })
+                        }} className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500" />
+                        Feito
+                      </label>
+                    </div>
+                    {modalTRE.cuffLeakFeito && (
+                      <div className="grid grid-cols-2 gap-2 mt-2 animate-fadeIn">
+                        {['Positivo', 'Negativo'].map(res => (
+                          <button key={res} type="button" onClick={() => setModalTRE({ ...modalTRE, cuffLeakResultado: res })} className={`p-2 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTRE.cuffLeakResultado === res ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-cyan-200'}`}>{res}</button>
+                        ))}
                       </div>
+                    )}
+                  </div>
+                  {/* MODO TRE */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Modo do TRE</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {['Tubo T', 'PSV', 'CPAP'].map(m => (
+                        <button key={m} type="button" onClick={() => setModalTRE({ ...modalTRE, modo: m })} className={`p-2.5 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTRE.modo === m ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{m}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* PARÂMETROS */}
+                  {modalTRE.modo && (
+                    <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm animate-fadeIn">
+                      <label className="text-[10px] font-bold text-cyan-700 uppercase mb-3 block text-center border-b border-slate-100 pb-2">Parâmetros ({modalTRE.modo})</label>
+                      {modalTRE.modo === 'Tubo T' && (
+                        <div className="grid grid-cols-1 gap-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">O₂ (L/min)</label>
+                            <input type="text" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.o2} onChange={e => setModalTRE({...modalTRE, o2: e.target.value})} />
+                          </div>
+                        </div>
+                      )}
+                      {modalTRE.modo === 'PSV' && (
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PS</label>
+                            <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.ps} onChange={e => setModalTRE({...modalTRE, ps: e.target.value})} />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PEEP</label>
+                            <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.peep} onChange={e => setModalTRE({...modalTRE, peep: e.target.value})} />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">FiO₂ (%)</label>
+                            <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.fio2} onChange={e => setModalTRE({...modalTRE, fio2: e.target.value})} />
+                          </div>
+                        </div>
+                      )}
+                      {modalTRE.modo === 'CPAP' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PEEP</label>
+                            <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.peep} onChange={e => setModalTRE({...modalTRE, peep: e.target.value})} />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">FiO₂ (%)</label>
+                            <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.fio2} onChange={e => setModalTRE({...modalTRE, fio2: e.target.value})} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
-
-                  {modalTRE.modo === 'PSV' && (
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PS</label>
-                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.ps} onChange={e => setModalTRE({...modalTRE, ps: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PEEP</label>
-                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.peep} onChange={e => setModalTRE({...modalTRE, peep: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">FiO₂ (%)</label>
-                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.fio2} onChange={e => setModalTRE({...modalTRE, fio2: e.target.value})} />
-                      </div>
+                  {/* DURAÇÃO E IRRS */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Duração (minutos)</label>
+                      <input type="number" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center font-bold text-lg" value={modalTRE.duracao} onChange={e => setModalTRE({...modalTRE, duracao: e.target.value})} />
                     </div>
-                  )}
-
-                  {modalTRE.modo === 'CPAP' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">PEEP</label>
-                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.peep} onChange={e => setModalTRE({...modalTRE, peep: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">FiO₂ (%)</label>
-                        <input type="number" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300 text-slate-700" value={modalTRE.fio2} onChange={e => setModalTRE({...modalTRE, fio2: e.target.value})} />
-                      </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center" title="Índice de Respiração Rápida e Superficial">IRRS (Tobin)</label>
+                      <input type="number" step="0.1" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center font-bold text-lg" value={modalTRE.irrs} onChange={e => setModalTRE({...modalTRE, irrs: e.target.value})} />
                     </div>
-                  )}
+                  </div>
+                  {/* DESFECHO */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Desfecho</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => setModalTRE({ ...modalTRE, desfecho: "Sucesso" })} className={`p-3 rounded-xl border-2 font-black text-sm uppercase tracking-wide transition-all ${modalTRE.desfecho === "Sucesso" ? 'border-green-500 bg-green-50 text-green-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-green-200'}`}>Sucesso</button>
+                      <button type="button" onClick={() => setModalTRE({ ...modalTRE, desfecho: "Falha" })} className={`p-3 rounded-xl border-2 font-black text-sm uppercase tracking-wide transition-all ${modalTRE.desfecho === "Falha" ? 'border-red-500 bg-red-50 text-red-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>Falha</button>
+                    </div>
+                  </div>
                 </div>
               )}
-
-              {/* DURAÇÃO E IRRS */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Duração (minutos)</label>
-                  <input type="number" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center font-bold text-lg" value={modalTRE.duracao} onChange={e => setModalTRE({...modalTRE, duracao: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center" title="Índice de Respiração Rápida e Superficial">IRRS (Tobin)</label>
-                  <input type="number" step="0.1" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center font-bold text-lg" value={modalTRE.irrs} onChange={e => setModalTRE({...modalTRE, irrs: e.target.value})} />
-                </div>
-              </div>
-
-              {/* DESFECHO */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Desfecho</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setModalTRE({ ...modalTRE, desfecho: "Sucesso" })} className={`p-3 rounded-xl border-2 font-black text-sm uppercase tracking-wide transition-all ${modalTRE.desfecho === "Sucesso" ? 'border-green-500 bg-green-50 text-green-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-green-200'}`}>Sucesso</button>
-                  <button type="button" onClick={() => setModalTRE({ ...modalTRE, desfecho: "Falha" })} className={`p-3 rounded-xl border-2 font-black text-sm uppercase tracking-wide transition-all ${modalTRE.desfecho === "Falha" ? 'border-red-500 bg-red-50 text-red-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>Falha</button>
-                </div>
-              </div>
-
             </div>
-
+            
             {/* RODAPÉ FIXO */}
             <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0">
-              <button type="button" onClick={() => setModalTRE({ ...modalTRE, isOpen: false })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
-                Cancelar
-              </button>
-              <button 
-                type="button"
-                disabled={!modalTRE.modo || !modalTRE.duracao || !modalTRE.desfecho || (modalTRE.cuffLeakFeito && !modalTRE.cuffLeakResultado)} 
-                onClick={salvarTRE} 
-                className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
-              >
-                Salvar TRE
-              </button>
-            </div>
+              {(!modalTRE.step || modalTRE.step === 1) ? (
+                <>
+                  <button type="button" onClick={() => setModalTRE({ ...modalTRE, isOpen: false, step: 1, checklist: {} })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                    Cancelar
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const checklistValues = Object.values(modalTRE.checklist || {});
+                      const unansweredCount = TRE_CHECKLIST.length - checklistValues.length;
 
+                      if (unansweredCount > 0) {
+                        alert("Por favor, responda todos os itens do checklist antes de prosseguir.");
+                        return;
+                      }
+
+                      const naoCount = checklistValues.filter(val => val === 'Não').length;
+
+                      if (naoCount === 1) {
+                        if (window.confirm("Sugiro avaliação com equipe multi. Deseja prosseguir?")) {
+                          setModalTRE({ ...modalTRE, step: 2 });
+                        }
+                      } else if (naoCount >= 2) {
+                        if (window.confirm("Sugiro suspender extubação e reavaliar em 24h. Deseja prosseguir?")) {
+                          setModalTRE({ ...modalTRE, step: 2 });
+                        }
+                      } else {
+                        setModalTRE({ ...modalTRE, step: 2 });
+                      }
+                    }}
+                    className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                  >
+                    Seguir
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => setModalTRE({ ...modalTRE, step: 1 })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                    Voltar
+                  </button>
+                  <button 
+                    type="button"
+                    disabled={!modalTRE.modo || !modalTRE.duracao || !modalTRE.desfecho || (modalTRE.cuffLeakFeito && !modalTRE.cuffLeakResultado)} 
+                    onClick={salvarTRE} 
+                    className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                  >
+                    Salvar TRE
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

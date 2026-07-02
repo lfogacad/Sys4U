@@ -6,31 +6,213 @@ if (admin.apps.length === 0) {
 }
 const db = admin.firestore();
 
+/**
+ * Coleta todos os dispositivos invasivos de um paciente, buscando em múltiplos
+ * locais possíveis do objeto: p.dispositivos, p.medical.dispositivos,
+ * p.nursing.dispositivos, p.enfermagem (camadas legadas), etc.
+ * Retorna um array normalizado de objetos:
+ * { tipo, dataInsercao, dataRetirada, ativo }
+ */
+function getDispositivosPaciente(p) {
+  const dispositivos = [];
+
+  // Helper: normaliza um objeto de dispositivo bruto para o formato padrão
+  const normalizar = (d) => {
+    if (!d || typeof d !== "object") return null;
+    const tipo = (d.tipo || d.nome || d.type || d.name || d.dispositivo || "").toString().trim();
+    if (!tipo) return null;
+
+    const dataInsercao = d.dataInsercao || d.data || d.dataInicio || d.dataImplantacao || d.dataColocacao || d.dataColocação || d.insercaoData || d.inicioData || null;
+    const dataRetirada = d.dataRetirada || d.retiradaData || d.dataRemocao || d.dataRemoção || d.remocaoData || d.retirada || d.dataFim || null;
+
+    // "ativo" pode vir explícito ou ser inferido pela ausência de dataRetirada
+    let ativo;
+    if (typeof d.ativo === "boolean") {
+      ativo = d.ativo;
+    } else if (typeof d.status === "string") {
+      ativo = d.status.toLowerCase() === "ativo" || d.status.toLowerCase() === "em uso";
+    } else {
+      ativo = !dataRetirada;
+    }
+
+    return { tipo: tipo.toLowerCase(), tipoOriginal: tipo, dataInsercao, dataRetirada, ativo };
+  };
+
+  // 1. p.dispositivos (pode ser array ou objeto mapa)
+  if (p.dispositivos) {
+    if (Array.isArray(p.dispositivos)) {
+      p.dispositivos.forEach((d) => {
+        const n = normalizar(d);
+        if (n) dispositivos.push(n);
+      });
+    } else if (typeof p.dispositivos === "object") {
+      Object.values(p.dispositivos).forEach((d) => {
+        const n = normalizar(d);
+        if (n) dispositivos.push(n);
+      });
+    }
+  }
+
+  // 2. p.medical.dispositivos
+  if (p.medical && p.medical.dispositivos) {
+    if (Array.isArray(p.medical.dispositivos)) {
+      p.medical.dispositivos.forEach((d) => {
+        const n = normalizar(d);
+        if (n) dispositivos.push(n);
+      });
+    } else if (typeof p.medical.dispositivos === "object") {
+      Object.values(p.medical.dispositivos).forEach((d) => {
+        const n = normalizar(d);
+        if (n) dispositivos.push(n);
+      });
+    }
+  }
+
+  // 3. p.nursing.dispositivos
+  if (p.nursing && p.nursing.dispositivos) {
+    if (Array.isArray(p.nursing.dispositivos)) {
+      p.nursing.dispositivos.forEach((d) => {
+        const n = normalizar(d);
+        if (n) dispositivos.push(n);
+      });
+    } else if (typeof p.nursing.dispositivos === "object") {
+      Object.values(p.nursing.dispositivos).forEach((d) => {
+        const n = normalizar(d);
+        if (n) dispositivos.push(n);
+      });
+    }
+  }
+
+  // 4. p.enfermagem.dispositivos (caso exista dentro de enfermagem)
+  if (p.enfermagem && p.enfermagem.dispositivos) {
+    if (Array.isArray(p.enfermagem.dispositivos)) {
+      p.enfermagem.dispositivos.forEach((d) => {
+        const n = normalizar(d);
+        if (n) dispositivos.push(n);
+      });
+    } else if (typeof p.enfermagem.dispositivos === "object") {
+      Object.values(p.enfermagem.dispositivos).forEach((d) => {
+        const n = normalizar(d);
+        if (n) dispositivos.push(n);
+      });
+    }
+  }
+
+  // 5. Legado: campos individuais em p.enfermagem (cvcData, svdData, shileyData)
+  if (p.enfermagem) {
+    if (p.enfermagem.cvcData) {
+      dispositivos.push({
+        tipo: "cvc",
+        tipoOriginal: "CVC",
+        dataInsercao: p.enfermagem.cvcData,
+        dataRetirada: p.enfermagem.cvcRetiradaData || null,
+        ativo: !p.enfermagem.cvcRetiradaData,
+      });
+    }
+    if (p.enfermagem.svdData) {
+      dispositivos.push({
+        tipo: "svd",
+        tipoOriginal: "SVD",
+        dataInsercao: p.enfermagem.svdData,
+        dataRetirada: p.enfermagem.svdRetiradaData || null,
+        ativo: !p.enfermagem.svdRetiradaData,
+      });
+    }
+    if (p.enfermagem.shileyData) {
+      dispositivos.push({
+        tipo: "shiley",
+        tipoOriginal: "Shiley",
+        dataInsercao: p.enfermagem.shileyData,
+        dataRetirada: p.enfermagem.shileyRetiradaData || null,
+        ativo: !p.enfermagem.shileyRetiradaData,
+      });
+    }
+  }
+
+  return dispositivos;
+}
+
+/**
+ * Verifica se o paciente possui um dispositivo ativo de um determinado grupo.
+ * grupos: array de strings para match (ex: ["svd", "sonda vesical de demora"])
+ */
+function hasDispositivoAtivo(p, grupos) {
+  const dispositivos = getDispositivosPaciente(p);
+  const gruposLower = grupos.map((g) => g.toLowerCase());
+  return dispositivos.some((d) => {
+    if (!d.ativo) return false;
+    return gruposLower.some((g) => d.tipo.includes(g) || d.tipoOriginal.toLowerCase().includes(g));
+  });
+}
+
+/**
+ * Busca o primeiro dispositivo ativo de um grupo e retorna suas datas.
+ */
+function getDispositivoAtivo(p, grupos) {
+  const dispositivos = getDispositivosPaciente(p);
+  const gruposLower = grupos.map((g) => g.toLowerCase());
+  return dispositivos.find((d) => {
+    if (!d.ativo) return false;
+    return gruposLower.some((g) => d.tipo.includes(g) || d.tipoOriginal.toLowerCase().includes(g));
+  }) || null;
+}
+
+/**
+ * Busca o dispositivo (ativo ou não) de um grupo cuja data de inserção seja
+ * a mais recente entre os que foram inseridos antes ou no dia da coleta.
+ * Usado pelos sniffers de IPCSC e ITU.
+ */
+function getDispositivoParaAuditoria(p, grupos, dataColetaObj) {
+  const dispositivos = getDispositivosPaciente(p);
+  const gruposLower = grupos.map((g) => g.toLowerCase());
+  const candidatos = dispositivos.filter((d) => {
+    return gruposLower.some((g) => d.tipo.includes(g) || d.tipoOriginal.toLowerCase().includes(g));
+  });
+  if (candidatos.length === 0) return null;
+
+  // Ordena por data de inserção (mais recente primeiro) — preferimos o dispositivo
+  // que estava em uso no momento da coleta
+  let melhor = null;
+  let melhorData = null;
+  for (const d of candidatos) {
+    if (!d.dataInsercao) continue;
+    let dStr = d.dataInsercao.includes("/") ? d.dataInsercao.split("/").reverse().join("-") : d.dataInsercao;
+    const dObj = new Date(`${dStr}T12:00:00`);
+    if (isNaN(dObj.getTime())) continue;
+    if (dObj > dataColetaObj) continue; // inserido depois da coleta, não conta
+    if (!melhorData || dObj > melhorData) {
+      melhorData = dObj;
+      melhor = d;
+    }
+  }
+  return melhor;
+}
+
 exports.gerarCensoUTI = onSchedule({
   schedule: "59 11,23 * * *", // Roda às 11:59 e às 23:59
-  timeZone: "America/Porto_Velho", 
-  memory: "512MiB" 
+  timeZone: "America/Porto_Velho",
+  memory: "512MiB"
 }, async () => {
   console.log("Iniciando rotina do robô (O2, Censo e IRAS)...");
 
   try {
     const leitosSnapshot = await db.collection("leitos_uti").get();
-    
+
     // Ajuste de fuso horário para Rondônia (UTC-4)
     const agora = new Date();
     agora.setHours(agora.getHours() - 4);
-    
+
     // 🔥 VARIÁVEL DE PROTEÇÃO: Define se é a rodada da noite
     const horaAtual = agora.getHours(); // Será 11 ou 23
     const isFechamentoDiario = horaAtual === 23;
-    
+
     // ========================================================
     // MOTOR DE TEMPO GERAL (D0 de análise da Madrugada)
     // ========================================================
     const datasJanelaPAV = [];
     for (let i = 0; i <= 3; i++) {
       const d = new Date(agora.getTime() - i * 86400000);
-      datasJanelaPAV.push(d.toISOString().split('T')[0]); 
+      datasJanelaPAV.push(d.toISOString().split('T')[0]);
     }
     const d0 = datasJanelaPAV[0]; // Hoje
     const mesCorrente = d0.slice(0, 7);
@@ -44,7 +226,7 @@ exports.gerarCensoUTI = onSchedule({
       pacientesComCVC: 0,
       pacientesComSVD: 0,
       pacientesComShiley: 0,
-      pacientesIdentificados: 0, 
+      pacientesIdentificados: 0,
       timestampProcessamento: admin.firestore.FieldValue.serverTimestamp()
     };
 
@@ -57,15 +239,15 @@ exports.gerarCensoUTI = onSchedule({
       const p = doc.data();
       const leitoId = doc.id;
       const leitoNumero = leitoId.replace('bed_', '');
-      
+
       if (p.nome && p.status !== "Livre") {
-        
+
         // ====================================================================
         // 0. HISTÓRICO DE O2 (RODA ÀS 11:59 E ÀS 23:59)
         // ====================================================================
         const suporteAtual = p.physio?.suporte || "Ar Ambiente";
         const turno = horaAtual === 11 ? "12:00" : "00:00";
-        
+
         let updatePayload = {
           historico_suporte_o2: admin.firestore.FieldValue.arrayUnion({
             data: d0,
@@ -79,7 +261,7 @@ exports.gerarCensoUTI = onSchedule({
         // 🔥 BLOCO PROTEGIDO: SÓ RODA NO FECHAMENTO DIÁRIO (23:59)
         // ====================================================================
         if (isFechamentoDiario) {
-          
+
           // Reset de Segurança da Enfermagem (SEMPRE, inclusive morador)
           updatePayload["enfermagem.identificacaoCorreta"] = false;
 
@@ -87,14 +269,23 @@ exports.gerarCensoUTI = onSchedule({
           if (p.ignorarEstatistica !== true) {
             contadores.totalLeitosOcupados++;
             if (p.enfermagem?.identificacaoCorreta === true) contadores.pacientesIdentificados++;
-            
+
             if (p.physio?.suporte === "VM" || p.fisioterapia?.suporte === "VM" || (p.dataIntubacao && !p.dataExtubacao)) {
                 contadores.pacientesEmVM++;
             }
-            
-            if (p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData) contadores.pacientesComCVC++;
-            if (p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData) contadores.pacientesComSVD++;
-            if (p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData) contadores.pacientesComShiley++;
+
+            // 🔧 CORREÇÃO: Contagem de dispositivos invasivos agora busca em
+            // p.dispositivos, p.medical.dispositivos, p.nursing.dispositivos,
+            // p.enfermagem.dispositivos e legado p.enfermagem.{cvcData,svdData,shileyData}
+            if (hasDispositivoAtivo(p, ["cvc", "cateter venoso central", "cateter central"])) {
+              contadores.pacientesComCVC++;
+            }
+            if (hasDispositivoAtivo(p, ["svd", "sonda vesical de demora", "sonda vesical"])) {
+              contadores.pacientesComSVD++;
+            }
+            if (hasDispositivoAtivo(p, ["shiley", "cateter de hemodialise", "cateter de hemodiálise", "cdl", "cateter de diálise", "cateter de dialise", "hemodialise", "hemodiálise"])) {
+              contadores.pacientesComShiley++;
+            }
           } // 🔚 Fim do filtro de morador
 
           // 2. SNIFFER DE SUSPEITA DE PAV (ANVISA)
@@ -184,7 +375,7 @@ exports.gerarCensoUTI = onSchedule({
 
                 if (atendeCriterioVM && p.dataExtubacao) {
                   let dataExtStr = p.dataExtubacao.includes('/') ? p.dataExtubacao.split('/').reverse().join('-') : p.dataExtubacao;
-                  if (Math.floor((dataEventoDOE - new Date(`${dataExtStr}T12:00:00`)) / (1000 * 60 * 60 * 24)) > 1) atendeCriterioVM = false; 
+                  if (Math.floor((dataEventoDOE - new Date(`${dataExtStr}T12:00:00`)) / (1000 * 60 * 60 * 24)) > 1) atendeCriterioVM = false;
                 }
 
                 if (atendeCriterioVM) {
@@ -219,11 +410,11 @@ exports.gerarCensoUTI = onSchedule({
 
             for (const hemo of hemoculturasPositivas) {
               if (!hemo.dataColeta) continue;
-              
+
               let dColetaStr = hemo.dataColeta.includes('/') ? hemo.dataColeta.split('/').reverse().join('-') : hemo.dataColeta;
               const dataColetaObj = new Date(`${dColetaStr}T12:00:00`);
               const mesCorrenteHemo = dColetaStr.slice(0,7);
-              
+
               const datasJanelaIPCSC = [];
               for (let i = -3; i <= 3; i++) {
                 const d = new Date(dataColetaObj.getTime() + i * 86400000);
@@ -232,15 +423,15 @@ exports.gerarCensoUTI = onSchedule({
 
               const nomeGerme = hemo.germe?.toLowerCase() || "";
               const isComensal = listaComensais.some(c => nomeGerme.includes(c));
-              
+
               let criterioMicroAprovado = false;
               let evidenciasSistemicasIPCS = [];
 
               if (!isComensal) {
                 criterioMicroAprovado = true;
               } else {
-                if (hemo.amostrasPositivas !== 'multiplas') continue; 
-                
+                if (hemo.amostrasPositivas !== 'multiplas') continue;
+
                 const varrerSistemicosIPCSC = (blocoBh) => {
                   if (!blocoBh || !blocoBh.date) return;
                   const dataRefUS = blocoBh.date;
@@ -280,14 +471,19 @@ exports.gerarCensoUTI = onSchedule({
 
               if (!criterioMicroAprovado) continue;
 
-              let dDispStr = null, dRetiradaStr = null;
-              if (p.enfermagem?.cvcData) {
-                dDispStr = p.enfermagem.cvcData; dRetiradaStr = p.enfermagem.cvcRetiradaData || null;
-              } else if (p.enfermagem?.shileyData) {
-                dDispStr = p.enfermagem.shileyData; dRetiradaStr = p.enfermagem.shileyRetiradaData || null;
-              }
+              // 🔧 CORREÇÃO: Busca dispositivo CVC ou Shiley em todos os locais possíveis
+              const gruposCVCShiley = [
+                "cvc", "cateter venoso central", "cateter central",
+                "shiley", "cateter de hemodialise", "cateter de hemodiálise",
+                "cdl", "cateter de diálise", "cateter de dialise",
+                "hemodialise", "hemodiálise"
+              ];
+              const dispIPCSC = getDispositivoParaAuditoria(p, gruposCVCShiley, dataColetaObj);
 
-              if (!dDispStr) continue;
+              if (!dispIPCSC || !dispIPCSC.dataInsercao) continue;
+
+              let dDispStr = dispIPCSC.dataInsercao;
+              let dRetiradaStr = dispIPCSC.dataRetirada || null;
 
               let dDispStrNorm = dDispStr.includes('/') ? dDispStr.split('/').reverse().join('-') : dDispStr;
               const dataDispObj = new Date(`${dDispStrNorm}T12:00:00`);
@@ -311,7 +507,7 @@ exports.gerarCensoUTI = onSchedule({
                       evidencias: {
                         microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
                         sistemicos: evidenciasSistemicasIPCS.length > 0 ? evidenciasSistemicasIPCS : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
-                        dispositivo: `Dispositivo (CVC/Shiley) inserido em ${dDispStrNorm.split('-').reverse().join('/')} (D${diffDispColeta >= 0 ? diffDispColeta + 1 : '?'} no dia da coleta)`,
+                        dispositivo: `Dispositivo (${dispIPCSC.tipoOriginal}) inserido em ${dDispStrNorm.split('-').reverse().join('/')} (D${diffDispColeta >= 0 ? diffDispColeta + 1 : '?'} no dia da coleta)`,
                         justificativa: "Cruzamento automatizado: Hemocultura + Janela 7D + Dispositivo Central."
                       },
                       timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
@@ -345,16 +541,21 @@ exports.gerarCensoUTI = onSchedule({
                 datasJanelaITU.push(d.toISOString().split('T')[0]);
               }
 
-              if (!p.enfermagem?.svdData) continue;
-              let dSvdStr = p.enfermagem.svdData.includes('/') ? p.enfermagem.svdData.split('/').reverse().join('-') : p.enfermagem.svdData;
+              // 🔧 CORREÇÃO: Busca SVD em todos os locais possíveis de dispositivos
+              const gruposSVD = ["svd", "sonda vesical de demora", "sonda vesical"];
+              const dispSVD = getDispositivoParaAuditoria(p, gruposSVD, dataColetaObj);
+
+              if (!dispSVD || !dispSVD.dataInsercao) continue;
+
+              let dSvdStr = dispSVD.dataInsercao.includes('/') ? dispSVD.dataInsercao.split('/').reverse().join('-') : dispSVD.dataInsercao;
               const dataSvdObj = new Date(`${dSvdStr}T12:00:00`);
 
               const diffSvdColeta = Math.floor((dataColetaObj - dataSvdObj) / (1000 * 60 * 60 * 24));
               let associadoSVD = diffSvdColeta >= 2;
 
-              if (associadoSVD && p.enfermagem.svdRetiradaData) {
-                let dSvdRetStr = p.enfermagem.svdRetiradaData.includes('/') ? p.enfermagem.svdRetiradaData.split('/').reverse().join('-') : p.enfermagem.svdRetiradaData;
-                if (Math.floor((dataColetaObj - new Date(`${dSvdRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24)) > 1) associadoSVD = false; 
+              if (associadoSVD && dispSVD.dataRetirada) {
+                let dSvdRetStr = dispSVD.dataRetirada.includes('/') ? dispSVD.dataRetirada.split('/').reverse().join('-') : dispSVD.dataRetirada;
+                if (Math.floor((dataColetaObj - new Date(`${dSvdRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24)) > 1) associadoSVD = false;
               }
 
               if (!associadoSVD) continue;
@@ -412,7 +613,7 @@ exports.gerarCensoUTI = onSchedule({
     }); // Fechamento do: leitosSnapshot.forEach
 
     await Promise.all(promessasAuditoria);
-    
+
     // 🔥 PROTEÇÃO FINAL: O Censo Diário só é salvo na coleção se for o fechamento da meia-noite
     if (isFechamentoDiario) {
       await db.collection("censo_diario").add(contadores);
@@ -420,7 +621,7 @@ exports.gerarCensoUTI = onSchedule({
     } else {
       console.log(`✅ Varredura das 12h concluída. Histórico de O2 atualizado com sucesso. (Censo e IRAS ignorados neste turno).`);
     }
-    
+
   } catch (error) {
     console.error("❌ Erro fatal no fechamento do servidor:", error);
   }
