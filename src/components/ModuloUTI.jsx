@@ -748,22 +748,23 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   useEffect(() => {
     if (!db) return;
     const hoje = new Date().toISOString().split('T')[0];
-    const checkCarrinhoHoje = async () => {
-      try {
-        const snapshot = await getDocs(
-          query(
-            collection(db, "carrinho_emg"),
-            where("data", "==", hoje)
-          )
-        );
-        setTemCarrinhoEMGHoje(snapshot.docs.length > 0);
-      } catch (e) {
-        console.warn("Erro ao verificar carrinho EMG:", e);
-        setTemCarrinhoEMGHoje(true); // Se falhar, libera (não bloquear)
-      }
-    };
-    checkCarrinhoHoje();
-  }, [db, currentPatient?.nome]); // Recarrega se mudar de paciente
+    
+    // Usando onSnapshot para atualizar em TEMPO REAL assim que o carrinho for salvo
+    const q = query(
+      collection(db, "carrinho_emg"),
+      where("data", "==", hoje)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setTemCarrinhoEMGHoje(snapshot.docs.length > 0);
+    }, (error) => {
+      console.warn("Erro ao verificar carrinho EMG:", error);
+      setTemCarrinhoEMGHoje(true); // Se falhar, libera (não bloquear)
+    });
+
+    // Limpa o listener quando mudar de paciente ou fechar a tela
+    return () => unsubscribe();
+  }, [db, currentPatient?.nome]);
 
   // Busca configuração dos leitos para bloquear botão de Puxar Paciente
   useEffect(() => {
