@@ -181,6 +181,44 @@ const GestorDashboard = ({ userProfile }) => {
       const fetchHistorico = async () => {
         setLoadingHistorico(true);
         try {
+          // =================================================================
+          // 1. NOVA LÓGICA: FISIOTERAPIA (Lê direto do objeto do paciente)
+          // =================================================================
+          if (modalHistorico.tipo === 'MRC' || modalHistorico.tipo === 'IMS') {
+            // Pega o physio do paciente ativo OU do backupProntuario (se for alta)
+            const physio = modalHistorico.paciente.physio || modalHistorico.paciente.backupProntuario?.physio || {};
+            
+            // O IMS pode estar salvo como 'icuMobilityScale' ou 'ims'
+            const targetObj = modalHistorico.tipo === 'MRC' 
+              ? physio.mrcScore 
+              : (physio.icuMobilityScale || physio.ims);
+            
+            if (targetObj && typeof targetObj === 'object') {
+              // Converte o objeto {"01/07/2026": "52"} em um array para o modal
+              const dataFormatada = Object.keys(targetObj).map(dataStr => {
+                const [dia, mes, ano] = dataStr.split('/');
+                return {
+                  id: dataStr,
+                  // Finge ser um Timestamp do Firebase para o modal não quebrar no .toDate()
+                  dataRegistro: { toDate: () => new Date(ano, mes - 1, dia, 12, 0, 0) },
+                  risco: modalHistorico.tipo === 'MRC' ? 'Força Muscular' : 'Mobilidade',
+                  valor: targetObj[dataStr]
+                };
+              });
+              
+              // Ordena da mais recente para a mais antiga
+              dataFormatada.sort((a, b) => b.dataRegistro.toDate() - a.dataRegistro.toDate());
+              setHistoricoData(dataFormatada);
+            } else {
+              setHistoricoData([]);
+            }
+            setLoadingHistorico(false);
+            return; // Sai da função para não rodar a busca do Firebase abaixo
+          }
+
+          // =================================================================
+          // 2. LÓGICA ORIGINAL: BRADEN E MORSE (Busca no Firebase)
+          // =================================================================
           // Pega o ID correto do paciente para buscar na coleção
           const idBusca = modalHistorico.paciente.idInternacao || modalHistorico.paciente.id;
           
@@ -416,8 +454,11 @@ const GestorDashboard = ({ userProfile }) => {
               idInternacao: data.idInternacao,
               nome: data.nomePaciente || data.nome,
               dataInternacao: data.dataEntrada || data.dataInternacao,
-              dataSaida: data.dataSaida || data.dataDesfecho, // <-- CRUCIAL PARA A JANELA
-              status: 'Alta/Óbito'
+              dataSaida: data.dataSaida || data.dataDesfecho,
+              status: 'Alta/Óbito',
+              // Puxando do backupProntuario para pacientes de alta:
+              admissaoFisioterapia: data.backupProntuario?.admissaoFisioterapia || null,
+              physio: data.backupProntuario?.physio || null
             };
           });
 
@@ -431,8 +472,11 @@ const GestorDashboard = ({ userProfile }) => {
               idInternacao: p.idInternacao,
               nome: p.nome,
               dataInternacao: p.dataInternacao,
-              dataSaida: new Date(), // Paciente ativo, a "saída" é hoje
-              status: 'Internado'
+              dataSaida: new Date(),
+              status: 'Internado',
+              // Puxando direto do leito para pacientes ativos:
+              admissaoFisioterapia: p.admissaoFisioterapia || null,
+              physio: p.physio || null
             }));
 
           let todos = [...ativos, ...historico];
@@ -5920,10 +5964,12 @@ const GestorDashboard = ({ userProfile }) => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
-                    <th className="p-4 w-1/4">Paciente / Admissão</th>
+                    <th className="p-4 w-1/6">Paciente / Admissão</th>
                     <th className="p-4 text-center border-l border-slate-200">SAPS 3 (Gravidade)</th>
                     <th className="p-4 text-center border-l border-slate-200">Braden (Lesão)</th>
                     <th className="p-4 text-center border-l border-slate-200">Morse (Queda)</th>
+                    <th className="p-4 text-center border-l border-slate-200">MRC (Força)</th>
+                    <th className="p-4 text-center border-l border-slate-200">IMS (Mobilidade)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -5986,6 +6032,52 @@ const GestorDashboard = ({ userProfile }) => {
                               </button>
                               {/* NOVO BOTÃO DE HISTÓRICO DIÁRIO */}
                               <button onClick={() => abrirHistoricoEscalas('Morse', pac)} className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors" title="Ver Histórico Diário">
+                                <History size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded">Pendente</span>
+                          )}
+                        </td>
+
+                        {/* COLUNA 5: MRC (FISIOTERAPIA) */}
+                        <td className="p-4 text-center border-l border-slate-100">
+                          {pac.admissaoFisioterapia?.mrcScore || pac.physio?.mrcScore ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="font-black text-slate-700 text-lg">
+                                {pac.admissaoFisioterapia?.mrcScore ?? '-'}
+                              </span>
+                              {/* Botão de lupa removido. Mantido apenas o Histórico: */}
+                              <button 
+                                onClick={() => abrirHistoricoEscalas('MRC', pac)} 
+                                className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors" 
+                                title="Ver Histórico Diário"
+                              >
+                                <History size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded">Pendente</span>
+                          )}
+                        </td>
+
+                        {/* COLUNA 6: IMS (FISIOTERAPIA) */}
+                        <td className="p-4 text-center border-l border-slate-100">
+                          {pac.admissaoFisioterapia?.ims || pac.physio?.icuMobilityScale || pac.physio?.ims ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="font-black text-slate-700 text-lg">
+                                {(() => {
+                                  const imsValue = pac.admissaoFisioterapia?.ims;
+                                  if (!imsValue) return '-';
+                                  return typeof imsValue === 'string' ? imsValue.split(' -')[0] : imsValue;
+                                })()}
+                              </span>
+                              {/* Botão de lupa removido. Mantido apenas o Histórico: */}
+                              <button 
+                                onClick={() => abrirHistoricoEscalas('IMS', pac)} 
+                                className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors" 
+                                title="Ver Histórico Diário"
+                              >
                                 <History size={16} />
                               </button>
                             </div>
