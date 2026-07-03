@@ -24,7 +24,7 @@ const SpeechDashboard = ({
               </label>
               <input
                 className="w-full p-2 border rounded"
-                value={currentPatient.fono?.nivel_consciencia || ""}
+                value={currentPatient.fono?.nivel_consciencia || currentPatient.neuro?.nivelConsciencia || currentPatient.admissionData?.exameNeuro || ""}
                 onChange={(e) => updateNested("fono", "nivel_consciencia", e.target.value)}
                 onBlur={() => handleBlurSave("Fonoaudiologia: Editou Nível de Consciência")}
               />
