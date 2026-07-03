@@ -273,6 +273,29 @@ const GestorDashboard = ({ userProfile }) => {
     return () => unsubscribe();
   }, [db]);
 
+  // 🔥 AUTO-CORREÇÃO DE STATUS (Sincroniza Nome vs Status para o Censo)
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      // Alterado de 'leitos' para 'leitosConfig'
+      if (typeof leitosConfig !== 'undefined' && leitosConfig.length > 0) {
+        leitosConfig.forEach(async (l) => {
+          const temPaciente = !!l.nome && l.nome.trim() !== '';
+          // Se tem nome mas o status está Livre, força Ocupado no Firebase
+          if (temPaciente && (l.status === 'Livre' || !l.status)) {
+            try {
+              const docId = l.id.includes('bed_') ? l.id : `bed_${l.id}`;
+              await updateDoc(doc(db, 'leitos_uti', docId), { status: 'Ocupado' });
+              console.log(`Leito ${docId} corrigido para Ocupado.`);
+            } catch (e) {
+              console.error("Erro na auto-correção:", e);
+            }
+          }
+        });
+      }
+    }, 3000);
+    return () => clearTimeout(timeout);
+  }, [leitosConfig]);
+
   // Sincroniza Histórico de Internações
   useEffect(() => {
     if (!db) return;
@@ -1358,7 +1381,7 @@ const GestorDashboard = ({ userProfile }) => {
           const dadosLeito = l.data();
           const temPacienteReal = dadosLeito.nomePaciente || dadosLeito.nome;
           
-          if (dadosLeito.status !== 'Livre' && temPacienteReal) {
+          if (temPacienteReal) {
             arrayHistoricoCompleto.push({
               id: l.id,
               nome: temPacienteReal,
@@ -2989,9 +3012,10 @@ const GestorDashboard = ({ userProfile }) => {
     let numeroLeitosVagos = 0;
     
     if (typeof leitosConfig !== 'undefined') {
-      numeroLeitosVagos = leitosConfig.filter(l => l.status === 'Livre' && !l.bloqueado).length;
+      // Alterado: checa se o nome está vazio em vez de confiar no status
+      numeroLeitosVagos = leitosConfig.filter(l => (!l.nome || l.nome.trim() === '') && !l.bloqueado).length;
     } else if (typeof patients !== 'undefined') {
-      numeroLeitosVagos = patients.filter(p => !p.nome && (p.leito !== 11 || currentRolePerms?.canSeeLeito11)).length;
+      numeroLeitosVagos = patients.filter(p => (!p.nome || p.nome.trim() === '') && (p.leito !== 11 || currentRolePerms?.canSeeLeito11)).length;
     }
 
     texto += `Leitos vagos - ${numeroLeitosVagos} LEITOS\n`;
@@ -7236,8 +7260,8 @@ const GestorDashboard = ({ userProfile }) => {
                               <span className="bg-purple-100 text-purple-700 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Isolamento</span>
                             )}
                           </div>
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${leito.status === 'Livre' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                            {leito.status}
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${(!leito.nome || leito.nome.trim() === '') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {(!leito.nome || leito.nome.trim() === '') ? 'Livre' : (leito.status === 'Morador' ? 'Morador' : 'Ocupado')}
                           </span>
                         </div>
 
