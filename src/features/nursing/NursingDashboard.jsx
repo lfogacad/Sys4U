@@ -24,7 +24,8 @@ const NursingDashboard = ({
   generateNursingAI_Evolution,
   isNursingRole,
   isGeneratingNursingAI,
-  temCarrinhoEMGHoje = true
+  temCarrinhoEMGHoje = true,
+  isDev  // 👈 ADICIONADO AQUI
 }) => {
 
   const [showNursingChecklistModal, setShowNursingChecklistModal] = useState(false);
@@ -255,7 +256,7 @@ const NursingDashboard = ({
       return;
     }
     if (tipo === 'Manutenção CVC') {
-      setModalManutencaoCVC({ isOpen: true, horario: '', trocaCurativo: '', motivoInfecao: '', motivoObstrucao: '', motivoTermino: '', motivoObito: '', motivoOutros: '' });
+      setModalManutencaoCVC({ isOpen: true, dispositivo: 'CVC', horario: '', trocaCurativo: '', motivoInfecao: '', motivoObstrucao: '', motivoTermino: '', motivoObito: '', motivoOutros: '' });
       return;
     }
     if (tipo === 'SVD') {
@@ -475,7 +476,8 @@ const NursingDashboard = ({
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
     const manutencao = {
-      tipo: 'Manutenção CVC',
+      tipo: modalManutencaoCVC.dispositivo === 'Shiley' ? 'Manutenção Shiley' : 'Manutenção CVC',
+      dispositivo: modalManutencaoCVC.dispositivo,
       data: dataISO,
       horario: modalManutencaoCVC.horario,
       trocaCurativo: modalManutencaoCVC.trocaCurativo,
@@ -488,10 +490,15 @@ const NursingDashboard = ({
       }
     };
 
-    const historico = [...(currentPatient.enfermagem?.historicoManutencaoCVC || []), manutencao];
-    updateNested("enfermagem", "historicoManutencaoCVC", historico);
+    // Salva no campo correto baseado no dispositivo selecionado
+    const campoHistorico = modalManutencaoCVC.dispositivo === 'Shiley' 
+      ? 'historicoManutencaoShiley' 
+      : 'historicoManutencaoCVC';
 
-    handleBlurSave(`Enfermagem: Manutenção CVC - Troca curativo: ${modalManutencaoCVC.trocaCurativo ? 'Sim' : 'Não'}`);
+    const historico = [...(currentPatient.enfermagem?.[campoHistorico] || []), manutencao];
+    updateNested("enfermagem", campoHistorico, historico);
+
+    handleBlurSave(`Enfermagem: Manutenção ${modalManutencaoCVC.dispositivo} - Troca curativo: ${modalManutencaoCVC.trocaCurativo ? 'Sim' : 'Não'}`);
     setModalManutencaoCVC({ ...modalManutencaoCVC, isOpen: false });
   };
 
@@ -1291,12 +1298,12 @@ return (
                   </button>
 
                   <button onClick={() => handleAcaoEnfermagem('Manutenção CVC')} className={`flex flex-col items-center justify-center gap-1.5 p-3 border rounded-xl transition-all ${
-                    cvcPrecisaManut
+                    (cvcPrecisaManut || shileyPrecisaManut)
                       ? 'pulse-manutencao bg-red-100 border-red-300 text-red-700'
                       : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
                   }`}>
-                    <BriefcaseMedical size={20} className={`${cvcPrecisaManut ? 'text-red-600' : 'text-slate-400'}`} />
-                    <span className="text-[10px] font-bold uppercase leading-tight text-center">Manutenção<br/>CVC</span>
+                    <BriefcaseMedical size={20} className={`${(cvcPrecisaManut || shileyPrecisaManut) ? 'text-red-600' : 'text-slate-400'}`} />
+                    <span className="text-[10px] font-bold uppercase leading-tight text-center">Manutenção<br/>CVC / Shiley</span>
                   </button>
 
                   <button onClick={() => handleAcaoEnfermagem('SVD')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
@@ -1822,9 +1829,9 @@ return (
               <button
                 type="button"
                 onClick={(e) => { e.preventDefault(); setShowNursingChecklistModal(true); }}
-                disabled={!isNursingRole || isGeneratingNursingAI || !temCarrinhoEMGHoje}
+                disabled={!isNursingRole || isGeneratingNursingAI || (!temCarrinhoEMGHoje && !isDev)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden ${isGeneratingNursingAI ? "bg-slate-200 text-slate-500 cursor-not-allowed" : "bg-blue-100 text-blue-700 hover:bg-blue-200"} ${!isNursingRole ? "opacity-50 cursor-not-allowed" : ""}`}
-                title={!temCarrinhoEMGHoje ? "⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução" : "Usar Inteligência Artificial para gerar evolução"}
+                title={(!temCarrinhoEMGHoje && !isDev) ? "⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução" : "Usar Inteligência Artificial para gerar evolução"}
               >
                 {isGeneratingNursingAI ? <><Loader2 className="animate-spin" size={14} /> Gerando...</> : <><BrainCircuit size={14} /> Evolução por IA</>}
               </button>
@@ -2222,6 +2229,41 @@ return (
                 <h2 className="text-lg font-black tracking-wide leading-tight">Manutenção CVC</h2>
               </div>
               <button onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            {/* SELETOR DE DISPOSITIVO: CVC / Shiley */}
+            <div className="px-6 pt-4 pb-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Dispositivo</label>
+              <div className="flex gap-2">
+                {/* BOTÃO CVC */}
+                <button
+                  type="button"
+                  onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, dispositivo: 'CVC' })}
+                  className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold transition-all ${
+                    modalManutencaoCVC.dispositivo === 'CVC'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : cvcPrecisaManut
+                        ? 'pulse-manutencao bg-red-100 border border-red-300 text-red-700'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  CVC {cvcPrecisaManut && modalManutencaoCVC.dispositivo !== 'CVC' && '⚠️'}
+                </button>
+                {/* BOTÃO SHILEY */}
+                <button
+                  type="button"
+                  onClick={() => setModalManutencaoCVC({ ...modalManutencaoCVC, dispositivo: 'Shiley' })}
+                  className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold transition-all ${
+                    modalManutencaoCVC.dispositivo === 'Shiley'
+                      ? 'bg-teal-600 text-white shadow-md'
+                      : shileyPrecisaManut
+                        ? 'pulse-manutencao bg-red-100 border border-red-300 text-red-700'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  Shiley {shileyPrecisaManut && modalManutencaoCVC.dispositivo !== 'Shiley' && '⚠️'}
+                </button>
+              </div>
             </div>
 
             <div className="p-6 bg-slate-50 space-y-5 overflow-y-auto max-h-[70vh]">

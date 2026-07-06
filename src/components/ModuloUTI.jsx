@@ -4967,6 +4967,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       handleNursingAdmission={() => setShowNursingModal(true)}
                       generateNursingAI_Evolution={generateNursingAI_Evolution}
                       isNursingRole={isNursingRole}
+                      isDev={isDev}
                       isGeneratingNursingAI={isGeneratingNursingAI}
                       handleViewNursingAdmission={handleViewNursingAdmission}
                       temCarrinhoEMGHoje={temCarrinhoEMGHoje}
