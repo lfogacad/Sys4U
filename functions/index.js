@@ -274,16 +274,16 @@ exports.gerarCensoUTI = onSchedule({
                 contadores.pacientesEmVM++;
             }
 
-            // 🔧 CORREÇÃO: Contagem de dispositivos invasivos agora busca em
-            // p.dispositivos, p.medical.dispositivos, p.nursing.dispositivos,
-            // p.enfermagem.dispositivos e legado p.enfermagem.{cvcData,svdData,shileyData}
-            if (hasDispositivoAtivo(p, ["cvc", "cateter venoso central", "cateter central"])) {
+            // CVC: inserido e não retirado
+            if (p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData) {
               contadores.pacientesComCVC++;
             }
-            if (hasDispositivoAtivo(p, ["svd", "sonda vesical de demora", "sonda vesical"])) {
+            // SVD: inserido e não retirado
+            if (p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData) {
               contadores.pacientesComSVD++;
             }
-            if (hasDispositivoAtivo(p, ["shiley", "cateter de hemodialise", "cateter de hemodiálise", "cdl", "cateter de diálise", "cateter de dialise", "hemodialise", "hemodiálise"])) {
+            // Shiley: inserido e não retirado
+            if (p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData) {
               contadores.pacientesComShiley++;
             }
           } // 🔚 Fim do filtro de morador
