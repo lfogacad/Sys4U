@@ -249,7 +249,9 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
   const [loadingCarrinhoEMG, setLoadingCarrinhoEMG] = useState(false);
   const [modalDetalheCarrinho, setModalDetalheCarrinho] = useState({ isOpen: false, dia: '', registros: [] });
-  const [temCarrinhoEMGHoje, setTemCarrinhoEMGHoje] = useState(false);
+  const [temCarrinhoEMGHoje, setTemCarrinhoEMGHoje] = useState(true);
+  const [carrinho1Preenchido, setCarrinho1Preenchido] = useState(true);
+  const [carrinho2Preenchido, setCarrinho2Preenchido] = useState(true);
 
   const [leitosConfig, setLeitosConfig] = useState([]);
 
@@ -744,25 +746,36 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     fetchCarrinhoEMG();
   }, [mesFiltroCarrinhoEMG, db]);
 
-  // Verifica se há carrinho EMG preenchido hoje (para bloquear evolução IA)
+  // Verifica se há carrinho EMG preenchido hoje (carrinho 1 e 2 separadamente)
   useEffect(() => {
     if (!db) return;
     const hoje = new Date().toISOString().split('T')[0];
     
-    // Usando onSnapshot para atualizar em TEMPO REAL assim que o carrinho for salvo
     const q = query(
       collection(db, "carrinho_emg"),
       where("data", "==", hoje)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setTemCarrinhoEMGHoje(snapshot.docs.length > 0);
+      const docs = snapshot.docs.map(doc => doc.data());
+      
+      // Verifica se existe o carrinho 1
+      const temCarrinho1 = docs.some(doc => String(doc.carrinhoNumero) === "1");
+      // Verifica se existe o carrinho 2
+      const temCarrinho2 = docs.some(doc => String(doc.carrinhoNumero) === "2");
+      
+      setCarrinho1Preenchido(temCarrinho1);
+      setCarrinho2Preenchido(temCarrinho2);
+      
+      // O botão só libera se os dois estiverem preenchidos
+      setTemCarrinhoEMGHoje(temCarrinho1 && temCarrinho2);
     }, (error) => {
       console.warn("Erro ao verificar carrinho EMG:", error);
-      setTemCarrinhoEMGHoje(true); // Se falhar, libera (não bloquear)
+      setTemCarrinhoEMGHoje(true);
+      setCarrinho1Preenchido(true);
+      setCarrinho2Preenchido(true);
     });
 
-    // Limpa o listener quando mudar de paciente ou fechar a tela
     return () => unsubscribe();
   }, [db, currentPatient?.nome]);
 
@@ -2932,15 +2945,21 @@ ${conduta}
     const digestorioFrase = `Dieta via ${viaDieta}. ${sneTexto}Última evacuação: ${evacDaysStr}.${tgiIntercorrencias}`;
 
     // 6. GENITURINÁRIO
-    let diureseStatus = "boa diurese";
+    let diureseStatus = "débito urinário não calculado";
     if (typeof calculateDiurese12hMlKgH === "function") {
       const diureseNum = parseFloat(calculateDiurese12hMlKgH(p));
-      if (!isNaN(diureseNum) && diureseNum < 0.5) diureseStatus = "baixa diurese";
+      if (!isNaN(diureseNum)) {
+        if (diureseNum === 0) diureseStatus = "anúria";
+        else if (diureseNum < 0.5) diureseStatus = "baixa diurese (oligúria)";
+        else diureseStatus = "boa diurese";
+      }
     }
     const svdTexto = p.enfermagem?.svd ? "Sonda Vesical de Demora (SVD) em uso" : "Sem SVD em uso";
     const diureseAspecto = p.enfermagem?.diureseCaracteristica || "não especificado";
-    
-    const geniFrase = `${svdTexto}, com ${diureseStatus} de aspecto ${diureseAspecto.toLowerCase()}`;
+
+    const geniFrase = diureseStatus === "débito urinário não calculado"
+      ? `${svdTexto}, débito urinário não calculado${diureseAspecto !== "não especificado" ? `, aspecto ${diureseAspecto.toLowerCase()}` : ""}`
+      : `${svdTexto}, com ${diureseStatus} de aspecto ${diureseAspecto.toLowerCase()}`;
 
     // 7. TEGUMENTAR
     const lesoesArray = p.enfermagem?.lesoes || [];
@@ -3045,6 +3064,12 @@ ${conduta}
       eventosRegistros.push(`- Manutenção CVC ${mcvc.horario}${mcvc.trocaCurativo ? ' — Troca de curativo' : ''}`);
     });
 
+    // Manutenção Shiley (historicoManutencaoShiley)
+    const manutShileysHoje = filtrarHoje(p.enfermagem?.historicoManutencaoShiley);
+    manutShileysHoje.forEach(mshiley => {
+      eventosRegistros.push(`- Manutenção Shiley ${mshiley.horario}${mshiley.trocaCurativo ? ' — Troca de curativo' : ''}`);
+    });
+
     // Inserção SVD (historicoSVD)
     const svdsInsercaoHoje = filtrarHoje(p.enfermagem?.historicoSVD || []);
     svdsInsercaoHoje.forEach(svd => {
@@ -3084,11 +3109,12 @@ ${conduta}
 
     // Carrinho de Emergência (da coleção carrinhos_emg)
     registrosCarrinho.forEach(car => {
+      const numCar = car.carrinhoNumero ? ` ${car.carrinhoNumero}` : '';
       const statusLaringo = car.laringoscopio === 'Funcionante' ? '✅' : '❌';
       const statusCardio = car.cardioversor === 'Funcionante' ? '✅' : '❌';
       const statusGel = car.gelCondutor === 'Sim' ? '✅' : '❌';
       const statusTabua = car.tabua === 'Sim' ? '✅' : '❌';
-      eventosRegistros.push(`- Checklist Carrinho de Emergência ${car.horario} — Lacre Carrinho: ${car.lacreCarrinho || '—'} / Lacre Caixa: ${car.lacreCaixa || '—'} — Laringoscópio ${statusLaringo} | Cardioversor ${statusCardio} | Gel Condutor ${statusGel} | Tábua ${statusTabua}`);
+      eventosRegistros.push(`- Checklist Carrinho de Emergência${numCar} ${car.horario} — Lacre Carrinho: ${car.lacreCarrinho || '—'} / Lacre Caixa: ${car.lacreCaixa || '—'} — Laringoscópio ${statusLaringo} | Cardioversor ${statusCardio} | Gel Condutor ${statusGel} | Tábua ${statusTabua}`);
     });
 
     const eventosTexto = eventosRegistros.length > 0
@@ -5404,19 +5430,30 @@ const userRole = userProfile?.role || userProfile?.perfil;
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Carrinho de Emergência</label>
                 <div className="grid grid-cols-2 gap-3">
-                  {['1', '2'].map(num => (
-                    <button
-                      key={num}
-                      onClick={() => setFormCarrinho({ ...formCarrinho, carrinhoNumero: num })}
-                      className={`p-4 rounded-xl border-2 font-black text-lg transition-all ${
-                        formCarrinho.carrinhoNumero === num
-                          ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-md scale-[1.02]'
-                          : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200'
-                      }`}
-                    >
-                      🚑 Carrinho {num}
-                    </button>
-                  ))}
+                  {['1', '2'].map(num => {
+                    const preenchido = num === '1' ? carrinho1Preenchido : carrinho2Preenchido;
+                    return (
+                      <button
+                        key={num}
+                        onClick={() => setFormCarrinho({ ...formCarrinho, carrinhoNumero: num })}
+                        className={`p-4 rounded-xl border-2 font-black text-lg transition-all flex flex-col items-center gap-1 ${
+                          formCarrinho.carrinhoNumero === num
+                            ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-md scale-[1.02]'
+                            : preenchido
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                              : 'pulse-manutencao border-red-300 bg-red-50 text-red-700'
+                        }`}
+                      >
+                        <span>🚑 Carrinho {num}</span>
+                        {formCarrinho.carrinhoNumero !== num && preenchido && (
+                          <span className="text-[10px] font-bold text-emerald-600">✅ Preenchido hoje</span>
+                        )}
+                        {formCarrinho.carrinhoNumero !== num && !preenchido && (
+                          <span className="text-[10px] font-bold text-red-600">⚠️ Pendente</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

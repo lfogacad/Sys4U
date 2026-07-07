@@ -385,6 +385,12 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
   const historicoAtual = currentPatient.physio?.procedimentosDiarios || [];
   const atualizado = [...historicoAtual, novoRegistro];
 
+  // Atualiza também os campos da PhysioDashboard (última avaliação)
+  updateNested("physio", "secrecao", true);
+  updateNested("physio", "secrecaoAspecto", modalAspiracaoFisio.caracteristica || "");
+  updateNested("physio", "secrecaoColoracao", modalAspiracaoFisio.coloracao || "");
+  updateNested("physio", "secrecaoQtd", modalAspiracaoFisio.quantidade || "");
+  
   // 2. Salva no estado e no Firebase
   updateNested("physio", "procedimentosDiarios", atualizado);
   

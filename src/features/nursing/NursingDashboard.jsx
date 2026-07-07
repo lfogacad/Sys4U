@@ -220,7 +220,8 @@ const NursingDashboard = ({
 
   const precisaManutencaoHoje = (dataInsercao, historicoManutencao) => {
     if (!dataInsercao) return false;
-    const hoje = new Date().toISOString().split('T')[0];
+    const d = new Date();
+    const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const temManutencaoHoje = historicoManutencao?.some(m => m.data === hoje);
     return !temManutencaoHoje;
   };
@@ -239,6 +240,36 @@ const NursingDashboard = ({
     currentPatient?.enfermagem?.shileyData,
     currentPatient?.enfermagem?.historicoManutencaoShiley
   );
+
+  // === BLOQUEIO POR MANUTENÇÃO PENDENTE (CVC / Shiley / SVD) ===
+  const dispositivosPendentes = (() => {
+    const enf = currentPatient?.enfermagem || {};
+    const d = new Date();
+    const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const pendentes = [];
+
+    // CVC: tem inserção, não foi retirado, sem manutenção hoje
+    if (enf.cvcData && !enf.cvcRetiradaData) {
+      const temManut = (enf.historicoManutencaoCVC || []).some(m => m.data === hoje);
+      if (!temManut) pendentes.push('CVC');
+    }
+
+    // Shiley: tem inserção, não foi retirado, sem manutenção hoje
+    if (enf.shileyData && !enf.shileyRetiradaData) {
+      const temManut = (enf.historicoManutencaoShiley || []).some(m => m.data === hoje);
+      if (!temManut) pendentes.push('Shiley');
+    }
+
+    // SVD: tem inserção, não foi retirado, sem manutenção hoje
+    if (enf.svdData && !enf.svdRetiradaData) {
+      const temManut = (enf.historicoManutencaoSVD || []).some(m => m.data === hoje);
+      if (!temManut) pendentes.push('SVD');
+    }
+
+    return pendentes;
+  })();
+
+  const temManutencaoPendente = dispositivosPendentes.length > 0;
 
   // Placeholders para botões de Ação (Modais serão criados em seguida)
   const handleAcaoEnfermagem = (tipo) => {
@@ -1828,10 +1859,43 @@ return (
               <h4 className="font-bold text-slate-700 flex items-center gap-2"><Edit3 size={16} className="text-slate-400" /> Evolução de Enfermagem (Privativo)</h4>
               <button
                 type="button"
-                onClick={(e) => { e.preventDefault(); setShowNursingChecklistModal(true); }}
-                disabled={!isNursingRole || isGeneratingNursingAI || (!temCarrinhoEMGHoje && !isDev)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden ${isGeneratingNursingAI ? "bg-slate-200 text-slate-500 cursor-not-allowed" : "bg-blue-100 text-blue-700 hover:bg-blue-200"} ${!isNursingRole ? "opacity-50 cursor-not-allowed" : ""}`}
-                title={(!temCarrinhoEMGHoje && !isDev) ? "⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução" : "Usar Inteligência Artificial para gerar evolução"}
+                onClick={(e) => {
+                  e.preventDefault();
+                  
+                  // === VALIDAÇÕES ANTES DE ABRIR O MODAL ===
+                  
+                  // 1. Manutenção pendente
+                  if (temManutencaoPendente && !isDev) {
+                    alert(`⚠️ Manutenção pendente!\n\nO paciente possui dispositivos sem manutenção registrada hoje:\n${dispositivosPendentes.map(d => `  • ${d}`).join('\n')}\n\nFaça a manutenção diária ANTES de gerar a evolução.`);
+                    return;
+                  }
+                  
+                  // 2. Carrinho de EMG
+                  if (!temCarrinhoEMGHoje && !isDev) {
+                    alert("⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução.");
+                    return;
+                  }
+                  
+                  // 3. Gerando no momento
+                  if (isGeneratingNursingAI) return;
+                  
+                  // Tudo ok, abre o modal
+                  setShowNursingChecklistModal(true);
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden ${
+                  isGeneratingNursingAI
+                    ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                    : (temManutencaoPendente && !isDev) || (!temCarrinhoEMGHoje && !isDev)
+                      ? "bg-red-500 text-white border border-red-600 opacity-60 cursor-not-allowed"
+                      : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                }`}
+                title={
+                  (temManutencaoPendente && !isDev)
+                    ? `⚠️ Manutenção pendente: ${dispositivosPendentes.join(', ')}`
+                    : (!temCarrinhoEMGHoje && !isDev)
+                      ? "⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução"
+                      : "Usar Inteligência Artificial para gerar evolução"
+                }
               >
                 {isGeneratingNursingAI ? <><Loader2 className="animate-spin" size={14} /> Gerando...</> : <><BrainCircuit size={14} /> Evolução por IA</>}
               </button>

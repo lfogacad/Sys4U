@@ -196,15 +196,9 @@ export const EXAM_ROWS = [
     "Macronebulização por TQT",
   ];
   export const MODOS_VM = ["PCV", "VCV", "PSV", "SIMV"];
-  export const ASPECTO_SECRECAO = ["Fluído", "Espesso", "Rolhas"];
-  export const COLORACAO_SECRECAO = [
-    "Hialina",
-    "Amarelada",
-    "Esverdeada",
-    "Purulenta",
-    "Sanguinolenta",
-  ];
-  export const QTD_SECRECAO = ["Pouca", "Moderada", "Abundante"];
+  export const ASPECTO_SECRECAO = ["Fluída", "Espessa", "Mucoide", "Mucopurulenta", "Hemoptoica", "Hemática", "Espumosa", "Rolhas"];
+  export const COLORACAO_SECRECAO = ["Transparente", "Esbranquiçada", "Amarelada", "Esverdeada", "Acastanhada", "Hemática"];
+  export const QTD_SECRECAO = ["Pequena", "Moderada", "Grande", "Abundante"];
   export const MOBILIZACAO = [
     "Mudança de decúbito",
     "Sedestação beira leito",
