@@ -13,7 +13,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ReferenceLine, Label  
 } from 'recharts';
-import { collection, onSnapshot, getDocs, doc, setDoc, orderBy, limit, updateDoc, query, where } from "firebase/firestore";
+import { collection, onSnapshot, getDocs, getDoc, doc, setDoc, orderBy, limit, updateDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
 
 import ModuloAdmin from './ModuloAdmin';
@@ -174,6 +174,122 @@ const GestorDashboard = ({ userProfile }) => {
     // Estados para armazenar os dados vindos do Firebase
   const [historicoData, setHistoricoData] = useState([]);
   const [loadingHistorico, setLoadingHistorico] = useState(false);
+
+  const [auditSAPS3, setAuditSAPS3] = useState(null);
+  const [salvandoAuditoria, setSalvandoAuditoria] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const SAPS3_CAMPOS_AUDITORIA = [
+    { key: 'idade', label: 'Idade', tipo: 'select', match: 'Idade', options: [
+      { label: '< 40 anos', pontos: 0 },
+      { label: '40-59 anos', pontos: 5 },
+      { label: '60-69 anos', pontos: 9 },
+      { label: '70-79 anos', pontos: 13 },
+      { label: '≥ 80 anos', pontos: 18 },
+    ]},
+    { key: 'comorbidades', label: 'Comorbidades', tipo: 'checkbox', options: [
+      { label: 'Câncer Sólido', match: 'Câncer Sólido', pontos: 10 },
+      { label: 'Hemato-onco', match: 'Hemato-onco', pontos: 12 },
+      { label: 'Cirrose', match: 'Cirrose', pontos: 10 },
+      { label: 'AIDS', match: 'AIDS', pontos: 12 },
+      { label: 'IC NYHA IV', match: 'IC NYHA IV', pontos: 10 },
+      { label: 'Imunossupressão', match: 'Imunossupressão', pontos: 3 },
+    ]},
+    { key: 'diasHospital', label: 'Internação Pré-UTI', tipo: 'select', match: 'Internação pré-UTI', options: [
+      { label: '< 14 dias', pontos: 0 },
+      { label: '14-27 dias', pontos: 6 },
+      { label: '≥ 28 dias', pontos: 7 },
+    ]},
+    { key: 'origem', label: 'Origem da Admissão', tipo: 'select', match: 'Origem', options: [
+      { label: 'Outros (PS/Sala/CC)', pontos: 0 },
+      { label: 'RPA', pontos: 2 },
+      { label: 'Enfermaria', pontos: 6 },
+    ]},
+    { key: 'motivoAdmissao', label: 'Tipo de Admissão', tipo: 'select', match: 'Admissão Cirúrgica', options: [
+      { label: 'Clínica', pontos: 0 },
+      { label: 'Cirúrgica Eletiva', pontos: -2 },
+      { label: 'Cirúrgica de Urgência', pontos: 2 },
+    ]},
+    { key: 'cirurgiaUrgente', label: 'Cirurgia Urgente', tipo: 'select', match: 'Cirurgia Urgente', options: [
+      { label: 'Não', pontos: 0 },
+      { label: 'Sim', pontos: 5 },
+    ]},
+    { key: 'infeccao', label: 'Infecção na Admissão', tipo: 'select', match: 'Infecção', options: [
+      { label: 'Não', pontos: 0 },
+      { label: 'Sim', pontos: 5 },
+    ]},
+    { key: 'sitioInfeccao', label: 'Sítio Infeccioso', tipo: 'select', match: 'Sítio Infeccioso', options: [
+      { label: 'Nenhum', pontos: 0 },
+      { label: 'Respiratório', pontos: 6 },
+      { label: 'Outros focos', pontos: 3 },
+    ]},
+    { key: 'sistemaRazao', label: 'Razão da Admissão', tipo: 'select', match: 'Razão', options: [
+      { label: 'Metabólico/Endócrino', pontos: 4 },
+      { label: 'Trauma/Outros', pontos: 5 },
+      { label: 'Hematológico', pontos: 6 },
+      { label: 'Neurológico', pontos: 7 },
+      { label: 'Geniturinário/Renal', pontos: 8 },
+      { label: 'Cardiovascular', pontos: 10 },
+      { label: 'Respiratório', pontos: 10 },
+      { label: 'Gastrointestinal/Digestivo', pontos: 12 },
+    ]},
+    { key: 'glasgow', label: 'Glasgow', tipo: 'select', match: 'Glasgow', options: [
+      { label: '15', pontos: 0 },
+      { label: '13-14', pontos: 2 },
+      { label: '7-12', pontos: 7 },
+      { label: '≤ 6', pontos: 15 },
+    ]},
+    { key: 'bilirrubina', label: 'Bilirrubina Total', tipo: 'select', match: 'Bilirrubina', options: [
+      { label: '< 2.0', pontos: 0 },
+      { label: '2.0-5.9', pontos: 4 },
+      { label: '≥ 6.0', pontos: 5 },
+    ]},
+    { key: 'creatinina', label: 'Creatinina', tipo: 'select', match: 'Creatinina', options: [
+      { label: '< 1.2', pontos: 0 },
+      { label: '1.2-1.9', pontos: 2 },
+      { label: '2.0-3.4', pontos: 7 },
+      { label: '≥ 3.5', pontos: 8 },
+    ]},
+    { key: 'leucocitos', label: 'Leucócitos', tipo: 'select', match: 'Leucócitos', options: [
+      { label: '4.000-19.999', pontos: 0 },
+      { label: '< 4.000', pontos: 5 },
+      { label: '≥ 20.000', pontos: 3 },
+    ]},
+    { key: 'ph', label: 'pH Arterial', tipo: 'select', match: 'pH', options: [
+      { label: '≥ 7.25', pontos: 0 },
+      { label: '< 7.25', pontos: 3 },
+    ]},
+    { key: 'plaquetas', label: 'Plaquetas', tipo: 'select', match: 'Plaquetas', options: [
+      { label: '≥ 100.000', pontos: 0 },
+      { label: '50.000-99.999', pontos: 5 },
+      { label: '< 50.000', pontos: 8 },
+    ]},
+    { key: 'pao2fio2', label: 'PaO2/FiO2', tipo: 'select', match: 'PaO2', options: [
+      { label: '≥ 250', pontos: 0 },
+      { label: '100-249', pontos: 7 },
+      { label: '< 100', pontos: 11 },
+    ]},
+    { key: 'fc', label: 'FC Inicial', tipo: 'select', match: 'FC Inicial', options: [
+      { label: '< 120', pontos: 0 },
+      { label: '120-159', pontos: 5 },
+      { label: '≥ 160', pontos: 7 },
+    ]},
+    { key: 'pas', label: 'PAS Inicial', tipo: 'select', match: 'PAS Inicial', options: [
+      { label: '≥ 120', pontos: 0 },
+      { label: '90-119', pontos: 2 },
+      { label: '70-89', pontos: 5 },
+      { label: '< 70', pontos: 11 },
+    ]},
+    { key: 'temperatura', label: 'Temperatura Inicial', tipo: 'select', match: 'Temp.', options: [
+      { label: '35.0-38.9', pontos: 0 },
+      { label: '< 35.0', pontos: 5 },
+      { label: '≥ 39.0', pontos: 3 },
+    ]},
+    { key: 'dva', label: 'Drogas Vasoativas', tipo: 'select', match: 'Vasoativo', options: [
+      { label: 'Não', pontos: 0 },
+      { label: 'Sim', pontos: 3 },
+    ]},
+  ];
 
   // Efeito que dispara a busca no Firebase toda vez que o modal é aberto
   useEffect(() => {
@@ -556,7 +672,7 @@ const GestorDashboard = ({ userProfile }) => {
       };
       buscarAuditoriaEscalas();
     }
-  }, [abaRiscoAtiva, filtroDataInicio, filtroDataFim]);
+  }, [abaRiscoAtiva, filtroDataInicio, filtroDataFim, refreshTrigger]);
 
   // =========================================================
   // BUSCA A EQUIPE MULTIPROFISSIONAL NO FIREBASE (GATILHO AUTOMÁTICO)
@@ -586,15 +702,118 @@ const GestorDashboard = ({ userProfile }) => {
     buscarEquipeMultiprofissional();
   }, []);
 
-  // Função para organizar os dados e abrir o modal da escala específica
-  const abrirAuditoriaEscala = (nomeEscala, nomePaciente, dadosEscala) => {
+  // Inicializa o formulário de auditoria parseando as respostas existentes
+  const inicializarAuditSAPS3 = (respostas) => {
+    const form = {};
+    SAPS3_CAMPOS_AUDITORIA.forEach(campo => {
+      if (campo.tipo === 'checkbox') form[campo.key] = [];
+      else form[campo.key] = 0;
+    });
+
+    if (!Array.isArray(respostas)) return form;
+
+    respostas.forEach(str => {
+      SAPS3_CAMPOS_AUDITORIA.forEach(campo => {
+        if (campo.tipo === 'checkbox') {
+          campo.options.forEach(opt => {
+            if (str.includes(opt.match) && !form[campo.key].includes(opt.match)) {
+              form[campo.key].push(opt.match);
+            }
+          });
+        } else if (campo.match && str.includes(campo.match)) {
+          const ptsMatch = str.match(/([+-]?\d+)\s*$/);
+          if (ptsMatch) form[campo.key] = parseInt(ptsMatch[1]);
+        }
+      });
+    });
+    return form;
+  };
+
+  // Calcula score, probabilidade e details em tempo real
+  const calcularAuditScore = () => {
+    if (!auditSAPS3) return { score: 0, prob: '0.0', details: [] };
+    let score = 0;
+    const details = [];
+
+    SAPS3_CAMPOS_AUDITORIA.forEach(campo => {
+      if (campo.tipo === 'checkbox') {
+        (auditSAPS3[campo.key] || []).forEach(selectedMatch => {
+          const opt = campo.options.find(o => o.match === selectedMatch);
+          if (opt) { score += opt.pontos; details.push(`${opt.label}: +${opt.pontos}`); }
+        });
+      } else {
+        const pontos = auditSAPS3[campo.key] ?? 0;
+        if (pontos !== 0) {
+          score += pontos;
+          const opt = campo.options.find(o => o.pontos === pontos);
+          if (opt) details.push(`${campo.label}: ${opt.label} (${pontos > 0 ? '+' : ''}${pontos})`);
+        }
+      }
+    });
+
+    const logit = -32.6659 + 7.3068 * Math.log(Math.max(score, 1) + 20.5958);
+    const prob = ((Math.exp(logit) / (1 + Math.exp(logit))) * 100).toFixed(1);
+    return { score, prob, details };
+  };
+
+  // Salva a auditoria no Firebase
+  const salvarAuditoriaSAPS3 = async () => {
+    if (!auditSAPS3 || !modalEscala?.meta?.id) return;
+    setSalvandoAuditoria(true);
+    try {
+      const { score, prob, details } = calcularAuditScore();
+      const meta = modalEscala.meta;
+      const collectionName = meta.status === 'Alta/Óbito' ? 'internacoes_historico' : 'leitos_uti';
+      const prefix = meta.status === 'Alta/Óbito' ? 'backupProntuario.saps3.' : 'saps3.';
+
+      const updateData = {};
+      updateData[`${prefix}isLocked`] = true;
+      updateData[`${prefix}lockedScore`] = score;
+      updateData[`${prefix}lockedProb`] = prob;
+      updateData[`${prefix}lockedDetails`] = details;
+      updateData[`${prefix}auditadoPor`] = userProfile?.nome || 'Gestor';
+      updateData[`${prefix}auditadoEm`] = new Date().toISOString();
+
+      await updateDoc(doc(db, collectionName, meta.id), updateData);
+
+      if (meta.idInternacao) {
+        const q = query(
+          collection(db, "indicadores_performance"),
+          where("idInternacao", "==", meta.idInternacao),
+          where("tipo", "==", "SAPS 3")
+        );
+        const snap = await getDocs(q);
+        for (const d of snap.docs) {
+          await updateDoc(doc(db, "indicadores_performance", d.id), {
+            valor: score, respostas: details
+          });
+        }
+      }
+
+      setModalEscala(null);
+      setAuditSAPS3(null);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (error) {
+      console.error("Erro ao salvar auditoria:", error);
+      alert("Erro ao salvar auditoria. Verifique o console.");
+    } finally {
+      setSalvandoAuditoria(false);
+    }
+  };
+
+  const abrirAuditoriaEscala = (nomeEscala, nomePaciente, dadosEscala, meta = {}) => {
     if (!dadosEscala) return;
+    const novasRespostas = dadosEscala.respostas || dadosEscala.detalhes || dadosEscala;
     setModalEscala({
       titulo: nomeEscala,
       paciente: nomePaciente,
-      score: dadosEscala.score || dadosEscala.pontuacao || dadosEscala.total || 'N/D',
-      respostas: dadosEscala.respostas || dadosEscala.detalhes || dadosEscala // Flexível para o formato que o senhor salvou
+      score: dadosEscala.score ?? dadosEscala.pontuacao ?? dadosEscala.total ?? 'N/D',
+      respostas: novasRespostas,
+      meta
     });
+    if (nomeEscala === 'SAPS 3') {
+      setAuditSAPS3(inicializarAuditSAPS3(novasRespostas));
+    }
   };
 
    const abrirHistoricoEscalas = (tipo, paciente) => {
@@ -5995,7 +6214,7 @@ const GestorDashboard = ({ userProfile }) => {
                           {pac.saps3 ? (
                             <div className="flex items-center justify-center gap-2">
                               <span className="font-black text-slate-700 text-lg">{pac.saps3.score ?? pac.saps3.pontuacao ?? '-'}</span>
-                              <button onClick={() => abrirAuditoriaEscala('SAPS 3', pac.nome, pac.saps3)} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
+                              <button onClick={() => abrirAuditoriaEscala('SAPS 3', pac.nome, pac.saps3, { id: pac.id, status: pac.status, idInternacao: pac.idInternacao })} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors" title="Auditar preenchimento">
                                 <Search size={16} />
                               </button>
                             </div>
@@ -6657,83 +6876,172 @@ const GestorDashboard = ({ userProfile }) => {
         {/* ============================================================== */}
         {/* MODAL DE AUDITORIA DA ESCALA ESPECÍFICA                        */}
         {/* ============================================================== */}
-        {modalEscala && (
+         {modalEscala && (
           <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+
+              {/* HEADER */}
               <div className="bg-slate-800 p-5 flex justify-between items-center text-white shrink-0">
                 <div>
                   <h3 className="font-black text-lg flex items-center gap-2">
-                    <Activity className="text-blue-400" /> Auditoria de Preenchimento: {modalEscala.titulo}
+                    <Activity className="text-blue-400" /> Auditoria: {modalEscala.titulo}
+                    {modalEscala.titulo === 'SAPS 3' && (
+                      <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase ml-1">Editável</span>
+                    )}
                   </h3>
                   <p className="text-slate-300 text-sm mt-1">Paciente: <span className="font-bold text-white">{modalEscala.paciente}</span></p>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="bg-white/10 px-4 py-2 rounded-lg text-center">
-                    <span className="block text-[10px] font-bold text-slate-300 uppercase">Score Final</span>
-                    <span className="block text-xl font-black text-white leading-none">{modalEscala.score}</span>
-                  </div>
-                  <button onClick={() => setModalEscala(null)} className="text-slate-400 hover:text-white transition-colors">
+                  {modalEscala.titulo === 'SAPS 3' && auditSAPS3 ? (
+                    <>
+                      <div className="bg-white/10 px-4 py-2 rounded-lg text-center">
+                        <span className="block text-[10px] font-bold text-slate-300 uppercase">Score Original</span>
+                        <span className="block text-xl font-black text-slate-400 leading-none line-through">{modalEscala.score}</span>
+                      </div>
+                      <div className="bg-blue-500 px-4 py-2 rounded-lg text-center">
+                        <span className="block text-[10px] font-bold text-blue-100 uppercase">Novo Score</span>
+                        <span className="block text-2xl font-black text-white leading-none">{calcularAuditScore().score}</span>
+                        <span className="block text-[10px] text-blue-200">Prob: {calcularAuditScore().prob}%</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="bg-white/10 px-4 py-2 rounded-lg text-center">
+                      <span className="block text-[10px] font-bold text-slate-300 uppercase">Score Final</span>
+                      <span className="block text-xl font-black text-white leading-none">{modalEscala.score}</span>
+                    </div>
+                  )}
+                  <button onClick={() => { setModalEscala(null); setAuditSAPS3(null); }} className="text-slate-400 hover:text-white transition-colors">
                     <XCircle size={24} />
                   </button>
                 </div>
               </div>
 
+              {/* CORPO */}
               <div className="p-6 bg-slate-50 flex-1 overflow-y-auto">
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">
-                  Detalhamento dos Fatores Assinalados pela Equipe
-                </h4>
-                
-                <div className="space-y-3">
-                  {/* VERIFICA SE AS RESPOSTAS SÃO UM ARRAY (Formato do SAPS 3) */}
-                  {Array.isArray(modalEscala.respostas) ? (
-                    modalEscala.respostas.length > 0 ? (
-                      modalEscala.respostas.map((item, idx) => {
-                        // Divide a string "Idade 85 anos: +18" em duas partes para ficar bonito
-                        const partes = String(item).split(':');
-                        const textoFator = partes[0];
-                        const pontuacao = partes[1] ? partes[1].trim() : '';
 
-                        return (
-                          <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
-                            <span className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                              <CheckCircle size={14} className="text-blue-500" /> {textoFator}
-                            </span>
-                            {pontuacao && (
-                              <span className={`text-sm font-black px-3 py-1 rounded-md text-right ${pontuacao.includes('-') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                {pontuacao}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="text-center text-slate-400 italic p-4">Nenhum fator de gravidade foi pontuado.</div>
-                    )
-                  ) : (
-                    /* CASO SEJA UM OBJETO (Formato do Braden e Morse que fizemos antes) */
-                    Object.entries(modalEscala.respostas || {}).map(([chave, valor], idx) => {
-                      if (chave === 'score' || chave === 'pontuacao' || chave === 'total' || chave === 'data') return null;
-                      return (
-                        <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
-                          <span className="text-sm font-bold text-slate-600 capitalize">
-                            {chave.replace(/([A-Z])/g, ' $1').trim()}
-                          </span>
-                          <span className="text-sm font-black text-slate-800 bg-slate-100 px-3 py-1 rounded-md text-right max-w-[50%]">
-                            {typeof valor === 'object' ? JSON.stringify(valor) : String(valor)}
-                          </span>
+                {/* === MODO AUDITORIA SAPS 3 === */}
+                {modalEscala.titulo === 'SAPS 3' && auditSAPS3 ? (
+                  <>
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">
+                      Correção dos Fatores Pontuados — Ajuste cada campo conforme auditoria
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                      {SAPS3_CAMPOS_AUDITORIA.map(campo => (
+                        <div key={campo.key} className={campo.tipo === 'checkbox' ? 'sm:col-span-2' : ''}>
+                          <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block">{campo.label}</label>
+
+                          {campo.tipo === 'checkbox' ? (
+                            <div className="flex flex-wrap gap-2">
+                              {campo.options.map(opt => {
+                                const checked = auditSAPS3[campo.key]?.includes(opt.match);
+                                return (
+                                  <button key={opt.match} type="button" onClick={() => {
+                                    setAuditSAPS3(prev => {
+                                      const arr = prev[campo.key] || [];
+                                      return { ...prev, [campo.key]: checked ? arr.filter(m => m !== opt.match) : [...arr, opt.match] };
+                                    });
+                                  }} className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${checked ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200'}`}>
+                                    {opt.label} <span className={`font-black ${opt.pontos > 0 ? 'text-red-500' : 'text-emerald-500'}`}>({opt.pontos > 0 ? '+' : ''}{opt.pontos})</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <select
+                              value={auditSAPS3[campo.key] ?? 0}
+                              onChange={(e) => setAuditSAPS3(prev => ({ ...prev, [campo.key]: parseInt(e.target.value) }))}
+                              className="w-full p-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-blue-200"
+                            >
+                              {campo.options.map(opt => (
+                                <option key={opt.label} value={opt.pontos}>
+                                  {opt.label} ({opt.pontos > 0 ? '+' : ''}{opt.pontos})
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </div>
-                      );
-                    })
-                  )}
-                  
-                  {(!modalEscala.respostas || (Array.isArray(modalEscala.respostas) ? modalEscala.respostas.length === 0 : Object.keys(modalEscala.respostas).length === 0)) && (
-                    <div className="text-center text-slate-400 italic p-4">
-                      O detalhamento específico desta escala não foi salvo no momento do preenchimento.
+                      ))}
+
                     </div>
-                  )}
-                </div>
+
+                    {/* Prévia dos detalhes recalculados */}
+                    <div className="mt-6 p-4 bg-white rounded-xl border border-slate-200">
+                      <h5 className="text-[10px] font-black text-slate-400 uppercase mb-2">Detalhes que serão salvos:</h5>
+                      <div className="space-y-1">
+                        {calcularAuditScore().details.length > 0 ? calcularAuditScore().details.map((d, i) => (
+                          <div key={i} className="text-xs text-slate-600 flex justify-between">
+                            <span>{d.split(': ')[0]}</span>
+                            <span className="font-black">{d.split(': ')[1]}</span>
+                          </div>
+                        )) : <span className="text-xs text-slate-400 italic">Nenhum fator pontuado (score = 0)</span>}
+                      </div>
+                    </div>
+                  </>
+
+                ) : (
+                  /* === MODO SOMENTE LEITURA (Braden, Morse, etc) === */
+                  <>
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">
+                      Detalhamento dos Fatores Assinalados pela Equipe
+                    </h4>
+                    <div className="space-y-3">
+                      {Array.isArray(modalEscala.respostas) ? (
+                        modalEscala.respostas.length > 0 ? (
+                          modalEscala.respostas.map((item, idx) => {
+                            const partes = String(item).split(':');
+                            const textoFator = partes[0];
+                            const pontuacao = partes[1] ? partes[1].trim() : '';
+                            return (
+                              <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
+                                <span className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                  <CheckCircle size={14} className="text-blue-500" /> {textoFator}
+                                </span>
+                                {pontuacao && (
+                                  <span className={`text-sm font-black px-3 py-1 rounded-md text-right ${pontuacao.includes('-') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                    {pontuacao}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="text-center text-slate-400 italic p-4">Nenhum fator de gravidade foi pontuado.</div>
+                        )
+                      ) : (
+                        Object.entries(modalEscala.respostas || {}).map(([chave, valor], idx) => {
+                          if (chave === 'score' || chave === 'pontuacao' || chave === 'total' || chave === 'data') return null;
+                          return (
+                            <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
+                              <span className="text-sm font-bold text-slate-600 capitalize">{chave.replace(/([A-Z])/g, ' $1').trim()}</span>
+                              <span className="text-sm font-black text-slate-800 bg-slate-100 px-3 py-1 rounded-md text-right max-w-[50%]">
+                                {typeof valor === 'object' ? JSON.stringify(valor) : String(valor)}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
+
+              {/* FOOTER (só para SAPS 3) */}
+              {modalEscala.titulo === 'SAPS 3' && auditSAPS3 && (
+                <div className="p-4 bg-white border-t border-slate-200 flex justify-between items-center shrink-0">
+                  <div className="text-xs text-slate-500">
+                    Ao salvar, o score será <span className="font-black text-amber-600">travado</span> e não poderá ser recalculado automaticamente.
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setModalEscala(null); setAuditSAPS3(null); }} className="px-4 py-2 rounded-lg text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">
+                      Cancelar
+                    </button>
+                    <button onClick={salvarAuditoriaSAPS3} disabled={salvandoAuditoria} className="px-6 py-2 rounded-lg text-sm font-black text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2">
+                      {salvandoAuditoria ? <><Loader2 className="animate-spin" size={16} /> Salvando...</> : <><CheckCircle size={16} /> Salvar Auditoria</>}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
