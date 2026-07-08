@@ -2566,8 +2566,8 @@ const salvarFralda = () => {
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Local</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {['Cabeça', 'Tórax', 'Abdome', 'MMSS', 'MMII', 'Região Púbica'].map(local => (
-                    <button key={local} onClick={() => setModalTricotomia({ ...modalTricotomia, local })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTricotomia.local === local ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{local}</button>
+                  {['Cabelo', 'Face', 'Tórax', 'Abdome', 'MMSS', 'MMII', 'Região Púbica'].map(local => (
+                    <button key={local} onClick={() => setModalTricotomia({ ...modalTricotomia, local })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${local === 'Região Púbica' ? 'col-span-2' : ''} ${modalTricotomia.local === local ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{local}</button>
                   ))}
                 </div>
               </div>
