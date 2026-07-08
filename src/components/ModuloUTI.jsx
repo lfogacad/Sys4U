@@ -2359,40 +2359,113 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const sexoPaciente = isFem ? 'A paciente' : 'O paciente';
       const mantemSe = 'Mantém-se'; 
 
-      // 1. SINAIS VITAIS (COM A NOVA LÓGICA DE SPO2)
+      // 1. SINAIS VITAIS (COM CONTAGEM DE EPISÓDIOS)
       const vitals = currentPatient.bh?.vitals || {};
-      let tempMax = 0, spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
-      let hasSpo2 = false; // Rastreador de segurança
-      
+      let tempMax = 0;
+      let hasSpo2 = false;
+
+      // Contadores de episódios
+      let epFebre = 0, epHipotermia = 0;
+      let epTaquicardia = 0, epBradicardia = 0;
+      let epTaquipneia = 0, epBradipneia = 0;
+      let epHipotensao = 0, epHipertensao = 0;
+      let epSpo2Rasa = 0, epSpo2Baixa = 0;
+
       Object.values(vitals).forEach((v) => {
         if (!v) return;
-        const t = safeNum(v["Temp (ºC)"]); if (t > tempMax) tempMax = t;
-        
-        // Coleta da SpO2
-        const s = safeNum(v["SpO2 (%)"]); 
+        // Temperatura
+        const t = safeNum(v["Temp (ºC)"]);
+        if (t > tempMax) tempMax = t;
+        if (t >= 37.8) epFebre++;
+        if (t > 0 && t < 35.0) epHipotermia++;
+        // SpO2
+        const s = safeNum(v["SpO2 (%)"]);
         if (s > 0) {
           hasSpo2 = true;
-          if (s < spo2Min) spo2Min = s; 
+          if (s >= 89 && s <= 92) epSpo2Rasa++;
+          if (s < 89) epSpo2Baixa++;
         }
-
+        // FC
         const fc = safeNum(v["FC (bpm)"]);
-        if (fc > 0) { if (fcMax === 0 || fc > fcMax) fcMax = fc; if (fcMin === 0 || fc < fcMin) fcMin = fc; }
+        if (fc > 0) {
+          if (fc > 100) epTaquicardia++;
+          if (fc < 60) epBradicardia++;
+        }
+        // PAS
         const pas = safeNum(v["PAS"]);
-        if (pas > 0) { if (pasMax === 0 || pas > pasMax) pasMax = pas; if (pasMin === 0 || pas < pasMin) pasMin = pas; }
+        if (pas > 0) {
+          if (pas < 90) epHipotensao++;
+          if (pas > 160) epHipertensao++;
+        }
+        // FR
+        const fr = safeNum(v["FR (ipm)"]) || safeNum(v["FR (irpm)"]) || safeNum(v["FR"]);
+        if (fr > 0) {
+          if (fr > 20) epTaquipneia++;
+          if (fr < 12) epBradipneia++;
+        }
       });
 
-      const tempStatus = tempMax >= 37.8 ? "febril" : "afebril";
-      
-      // 👇 A MÁGICA DA SPO2 RASA/BOA/BAIXA 👇
-      let spo2Status = "sem registro de SpO2";
-      if (hasSpo2) {
-        if (spo2Min > 92) spo2Status = "mantendo boa SpO2";
-        else if (spo2Min >= 89) spo2Status = "com SpO2 rasa";
-        else spo2Status = "com baixa SpO2";
+      // Helper: constrói status por episódio
+      const buildEpisodio = (ep, singular, multiLabel, normalLabel) => {
+        if (ep === 0) return normalLabel;
+        if (ep === 1) return `apresentou um episódio de ${singular}`;
+        return multiLabel; // 2+ episódios: volta ao comportamento antigo
+      };
+
+      // TEMPERATURA
+      let tempStatus;
+      if (epFebre === 0 && epHipotermia === 0) {
+        tempStatus = "afebril";
+      } else {
+        const parts = [];
+        if (epFebre > 0) parts.push(buildEpisodio(epFebre, "febre", "febril", ""));
+        if (epHipotermia > 0) parts.push(buildEpisodio(epHipotermia, "hipotermia", isFem ? "hipotérmica" : "hipotérmico", ""));
+        tempStatus = parts.join(" e ");
       }
 
-      const fcStatus = fcMax > 100 ? (isFem ? "taquicárdica" : "taquicárdico") : (fcMin > 0 && fcMin < 60 ? (isFem ? "bradicárdica" : "bradicárdico") : (isFem ? "eucárdica" : "eucárdico"));
-      const paStatus = (pasMin > 0 && pasMin < 90) ? "com hipotensão" : (pasMax > 160 ? (isFem ? "hipertensa" : "hipertenso") : "com bom controle pressórico");
+      // SPO2
+      let spo2Status = "sem registro de SpO2";
+      if (hasSpo2) {
+        if (epSpo2Rasa === 0 && epSpo2Baixa === 0) {
+          spo2Status = "mantendo boa SpO2";
+        } else {
+          const parts = [];
+          if (epSpo2Baixa > 0) parts.push(buildEpisodio(epSpo2Baixa, "baixa SpO2", "com baixa SpO2", ""));
+          if (epSpo2Rasa > 0) parts.push(buildEpisodio(epSpo2Rasa, "SpO2 rasa", "com SpO2 rasa", ""));
+          spo2Status = parts.join(" e ");
+        }
+      }
+
+      // FC
+      let fcStatus;
+      if (epTaquicardia === 0 && epBradicardia === 0) {
+        fcStatus = isFem ? "eucárdica" : "eucárdico";
+      } else {
+        const parts = [];
+        if (epTaquicardia > 0) parts.push(buildEpisodio(epTaquicardia, "taquicardia", isFem ? "taquicárdica" : "taquicárdico", ""));
+        if (epBradicardia > 0) parts.push(buildEpisodio(epBradicardia, "bradicardia", isFem ? "bradicárdica" : "bradicárdico", ""));
+        fcStatus = parts.join(" e ");
+      }
+
+      // PA
+      let paStatus;
+      if (epHipotensao === 0 && epHipertensao === 0) {
+        paStatus = "com bom controle pressórico";
+      } else {
+        const parts = [];
+        if (epHipotensao > 0) parts.push(buildEpisodio(epHipotensao, "hipotensão", isFem ? "hipotensa" : "hipotenso", ""));
+        if (epHipertensao > 0) parts.push(buildEpisodio(epHipertensao, "hipertensão", isFem ? "hipertensa" : "hipertenso", ""));
+        paStatus = parts.join(" e ");
+      }
+
+      // FR (novo)
+      let frStatus = "";
+      if (epTaquipneia > 0 || epBradipneia > 0) {
+        const parts = [];
+        if (epTaquipneia > 0) parts.push(buildEpisodio(epTaquipneia, "taquipneia", isFem ? "taquipneica" : "taquipneico", ""));
+        if (epBradipneia > 0) parts.push(buildEpisodio(epBradipneia, "bradipneia", isFem ? "bradipneica" : "bradipneico", ""));
+        frStatus = parts.join(" e ");
+      }
 
       // 2. ESTADO GERAL E NEURO
       const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
@@ -2405,7 +2478,6 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const formatoObrigatorioLinha1 = isSedado 
         ? `${sexoPaciente} encontra-se em [ESTADO GERAL], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].`
         : `${sexoPaciente} encontra-se em [ESTADO GERAL], [NÍVEL DE CONSCIÊNCIA], [SEDAÇÃO], [SUPORTE RESPIRATÓRIO], [SPO2].`;
-      
       const dadosConsciencia = isSedado ? "" : `- [NÍVEL DE CONSCIÊNCIA]: ${nivelConsciencia}\n      `;
 
       // 3. RESPIRATÓRIO
@@ -2414,6 +2486,13 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       if (suporte === "VM") suporteText = "em VM por TOT";
       else if (suporte.toLowerCase() === "ar ambiente") suporteText = "em ar ambiente";
       else suporteText = `em uso de ${suporte}`;
+
+      // FiO2: só mostra se NÃO estiver em VM
+      const isVM = suporte === "VM";
+      const fio2Val = currentPatient.physio?.fiO2;
+      const fio2Num = safeNum(fio2Val);
+      const fio2Text = (!isVM && fio2Num > 0) ? ` em FiO2 de ${fio2Num}%` : "";
+      const suporteFinal = `${suporteText}${fio2Text}`;
 
       // 4. HEMODINÂMICO 
       const usaDVA = currentPatient.cardio?.dva === true; 
@@ -2518,18 +2597,16 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       // 8. O PROMPT PARA A IA (APENAS O BLOCO DE EVOLUÇÃO)
       const promptText = `Você é um médico intensivista. Redija a evolução ESTRITAMENTE no formato exato fornecido abaixo.
       NÃO adicione introduções e não invente dados. Siga exatamente a estrutura fornecida.
-
       FORMATO OBRIGATÓRIO:
       ${formatoObrigatorioLinha1}
-      [HEMODINÂMICA], [DVA], apresenta-se [FC], [PA].
+      [HEMODINÂMICA], [DVA], [FC], [PA].
       [DIURESE], [FUNÇÃO RENAL].
       ${mantemSe} [TEMPERATURA], [LEUCOMETRIA] e [ATB].
-      A dieta é [VIA DIETA]. Última evacuação: [EVACUAÇÃO].[TGI]
-
+      ${frStatus ? '[FR]' : ''}
       DADOS CLÍNICOS REAIS:
       - [ESTADO GERAL]: ${egExtenso}
       ${dadosConsciencia}- [SEDAÇÃO]: ${sedacaoText}
-      - [SUPORTE RESPIRATÓRIO]: ${suporteText}
+      - [SUPORTE RESPIRATÓRIO]: ${suporteFinal}${fio2Text}
       - [SPO2]: ${spo2Status}
       - [HEMODINÂMICA]: ${hemodinamicaStatus}
       - [DVA]: ${dvaText}
@@ -2540,11 +2617,10 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       - [TEMPERATURA]: ${tempStatus}
       - [LEUCOMETRIA]: ${leucoStatus}
       - [ATB]: ${atbsFinal}
-      - [VIA DIETA]: ${viaDieta}
+      ${frStatus ? `- [FR]: ${frStatus}\n      ` : ''}- [VIA DIETA]: ${viaDieta}
       - [EVACUAÇÃO]: ${evacDaysStr}
       - [TGI]: ${tgiIntercorrencias}
-      
-      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO].`;
+      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO]. Se [FR] existir, inclua-o como uma frase adicional após o ATB.`;
 
       // 9. LOOP DE MODELOS (GEMINI)
       const models = ["gemini-2.5-flash", "gemini-1.5-pro"];
