@@ -18,7 +18,7 @@ import {
   getManausDateStr, formatDateDDMM, getLast10Days, calculateTotals,
   safeNumber, defaultPatient, ensureBHStructure, calculateAge,
   getDaysD0, getDaysD1, getTempoVMText, getTempoVMNumber,calculateEvacDays,
-  calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH,
+  calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, calculateNoraDose,
   calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf,
   analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, formatExamName
 } from '../utils/core';
@@ -2619,13 +2619,12 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       [HEMODINÂMICA], [DVA], [FC], [PA].
       [DIURESE], [FUNÇÃO RENAL].
       ${mantemSe} [TEMPERATURA], [LEUCOMETRIA] e [ATB].
-      ${frStatus ? '[FR]' : ''}
       DADOS CLÍNICOS REAIS:
       - [ESTADO GERAL]: ${egExtenso}
       ${dadosConsciencia}- [SEDAÇÃO]: ${sedacaoText}
-      - [SUPORTE RESPIRATÓRIO]: ${suporteFinal}${fio2Text}
+      - [SUPORTE RESPIRATÓRIO]: ${suporteFinal}
       - [SPO2]: ${spo2Status}
-      - [HEMODINÂMICA]: ${hemodinamicaStatus}
+      ${frStatus ? `- [FR]: ${frStatus}\n      ` : ''}- [HEMODINÂMICA]: ${hemodinamicaStatus}
       - [DVA]: ${dvaText}
       - [FC]: ${fcStatus}
       - [PA]: ${paStatus}
@@ -2634,13 +2633,13 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       - [TEMPERATURA]: ${tempStatus}
       - [LEUCOMETRIA]: ${leucoStatus}
       - [ATB]: ${atbsFinal}
-      ${frStatus ? `- [FR]: ${frStatus}\n      ` : ''}- [VIA DIETA]: ${viaDieta}
+      - [VIA DIETA]: ${viaDieta}
       - [EVACUAÇÃO]: ${evacDaysStr}
       - [TGI]: ${tgiIntercorrencias}
-      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO]. Se [FR] existir, inclua-o como uma frase adicional após o ATB.`;
+      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO]. Se [FR] existir, inclua-o na primeira linha logo após a SpO2, sem quebra de linha.`;
 
       // 9. LOOP DE MODELOS (GEMINI)
-      const models = ["gemini-2.5-flash", "gemini-1.5-pro"];
+      const models = ["gemini-2.5-flash", "gemini-2.5-pro"];
       
       for (const model of models) {
         try {
@@ -2693,6 +2692,46 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
             const dvaList = currentPatient.cardio?.dva && currentPatient.cardio?.drogasDVA?.length > 0 
               ? currentPatient.cardio.drogasDVA.join(", ") 
               : "Sem uso de drogas vasoativas";
+            
+            // Busca a dose mais recente de Noradrenalina no BH
+            let noraDoseText = "";
+            const dvaDrugs = currentPatient.cardio?.drogasDVA || [];
+            if (dvaDrugs.includes("Noradrenalina")) {
+              const gains = currentPatient.bh?.gains || {};
+              const sortedHours = Object.keys(gains).sort().reverse();
+              let noraMlHour = 0;
+              for (const hora of sortedHours) {
+                const entry = gains[hora];
+                if (entry && entry["Noradrenalina"]) {
+                  noraMlHour = parseFloat(String(entry["Noradrenalina"]).replace(",", ".")) || 0;
+                  if (noraMlHour > 0) break;
+                }
+              }
+              if (noraMlHour > 0) {
+                const dose = calculateNoraDose(currentPatient, noraMlHour);
+                if (dose) noraDoseText = ` (${dose} mcg/kg/min)`;
+              }
+            }
+
+            const neuro = currentPatient.neuro || {};
+
+            // Glasgow/RASS
+            let glasgowRassLine = "";
+            if (neuro?.sedacao) {
+              if (neuro.rass) glasgowRassLine = `RASS: ${neuro.rass}`;
+            } else {
+              const ao = parseInt(neuro?.glasgowAO) || 0;
+              const rm = parseInt(neuro?.glasgowRM) || 0;
+              const rvStr = neuro?.glasgowRV || "";
+              if (neuro?.glasgowAO || rvStr || neuro?.glasgowRM) {
+                if (rvStr.startsWith("T") || rvStr.startsWith("1 - T")) {
+                  glasgowRassLine = `Glasgow: ${ao + rm}T`;
+                } else {
+                  const rv = parseInt(rvStr) || 0;
+                  glasgowRassLine = `Glasgow: ${ao + rm + rv}`;
+                }
+              }
+            }
 
             // Montando o Template Final
             const evolutionCompleta = `EVOLUÇÃO DIÁRIA
@@ -2719,8 +2758,9 @@ ABD.: ${exAbd}
 EXTREMIDADES: ${exExt}
 
 SEDAÇÃO: ${sedacaoList}
+${glasgowRassLine}
 
-DVA: ${dvaList}
+DVA: ${dvaList}${noraDoseText}
 
 EVOLUÇÃO E INTERCORRÊNCIAS:
 ${aiEvolucaoClinica}
