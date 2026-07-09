@@ -386,22 +386,30 @@ export const calculateSAPS3Score = (patient) => {
   let pasInicial = 0;
   let tempInicial = 0;
 
-  if (patient.bh?.vitals) {
-    const horarios = Object.keys(patient.bh.vitals).sort();
+  // Coleta todos os BHs (histórico + atual) e ordena do mais antigo para o mais recente
+  // O BH de admissão é o MAIS ANTIGO
+  const todosBHs = [
+    ...(patient.historico_bh || []),
+    patient.bh
+  ].filter(bh => bh && bh.vitals && bh.date)
+   .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+  // Pega o BH mais antigo (admissão)
+  const bhAdmissao = todosBHs[0];
+
+  if (bhAdmissao?.vitals) {
+    const horarios = Object.keys(bhAdmissao.vitals).sort();
     
-    // Busca os PRIMEIROS sinais vitais registrados
     for (let h of horarios) {
-      const v = patient.bh.vitals[h];
+      const v = bhAdmissao.vitals[h];
       const fc = safeNumber(v["FC (bpm)"]);
       const pas = safeNumber(v["PAS"]);
       const t = safeNumber(v["Temp (ºC)"]);
       
-      // Salva o primeiro valor que não for zero
       if (fc > 0 && fcInicial === 0) fcInicial = fc;
       if (pas > 0 && pasInicial === 0) pasInicial = pas;
       if (t > 0 && tempInicial === 0) tempInicial = t;
       
-      // Se já achou os 3 primeiros, aborta a busca para não olhar o resto do dia
       if (fcInicial > 0 && pasInicial > 0 && tempInicial > 0) break;
     }
   }

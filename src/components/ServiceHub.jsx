@@ -41,7 +41,21 @@ const ServiceHub = ({ userProfile }) => {
 
   // Filtra os módulos dinamicamente com base no crachá
   const modulosVisiveis = modulos.filter(modulo => {
-    // 1. REGRA DA RECEPÇÃO: Só enxerga a própria recepção e nada mais
+    // 0. REGRA DA RECEPÇÃO E TRIAGEM: Só perfis autorizados veem o card
+    if (modulo.id === 'recepcao') {
+      const perfisRecepcao = [
+        'Médico',
+        'Enfermeiro',
+        'Recepção',
+        'Desenvolvedor',
+        'Diretor Administrativo',
+        'Gerente de Enfermagem',
+        'RT Médico'
+      ];
+      return perfisRecepcao.includes(userRole);
+    }
+
+    // 1. REGRA DA RECEPÇÃO (cargo): Só enxerga a própria recepção e nada mais
     if (userRole === 'Recepção') {
       return modulo.id === 'recepcao';
     }
@@ -55,13 +69,13 @@ const ServiceHub = ({ userProfile }) => {
         'RT da Fisioterapia',
         'CCIH UTI',
         'CCIH Geral',
-        'Administrador' // Mantido por retrocompatibilidade caso tenha algum antigo
+        'RT Médico',
+        'Administrador'
       ];
       return perfisGestao.includes(userRole);
     }
 
-    // 3. REGRA GERAL: Para a equipe clínica (Médico, Enf, Físio, etc)
-    // Eles verão Recepção e UTI normalmente, pois passam direto pelas travas acima
+    // 3. REGRA GERAL: Equipe clínica vê UTI
     return true;
   });
 
