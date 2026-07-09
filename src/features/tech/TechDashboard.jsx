@@ -17,6 +17,7 @@ const TechDashboard = ({
   setPatients,
   save,
   isEditable,
+  userRole,
   selectedDate,
   setSelectedDate,
   unlockedDates,
@@ -42,6 +43,8 @@ const TechDashboard = ({
   const [showSVDModal, setShowSVDModal] = useState(false);
   const [listaProfissionais, setListaProfissionais] = useState([]);
 
+  const canAccessRegistros = ['Téc. em Enf.', 'Desenvolvedor'].includes(userRole);
+  
   // =========================================================================
   // FUNÇÃO AUXILIAR: ARREDONDA A HORA ATUAL PARA 00, 15, 30 OU 45
   // =========================================================================
@@ -958,8 +961,9 @@ const salvarFralda = () => {
         
         {/* BOTÃO QUE ABRE/FECHA A SEÇÃO */}
         <button 
-          onClick={(e) => { e.preventDefault(); setRegistrosOpen(!registrosOpen); }} 
-          className="flex items-center gap-2 font-bold text-slate-700 w-full text-left"
+          onClick={(e) => { e.preventDefault(); if (!canAccessRegistros) return; setRegistrosOpen(!registrosOpen); }} 
+          disabled={!canAccessRegistros}
+          className={`flex items-center gap-2 font-bold w-full text-left ${canAccessRegistros ? 'text-slate-700 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
         >
           {registrosOpen ? <ChevronDown size={20} className="text-indigo-600" /> : <ChevronRight size={20} className="text-slate-400" />} 
           <ClipboardList className={registrosOpen ? "text-indigo-600" : "text-slate-400"} size={18} />

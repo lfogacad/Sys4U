@@ -5218,6 +5218,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         setPatients={setPatients}
                         save={save}
                         isEditable={isEditable}
+                        userRole={userProfile?.perfil || userProfile?.cargoLocal || userProfile?.role}
                         
                         // NOVAS PROPS DA GESTÃO DE TEMPO
                         selectedDate={selectedBHDate}
