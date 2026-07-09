@@ -678,26 +678,23 @@ export const calculateDiurese12hMlKgH = (patient) => {
   const HORA_VIRADA_BH = 7; // O BH vira às 07h
 
   let diureseBruta = 0;
+  let crossedVirada = false;
+
   for (let i = 0; i < 12; i++) {
     let checkIndex = currentIndex - i;
+    if (checkIndex < 0) checkIndex = BH_HOURS.length + checkIndex;
+
+    const hourStr = BH_HOURS[checkIndex];
+    const hourNumAtCheck = parseInt(hourStr.split(":")[0]);
+
     let targetBH = bhAtual;
 
-    if (checkIndex < 0) {
-      // Atravessou meia-noite
-      checkIndex = BH_HOURS.length + checkIndex;
-      if (currentHourNum >= HORA_VIRADA_BH) {
-        // BH já virou às 07h, as horas da noite/madrugada estão no BH anterior
-        targetBH = bhPrev;
-      }
-      // Se currentHourNum < 7, o BH atual ainda engloba a noite anterior, mantém bhAtual
-    } else if (currentHourNum >= HORA_VIRADA_BH && checkIndex < HORA_VIRADA_BH) {
-      // Hora atual é depois das 07h, mas estamos olhando uma hora antes das 07h
-      // Essa hora pertence ao BH anterior (já arquivado em historico_bh)
-      targetBH = bhPrev;
+    if (currentHourNum >= HORA_VIRADA_BH) {
+      if (hourNumAtCheck < HORA_VIRADA_BH) crossedVirada = true;
+      if (crossedVirada) targetBH = bhPrev;
     }
 
     if (targetBH) {
-      const hourStr = BH_HOURS[checkIndex];
       if (targetBH.losses && targetBH.losses[hourStr]) {
         diureseBruta += safeNumber(targetBH.losses[hourStr]["Diurese"]);
       }
@@ -736,34 +733,30 @@ export const analyzeOliguriaForSOFA = (patient) => {
   let diurese6 = 0, diurese12 = 0, diurese24 = 0;
 
   // 3. Varre as últimas 24 horas
+  let crossedVirada = false;
+
   for (let i = 0; i < 24; i++) {
     let checkIndex = currentIndex - i;
+    if (checkIndex < 0) checkIndex = BH_HOURS.length + checkIndex;
+
+    const hourStr = BH_HOURS[checkIndex];
+    const hourNumAtCheck = parseInt(hourStr.split(":")[0]);
+
     let targetBH = bhAtual;
 
-    if (checkIndex < 0) {
-      // Atravessou meia-noite
-      checkIndex = BH_HOURS.length + checkIndex;
-      if (currentHourNum >= HORA_VIRADA_BH) {
-        // BH já virou às 07h, as horas da noite/madrugada estão no BH anterior
-        targetBH = bhPrev;
-      }
-    } else if (currentHourNum >= HORA_VIRADA_BH && checkIndex < HORA_VIRADA_BH) {
-      // Hora atual é depois das 07h, mas estamos olhando uma hora antes das 07h
-      // Essa hora pertence ao BH anterior (já arquivado em historico_bh)
-      targetBH = bhPrev;
+    if (currentHourNum >= HORA_VIRADA_BH) {
+      // BH já virou às 07h — ao cruzar para antes das 07h, tudo abaixo é bhPrev
+      if (hourNumAtCheck < HORA_VIRADA_BH) crossedVirada = true;
+      if (crossedVirada) targetBH = bhPrev;
     }
 
     if (targetBH) {
-      const hourStr = BH_HOURS[checkIndex];
-      // 🔧 CORREÇÃO: Soma apenas a diurese, sem subtrair irrigação
       const diureseHora = targetBH.losses?.[hourStr] ? safeNumber(targetBH.losses[hourStr]["Diurese"]) : 0;
-
       diurese24 += diureseHora;
       if (i < 12) diurese12 += diureseHora;
       if (i < 6) diurese6 += diureseHora;
     }
   }
-
   // 4. Calcula o ml/kg/h
   const mlKgH_6 = diurese6 / weight / 6;
   const mlKgH_12 = diurese12 / weight / 12;

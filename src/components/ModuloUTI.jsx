@@ -796,40 +796,60 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   // ==============================================================
   useEffect(() => {
     const automatizarFechamentoBH = async () => {
-      // Evita rodar se os dados ainda não carregaram
       if (!db || !currentPatient || !currentPatient.bh || !currentPatient.bh.date) return;
 
       const logicalToday = getLogicalDate();
       const currentBHDate = currentPatient.bh.date;
 
-      // Comparação de Strings (Ex: "2026-05-03" < "2026-05-04")
-      // Se a data do BH atual for menor que o dia lógico de hoje, o plantão virou.
       if (currentBHDate < logicalToday) {
         console.log(`[SYS4U] Virada de plantão detectada. Arquivando BH do dia ${currentBHDate} para o Leito ${currentPatient.leito}`);
 
-        // 1. Resgata o histórico antigo para não perder nada
         const historicoAntigo = currentPatient.historico_bh || [];
 
-        // 2. Calcula o saldo acumulado que será herdado para o novo dia
-        // Soma o acumulado prévio com o balanço de 24h do dia que está sendo fechado
-        const saldoAnterior = parseFloat(currentPatient.bh.accumulated) || 0;
-        // Nota: Se o senhor tiver o valor exato do balanço 24h salvo no Firebase, pode somar aqui. 
-        // Caso contrário, ele herda o que foi digitado no campo "BH Ant."
+        // Helper inline para números (caso safeNum não esteja acessível)
+        const toNum = (val) => parseFloat(String(val ?? 0).replace(",", ".")) || 0;
 
-        // 3. Cria a "Folha em Branco" para o plantão de hoje
+        // Calcula o balanço de 24h do dia que está sendo fechado
+        const bhAtual = currentPatient.bh || {};
+        const gains = bhAtual.gains || {};
+        const losses = bhAtual.losses || {};
+        const irrigation = bhAtual.irrigation || {};
+        const insensibleLoss = toNum(bhAtual.insensibleLoss);
+
+        // Ganhos: soma todos os valores de todas as horas
+        const totalGains = Object.values(gains).reduce((acc, hora) => {
+          if (!hora) return acc;
+          return acc + Object.values(hora).reduce((a, v) => a + toNum(v), 0);
+        }, 0);
+
+        // Perdas: soma todos os valores de todas as horas
+        const totalLosses = Object.values(losses).reduce((acc, hora) => {
+          if (!hora) return acc;
+          return acc + Object.values(hora).reduce((a, v) => a + toNum(v), 0);
+        }, 0);
+
+        // Irrigação: soma todos os valores
+        const totalIrrigation = Object.values(irrigation).reduce((acc, val) => acc + toNum(val), 0);
+
+        // Balanço do dia = ganhos - perdas - irrigação - perdas insensíveis
+        const balanco24h = totalGains - totalLosses - totalIrrigation - insensibleLoss;
+
+        // Saldo anterior = accumulated antigo + balanço do dia fechado
+        const accumulatedAnterior = toNum(bhAtual.accumulated);
+        const saldoAnterior = accumulatedAnterior + balanco24h;
+
         const novoBHzero = {
           date: logicalToday,
           gains: {},
           losses: {},
           vitals: {},
           irrigation: {},
-          customGains: currentPatient.bh.customGains || [], // Mantém os itens customizados criados pela equipe
+          customGains: currentPatient.bh.customGains || [],
           customLosses: currentPatient.bh.customLosses || [],
-          accumulated: saldoAnterior, 
+          accumulated: saldoAnterior,
           insensibleLoss: 0
         };
 
-        // 4. Salva no Banco de Dados (Transação Blindada)
         try {
           let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
           const apenasNumero = String(idBruto).replace(/bed_/g, "");
@@ -837,22 +857,19 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           const leitoRef = doc(db, "leitos_uti", docId);
 
           await updateDoc(leitoRef, {
-            // Empurra o BH antigo para o cofre do histórico
             historico_bh: [...historicoAntigo, currentPatient.bh],
-            // Substitui o BH atual pela folha em branco
             bh: novoBHzero
           });
 
-          console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso.`);
+          console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso. BH Ant.: ${saldoAnterior} (anterior: ${accumulatedAnterior} + balanço 24h: ${balanco24h}).`);
         } catch (error) {
           console.error("[SYS4U] Erro crítico ao automatizar fechamento do BH:", error);
         }
       }
     };
 
-    // Roda a verificação toda vez que o paciente mudar ou o componente montar
     automatizarFechamentoBH();
-  }, [currentPatient, db]); // Remova o getLogicalDate das dependências se ele estiver definido fora do componente ou use useCallback
+  }, [currentPatient, db]);
 
   // Efeito para buscar a fila de espera da UTI em tempo real
   useEffect(() => {

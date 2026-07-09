@@ -67,7 +67,8 @@ const ModuloAdmin = ({ userProfile }) => {
     if (cat === 'Enfermeiro' || cat === 'Téc. Enfermagem') conselhoPadrao = 'COREN';
     if (cat === 'Fisioterapeuta') conselhoPadrao = 'CREFITO';
     if (cat === 'Nutricionista') conselhoPadrao = 'CRN';
-    if (cat === 'Fonoaudiólogo') conselhoPadrao = 'CREFONO';
+    if (cat === 'Fonoaudiólogo') conselhoPadrao = 'CREFA';
+    if (cat === 'Psicólogo') conselhoPadrao = 'CRP';
     if (cat === 'Administrativo') conselhoPadrao = 'CPF';
 
     setNovoProfissional({ ...novoProfissional, categoria: cat, conselho: conselhoPadrao });
@@ -597,6 +598,7 @@ const handleAtribuirVinculo = async (e) => {
                   <option value="Fisioterapeuta">Fisioterapeuta</option>
                   <option value="Nutricionista">Nutricionista</option>
                   <option value="Fonoaudiólogo">Fonoaudiólogo</option>
+                  <option value="Psicólogo">Psicólogo</option>
                   
                   {/* Chefias e Coordenações */}
                   <option value="Gerente de Enfermagem">Gerente de Enfermagem</option>
