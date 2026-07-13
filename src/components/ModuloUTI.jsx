@@ -4855,22 +4855,45 @@ const userRole = userProfile?.role || userProfile?.perfil;
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
           {/* ========================================== */}
           <div className="flex-1 w-full min-w-0 order-1 md:order-2">
-            
-            {/* WRAPPER STICKY - leitos + header do paciente (apenas desktop) */}
-            <div className="md:sticky md:top-0 md:z-50">
-              
-            {/* BARRA DE LEITOS */}
-            <div className={`
-              relative z-40 flex gap-2 scrollbar-hide print:hidden overflow-x-auto p-1.5 rounded-2xl
-              transition-all duration-300
-              bg-white/95 backdrop-blur-sm border border-white shadow-md md:bg-transparent md:backdrop-blur-none md:border-0 md:shadow-none md:rounded-none md:py-3
-              md:justify-center md:overflow-visible md:bg-transparent md:border-0 md:shadow-none md:rounded-none md:py-3
-              ${isScrolled
-                ? 'md:fixed md:top-1/2 md:right-3 md:-translate-y-1/2 md:flex-col md:z-[55] md:gap-1.5 md:py-2 md:px-1.5 md:bg-transparent md:border-0 md:shadow-none md:rounded-none'
-                : ''
-              }
-            `}>
+
+            {/* BARRA DE LEITOS - TOPO (scrolla normalmente, some ao descer) */}
+            <div className="relative z-40 flex gap-2 scrollbar-hide print:hidden overflow-x-auto p-1.5 mb-6 bg-white border border-slate-200 rounded-2xl shadow-sm md:bg-transparent md:border-0 md:shadow-none md:rounded-none md:justify-center md:overflow-visible md:py-3">
               {patients.map((p, idx) => {
+              if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
+                return null;
+              }
+              const isActive = activeTab === idx;
+              const dataInternacao = p.dataInternacaoISO || p.dataInternacao || "";
+              const hasPsiPendente = (p.psychology?.solicitacoes || []).some(s => {
+                if (s.status === 'Concluída') return false;
+                if (!dataInternacao) return true;
+                return new Date(s.data) >= new Date(dataInternacao);
+              });
+              const showPsiBadge = userRole === 'Psicólogo' && hasPsiPendente;
+              return (
+                <button
+                  key={p.id || idx}
+                  onClick={() => setActiveTab(idx)}
+                  className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center relative ${
+                    isActive
+                      ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
+                      : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
+                  }`}
+                >
+                  {showPsiBadge && (
+                    <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse z-10"></span>
+                  )}
+                  <span className="text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">Leito</span>
+                  <span className="text-xl leading-none">{p.leito}</span>
+                </button>
+              );
+            })}
+          </div>
+
+            {/* BARRA DE LEITOS - LATERAL DIREITA (fixed, só no scroll, só desktop) */}
+            {isScrolled && (
+              <div className="hidden md:flex fixed top-1/2 right-3 -translate-y-1/2 z-[55] flex-col gap-1.5 py-2 px-1.5 print:hidden">
+                {patients.map((p, idx) => {
                 if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
                   return null;
                 }
@@ -4884,24 +4907,23 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 const showPsiBadge = userRole === 'Psicólogo' && hasPsiPendente;
                 return (
                   <button
-                    key={p.id || idx}
+                    key={`side-${p.id || idx}`}
                     onClick={() => setActiveTab(idx)}
-                    className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all duration-300 border flex flex-col items-center justify-center relative
-                      ${isScrolled ? 'md:!w-9 md:!h-9 md:!rounded-lg' : ''}
-                      ${isActive
-                        ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
+                    className={`flex-shrink-0 w-9 h-9 rounded-lg font-bold transition-all border flex flex-col items-center justify-center relative text-xs ${
+                      isActive
+                        ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md"
                         : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
-                      }`}
+                    }`}
                   >
                     {showPsiBadge && (
-                      <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-white animate-pulse z-10"></span>
+                      <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white animate-pulse z-10"></span>
                     )}
-                    <span className={`text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5 ${isScrolled ? 'md:!hidden' : ''}`}>Leito</span>
-                    <span className={`text-xl leading-none ${isScrolled ? 'md:!text-xs' : ''}`}>{p.leito}</span>
+                    {p.leito}
                   </button>
                 );
               })}
             </div>
+          )}
 
               {/* HEADER DO PACIENTE */}
               <div className="bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center print:hidden md:sticky md:top-0 md:z-40">
@@ -4943,9 +4965,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 </span>
               </div>
 
-            </div>
-
-            <div className={`relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px] ${isScrolled ? 'md:pr-14' : ''}`}>
+            <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px]">
               {!currentPatient.nome ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500 py-20">
                   <UserPlus size={64} className="mb-4 text-slate-300" />
