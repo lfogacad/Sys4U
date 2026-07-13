@@ -715,6 +715,13 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     }
   }, [viewMode]);
 
+  // Detecta se o usuário rolou a tela para baixo (para mudar a cor do menu)
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 120);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   // Sincroniza Carrinho de EMG (por mês selecionado)
   useEffect(() => {
     if (!db || !mesFiltroCarrinhoEMG) return;
@@ -4501,6 +4508,8 @@ const ROLE_PERMISSIONS = {
   }
 };
 
+const [isScrolled, setIsScrolled] = useState(false);
+
 // 1. LÊ O CRACHÁ: Aceita tanto 'role' quanto 'perfil' vindo do Firebase
 const userRole = userProfile?.role || userProfile?.perfil;
 
@@ -4687,49 +4696,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
       {/* CORPO PRINCIPAL (LEITOS + ABAS LATERAIS) */}
       {/* ========================================== */}
       <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0 print:p-0">
-        
-        {/* BARRA DE LEITOS (Design Main) */}
-        <div className="relative z-40 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 scrollbar-hide print:hidden border border-white">
-          {patients.map((p, idx) => {
-
-            if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
-              return null;
-            }
-
-            const isActive = activeTab === idx;
-
-            // Verifica solicitações de psicologia pendentes e posteriores à internação
-            const dataInternacao = p.dataInternacaoISO || p.dataInternacao || "";
-            const hasPsiPendente = (p.psychology?.solicitacoes || []).some(s => {
-              if (s.status === 'Concluída') return false;
-              if (!dataInternacao) return true; // sem data de internação, mostra
-              return new Date(s.data) >= new Date(dataInternacao);
-            });
-            const showPsiBadge = userRole === 'Psicólogo' && hasPsiPendente;
-
-            return (
-              <button
-                key={p.id || idx}
-                onClick={() => setActiveTab(idx)}
-                className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center relative ${
-                  isActive
-                    ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
-                    : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
-                }`}
-              >
-                {showPsiBadge && (
-                  <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse z-10"></span>
-                )}
-                <span className="text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">Leito</span>
-                <span className="text-xl leading-none">{p.leito}</span>
-              </button>
-            );
-          })}
-        </div>
-
         {/* CONTAINER DE DUAS COLUNAS NO PC */}
         <div className="flex flex-col md:flex-row gap-4 md:gap-6 relative mt-2">
-          
           {/* FUNDO DE HEXÁGONOS */}
           <img 
             src="/hexagons.svg" 
@@ -4737,17 +4705,12 @@ const userRole = userProfile?.role || userProfile?.perfil;
             className="absolute -top-6 right-0 md:-right-40 w-[280px] md:w-[350px] opacity-5 pointer-events-none z-0" 
             onError={(e) => e.target.style.display = 'none'}
           />
-
-          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE (Carrossel 3D Mobile) */}
-          <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6">
+          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE */}
+          <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6 order-2 md:order-1">
             <div className="relative mb-6 md:mb-0 print:hidden">
-
-              {/* CONTAINER DO CARROSSEL AJUSTADO PARA WEBKIT/IOS + ERGONOMIA V2 */}
               <div
                 ref={navScrollRef}
-                // SUTURA 1: Mantém a aceleração de hardware nativa de rolagem da Apple
                 style={{ WebkitOverflowScrolling: 'touch' }} 
-                // SUTURA 2: gap-4 adicionado conforme sua v2. Remoção do px-[40vw] e adição do touch-pan-x e pseudo-elementos
                 className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-4 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center touch-pan-x
                   before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden
                   after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden
@@ -4891,23 +4854,68 @@ const userRole = userProfile?.role || userProfile?.perfil;
           {/* ========================================== */}
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
           {/* ========================================== */}
-          <div className="flex-1 w-full min-w-0">
-            <div className="sticky top-0 z-40 bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center print:hidden">
+          <div className="flex-1 w-full min-w-0 order-1 md:order-2">
+            
+            {/* WRAPPER STICKY - leitos + header do paciente (apenas desktop) */}
+            <div className="md:sticky md:top-0 md:z-50">
               
-              <div className="flex items-center gap-3 flex-wrap">
-                {/* O NOME AGORA É UM BOTÃO */}
-                <button 
-                  onClick={() => currentPatient.nome && setShowPatientDataModal(true)}
-                  className={`text-lg font-extrabold text-teal-600 uppercase transition-all flex items-center gap-2 ${
-                    currentPatient.nome ? "hover:text-teal-800 cursor-pointer hover:scale-[1.01]" : "cursor-default"
-                  }`}
-                  title={currentPatient.nome ? "Ver dados cadastrais" : ""}
-                >
-                  {currentPatient.nome || "LEITO DISPONÍVEL"}
-                  {currentPatient.nome && <FileText size={16} className="text-teal-400 opacity-50" />}
-                </button>
-                
-                {/* BOTÃO DA LIXEIRA + TROCA DE LEITO */}
+            {/* BARRA DE LEITOS */}
+            <div className={`
+              relative z-40 flex gap-2 scrollbar-hide print:hidden overflow-x-auto p-1.5 rounded-2xl
+              transition-all duration-300
+              bg-white/95 backdrop-blur-sm border border-white shadow-md md:bg-transparent md:backdrop-blur-none md:border-0 md:shadow-none md:rounded-none md:py-3
+              md:justify-center md:overflow-visible md:bg-transparent md:border-0 md:shadow-none md:rounded-none md:py-3
+              ${isScrolled
+                ? 'md:fixed md:top-1/2 md:right-3 md:-translate-y-1/2 md:flex-col md:z-[55] md:gap-1.5 md:py-2 md:px-1.5 md:bg-transparent md:border-0 md:shadow-none md:rounded-none'
+                : ''
+              }
+            `}>
+              {patients.map((p, idx) => {
+                if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
+                  return null;
+                }
+                const isActive = activeTab === idx;
+                const dataInternacao = p.dataInternacaoISO || p.dataInternacao || "";
+                const hasPsiPendente = (p.psychology?.solicitacoes || []).some(s => {
+                  if (s.status === 'Concluída') return false;
+                  if (!dataInternacao) return true;
+                  return new Date(s.data) >= new Date(dataInternacao);
+                });
+                const showPsiBadge = userRole === 'Psicólogo' && hasPsiPendente;
+                return (
+                  <button
+                    key={p.id || idx}
+                    onClick={() => setActiveTab(idx)}
+                    className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all duration-300 border flex flex-col items-center justify-center relative
+                      ${isScrolled ? 'md:!w-9 md:!h-9 md:!rounded-lg' : ''}
+                      ${isActive
+                        ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
+                        : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
+                      }`}
+                  >
+                    {showPsiBadge && (
+                      <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-white animate-pulse z-10"></span>
+                    )}
+                    <span className={`text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5 ${isScrolled ? 'md:!hidden' : ''}`}>Leito</span>
+                    <span className={`text-xl leading-none ${isScrolled ? 'md:!text-xs' : ''}`}>{p.leito}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+              {/* HEADER DO PACIENTE */}
+              <div className="bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center print:hidden md:sticky md:top-0 md:z-40">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button 
+                    onClick={() => currentPatient.nome && setShowPatientDataModal(true)}
+                    className={`text-lg font-extrabold text-teal-600 uppercase transition-all flex items-center gap-2 ${
+                      currentPatient.nome ? "hover:text-teal-800 cursor-pointer hover:scale-[1.01]" : "cursor-default"
+                    }`}
+                    title={currentPatient.nome ? "Ver dados cadastrais" : ""}
+                  >
+                    {currentPatient.nome || "LEITO DISPONÍVEL"}
+                    {currentPatient.nome && <FileText size={16} className="text-teal-400 opacity-50" />}
+                  </button>
                   {currentPatient.nome && (userProfile?.perfil === "Enfermeiro" || userProfile?.role === "Enfermeiro" || userProfile?.perfil === "Desenvolvedor" || userProfile?.role === "Desenvolvedor") && (
                     <div className="flex items-center gap-1">
                       <button onClick={() => setModalTrocaLeito({ isOpen: true, novoLeito: '' })} className="text-slate-300 hover:text-amber-500 transition-colors" title="Transferir para outro leito">
@@ -4918,30 +4926,26 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       </button>
                     </div>
                   )}
-
-                {/* --- NOVA CÁPSULA DE IDADE --- */}
-                {currentPatient.dataNascimento && (
-                  <span className="bg-teal-600 text-white px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm">
-                    {calculateAge(currentPatient.dataNascimento)} anos
-                  </span>
-                )}
-                {/* ========================================================================= */}
-                {/* 🚨 ALERTA DE PRECAUÇÃO DE CONTATO (CCIH) - VEM DO MÓDULO DE CULTURAS (IA) */}
-                {/* ========================================================================= */}
-                {currentPatient.medical?.isolamentoContato && (
-                  <div className="flex items-center gap-1.5 px-3 py-1 bg-red-100 border border-red-300 text-red-700 rounded-full text-xs font-black uppercase shadow-sm animate-pulse">
-                    <ShieldAlert size={14} />
-                    Precaução de Contato ({currentPatient.medical?.motivoIsolamento})
-                  </div>
-                )}
+                  {currentPatient.dataNascimento && (
+                    <span className="bg-teal-600 text-white px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm">
+                      {calculateAge(currentPatient.dataNascimento)} anos
+                    </span>
+                  )}
+                  {currentPatient.medical?.isolamentoContato && (
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-red-100 border border-red-300 text-red-700 rounded-full text-xs font-black uppercase shadow-sm animate-pulse">
+                      <ShieldAlert size={14} />
+                      Precaução de Contato ({currentPatient.medical?.motivoIsolamento})
+                    </div>
+                  )}
+                </div>
+                <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold whitespace-nowrap">
+                  Leito {currentPatient.leito}
+                </span>
               </div>
-              
-              <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold whitespace-nowrap">
-                Leito {currentPatient.leito}
-              </span>
+
             </div>
 
-            <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px]">
+            <div className={`relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px] ${isScrolled ? 'md:pr-14' : ''}`}>
               {!currentPatient.nome ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500 py-20">
                   <UserPlus size={64} className="mb-4 text-slate-300" />
