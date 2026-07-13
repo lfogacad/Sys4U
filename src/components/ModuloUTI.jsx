@@ -806,37 +806,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
         const historicoAntigo = currentPatient.historico_bh || [];
 
-        // Helper inline para números (caso safeNum não esteja acessível)
-        const toNum = (val) => parseFloat(String(val ?? 0).replace(",", ".")) || 0;
-
-        // Calcula o balanço de 24h do dia que está sendo fechado
-        const bhAtual = currentPatient.bh || {};
-        const gains = bhAtual.gains || {};
-        const losses = bhAtual.losses || {};
-        const irrigation = bhAtual.irrigation || {};
-        const insensibleLoss = toNum(bhAtual.insensibleLoss);
-
-        // Ganhos: soma todos os valores de todas as horas
-        const totalGains = Object.values(gains).reduce((acc, hora) => {
-          if (!hora) return acc;
-          return acc + Object.values(hora).reduce((a, v) => a + toNum(v), 0);
-        }, 0);
-
-        // Perdas: soma todos os valores de todas as horas
-        const totalLosses = Object.values(losses).reduce((acc, hora) => {
-          if (!hora) return acc;
-          return acc + Object.values(hora).reduce((a, v) => a + toNum(v), 0);
-        }, 0);
-
-        // Irrigação: soma todos os valores
-        const totalIrrigation = Object.values(irrigation).reduce((acc, val) => acc + toNum(val), 0);
-
-        // Balanço do dia = ganhos - perdas - irrigação - perdas insensíveis
-        const balanco24h = totalGains - totalLosses - totalIrrigation - insensibleLoss;
-
-        // Saldo anterior = accumulated antigo + balanço do dia fechado
-        const accumulatedAnterior = toNum(bhAtual.accumulated);
-        const saldoAnterior = accumulatedAnterior + balanco24h;
+        // Usa calculateTotals (já testada e correta) em vez de cálculo inline
+        const { accumulated: saldoAnterior } = calculateTotals(currentPatient.bh, currentPatient.nutri?.peso);
 
         const novoBHzero = {
           date: logicalToday,
@@ -846,7 +817,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           irrigation: {},
           customGains: currentPatient.bh.customGains || [],
           customLosses: currentPatient.bh.customLosses || [],
-          accumulated: saldoAnterior,
+          accumulated: saldoAnterior || 0,
           insensibleLoss: 0
         };
 
@@ -858,10 +829,28 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
           await updateDoc(leitoRef, {
             historico_bh: [...historicoAntigo, currentPatient.bh],
+            bh_previous: { ...currentPatient.bh },   // ← PROBLEMA 2 CORRIGIDO
             bh: novoBHzero
           });
 
-          console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso. BH Ant.: ${saldoAnterior} (anterior: ${accumulatedAnterior} + balanço 24h: ${balanco24h}).`);
+          // Atualiza o estado local imediatamente (não espera o onSnapshot)
+          setPatients(prev => {
+            const novos = [...prev];
+            const idx = novos.findIndex(p => 
+              p.id === currentPatient.id || p.leito === currentPatient.leito
+            );
+            if (idx !== -1) {
+              novos[idx] = {
+                ...novos[idx],
+                historico_bh: [...historicoAntigo, currentPatient.bh],
+                bh_previous: { ...currentPatient.bh },
+                bh: novoBHzero
+              };
+            }
+            return novos;
+          });
+
+          console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso. BH Ant.: ${saldoAnterior}.`);
         } catch (error) {
           console.error("[SYS4U] Erro crítico ao automatizar fechamento do BH:", error);
         }
@@ -1380,12 +1369,18 @@ const clearAntibiotic = (i) => {
     const p = JSON.parse(JSON.stringify(up[activeTab]));
 
     const { accumulated } = calculateTotals(p.bh || {}, p.nutri?.peso);
+    
+    // Adiciona ao histórico (não só bh_previous)
+    if (!p.historico_bh) p.historico_bh = [];
+    p.historico_bh.push({ ...(p.bh || {}) });
+    
     p.bh_previous = { ...(p.bh || {}) };
     p.bh = {
       date: getManausDateStr(),
       accumulated: accumulated || 0,
       insensibleLoss: p.bh?.insensibleLoss || 0,
-      gains: {}, losses: {}, irrigation: {}, vitals: {}, customGains: p.bh?.customGains || [], customLosses: p.bh?.customLosses || [],
+      gains: {}, losses: {}, irrigation: {}, vitals: {}, 
+      customGains: p.bh?.customGains || [], customLosses: p.bh?.customLosses || [],
     };
 
     up[activeTab] = p;
