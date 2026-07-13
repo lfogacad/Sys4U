@@ -4696,25 +4696,35 @@ const userRole = userProfile?.role || userProfile?.perfil;
         {/* BARRA DE LEITOS (Design Main) */}
         <div className="relative z-40 bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl shadow-md mb-6 flex overflow-x-auto gap-2 scrollbar-hide print:hidden border border-white">
           {patients.map((p, idx) => {
-            
-            // 👇 A MÁGICA DO LEITO FANTASMA: 
-            // Se for o leito 11 e o perfil NÃO tiver permissão na matriz, o botão não é desenhado.
+
             if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
-              return null; 
+              return null;
             }
 
             const isActive = activeTab === idx;
-            
+
+            // Verifica solicitações de psicologia pendentes e posteriores à internação
+            const dataInternacao = p.dataInternacaoISO || p.dataInternacao || "";
+            const hasPsiPendente = (p.psychology?.solicitacoes || []).some(s => {
+              if (s.status === 'Concluída') return false;
+              if (!dataInternacao) return true; // sem data de internação, mostra
+              return new Date(s.data) >= new Date(dataInternacao);
+            });
+            const showPsiBadge = userRole === 'Psicólogo' && hasPsiPendente;
+
             return (
               <button
                 key={p.id || idx}
                 onClick={() => setActiveTab(idx)}
-                className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center ${
+                className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center relative ${
                   isActive
                     ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
                     : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
                 }`}
               >
+                {showPsiBadge && (
+                  <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse z-10"></span>
+                )}
                 <span className="text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">Leito</span>
                 <span className="text-xl leading-none">{p.leito}</span>
               </button>
