@@ -6,8 +6,17 @@ const HeaderGlobal = ({ user, unidade, onSignOut }) => {
     <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm">
       {/* Lado Esquerdo: Logo e Unidade */}
       <div className="flex items-center gap-4">
-        <div className="bg-emerald-600 text-white p-2 rounded-xl shadow-sm">
-          <Hospital size={28} />
+        <div className="w-14 h-14 flex items-center justify-center">
+          <img 
+            src="/logo.png" 
+            alt="Sys4U" 
+            className="w-full h-full object-contain"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'block';
+            }}
+          />
+          <Hospital size={28} className="text-blue-500 hidden" />
         </div>
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Sys4U</h1>
