@@ -88,12 +88,21 @@ const Sys4ULogo = ({ variant = 'mobile' }) => {
   if (variant === 'desktop') {
     return (
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-sm ring-1 ring-white/20 flex items-center justify-center">
-          <Activity className="w-7 h-7 text-white" />
+        <div className="w-14 h-14 rounded-xl bg-white/15 backdrop-blur-sm ring-1 ring-white/20 flex items-center justify-center p-1">
+          <img 
+            src="/logobranca.png" 
+            alt="Sys4U" 
+            className="w-full h-full object-contain"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'block';
+            }}
+          />
+          <Activity className="w-7 h-7 text-white hidden" />
         </div>
         <div>
           <h1 className="text-xl font-bold text-white">Sys4U</h1>
-          <p className="text-sm text-teal-100">Ecossistema de Saúde v2.0</p>
+          <p className="text-sm text-teal-100">Assistente em Saúde</p>
         </div>
       </div>
     );
@@ -101,11 +110,20 @@ const Sys4ULogo = ({ variant = 'mobile' }) => {
 
   return (
     <div>
-      <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-teal-400 flex items-center justify-center shadow-lg">
-        <Activity className="w-8 h-8 text-white" />
+      <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-teal-400 flex items-center justify-center shadow-lg p-1.5">
+        <img 
+          src="/logobranca.png" 
+          alt="Sys4U" 
+          className="w-full h-full object-contain"
+          onError={(e) => {
+            e.target.style.display = 'none';
+            e.target.nextSibling.style.display = 'block';
+          }}
+        />
+        <Activity className="w-8 h-8 text-white hidden" />
       </div>
       <h1 className="text-2xl font-black text-slate-900 text-center mt-4">Sys4U</h1>
-      <p className="text-sm text-slate-500 text-center mt-1">Ecossistema de Saúde v2.0</p>
+      <p className="text-sm text-slate-500 text-center mt-1">Assistente em Saúde</p>
     </div>
   );
 };
