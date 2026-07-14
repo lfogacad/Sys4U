@@ -145,7 +145,7 @@ const OverviewTab = ({
 
         <div className="p-4 bg-lime-50 border border-lime-100 rounded-xl">
           <h4 className="font-bold text-lime-800 mb-2 flex items-center gap-2"><Utensils size={16} /> Nutrição</h4>
-          <p className="text-sm">Via: <b>{currentPatient.nutri?.via || "Zero"}</b></p>
+          <p className="text-sm">Via: <b>{currentPatient.nutri?.via || "Aguarda Avaliação"}</b></p>
           {currentPatient.nutri?.via === "Oral" && <p className="text-xs text-lime-600 mt-1">Consistência: <b>{currentPatient.fono?.consistencia || "-"}</b></p>}
           {(currentPatient.nutri?.via === "Enteral" || currentPatient.nutri?.via === "Parenteral") && (
             <div className="text-xs text-lime-600 mt-1">
