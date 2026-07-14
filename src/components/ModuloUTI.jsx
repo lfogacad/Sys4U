@@ -4706,7 +4706,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
             onError={(e) => e.target.style.display = 'none'}
           />
           {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE */}
-          <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6 order-2 md:order-1">
+          <div className="w-full md:w-12 flex-shrink-0 relative z-20 print:hidden self-start md:sticky md:top-6 md:mt-20 order-2 md:order-1">
             <div className="relative mb-6 md:mb-0 print:hidden">
               <div
                 ref={navScrollRef}
@@ -4857,7 +4857,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
           <div className="flex-1 w-full min-w-0 order-1 md:order-2">
 
             {/* BARRA DE LEITOS - TOPO (scrolla normalmente, some ao descer) */}
-            <div className="relative z-40 flex gap-2 scrollbar-hide print:hidden overflow-x-auto p-1.5 mb-6 bg-white border border-slate-200 rounded-2xl shadow-sm md:bg-transparent md:border-0 md:shadow-none md:rounded-none md:justify-center md:overflow-visible md:py-3">
+            <div className="relative z-40 md:-mt-2 flex gap-2 scrollbar-hide print:hidden overflow-x-auto p-1.5 mb-6 bg-white border border-slate-200 rounded-2xl shadow-sm md:bg-transparent md:border-0 md:shadow-none md:rounded-none md:justify-center md:overflow-visible md:py-3">
               {patients.map((p, idx) => {
               if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
                 return null;
@@ -4876,8 +4876,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   onClick={() => setActiveTab(idx)}
                   className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center relative ${
                     isActive
-                      ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md scale-105"
-                      : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
+                      ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent ring-1 ring-white/60 text-white shadow-md scale-105"
+                      : "bg-slate-50 border-slate-300/60 text-slate-500 hover:bg-slate-100 shadow-sm"
                   }`}
                 >
                   {showPsiBadge && (
