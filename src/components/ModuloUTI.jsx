@@ -4706,7 +4706,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
             onError={(e) => e.target.style.display = 'none'}
           />
           {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE */}
-          <div className="w-full md:w-12 flex-shrink-0 relative z-20 print:hidden self-start md:sticky md:top-6 md:mt-20 order-2 md:order-1">
+          <div className="w-full md:w-12 flex-shrink-0 relative z-30 print:hidden self-start md:sticky md:top-6 md:mt-20 order-2 md:order-1">
             <div className="relative mb-6 md:mb-0 print:hidden">
               <div
                 ref={navScrollRef}
@@ -4874,10 +4874,10 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 <button
                   key={p.id || idx}
                   onClick={() => setActiveTab(idx)}
-                  className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border flex flex-col items-center justify-center relative ${
+                  className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border-2 flex flex-col items-center justify-center relative ${
                     isActive
-                      ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent ring-1 ring-white/60 text-white shadow-md scale-105"
-                      : "bg-slate-50 border-slate-300/60 text-slate-500 hover:bg-slate-100 shadow-sm"
+                      ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-white/60 ring-2 ring-white/50 text-white shadow-lg shadow-teal-500/40 scale-110 backdrop-blur-sm"
+                      : "bg-white/10 hover:bg-white/20 border-white/40 backdrop-blur-sm text-white/80 hover:text-white shadow-sm"
                   }`}
                 >
                   {showPsiBadge && (
