@@ -10,7 +10,7 @@ import {
   FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ReferenceLine, Label  
 } from 'recharts';
 import { collection, onSnapshot, getDocs, getDoc, doc, setDoc, orderBy, limit, updateDoc, query, where } from "firebase/firestore";
@@ -91,6 +91,52 @@ const GestorDashboard = ({ userProfile }) => {
     respTroca: false, detTroca: '', dataTroca: '',
     microCultura: false, germeCultura: '', dataCultura: ''
   });
+
+  const [historicoDensidadePAV, setHistoricoDensidadePAV] = useState([]);
+  const [historicoDensidadeITU, setHistoricoDensidadeITU] = useState([]);
+  const [historicoDensidadeIPCSC, setHistoricoDensidadeIPCSC] = useState([]);
+
+  useEffect(() => {
+    const buscarHistorico = async () => {
+      if (!db) return;
+      const meses = [];
+      const hoje = new Date();
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+        const mesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
+        meses.push({ mesAno, label });
+      }
+      const resultadoPAV = [];
+      const resultadoIPCSC = [];
+      const resultadoITU = [];
+      for (const { mesAno, label } of meses) {
+        const [snapCenso, snapPAV, snapIPCSC, snapITU] = await Promise.all([
+          getDocs(query(collection(db, "censo_diario"), where("data", ">=", `${mesAno}-01`), where("data", "<=", `${mesAno}-31`))),
+          getDocs(query(collection(db, "auditorias_pav"), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado"))),
+          getDocs(query(collection(db, "auditorias_ipcsc"), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado"))),
+          getDocs(query(collection(db, "auditorias_itu"), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado")))
+        ]);
+        let diasVM = 0, diasCVC = 0, diasSVD = 0;
+        snapCenso.forEach(d => {
+          const c = d.data();
+          diasVM += (Number(c.pacientesEmVM) || 0);
+          diasCVC += (Number(c.pacientesComCVC) || 0);
+          diasSVD += (Number(c.pacientesComSVD) || 0);
+        });
+        const casosPAV = snapPAV.size;
+        const casosIPCSC = snapIPCSC.size;
+        const casosITU = snapITU.size;
+        resultadoPAV.push({ mes: label, di: parseFloat((diasVM > 0 ? (casosPAV / diasVM) * 1000 : 0).toFixed(2)), casos: casosPAV, diasVM });
+        resultadoIPCSC.push({ mes: label, di: parseFloat((diasCVC > 0 ? (casosIPCSC / diasCVC) * 1000 : 0).toFixed(2)), casos: casosIPCSC, diasCVC });
+        resultadoITU.push({ mes: label, di: parseFloat((diasSVD > 0 ? (casosITU / diasSVD) * 1000 : 0).toFixed(2)), casos: casosITU, diasSVD });
+      }
+      setHistoricoDensidadePAV(resultadoPAV);
+      setHistoricoDensidadeIPCSC(resultadoIPCSC);
+      setHistoricoDensidadeITU(resultadoITU);
+    };
+    buscarHistorico();
+  }, [db]);
 
   // CONTROLES DA AUDITORIA AUTOMATIZADA (IPCS-C)
   const [auditoriasIPCSC, setAuditoriasIPCSC] = useState([]);
@@ -4959,6 +5005,94 @@ const GestorDashboard = ({ userProfile }) => {
                 </div>
               )}
 
+              {/* GRÁFICO DE DENSIDADE DE INCIDÊNCIA PAV — ÚLTIMOS 12 MESES */}
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 mt-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                  <TrendingUp size={20} className="text-teal-600" />
+                  Densidade de Incidência de PAV — Últimos 12 Meses
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  Casos de PAV confirmados por 1.000 dias de ventilação mecânica
+                </p>
+                {historicoDensidadePAV.length === 0 ? (
+                  <div className="h-64 flex items-center justify-center text-slate-400 animate-pulse font-bold">
+                    Carregando dados epidemiológicos...
+                  </div>
+                ) : (
+                  <>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <LineChart data={historicoDensidadePAV} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                        <XAxis 
+                          dataKey="mes" 
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                          axisLine={{ stroke: '#cbd5e1' }}
+                          tickLine={false}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                          axisLine={false}
+                          tickLine={false}
+                          label={{ value: 'DI / 1000 dias-VM', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }}
+                        />
+                        <Tooltip
+                          contentStyle={{ 
+                            backgroundColor: '#1e293b', 
+                            border: 'none', 
+                            borderRadius: '8px', 
+                            fontSize: '12px',
+                            color: '#fff'
+                          }}
+                          labelStyle={{ color: '#94a3b8', fontWeight: 'bold' }}
+                          formatter={(value, name) => {
+                            if (name === 'di') return [`${value} / 1000 dias-VM`, 'Densidade'];
+                            return [value, name];
+                          }}
+                          labelFormatter={(label) => {
+                            const item = historicoDensidadePAV.find(d => d.mes === label);
+                            return item ? `${label} | ${item.casos} casos | ${item.diasVM} dias-VM` : label;
+                          }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="di" 
+                          stroke="#0d9488" 
+                          strokeWidth={3}
+                          dot={{ fill: '#0d9488', r: 4 }}
+                          activeDot={{ r: 7, fill: '#14b8a6', stroke: '#fff', strokeWidth: 2 }}
+                          name="di"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+
+                    {/* RESUMO ESTATÍSTICO */}
+                    <div className="flex justify-between items-center mt-4 pt-4 border-t border-slate-100 flex-wrap gap-3">
+                      <div className="flex gap-6">
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Média 12 meses</span>
+                          <span className="text-lg font-black text-slate-700">
+                            {(historicoDensidadePAV.reduce((s, d) => s + d.di, 0) / historicoDensidadePAV.length).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Pico</span>
+                          <span className="text-lg font-black text-red-500">
+                            {Math.max(...historicoDensidadePAV.map(d => d.di)).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Mês atual</span>
+                          <span className="text-lg font-black text-teal-600">
+                            {historicoDensidadePAV[historicoDensidadePAV.length - 1]?.di.toFixed(2) || '0.00'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400 italic">DI = (Casos Confirmados ÷ Dias de VM) × 1000</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
             </div>
           )}
 
@@ -5421,6 +5555,95 @@ const GestorDashboard = ({ userProfile }) => {
                   </div>
                 </div>
               )}
+
+              {/* GRÁFICO DE DENSIDADE DE INCIDÊNCIA IPCS-C — ÚLTIMOS 12 MESES */}
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 mt-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                  <TrendingUp size={20} className="text-indigo-600" />
+                  Densidade de Incidência de IPCS-C — Últimos 12 Meses
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  Casos de IPCS-C confirmados por 1.000 dias de cateter central
+                </p>
+                {historicoDensidadeIPCSC.length === 0 ? (
+                  <div className="h-64 flex items-center justify-center text-slate-400 animate-pulse font-bold">
+                    Carregando dados epidemiológicos...
+                  </div>
+                ) : (
+                  <>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <LineChart data={historicoDensidadeIPCSC} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                        <XAxis 
+                          dataKey="mes" 
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                          axisLine={{ stroke: '#cbd5e1' }}
+                          tickLine={false}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                          axisLine={false}
+                          tickLine={false}
+                          label={{ value: 'DI / 1000 dias-CVC', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }}
+                        />
+                        <Tooltip
+                          contentStyle={{ 
+                            backgroundColor: '#1e293b', 
+                            border: 'none', 
+                            borderRadius: '8px', 
+                            fontSize: '12px',
+                            color: '#fff'
+                          }}
+                          labelStyle={{ color: '#94a3b8', fontWeight: 'bold' }}
+                          formatter={(value, name) => {
+                            if (name === 'di') return [`${value} / 1000 dias-CVC`, 'Densidade'];
+                            return [value, name];
+                          }}
+                          labelFormatter={(label) => {
+                            const item = historicoDensidadeIPCSC.find(d => d.mes === label);
+                            return item ? `${label} | ${item.casos} casos | ${item.diasCVC} dias-CVC` : label;
+                          }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="di" 
+                          stroke="#4f46e5" 
+                          strokeWidth={3}
+                          dot={{ fill: '#4f46e5', r: 4 }}
+                          activeDot={{ r: 7, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }}
+                          name="di"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+
+                    {/* RESUMO ESTATÍSTICO */}
+                    <div className="flex justify-between items-center mt-4 pt-4 border-t border-slate-100 flex-wrap gap-3">
+                      <div className="flex gap-6">
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Média 12 meses</span>
+                          <span className="text-lg font-black text-slate-700">
+                            {(historicoDensidadeIPCSC.reduce((s, d) => s + d.di, 0) / historicoDensidadeIPCSC.length).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Pico</span>
+                          <span className="text-lg font-black text-red-500">
+                            {Math.max(...historicoDensidadeIPCSC.map(d => d.di)).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Mês atual</span>
+                          <span className="text-lg font-black text-indigo-600">
+                            {historicoDensidadeIPCSC[historicoDensidadeIPCSC.length - 1]?.di.toFixed(2) || '0.00'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400 italic">DI = (Casos Confirmados ÷ Dias de CVC) × 1000</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
             </div>
           )}
 
@@ -5858,6 +6081,94 @@ const GestorDashboard = ({ userProfile }) => {
                   </div>
                 </div>
               )}
+
+              {/* GRÁFICO DE DENSIDADE DE INCIDÊNCIA ITU-AC — ÚLTIMOS 12 MESES */}
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 mt-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                  <TrendingUp size={20} className="text-violet-600" />
+                  Densidade de Incidência de ITU-AC — Últimos 12 Meses
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  Casos de ITU-AC confirmados por 1.000 dias de sonda vesical de demora
+                </p>
+                {historicoDensidadeITU.length === 0 ? (
+                  <div className="h-64 flex items-center justify-center text-slate-400 animate-pulse font-bold">
+                    Carregando dados epidemiológicos...
+                  </div>
+                ) : (
+                  <>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <LineChart data={historicoDensidadeITU} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                        <XAxis 
+                          dataKey="mes" 
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                          axisLine={{ stroke: '#cbd5e1' }}
+                          tickLine={false}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                          axisLine={false}
+                          tickLine={false}
+                          label={{ value: 'DI / 1000 dias-SVD', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }}
+                        />
+                        <Tooltip
+                          contentStyle={{ 
+                            backgroundColor: '#1e293b', 
+                            border: 'none', 
+                            borderRadius: '8px', 
+                            fontSize: '12px',
+                            color: '#fff'
+                          }}
+                          labelStyle={{ color: '#94a3b8', fontWeight: 'bold' }}
+                          formatter={(value, name) => {
+                            if (name === 'di') return [`${value} / 1000 dias-SVD`, 'Densidade'];
+                            return [value, name];
+                          }}
+                          labelFormatter={(label) => {
+                            const item = historicoDensidadeITU.find(d => d.mes === label);
+                            return item ? `${label} | ${item.casos} casos | ${item.diasSVD} dias-SVD` : label;
+                          }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="di" 
+                          stroke="#7c3aed" 
+                          strokeWidth={3}
+                          dot={{ fill: '#7c3aed', r: 4 }}
+                          activeDot={{ r: 7, fill: '#8b5cf6', stroke: '#fff', strokeWidth: 2 }}
+                          name="di"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+
+                    {/* RESUMO ESTATÍSTICO */}
+                    <div className="flex justify-between items-center mt-4 pt-4 border-t border-slate-100 flex-wrap gap-3">
+                      <div className="flex gap-6">
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Média 12 meses</span>
+                          <span className="text-lg font-black text-slate-700">
+                            {(historicoDensidadeITU.reduce((s, d) => s + d.di, 0) / historicoDensidadeITU.length).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Pico</span>
+                          <span className="text-lg font-black text-red-500">
+                            {Math.max(...historicoDensidadeITU.map(d => d.di)).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Mês atual</span>
+                          <span className="text-lg font-black text-violet-600">
+                            {historicoDensidadeITU[historicoDensidadeITU.length - 1]?.di.toFixed(2) || '0.00'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400 italic">DI = (Casos Confirmados ÷ Dias de SVD) × 1000</span>
+                    </div>
+                  </>
+                )}
+              </div>
 
             </div>
           )}
