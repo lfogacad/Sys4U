@@ -20,15 +20,11 @@ const HeaderGlobal = ({ user, unidade, onSignOut }) => {
         </div>
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Sys4U</h1>
-          {unidade ? (
-            <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
-              {unidade.instituicaoNome} • {unidade.unidadeNome}
-            </p>
-          ) : (
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Ecossistema de Saúde
-            </p>
-          )}
+          <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
+            {unidade?.instituicaoNome || unidade?.unidadeNome
+              ? `${unidade.instituicaoNome || ''}${unidade.instituicaoNome && unidade.unidadeNome ? ' • ' : ''}${unidade.unidadeNome || ''}`.trim() || 'Hospital Municipal de Ariquemes'
+              : 'Hospital Municipal de Ariquemes'}
+          </p>
         </div>
       </div>
 
