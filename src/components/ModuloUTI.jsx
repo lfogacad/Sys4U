@@ -4982,65 +4982,78 @@ const userRole = userProfile?.role || userProfile?.perfil;
             </div>
           )}
 
-              {/* HEADER DO PACIENTE */}
-              <div className="bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center print:hidden md:sticky md:top-0 md:z-40">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <button 
+          {/* HEADER DO PACIENTE */}
+          <div className="bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center print:hidden md:sticky md:top-0 md:z-40">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* MOBILE: texto puro | DESKTOP: botão clicável */}
+              {currentPatient.nome ? (
+                <>
+                  <span className="text-lg font-extrabold text-teal-600 uppercase md:hidden">
+                    {currentPatient.nome}
+                  </span>
+                  <button
                     onClick={() => currentPatient.nome && setShowPatientDataModal(true)}
-                    className={`text-lg font-extrabold text-teal-600 uppercase transition-all flex items-center gap-2 ${
-                      currentPatient.nome ? "hover:text-teal-800 cursor-pointer hover:scale-[1.01]" : "cursor-default"
-                    }`}
-                    title={currentPatient.nome ? "Ver dados cadastrais" : ""}
+                    className="hidden md:flex text-lg font-extrabold text-teal-600 uppercase transition-all items-center gap-2 hover:text-teal-800 cursor-pointer hover:scale-[1.01]"
+                    title="Ver dados cadastrais"
                   >
-                    {currentPatient.nome || "LEITO DISPONÍVEL"}
-                    {currentPatient.nome && <FileText size={16} className="text-teal-400 opacity-50" />}
+                    {currentPatient.nome}
+                    <FileText size={16} className="text-teal-400 opacity-50" />
                   </button>
-                  {currentPatient.nome && (userProfile?.perfil === "Enfermeiro" || userProfile?.role === "Enfermeiro" || userProfile?.perfil === "Desenvolvedor" || userProfile?.role === "Desenvolvedor") && (
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setModalTrocaLeito({ isOpen: true, novoLeito: '' })} className="text-slate-300 hover:text-amber-500 transition-colors" title="Transferir para outro leito">
-                        <ArrowRightLeft size={18} />
-                      </button>
-                      <button onClick={handleClearData} className="text-slate-300 hover:text-red-500 transition-colors" title="Liberar Leito">
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  )}
-                  {currentPatient.dataNascimento && (
-                    <span className="bg-teal-600 text-white px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm">
-                      {calculateAge(currentPatient.dataNascimento)} anos
-                    </span>
-                  )}
-                  {currentPatient.medical?.isolamentoContato && (
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-red-100 border border-red-300 text-red-700 rounded-full text-xs font-black uppercase shadow-sm animate-pulse">
-                      <ShieldAlert size={14} />
-                      Precaução de Contato ({currentPatient.medical?.motivoIsolamento})
-                    </div>
-                  )}
+                </>
+              ) : (
+                <span className="text-lg font-extrabold text-teal-600 uppercase">LEITO DISPONÍVEL</span>
+              )}
+
+              {/* Botões de transferir e liberar leito — somente desktop */}
+              {currentPatient.nome && (userProfile?.perfil === "Enfermeiro" || userProfile?.role === "Enfermeiro" || userProfile?.perfil === "Desenvolvedor" || userProfile?.role === "Desenvolvedor") && (
+                <div className="hidden md:flex items-center gap-1">
+                  <button onClick={() => setModalTrocaLeito({ isOpen: true, novoLeito: '' })} className="text-slate-300 hover:text-amber-500 transition-colors" title="Transferir para outro leito">
+                    <ArrowRightLeft size={18} />
+                  </button>
+                  <button onClick={handleClearData} className="text-slate-300 hover:text-red-500 transition-colors" title="Liberar Leito">
+                    <Trash2 size={18} />
+                  </button>
                 </div>
-                  <div className="flex items-center gap-2">
-                    {currentPatient.leito && (
-                      <button
-                        onClick={() => setIsModalAlertasOpen(true)}
-                        className={`relative p-1.5 rounded-lg transition-all ${
-                          alertasLeito.length > 0
-                            ? "text-red-500 bg-red-50 hover:bg-red-100"
-                            : "text-slate-300 hover:text-slate-500 hover:bg-slate-100"
-                        }`}
-                        title={alertasLeito.length > 0 ? `${alertasLeito.length} alerta(s) ativo(s)` : "Nenhum alerta"}
-                      >
-                        <AlertTriangle size={20} />
-                        {alertasLeito.length > 0 && (
-                          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                            {alertasLeito.length}
-                          </span>
-                        )}
-                      </button>
-                    )}
-                    <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold whitespace-nowrap">
-                      Leito {currentPatient.leito}
+              )}
+
+              {currentPatient.dataNascimento && (
+                <span className="bg-teal-600 text-white px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm">
+                  {calculateAge(currentPatient.dataNascimento)} anos
+                </span>
+              )}
+              {currentPatient.medical?.isolamentoContato && (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-red-100 border border-red-300 text-red-700 rounded-full text-xs font-black uppercase shadow-sm animate-pulse">
+                  <ShieldAlert size={14} />
+                  Precaução de Contato ({currentPatient.medical?.motivoIsolamento})
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Botão de alerta — somente desktop */}
+              {currentPatient.leito && (
+                <button
+                  onClick={() => setIsModalAlertasOpen(true)}
+                  className={`hidden md:flex relative p-1.5 rounded-lg transition-all ${
+                    alertasLeito.length > 0
+                      ? "text-red-500 bg-red-50 hover:bg-red-100"
+                      : "text-slate-300 hover:text-slate-500 hover:bg-slate-100"
+                  }`}
+                  title={alertasLeito.length > 0 ? `${alertasLeito.length} alerta(s) ativo(s)` : "Nenhum alerta"}
+                >
+                  <AlertTriangle size={20} />
+                  {alertasLeito.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                      {alertasLeito.length}
                     </span>
-                  </div>
-              </div>
+                  )}
+                </button>
+              )}
+              <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold whitespace-nowrap">
+                Leito {currentPatient.leito}
+              </span>
+            </div>
+          </div>
 
             <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px]">
               {!currentPatient.nome ? (
