@@ -4797,156 +4797,171 @@ const userRole = userProfile?.role || userProfile?.perfil;
             className="absolute -top-6 right-0 md:-right-40 w-[280px] md:w-[350px] opacity-5 pointer-events-none z-0" 
             onError={(e) => e.target.style.display = 'none'}
           />
-          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE */}
-          <div className="w-full md:w-12 flex-shrink-0 relative z-30 print:hidden self-start md:sticky md:top-6 md:mt-20 order-0 md:order-1">
-            <div className="relative mb-6 md:mb-0 print:hidden">
+{/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE (Carrossel Inteligente) */}
+<div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6 md:mt-20 order-1 md:order-1">
+  <div className="relative mb-6 md:mb-0 print:hidden">
+
+    {/* CONTAINER DO CARROSSEL */}
+    <div
+      ref={navScrollRef}
+      onScroll={handleNavScroll}
+      style={{ WebkitOverflowScrolling: 'touch' }} 
+      className={`flex overflow-x-auto md:overflow-visible md:flex-col pb-4 md:pb-0 scrollbar-hide items-center transition-all duration-300
+        ${allNavButtons.length > 3 
+          ? "gap-0 md:gap-3 snap-x snap-mandatory touch-pan-x before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden" 
+          : "gap-4 justify-center w-full"
+        }
+      `}
+    >
+      {allNavButtons.map((btn, index) => {
+        const isActive = viewMode === btn.id;
+        const poucasAbas = allNavButtons.length <= 3;
+        
+        const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
+
+        // --- CÁLCULO DA CASCATA 3D ---
+        const centerIndex = allNavButtons.findIndex(b => b.id === (centerTab || allNavButtons[0]?.id));
+        const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
+        const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
+
+        return (
+          <div
+            key={btn.id}
+            id={`nav-${btn.id}`}
+            style={{ zIndex: zIndexCascata }} 
+            className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out 
+              ${!poucasAbas ? 'snap-center' : ''} 
+              ${window.innerWidth < 768 && !poucasAbas ? '-ml-5 first:ml-0' : ''} 
+              hover:z-[100]
+            `}
+          >
+            <button
+              onClick={() => {
+                const isMobile = window.innerWidth < 768;
+                if (isMobile && !poucasAbas) {
+                  if (centerTab !== btn.id) {
+                     const el = document.getElementById(`nav-${btn.id}`);
+                     if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                  } else {
+                     setViewMode(btn.id);
+                  }
+                } else {
+                  setViewMode(btn.id);
+                  if (isMobile) {
+                    const el = document.getElementById(`nav-${btn.id}`);
+                    if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                  }
+                }
+              }}
+              className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
+                ${
+                  isActive
+                    ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
+                    : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm"
+                }
+                ${isExpandedMobile ? "w-[170px]" : "w-14"}
+                md:w-12 md:hover:w-[180px]
+              `}
+              title={btn.label}
+            >
+              {/* ÍCONE */}
+              <div className={`flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300 ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
+                  {btn.icon}
+                </div>
+              </div>
+
+              {/* TEXTO */}
               <div
-                ref={navScrollRef}
-                style={{ WebkitOverflowScrolling: 'touch' }} 
-                className={`flex overflow-x-auto md:overflow-visible md:flex-col gap-4 md:gap-3 pb-4 md:pb-0 scrollbar-hide snap-x snap-mandatory items-center touch-pan-x
-                  before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden
-                  after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden
+                className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+                  ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
                 `}
               >
-                {allNavButtons.map((btn, index) => {
-                  const isActive = viewMode === btn.id;
-                  
-                  // Lógica 3D do Mobile
-                  const isExpandedMobile = window.innerWidth < 768 && centerTab === btn.id;
-                  const centerIndex = allNavButtons.findIndex(b => b.id === (centerTab || allNavButtons[0]?.id));
-                  const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
-                  const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
-
-                  return (
-                    <div
-                      key={btn.id}
-                      id={`nav-${btn.id}`}
-                      style={{ zIndex: zIndexCascata }} 
-                      className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out hover:z-[100]`}
-                    >
-                      <button
-                        onClick={() => {
-                          const isMobile = window.innerWidth < 768;
-                          if (isMobile) {
-                            if (centerTab !== btn.id) {
-                               const el = document.getElementById(`nav-${btn.id}`);
-                               if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                            } else {
-                               setViewMode(btn.id);
-                            }
-                          } else {
-                            setViewMode(btn.id);
-                          }
-                        }}
-                        // MUDANÇA: h-16 w-16 no mobile (antes era 12). Botões maiores!
-                        className={`flex items-center h-16 md:h-12 min-w-[4rem] md:min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
-                          ${
-                            isActive
-                              ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
-                              : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm"
-                          }
-                          ${isExpandedMobile ? "w-[170px]" : "w-16 md:w-12"}
-                          md:hover:w-[180px]
-                        `}
-                        title={btn.label}
-                      >
-                        {/* ÍCONE */}
-                        <div className={`flex-shrink-0 flex items-center justify-center w-16 h-16 md:w-12 md:h-12 transition-transform duration-300 ${isActive ? 'text-white' : 'text-slate-500'}`}>
-                          {/* MUDANÇA: scale-125 no mobile para ícones mais nítidos */}
-                          <div className={isExpandedMobile || isActive ? "scale-125 md:scale-100" : "scale-110 md:scale-90"}>
-                            {btn.icon}
-                          </div>
-                        </div>
-
-                        {/* TEXTO */}
-                        <div
-                          className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
-                            ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
-                          `}
-                        >
-                          <span className="text-sm font-bold tracking-wide">
-                            {btn.label}
-                          </span>
-                        </div>
-                      </button>
-                    </div>
-                  );
-                })}
-
-                {/* ========================================================= */}
-                {/* BOTÃO DO CARRINHO DE EMERGÊNCIA                          */}
-                {/* ========================================================= */}
-                <div
-                  id="nav-carrinho"
-                  style={{ zIndex: 5 }} 
-                  className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out hover:z-[100] mt-0 md:mt-4`}
-                >
-                  <button
-                    onClick={() => setModalCarrinhoAberto(true)}
-                    className={`flex items-center h-16 md:h-12 min-w-[4rem] md:min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
-                      bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100
-                      w-16 md:w-12 md:hover:w-[190px]
-                    `}
-                    title="Carrinho de Emergência"
-                  >
-                    <div className="flex-shrink-0 flex items-center justify-center w-16 h-16 md:w-12 md:h-12 transition-transform duration-300">
-                      <div className="scale-125 md:scale-100">
-                        <Ambulance size={22} className="text-amber-600 group-hover:scale-110 transition-transform" />
-                      </div>
-                    </div>
-                    <div
-                      className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
-                        opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100
-                      `}
-                    >
-                      <span className="text-sm font-bold tracking-wide text-amber-700">
-                        Carrinho EMG
-                      </span>
-                    </div>
-                  </button>
-                </div>
-
-                {/* ========================================================= */}
-                {/* O NOVO BOTÃO DE NOTIFICAÇÃO DE EVENTOS (Fixo no final)    */}
-                {/* ========================================================= */}
-                <div
-                  id="nav-notificacao"
-                  style={{ zIndex: 5 }} 
-                  className={`relative flex-shrink-0 snap-center md:snap-align-none transition-all duration-300 ease-out hover:z-[100] mt-0 md:mt-4`}
-                >
-                  <button
-                    onClick={() => setIsEventModalOpen(true)}
-                    className={`flex items-center h-16 md:h-12 min-w-[4rem] md:min-w-[3rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
-                      bg-red-50 border-red-200 text-red-600 hover:bg-red-100
-                      w-16 md:w-12 md:hover:w-[190px]
-                    `}
-                    title="Notificar Evento Adverso"
-                  >
-                    <div className="flex-shrink-0 flex items-center justify-center w-16 h-16 md:w-12 md:h-12 transition-transform duration-300">
-                      <div className="scale-125 md:scale-100">
-                        <AlertTriangle size={22} className="text-red-600 group-hover:scale-110 transition-transform" />
-                      </div>
-                    </div>
-                    <div
-                      className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
-                        opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100
-                      `}
-                    >
-                      <span className="text-sm font-bold tracking-wide text-red-700">
-                        Notificar Evento
-                      </span>
-                    </div>
-                  </button>
-                </div>
-
+                <span className="text-xs md:text-sm font-bold tracking-wide">
+                  {btn.label}
+                </span>
               </div>
+            </button>
+          </div>
+        );
+      })}
+
+      {/* BOTÃO DO CARRINHO DE EMERGÊNCIA */}
+      <div
+        id="nav-carrinho"
+        style={{ zIndex: 5 }} 
+        className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out hover:z-[100] mt-0 md:mt-4
+          ${allNavButtons.length > 3 ? 'snap-center' : ''}
+          ${window.innerWidth < 768 && allNavButtons.length > 3 ? '-ml-5 first:ml-0' : ''}
+        `}
+      >
+        <button
+          onClick={() => setModalCarrinhoAberto(true)}
+          className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
+            bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100
+            w-14 md:w-12 md:hover:w-[190px]
+          `}
+          title="Carrinho de Emergência"
+        >
+          <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300">
+            <div className="scale-100">
+              <Ambulance size={22} className="text-amber-600 group-hover:scale-110 transition-transform" />
             </div>
           </div>
+          <div
+            className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+              opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100
+            `}
+          >
+            <span className="text-xs md:text-sm font-bold tracking-wide text-amber-700">
+              Carrinho EMG
+            </span>
+          </div>
+        </button>
+      </div>
+
+      {/* BOTÃO DE NOTIFICAÇÃO DE EVENTOS */}
+      <div
+        id="nav-notificacao"
+        style={{ zIndex: 5 }} 
+        className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out hover:z-[100] mt-0 md:mt-4
+          ${allNavButtons.length > 3 ? 'snap-center' : ''}
+          ${window.innerWidth < 768 && allNavButtons.length > 3 ? '-ml-5 first:ml-0' : ''}
+        `}
+      >
+        <button
+          onClick={() => setIsEventModalOpen(true)}
+          className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
+            bg-red-50 border-red-200 text-red-600 hover:bg-red-100
+            w-14 md:w-12 md:hover:w-[190px]
+          `}
+          title="Notificar Evento Adverso"
+        >
+          <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300">
+            <div className="scale-100">
+              <AlertTriangle size={22} className="text-red-600 group-hover:scale-110 transition-transform" />
+            </div>
+          </div>
+          <div
+            className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+              opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100
+            `}
+          >
+            <span className="text-xs md:text-sm font-bold tracking-wide text-red-700">
+              Notificar Evento
+            </span>
+          </div>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
 
           {/* ========================================== */}
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
           {/* ========================================== */}
-          <div className="flex-1 w-full min-w-0 order-1 md:order-2">
+          <div className="flex-1 w-full min-w-0 order-2 md:order-2">
 
             {/* BARRA DE LEITOS - LATERAL DIREITA (fixed, só no scroll, só desktop) */}
             {isScrolled && (
