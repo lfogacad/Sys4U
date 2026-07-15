@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, Droplets } from 'lucide-react';
 import { calculateAge } from '../../utils/core';
+import { ModalPortal } from '../../components/ModuloUTI';
 
 const ITENS_CHECKLIST = [
   { key: 'privacidade', label: 'Privacidade do paciente garantida' },
@@ -206,6 +207,7 @@ const SVDInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, handl
   if (!isOpen) return null;
   
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
         <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -393,6 +395,7 @@ const SVDInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, handl
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 };
 

@@ -7,6 +7,7 @@ import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_
 import { formatDateDDMM } from '../../utils/core';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import PhysioEvoModal from '../../components/modals/PhysioEvoModal';
+import { ModalPortal } from '../../components/ModuloUTI';
 
 const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients, activeTab, setPatients, save, handlePhysioAdmission, handleViewPhysioAdmission, clearDate, updateP, updateNested, handleBlurSave, setShowVmFlowsheet, handleSuporteChange, toggleArrayItem, calculateExchangeDate, isDeviceExpired, handlePrintGasometria, handleGeneratePhysioEvo, getTempoVMText, isOverviewEditable, localEditRef }) => {
   
@@ -1678,6 +1679,7 @@ const TRE_CHECKLIST = [
       {/* MODAL: ÚLTIMA TROCA DE VIA AÉREA                                          */}
       {/* ========================================================================= */}
       {modalTrocaVA?.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-cyan-500/20">
             
@@ -1713,12 +1715,14 @@ const TRE_CHECKLIST = [
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL EXCLUSIVO: ASPIRAÇÃO TRAQUEAL DA FISIOTERAPIA v2                     */}
       {/* ========================================================================= */}
       {modalAspiracaoFisio?.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
             
@@ -1833,12 +1837,14 @@ const TRE_CHECKLIST = [
 
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: SESSÃO DE VNI                                                      */}
       {/* ========================================================================= */}
       {modalVNI?.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
             
@@ -1979,12 +1985,14 @@ const TRE_CHECKLIST = [
 
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: TESTE DE RESPIRAÇÃO ESPONTÂNEA (TRE)                               */}
       {/* ========================================================================= */}
       {modalTRE?.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
             
@@ -2203,12 +2211,14 @@ const TRE_CHECKLIST = [
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: MOBILIZAÇÃO PRECOCE                                                */}
       {/* ========================================================================= */}
       {modalMobilizacao?.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
             
@@ -2389,12 +2399,14 @@ const TRE_CHECKLIST = [
 
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: PROTOCOLO DE EXTUBAÇÃO                                             */}
       {/* ========================================================================= */}
       {modalExtubacao?.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
             
@@ -2494,6 +2506,7 @@ const TRE_CHECKLIST = [
 
           </div>
         </div>
+        </ModalPortal>
       )}
 
     </fieldset>

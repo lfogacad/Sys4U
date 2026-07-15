@@ -6206,19 +6206,22 @@ const GestorDashboard = ({ userProfile }) => {
     // Calcula a linha do tempo (dataTimeline)
     const eventosPorDia = listaEventos.reduce((acc, evento) => {
       if (evento.dataHoraOcorrencia) {
-        const dia = new Date(evento.dataHoraOcorrencia).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-        acc[dia] = (acc[dia] || 0) + 1;
+        const data = new Date(evento.dataHoraOcorrencia);
+        const chave = data.toISOString().slice(0, 10); // "2026-06-15" ← ordenável
+        if (!acc[chave]) {
+          acc[chave] = { data, contagem: 0 };
+        }
+        acc[chave].contagem++;
       }
       return acc;
     }, {});
 
-    const dataTimeline = Object.keys(eventosPorDia).map(dia => ({
-      dia,
-      eventos: eventosPorDia[dia]
-    })).sort((a, b) => {
-      // Tenta ordenar pelas datas (mesmo convertidas para string de exibição)
-      return a.dia.localeCompare(b.dia);
-    });
+    const dataTimeline = Object.keys(eventosPorDia)
+      .sort() // ISO string "2026-06-15" ordena cronologicamente
+      .map(chave => ({
+        dia: eventosPorDia[chave].data.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+        eventos: eventosPorDia[chave].contagem
+      }));
 
     // ==========================================
     // CÁLCULOS DA ABA CHECKLIST CVC

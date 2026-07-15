@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, Syringe } from 'lucide-react';
 import { calculateAge } from '../../utils/core';
+import { ModalPortal } from '../../components/ModuloUTI';
+import { addDoc, collection } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 
 const BARREIRAS_LIST = [
   { key: 'higienizacao', label: 'Higienização das mãos' },
@@ -32,6 +35,8 @@ const initialForm = {
     acc[item.key] = false;
     return acc;
   }, {}),
+  teveEventoAdverso: false,
+  eventoAdverso: '',
 };
 
 const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerarPDF, handleBlurSave, userProfile, listaProfissionais = [] }) => {
@@ -70,7 +75,7 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
     });
   };
 
-  const salvar = () => {
+  const salvar = async () => {
     const itens = BARREIRAS_LIST.map((item) => ({
       key: item.key,
       label: item.label,
@@ -104,6 +109,8 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
         todasCumpridas,
         resumo,
       },
+      teveEventoAdverso: form.teveEventoAdverso,
+      eventoAdverso: form.teveEventoAdverso ? form.eventoAdverso : '',
     };
 
     updateNested('enfermagem', 'ultimoCVC', registro);
@@ -129,6 +136,38 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
       updateNested('enfermagem', 'cvcData', dataISO);
       if (form.localInserção) {
         updateNested('enfermagem', 'cvcLocal', form.localInserção);
+      }
+    }
+
+    // Se houve evento adverso, registra também na coleção do GestorDashboard
+    if (form.teveEventoAdverso && form.eventoAdverso) {
+      const nomePaciente = currentPatient?.nome || '';
+      const iniciais = nomePaciente.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+      const leitoPaciente = String(currentPatient?.leito || '').padStart(2, '0');
+
+      const eventoPadronizado = {
+        tipoEvento: form.eventoAdverso,
+        dataHoraOcorrencia: `${dataISO}T${horario}:00`,
+        leitoOcorrencia: leitoPaciente,
+        pacienteIniciais: iniciais,
+        grauDano: '',
+        statusAnalise: 'Pendente NSP',
+        relato: `Evento adverso durante inserção de ${form.tipoCateter} em ${form.localInserção}: ${form.eventoAdverso}.`,
+        acoesImediatas: '',
+        origem: 'CVCInsercao',
+        dataNotificacao: new Date().toISOString(),
+      };
+
+      // 1. Salva no paciente (histórico local)
+      const eventosAnteriores = Array.isArray(currentPatient?.eventosAdversos) ? currentPatient.eventosAdversos : [];
+      updateNested('eventosAdversos', [...eventosAnteriores, eventoPadronizado]);
+
+      // 2. Salva na coleção global que alimenta o GestorDashboard
+      try {
+        await addDoc(collection(db, "eventos_adversos"), eventoPadronizado);
+      } catch (e) {
+        // Se db não estiver disponível, falha silenciosa (já salvou no paciente)
+        console.error("Erro ao salvar evento adverso na coleção global:", e);
       }
     }
 
@@ -292,6 +331,7 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
   if (!isOpen) return null;
 
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-blue-500/20 my-auto">
         <div className="bg-blue-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -581,6 +621,72 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
               })}
             </div>
           </div>
+
+          {/* ============================================================ */}
+          {/* EVENTO ADVERSO                                               */}
+          {/* ============================================================ */}
+          <div className="border-t-2 border-red-200 pt-4 mt-2">
+            <label className="text-xs font-bold text-slate-600 mb-3 block text-center">
+              Houve Evento Adverso relacionado ao procedimento?
+            </label>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {['Sim', 'Não'].map((op) => {
+                const selected = form.teveEventoAdverso === (op === 'Sim');
+                return (
+                  <button
+                    key={op}
+                    type="button"
+                    className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${
+                      selected
+                        ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'
+                    }`}
+                    onClick={() => setForm({ ...form, teveEventoAdverso: op === 'Sim', eventoAdverso: op === 'Sim' ? form.eventoAdverso : '' })}
+                  >
+                    {op === 'Sim' ? '🔴 Sim' : '✅ Não'}
+                  </button>
+                );
+              })}
+            </div>
+
+            {form.teveEventoAdverso && (
+              <div className="animate-fadeIn">
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">
+                  Selecione o Evento
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    'Pneumotórax',
+                    'Hematoma',
+                    'Punção Arterial Acidental',
+                    'Arritmia',
+                    'Má Posição do Cateter',
+                    'Sangramento Excessivo',
+                    'Lesão de Estruturas Adjacentes',
+                    'Óbito',
+                    'Outro'
+                  ].map((evt) => {
+                    const selected = form.eventoAdverso === evt;
+                    return (
+                      <button
+                        key={evt}
+                        type="button"
+                        className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${
+                          selected
+                            ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]'
+                            : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'
+                        }`}
+                        onClick={() => setForm({ ...form, eventoAdverso: evt })}
+                      >
+                        {evt}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
 
         <div className="flex gap-3 p-5 pt-4 border-t border-slate-200 shrink-0">
@@ -603,6 +709,7 @@ const CVCInsercaoModal = ({ isOpen, onClose, currentPatient, updateNested, gerar
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 };
 

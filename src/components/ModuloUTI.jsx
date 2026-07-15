@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, arrayUnion, 
          onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -59,6 +60,12 @@ import ChecklistEvoModal from './modals/ChecklistEvoModal';
 import NoraModal from './modals/NoraModal';
 import SepsisModal from './modals/SepsisModal';
 import NutriAdmissionModal from './modals/NutriAdmissionModal';
+
+// --- PORTAL PARA MODAIS ---
+export const ModalPortal = ({ children }) => {
+  if (typeof document === 'undefined') return null;
+  return createPortal(children, document.body);
+};
 
 // ÍCONE PERSONALIZADO DE ENFERMAGEM
 function NurseCap(props) {
@@ -4957,7 +4964,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
           )}
 
           {/* HEADER DO PACIENTE */}
-          <div className="bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center print:hidden md:sticky md:top-0 md:z-40">
+          <div className="bg-white px-4 py-3 shadow-md border rounded-t-3xl flex justify-between items-center print:hidden md:sticky md:top-0 md:z-30">
             <div className="flex items-center gap-3 flex-wrap">
               {/* MOBILE: texto puro | DESKTOP: botão clicável */}
               {currentPatient.nome ? (

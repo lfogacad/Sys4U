@@ -9,6 +9,7 @@ import { doc, updateDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import CVCInsercaoModal from './CVCInsercaoModal';
 import SVDInsercaoModal from './SVDInsercaoModal';
+import { ModalPortal } from '../../components/ModuloUTI';
 
 const TechDashboard = ({
   currentPatient,
@@ -1596,6 +1597,7 @@ const salvarFralda = () => {
       {/* MODAL: REGISTRO DE DIETA VO (2 ETAPAS)                                    */}
       {/* ========================================================================= */}
       {modalDieta.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             
@@ -1802,12 +1804,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: REGISTRO DE BANHO                                                  */}
       {/* ========================================================================= */}
       {modalBanho.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             
@@ -1892,12 +1896,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: REGISTRO DE MUDANÇA DE DECÚBITO                                    */}
       {/* ========================================================================= */}
       {modalDecubito.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             
@@ -1982,12 +1988,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: REGISTRO DE HIGIENE ORAL                                           */}
       {/* ========================================================================= */}
       {modalHigieneOral.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
@@ -2036,12 +2044,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: REGISTRO DE HIGIENE ÍNTIMA                                         */}
       {/* ========================================================================= */}
       {modalHigieneIntima.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
@@ -2090,12 +2100,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: REGISTRO DE ASPIRAÇÃO VAS                                          */}
       {/* ========================================================================= */}
       {modalAspiracao.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             
@@ -2196,12 +2208,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     
       {/* ========================================================================= */}
       {/* MODAL: REGISTRO DE TROCA DE FRALDA                                        */}
       {/* ========================================================================= */}
       {modalFralda.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             
@@ -2325,12 +2339,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: REGISTRO DE CURATIVO                                               */}
       {/* ========================================================================= */}
       {modalCurativo.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
             
@@ -2427,12 +2443,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: RELATÓRIO DE ENFERMAGEM GERADO                                     */}
       {/* ========================================================================= */}
       {modalRelatorio.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
             
@@ -2474,12 +2492,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
-      {/* MODAL: ACESSO PERIFÉRICO                                                  */}
+      {/* MODAL: ACESSO PERIFÉRICO */}
       {/*  */}
       {modalAcesso.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
             <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2539,12 +2559,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
-      {/* MODAL: TRICOTOMIA                                                         */}
+      {/* MODAL: TRICOTOMIA */}
       {/*  */}
       {modalTricotomia.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
@@ -2582,12 +2604,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
-      {/* MODAL: CRIOTERAPIA                                                        */}
+      {/* MODAL: CRIOTERAPIA */}
       {/*  */}
       {modalCrioterapia.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
@@ -2617,12 +2641,14 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
       {/* MODAL: INSULINA                                                           */}
       {/*  */}
       {modalInsulina.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
@@ -2676,6 +2702,7 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       <CVCInsercaoModal

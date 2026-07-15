@@ -7,6 +7,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { ESCALA_DOR, PRECAUCOES, CARACTERISTICAS_DIURESE } from '../../constants/clinicalLists';
 import ModalChecklistEnfermagem from '../../components/modals/ModalChecklistEnfermagem';
+import { ModalPortal } from '../../components/ModuloUTI';
 
 const NursingDashboard = ({
   currentPatient,
@@ -1927,6 +1928,7 @@ return (
       {/* MODAL: CURATIVO                                           */}
       {/* ======================================================== */}
       {modalCurativo.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-emerald-500/20 my-auto">
             <div className="bg-emerald-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2030,12 +2032,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ======================================================== */}
       {/* MODAL: ACESSO PERIFÉRICO (Enfermagem)                     */}
       {/* ======================================================== */}
       {modalAcessoPeriferico.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
             <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2095,12 +2099,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ======================================================== */}
       {/* MODAL: INSERÇÃO CVC                                       */}
       {/* ======================================================== */}
       {modalCVC.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-blue-500/20 my-auto">
             <div className="bg-blue-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2279,12 +2285,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ======================================================== */}
       {/* MODAL: MANUTENÇÃO CVC                                     */}
       {/* ======================================================== */}
       {modalManutencaoCVC.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-sky-500/20 my-auto">
             <div className="bg-sky-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2437,12 +2445,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ======================================================== */}
       {/* MODAL: SVD (SONDA VESICAL DE DEMORA)                     */}
       {/* ======================================================== */}
       {modalSVD.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-orange-500/20 my-auto">
             <div className="bg-orange-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2557,12 +2567,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
       {/* MODAL: MANUTENÇÃO SVD (SONDA VESICAL DE DEMORA) */}
       {/*  */}
       {modalManutencaoSVD.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-amber-500/20 my-auto">
             <div className="bg-amber-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2651,12 +2663,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
       {/* MODAL: GASOMETRIA */}
       {/*  */}
       {modalGasometria.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-lime-500/20 my-auto">
             <div className="bg-lime-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2700,12 +2714,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
       {/* MODAL: HEMOTRANSFUSÃO */}
       {/*  */}
       {modalHemotransfusao.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-red-500/20 my-auto">
             <div className="bg-red-700 p-5 text-white flex justify-between items-center shrink-0">
@@ -2902,12 +2918,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
       {/* MODAL: ECG */}
       {/*  */}
       {modalECG.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-violet-500/20 my-auto">
             <div className="bg-violet-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -2966,12 +2984,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
       {/* MODAL: FLEET ENEMA */}
       {/*  */}
       {modalFleetEnema.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-orange-500/20 my-auto">
             <div className="bg-orange-600 p-5 text-white flex justify-between items-center shrink-0">
@@ -3005,12 +3025,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
       {/* MODAL: NPT (NUTRIÇÃO PARENTERAL TOTAL) */}
       {/*  */}
       {modalNPT.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-purple-500/20 my-auto">
             <div className="bg-purple-700 p-5 text-white flex justify-between items-center shrink-0">
@@ -3069,12 +3091,14 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/*  */}
       {/* MODAL: ASPIRAÇÃO TRAQUEAL */}
       {/*  */}
       {modalAspiracao.isOpen && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-cyan-500/20 my-auto">
             <div className="bg-cyan-700 p-5 text-white flex justify-between items-center shrink-0">
@@ -3160,6 +3184,7 @@ return (
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
     </div>
