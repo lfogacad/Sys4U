@@ -4813,147 +4813,105 @@ const userRole = userProfile?.role || userProfile?.perfil;
         }
       `}
     >
-      {allNavButtons.map((btn, index) => {
-        const isActive = viewMode === btn.id;
-        const poucasAbas = allNavButtons.length <= 3;
-        
-        const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
+      {(() => {
+        const carouselItems = [
+          ...allNavButtons.map(btn => ({ ...btn, type: 'nav' })),
+          { id: 'carrinho', label: 'Carrinho EMG', icon: <Ambulance size={22} />, type: 'carrinho' },
+          { id: 'notificacao', label: 'Notificar Evento', icon: <AlertTriangle size={22} />, type: 'notificacao' },
+        ];
 
-        // --- CÁLCULO DA CASCATA 3D ---
-        const centerIndex = allNavButtons.findIndex(b => b.id === (centerTab || allNavButtons[0]?.id));
-        const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
-        const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
+        const poucasAbas = carouselItems.length <= 3;
 
-        return (
-          <div
-            key={btn.id}
-            id={`nav-${btn.id}`}
-            style={{ zIndex: zIndexCascata }} 
-            className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out 
-              ${!poucasAbas ? 'snap-center' : ''} 
-              ${window.innerWidth < 768 && !poucasAbas ? '-ml-5 first:ml-0' : ''} 
-              hover:z-[100]
-            `}
-          >
-            <button
-              onClick={() => {
-                const isMobile = window.innerWidth < 768;
-                if (isMobile && !poucasAbas) {
-                  if (centerTab !== btn.id) {
-                     const el = document.getElementById(`nav-${btn.id}`);
-                     if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                  } else {
-                     setViewMode(btn.id);
-                  }
-                } else {
-                  setViewMode(btn.id);
-                  if (isMobile) {
-                    const el = document.getElementById(`nav-${btn.id}`);
-                    if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                  }
-                }
-              }}
-              className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
-                ${
-                  isActive
-                    ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
-                    : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm"
-                }
-                ${isExpandedMobile ? "w-[170px]" : "w-14"}
-                md:w-12 md:hover:w-[180px]
+        return carouselItems.map((btn, index) => {
+          const isActive = btn.type === 'nav' && viewMode === btn.id;
+          const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
+
+          const centerIndex = carouselItems.findIndex(b => b.id === (centerTab || carouselItems[0]?.id));
+          const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
+          const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
+
+          let btnClass = '';
+          let iconClass = '';
+          if (btn.type === 'nav') {
+            btnClass = isActive
+              ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
+              : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm";
+            iconClass = isActive ? 'text-white' : 'text-slate-500';
+          } else if (btn.type === 'carrinho') {
+            btnClass = "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100";
+            iconClass = 'text-amber-600';
+          } else {
+            btnClass = "bg-red-50 border-red-200 text-red-600 hover:bg-red-100";
+            iconClass = 'text-red-600';
+          }
+
+          const labelClass = btn.type === 'carrinho' ? 'text-amber-700' : btn.type === 'notificacao' ? 'text-red-700' : '';
+
+          const handleClick = () => {
+            const isMobile = window.innerWidth < 768;
+            if (btn.type === 'carrinho') {
+              setModalCarrinhoAberto(true);
+              return;
+            }
+            if (btn.type === 'notificacao') {
+              setIsEventModalOpen(true);
+              return;
+            }
+            if (isMobile && !poucasAbas) {
+              if (centerTab !== btn.id) {
+                const el = document.getElementById(`nav-${btn.id}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+              } else {
+                setViewMode(btn.id);
+              }
+            } else {
+              setViewMode(btn.id);
+              if (isMobile) {
+                const el = document.getElementById(`nav-${btn.id}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+              }
+            }
+          };
+
+          return (
+            <div
+              key={btn.id}
+              id={`nav-${btn.id}`}
+              style={{ zIndex: zIndexCascata }}
+              className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out
+                ${!poucasAbas ? 'snap-center' : ''}
+                ${window.innerWidth < 768 && !poucasAbas ? '-ml-5 first:ml-0' : ''}
+                md:hover:z-[100]
+                ${btn.type !== 'nav' ? 'md:mt-4' : ''}
               `}
-              title={btn.label}
             >
-              {/* ÍCONE */}
-              <div className={`flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300 ${isActive ? 'text-white' : 'text-slate-500'}`}>
-                <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
-                  {btn.icon}
-                </div>
-              </div>
-
-              {/* TEXTO */}
-              <div
-                className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
-                  ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
+              <button
+                onClick={handleClick}
+                className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg ${btnClass}
+                  ${isExpandedMobile ? "w-[170px]" : "w-14"}
+                  md:w-12 ${btn.type === 'carrinho' ? 'md:hover:w-[190px]' : btn.type === 'notificacao' ? 'md:hover:w-[190px]' : 'md:hover:w-[180px]'}
                 `}
+                title={btn.label}
               >
-                <span className="text-xs md:text-sm font-bold tracking-wide">
-                  {btn.label}
-                </span>
-              </div>
-            </button>
-          </div>
-        );
-      })}
-
-      {/* BOTÃO DO CARRINHO DE EMERGÊNCIA */}
-      <div
-        id="nav-carrinho"
-        style={{ zIndex: 5 }} 
-        className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out hover:z-[100] mt-0 md:mt-4
-          ${allNavButtons.length > 3 ? 'snap-center' : ''}
-          ${window.innerWidth < 768 && allNavButtons.length > 3 ? '-ml-5 first:ml-0' : ''}
-        `}
-      >
-        <button
-          onClick={() => setModalCarrinhoAberto(true)}
-          className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
-            bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100
-            w-14 md:w-12 md:hover:w-[190px]
-          `}
-          title="Carrinho de Emergência"
-        >
-          <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300">
-            <div className="scale-100">
-              <Ambulance size={22} className="text-amber-600 group-hover:scale-110 transition-transform" />
+                <div className={`flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300 ${iconClass}`}>
+                  <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
+                    {btn.icon}
+                  </div>
+                </div>
+                <div
+                  className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+                    ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
+                  `}
+                >
+                  <span className={`text-xs md:text-sm font-bold tracking-wide ${labelClass}`}>
+                    {btn.label}
+                  </span>
+                </div>
+              </button>
             </div>
-          </div>
-          <div
-            className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
-              opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100
-            `}
-          >
-            <span className="text-xs md:text-sm font-bold tracking-wide text-amber-700">
-              Carrinho EMG
-            </span>
-          </div>
-        </button>
-      </div>
-
-      {/* BOTÃO DE NOTIFICAÇÃO DE EVENTOS */}
-      <div
-        id="nav-notificacao"
-        style={{ zIndex: 5 }} 
-        className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out hover:z-[100] mt-0 md:mt-4
-          ${allNavButtons.length > 3 ? 'snap-center' : ''}
-          ${window.innerWidth < 768 && allNavButtons.length > 3 ? '-ml-5 first:ml-0' : ''}
-        `}
-      >
-        <button
-          onClick={() => setIsEventModalOpen(true)}
-          className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg
-            bg-red-50 border-red-200 text-red-600 hover:bg-red-100
-            w-14 md:w-12 md:hover:w-[190px]
-          `}
-          title="Notificar Evento Adverso"
-        >
-          <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300">
-            <div className="scale-100">
-              <AlertTriangle size={22} className="text-red-600 group-hover:scale-110 transition-transform" />
-            </div>
-          </div>
-          <div
-            className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
-              opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100
-            `}
-          >
-            <span className="text-xs md:text-sm font-bold tracking-wide text-red-700">
-              Notificar Evento
-            </span>
-          </div>
-        </button>
-      </div>
-
+          );
+        });
+      })()}
     </div>
   </div>
 </div>
