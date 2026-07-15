@@ -4753,6 +4753,41 @@ const userRole = userProfile?.role || userProfile?.perfil;
       {/* CORPO PRINCIPAL (LEITOS + ABAS LATERAIS) */}
       {/* ========================================== */}
       <main className="max-w-7xl mx-auto -mt-20 px-2 md:px-4 print:mt-0 print:p-0">
+
+            {/* BARRA DE LEITOS - TOPO (scrolla normalmente, some ao descer) */}
+            <div className="relative z-40 md:-mt-2 flex gap-2 scrollbar-hide print:hidden overflow-x-auto p-1.5 mb-6 md:justify-center md:overflow-visible md:py-3">
+              {patients.map((p, idx) => {
+              if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
+                return null;
+              }
+              const isActive = activeTab === idx;
+              const dataInternacao = p.dataInternacaoISO || p.dataInternacao || "";
+              const hasPsiPendente = (p.psychology?.solicitacoes || []).some(s => {
+                if (s.status === 'Concluída') return false;
+                if (!dataInternacao) return true;
+                return new Date(s.data) >= new Date(dataInternacao);
+              });
+              const showPsiBadge = userRole === 'Psicólogo' && hasPsiPendente;
+              return (
+                <button
+                  key={p.id || idx}
+                  onClick={() => setActiveTab(idx)}
+                  className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border-2 flex flex-col items-center justify-center relative ${
+                    isActive
+                      ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-white/60 ring-2 ring-white/50 text-white shadow-lg shadow-teal-500/40 scale-110 backdrop-blur-sm"
+                      : "bg-white/10 hover:bg-white/20 border-white/40 backdrop-blur-sm text-white/80 hover:text-white shadow-sm"
+                  }`}
+                >
+                  {showPsiBadge && (
+                    <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse z-10"></span>
+                  )}
+                  <span className="text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">Leito</span>
+                  <span className="text-xl leading-none">{p.leito}</span>
+                </button>
+              );
+            })}
+          </div>
+
         {/* CONTAINER DE DUAS COLUNAS NO PC */}
         <div className="flex flex-col md:flex-row gap-4 md:gap-6 relative mt-2">
           {/* FUNDO DE HEXÁGONOS */}
@@ -4763,7 +4798,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
             onError={(e) => e.target.style.display = 'none'}
           />
           {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE */}
-          <div className="w-full md:w-12 flex-shrink-0 relative z-30 print:hidden self-start md:sticky md:top-6 md:mt-20 order-2 md:order-1">
+          <div className="w-full md:w-12 flex-shrink-0 relative z-30 print:hidden self-start md:sticky md:top-6 md:mt-20 order-0 md:order-1">
             <div className="relative mb-6 md:mb-0 print:hidden">
               <div
                 ref={navScrollRef}
@@ -4912,40 +4947,6 @@ const userRole = userProfile?.role || userProfile?.perfil;
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
           {/* ========================================== */}
           <div className="flex-1 w-full min-w-0 order-1 md:order-2">
-
-            {/* BARRA DE LEITOS - TOPO (scrolla normalmente, some ao descer) */}
-            <div className="relative z-40 md:-mt-2 flex gap-2 scrollbar-hide print:hidden overflow-x-auto p-1.5 mb-6 bg-white border border-slate-200 rounded-2xl shadow-sm md:bg-transparent md:border-0 md:shadow-none md:rounded-none md:justify-center md:overflow-visible md:py-3">
-              {patients.map((p, idx) => {
-              if ((p.leito === 11 || p.leito === "11") && !currentRolePerms.canSeeLeito11) {
-                return null;
-              }
-              const isActive = activeTab === idx;
-              const dataInternacao = p.dataInternacaoISO || p.dataInternacao || "";
-              const hasPsiPendente = (p.psychology?.solicitacoes || []).some(s => {
-                if (s.status === 'Concluída') return false;
-                if (!dataInternacao) return true;
-                return new Date(s.data) >= new Date(dataInternacao);
-              });
-              const showPsiBadge = userRole === 'Psicólogo' && hasPsiPendente;
-              return (
-                <button
-                  key={p.id || idx}
-                  onClick={() => setActiveTab(idx)}
-                  className={`flex-shrink-0 w-14 h-16 rounded-xl font-bold transition-all border-2 flex flex-col items-center justify-center relative ${
-                    isActive
-                      ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-white/60 ring-2 ring-white/50 text-white shadow-lg shadow-teal-500/40 scale-110 backdrop-blur-sm"
-                      : "bg-white/10 hover:bg-white/20 border-white/40 backdrop-blur-sm text-white/80 hover:text-white shadow-sm"
-                  }`}
-                >
-                  {showPsiBadge && (
-                    <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse z-10"></span>
-                  )}
-                  <span className="text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">Leito</span>
-                  <span className="text-xl leading-none">{p.leito}</span>
-                </button>
-              );
-            })}
-          </div>
 
             {/* BARRA DE LEITOS - LATERAL DIREITA (fixed, só no scroll, só desktop) */}
             {isScrolled && (
