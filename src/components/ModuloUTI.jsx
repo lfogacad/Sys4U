@@ -221,6 +221,12 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [dischargeDestination, setDischargeDestination] = useState("");
   const [isDischarging, setIsDischarging] = useState(false);
 
+  // --- ESTADOS DO MODAL DE ALERTAS DE LEITO ---
+  const [alertasLeito, setAlertasLeito] = useState([]);
+  const [isModalAlertasOpen, setIsModalAlertasOpen] = useState(false);
+  const [novoAlertaTexto, setNovoAlertaTexto] = useState('');
+  const [salvandoAlerta, setSalvandoAlerta] = useState(false);
+
   const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
   const [eventoSelecionado, setEventoSelecionado] = useState(null);
   const [formEvento, setFormEvento] = useState({
@@ -798,6 +804,26 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     return () => unsubscribe();
   }, [db]);
 
+  // Alerta de Leito (em tempo real)
+  useEffect(() => {
+    if (!currentPatient?.cpf) {
+      setAlertasLeito([]);
+      return;
+    }
+    const q = query(
+      collection(db, "alertas_leito"),
+      where("cpf", "==", currentPatient.cpf),
+      where("ativo", "==", true)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const lista = [];
+      snap.forEach(d => lista.push({ id: d.id, ...d.data() }));
+      lista.sort((a, b) => (b.dataCriacao?.seconds || 0) - (a.dataCriacao?.seconds || 0));
+      setAlertasLeito(lista);
+    });
+    return () => unsub();
+  }, [currentPatient?.cpf]);
+
   // ==============================================================
   // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" das 07h00)
   // ==============================================================
@@ -1173,6 +1199,37 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       spo2: admissionVitals.spo2 || p.admissaoSpO2 || 95,
       isFallback: !hasAdmissionData
     };
+  };
+
+  // Função para adicionar um alerta no leito do paciente atual
+  const handleAddAlerta = async () => {
+    if (!novoAlertaTexto.trim() || !currentPatient?.cpf) return;
+    setSalvandoAlerta(true);
+    try {
+      await addDoc(collection(db, "alertas_leito"), {
+        cpf: currentPatient.cpf,
+        leito: currentPatient.leito,
+        nome: currentPatient.nome,
+        texto: novoAlertaTexto.trim(),
+        ativo: true,
+        criadoPor: userProfile?.nome || 'Usuário',
+        perfil: userProfile?.perfil || '',
+        dataCriacao: serverTimestamp()
+      });
+      setNovoAlertaTexto('');
+    } catch (err) {
+      console.error("Erro ao salvar alerta:", err);
+    } finally {
+      setSalvandoAlerta(false);
+    }
+  };
+
+  const handleResolverAlerta = async (alertaId) => {
+    try {
+      await updateDoc(doc(db, "alertas_leito", alertaId), { ativo: false });
+    } catch (err) {
+      console.error("Erro ao resolver alerta:", err);
+    }
   };
 
   const salvarCarrinhoEMG = async () => {
@@ -4960,9 +5017,29 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     </div>
                   )}
                 </div>
-                <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold whitespace-nowrap">
-                  Leito {currentPatient.leito}
-                </span>
+                  <div className="flex items-center gap-2">
+                    {currentPatient.leito && (
+                      <button
+                        onClick={() => setIsModalAlertasOpen(true)}
+                        className={`relative p-1.5 rounded-lg transition-all ${
+                          alertasLeito.length > 0
+                            ? "text-red-500 bg-red-50 hover:bg-red-100"
+                            : "text-slate-300 hover:text-slate-500 hover:bg-slate-100"
+                        }`}
+                        title={alertasLeito.length > 0 ? `${alertasLeito.length} alerta(s) ativo(s)` : "Nenhum alerta"}
+                      >
+                        <AlertTriangle size={20} />
+                        {alertasLeito.length > 0 && (
+                          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                            {alertasLeito.length}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                    <span className="bg-slate-100 px-3 py-1.5 rounded-xl font-bold whitespace-nowrap">
+                      Leito {currentPatient.leito}
+                    </span>
+                  </div>
               </div>
 
             <div className="relative z-20 bg-white p-6 md:p-8 rounded-b-3xl shadow-xl border border-t-0 min-h-[500px]">
@@ -6086,6 +6163,71 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all uppercase tracking-wider"
                 >
                   Transferir
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================ */}
+      {/* MODAL DE ALERTAS */}
+      {/* ================ */}
+      {isModalAlertasOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setIsModalAlertasOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <AlertTriangle size={22} className={alertasLeito.length > 0 ? "text-red-500" : "text-slate-400"} />
+                Alertas — Leito {currentPatient.leito}
+              </h3>
+              <button onClick={() => setIsModalAlertasOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {alertasLeito.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">Nenhum alerta ativo para este leito.</p>
+              ) : (
+                <div className="space-y-2">
+                  {alertasLeito.map(alerta => (
+                    <div key={alerta.id} className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-slate-700">{alerta.texto}</p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {alerta.criadoPor}{alerta.perfil ? ` • ${alerta.perfil}` : ''} • {alerta.dataCriacao?.toDate?.()?.toLocaleString('pt-BR') || 'Data indisponível'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleResolverAlerta(alerta.id)}
+                        className="text-slate-300 hover:text-green-500 flex-shrink-0 transition-colors"
+                        title="Resolver alerta"
+                      >
+                        <Check size={18} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-200">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={novoAlertaTexto}
+                  onChange={e => setNovoAlertaTexto(e.target.value)}
+                  placeholder="Descreva o alerta..."
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-teal-400"
+                  onKeyDown={e => { if (e.key === 'Enter' && novoAlertaTexto.trim()) handleAddAlerta(); }}
+                />
+                <button
+                  onClick={handleAddAlerta}
+                  disabled={!novoAlertaTexto.trim() || salvandoAlerta}
+                  className="bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Adicionar
                 </button>
               </div>
             </div>
