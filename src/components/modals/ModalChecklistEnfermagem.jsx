@@ -214,7 +214,7 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       handleBlurSave(`Enfermagem: Checklist Diário (${auditMessages.join(', ')})`);
     }
 
-    // 4. Salva intercorrências e condutas no paciente para a IA enxergar
+    // 4. Salva intercorrências e condutas primeiro
     if (intercorrencias) {
       updateNested("enfermagem", "intercorrencias", intercorrencias);
     }
@@ -222,7 +222,8 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       updateNested("enfermagem", "condutas", condutas);
     }
 
-    onGenerateAI();
+    // 5. Gera evolução passando os valores diretamente (sem depender do state)
+    onGenerateAI(intercorrencias, condutas);
     onClose();
   };
 

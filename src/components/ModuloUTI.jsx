@@ -3306,32 +3306,33 @@ ${conduta}
       eventosRegistros.push(`- Acesso Periférico ${p.enfermagem.avpHorario} — ${p.enfermagem.avpLocal} (${p.enfermagem.avpCalibre || 'N/A'})`);
     }
 
-    // RCP (Reanimação Cardiopulmonar)
-    const rcpsHoje = filtrarHoje(p.enfermagem?.historicoRCP);
-    rcpsHoje.forEach(rcp => {
+    const eventosTexto = eventosRegistros.length > 0
+      ? eventosRegistros.join('\n')
+      : 'Nenhum registro adicional no período.';
+
+    // Monta texto de RCP para anexar às intercorrências
+    const rcpsHojeIntercorrencia = (Array.isArray(p.enfermagem?.historicoRCP) ? p.enfermagem.historicoRCP : [])
+      .filter(e => {
         const dataEvento = e.data || '';
         const dataISO = dataEvento.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, '$3-$2-$1');
         return dataISO === hojeISO;
       })
       .sort((a, b) => (a.horarioInicioRCP || '').localeCompare(b.horarioInicioRCP || ''));
-    rcpsHoje.forEach(rcp => {
-      let texto = `- RCP ${rcp.horarioInicioRCP || 'N/I'} às ${rcp.horarioFimRCP || 'N/I'}`;
-      if (rcp.ritmoInicial) texto += ` — Ritmo inicial: ${rcp.ritmoInicial}`;
-      if (rcp.viaAerea) texto += ` — Via aérea: ${rcp.viaAerea}`;
-      if (rcp.adrenalinaAmpolas) texto += ` — Adrenalina: ${rcp.adrenalinaAmpolas} ampolas`;
-      if (rcp.outrasDrogas) texto += ` — Outras drogas: ${rcp.outrasDrogas}`;
-      if (rcp.desfibrilacao === 'Sim' && rcp.choques) texto += ` — Desfibrilação: ${rcp.choques} choque(s)`;
-      if (rcp.desfecho) texto += ` — Desfecho: ${rcp.desfecho}`;
-      if (rcp.causaProvavel) texto += ` — Causa provável: ${rcp.causaProvavel}`;
-      if (rcp.observacoes) texto += ` — Obs: ${rcp.observacoes}`;
-      eventosRegistros.push(texto);
+    
+    let rcpTexto = '';
+    rcpsHojeIntercorrencia.forEach(rcp => {
+      rcpTexto += `\n- RCP ${rcp.horarioInicioRCP || 'N/I'} às ${rcp.horarioFimRCP || 'N/I'}`;
+      if (rcp.ritmoInicial) rcpTexto += ` — Ritmo inicial: ${rcp.ritmoInicial}`;
+      if (rcp.viaAerea) rcpTexto += ` — Via aérea: ${rcp.viaAerea}`;
+      if (rcp.adrenalinaAmpolas) rcpTexto += ` — Adrenalina: ${rcp.adrenalinaAmpolas} ampolas`;
+      if (rcp.outrasDrogas) rcpTexto += ` — Outras drogas: ${rcp.outrasDrogas}`;
+      if (rcp.desfibrilacao === 'Sim' && rcp.choques) rcpTexto += ` — Desfibrilação: ${rcp.choques} choque(s)`;
+      if (rcp.desfecho) rcpTexto += ` — Desfecho: ${rcp.desfecho}`;
+      if (rcp.causaProvavel) rcpTexto += ` — Causa provável: ${rcp.causaProvavel}`;
+      if (rcp.observacoes) rcpTexto += ` — Obs: ${rcp.observacoes}`;
     });
 
-    const eventosTexto = eventosRegistros.length > 0
-      ? eventosRegistros.join('\n')
-      : 'Nenhum registro adicional no período.';
-
-    const intercorrencias = p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.";
+    const intercorrencias = (p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.") + rcpTexto;
     const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
 
     // 9. O PROMPT BLINDADO

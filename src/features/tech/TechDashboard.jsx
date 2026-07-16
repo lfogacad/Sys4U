@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, 
+import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, HeartPulse,
          Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar, Coffee, ArrowRight, CheckCircle2,
          ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
          FileText, Copy, Syringe, Scissors, Snowflake, TestTube, ChevronDown, ChevronRight } from 'lucide-react';
@@ -477,6 +477,39 @@ const salvarFralda = () => {
   };
 
   // =========================================================================
+  // ESTADOS, FUNÇÕES DO MODAL DE RCP
+  // =========================================================================    
+    const [modalRCPTecnico, setModalRCPTecnico] = useState({
+    isOpen: false,
+    horarioPCR: '',
+    tempoRCP: '',
+    desfecho: '',
+  });
+
+  const salvarRCPTecnico = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_rcp_pcr) p.enfermagem.historico_rcp_pcr = [];
+
+    const novoRegistro = {
+      dataHoraRegistro: new Date().toISOString(),
+      horarioPCR: modalRCPTecnico.horarioPCR,
+      tempoRCP: modalRCPTecnico.tempoRCP,
+      desfecho: modalRCPTecnico.desfecho,
+    };
+
+    p.enfermagem.historico_rcp_pcr.push(novoRegistro);
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Registrou RCP/PCR (${modalRCPTecnico.desfecho})`);
+
+    setModalRCPTecnico({ isOpen: false, horarioPCR: '', tempoRCP: '', desfecho: '' });
+  };
+
+  // =========================================================================
   // ESTADOS E FUNÇÕES DO RELATÓRIO DE ENFERMAGEM
   // =========================================================================
   const [modalRelatorio, setModalRelatorio] = useState({ isOpen: false, texto: "" });
@@ -526,6 +559,16 @@ const salvarFralda = () => {
     addEvent(enf.historico_tricotomia, (i) => `Tricotomia: ${i.local}.`);
     addEvent(enf.historico_crioterapia, () => `Crioterapia realizada.`);
     addEvent(enf.historico_insulina, (i) => `Insulina: ${i.tipo} - ${i.dose} UI.`);
+    if (Array.isArray(enf.historico_rcp_pcr)) {
+      enf.historico_rcp_pcr.forEach(item => {
+        if (item.horarioPCR && item.dataHoraRegistro && item.dataHoraRegistro.startsWith(dataHoje)) {
+          let txt = `RCP/PCR - Início: ${item.horarioPCR}`;
+          if (item.tempoRCP) txt += `, Tempo de RCP: ${item.tempoRCP} min`;
+          if (item.desfecho) txt += `, Desfecho: ${item.desfecho}`;
+          eventos.push({ horario: item.horarioPCR, texto: txt });
+        }
+      });
+    }
 
     // 🔥 NOVO: Extraindo Diurese diretamente da tabela do Balanço Hídrico (BH)
     if (currentPatient.bh && currentPatient.bh.losses) {
@@ -1124,6 +1167,17 @@ const salvarFralda = () => {
             >
               <Droplets size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
               <span className="text-[10px] font-bold uppercase text-center">Inserção SVD</span>
+            </button>
+
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                setModalRCPTecnico({ ...modalRCPTecnico, isOpen: true, horarioPCR: getHoraAtualArredondada() });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <HeartPulse size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">RCP / PCR</span>
             </button>
 
           </div>
@@ -2703,6 +2757,107 @@ const salvarFralda = () => {
           </div>
         </div>
         </ModalPortal>
+      )}
+
+      {/*  */}
+      {/* MODAL: RCP / PCR (Simplificado - Técnico) */}
+      {/*  */}
+      {modalRCPTecnico.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden border-4 border-indigo-500/20 animate-fade-in">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><HeartPulse size={20} /></div>
+                <h2 className="text-lg font-black">Registro de RCP</h2>
+              </div>
+              <button onClick={() => setModalRCPTecnico({ ...modalRCPTecnico, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-5">
+
+              {/* HORÁRIO DA PCR */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da PCR</label>
+                <input
+                  type="time"
+                  value={modalRCPTecnico.horarioPCR}
+                  onChange={(e) => setModalRCPTecnico({ ...modalRCPTecnico, horarioPCR: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-black text-center text-lg cursor-pointer"
+                />
+              </div>
+
+              {/* TEMPO DE RCP */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Tempo de RCP (minutos)</label>
+                <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <button
+                      onClick={() => {
+                        const val = parseInt(modalRCPTecnico.tempoRCP || '0');
+                        if (val > 0) setModalRCPTecnico({ ...modalRCPTecnico, tempoRCP: String(val - 1) });
+                      }}
+                      className="px-4 py-3 text-slate-500 hover:bg-slate-100 font-bold text-lg"
+                    >−</button>
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      value={modalRCPTecnico.tempoRCP}
+                      onChange={(e) => setModalRCPTecnico({ ...modalRCPTecnico, tempoRCP: e.target.value })}
+                      className="w-20 py-3 text-center text-2xl font-black text-slate-700 outline-none border-x border-slate-200"
+                    />
+                    <button
+                      onClick={() => {
+                        const val = parseInt(modalRCPTecnico.tempoRCP || '0');
+                        setModalRCPTecnico({ ...modalRCPTecnico, tempoRCP: String(val + 1) });
+                      }}
+                      className="px-4 py-3 text-slate-500 hover:bg-slate-100 font-bold text-lg"
+                    >+</button>
+                  </div>
+                  <span className="text-sm font-bold text-slate-400">min</span>
+                </div>
+              </div>
+
+              {/* DESFECHO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Desfecho</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setModalRCPTecnico({ ...modalRCPTecnico, desfecho: 'RCE' })}
+                    className={`p-4 rounded-xl border-2 font-bold text-sm uppercase tracking-wide transition-all ${
+                      modalRCPTecnico.desfecho === 'RCE'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200'
+                    }`}
+                  >
+                    RCE
+                  </button>
+                  <button
+                    onClick={() => setModalRCPTecnico({ ...modalRCPTecnico, desfecho: 'Óbito' })}
+                    className={`p-4 rounded-xl border-2 font-bold text-sm uppercase tracking-wide transition-all ${
+                      modalRCPTecnico.desfecho === 'Óbito'
+                        ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'
+                    }`}
+                  >
+                    Óbito
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalRCPTecnico({ ...modalRCPTecnico, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button
+                  disabled={!modalRCPTecnico.horarioPCR || !modalRCPTecnico.desfecho}
+                  onClick={salvarRCPTecnico}
+                  className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                >
+                  <HeartPulse size={18} /> Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <CVCInsercaoModal
