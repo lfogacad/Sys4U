@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Activity, ShieldAlert, Syringe, BrainCircuit } from 'lucide-react';
+import { X, Activity, ShieldAlert, Syringe, BrainCircuit, AlertCircle, CheckCircle } from 'lucide-react';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase'; 
 
@@ -48,6 +48,8 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
   const [initialSvd, setInitialSvd] = useState(false);
   const [cvcLocal, setCvcLocal] = useState('');
   const [shileyLocal, setShileyLocal] = useState('');
+  const [intercorrencias, setIntercorrencias] = useState(currentPatient?.enfermagem?.intercorrencias || '');
+  const [condutas, setCondutas] = useState(currentPatient?.enfermagem?.condutas || '');
 
   useEffect(() => {
     if (isOpen && currentPatient) {
@@ -210,6 +212,14 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
 
     if (auditMessages.length > 0) {
       handleBlurSave(`Enfermagem: Checklist Diário (${auditMessages.join(', ')})`);
+    }
+
+    // 4. Salva intercorrências e condutas no paciente para a IA enxergar
+    if (intercorrencias) {
+      updateNested("enfermagem", "intercorrencias", intercorrencias);
+    }
+    if (condutas) {
+      updateNested("enfermagem", "condutas", condutas);
     }
 
     onGenerateAI();
@@ -384,6 +394,28 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* INTERCORRÊNCIAS E CONDUTAS */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="p-4 bg-white border rounded-xl shadow-sm">
+              <h4 className="font-bold text-slate-700 mb-2 text-sm flex items-center gap-2"><AlertCircle size={16} className="text-orange-500" /> Intercorrências</h4>
+              <textarea 
+                className="w-full p-3 border rounded-lg h-24 text-sm outline-none focus:ring-2 focus:ring-orange-100 bg-slate-50 focus:bg-white transition-colors whitespace-pre-wrap" 
+                placeholder="Relate as intercorrências do plantão aqui..." 
+                value={intercorrencias}
+                onChange={(e) => setIntercorrencias(e.target.value)}
+              />
+            </div>
+            <div className="p-4 bg-white border rounded-xl shadow-sm">
+              <h4 className="font-bold text-slate-700 mb-2 text-sm flex items-center gap-2"><CheckCircle size={16} className="text-green-500" /> Condutas</h4>
+              <textarea 
+                className="w-full p-3 border rounded-lg h-24 text-sm outline-none focus:ring-2 focus:ring-green-100 bg-slate-50 focus:bg-white transition-colors whitespace-pre-wrap" 
+                placeholder="Plano de cuidados e condutas tomadas..." 
+                value={condutas}
+                onChange={(e) => setCondutas(e.target.value)}
+              />
             </div>
           </div>
 

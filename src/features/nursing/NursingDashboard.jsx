@@ -1830,30 +1830,6 @@ return (
             </div>
           </div>
 
-          {/* INTERCORRÊNCIAS E CONDUTAS */}
-          <div className="grid md:grid-cols-2 gap-4 mt-4">
-            <div className="p-4 bg-white border rounded-xl shadow-sm">
-              <h4 className="font-bold text-slate-700 mb-2 text-sm flex items-center gap-2"><AlertCircle size={16} className="text-orange-500" /> Intercorrências</h4>
-              <textarea 
-                className="w-full p-3 border rounded-lg h-24 text-sm outline-none focus:ring-2 focus:ring-orange-100 bg-slate-50 focus:bg-white transition-colors whitespace-pre-wrap" 
-                placeholder="Relate as intercorrências do plantão aqui..." 
-                value={currentPatient.enfermagem?.intercorrencias || ""} 
-                onChange={(e) => updateNested("enfermagem", "intercorrencias", e.target.value)} 
-                onBlur={() => handleBlurSave("Enfermagem: Editou Intercorrências")}
-              />
-            </div>
-            <div className="p-4 bg-white border rounded-xl shadow-sm">
-              <h4 className="font-bold text-slate-700 mb-2 text-sm flex items-center gap-2"><CheckCircle size={16} className="text-green-500" /> Condutas</h4>
-              <textarea 
-                className="w-full p-3 border rounded-lg h-24 text-sm outline-none focus:ring-2 focus:ring-green-100 bg-slate-50 focus:bg-white transition-colors whitespace-pre-wrap" 
-                placeholder="Plano de cuidados e condutas tomadas..." 
-                value={currentPatient.enfermagem?.condutas || ""} 
-                onChange={(e) => updateNested("enfermagem", "condutas", e.target.value)} 
-                onBlur={() => handleBlurSave("Enfermagem: Editou Condutas")}
-              />
-            </div>
-          </div>
-
           {/* EVOLUÇÃO IA / PRIVATIVO */}
           <div className="p-4 bg-white border rounded-xl shadow-sm mt-4">
             <div className="flex justify-between items-center mb-2">
