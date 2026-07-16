@@ -3306,6 +3306,27 @@ ${conduta}
       eventosRegistros.push(`- Acesso Periférico ${p.enfermagem.avpHorario} — ${p.enfermagem.avpLocal} (${p.enfermagem.avpCalibre || 'N/A'})`);
     }
 
+    // RCP (Reanimação Cardiopulmonar)
+    const rcpsHoje = filtrarHoje(p.enfermagem?.historicoRCP);
+    rcpsHoje.forEach(rcp => {
+        const dataEvento = e.data || '';
+        const dataISO = dataEvento.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, '$3-$2-$1');
+        return dataISO === hojeISO;
+      })
+      .sort((a, b) => (a.horarioInicioRCP || '').localeCompare(b.horarioInicioRCP || ''));
+    rcpsHoje.forEach(rcp => {
+      let texto = `- RCP ${rcp.horarioInicioRCP || 'N/I'} às ${rcp.horarioFimRCP || 'N/I'}`;
+      if (rcp.ritmoInicial) texto += ` — Ritmo inicial: ${rcp.ritmoInicial}`;
+      if (rcp.viaAerea) texto += ` — Via aérea: ${rcp.viaAerea}`;
+      if (rcp.adrenalinaAmpolas) texto += ` — Adrenalina: ${rcp.adrenalinaAmpolas} ampolas`;
+      if (rcp.outrasDrogas) texto += ` — Outras drogas: ${rcp.outrasDrogas}`;
+      if (rcp.desfibrilacao === 'Sim' && rcp.choques) texto += ` — Desfibrilação: ${rcp.choques} choque(s)`;
+      if (rcp.desfecho) texto += ` — Desfecho: ${rcp.desfecho}`;
+      if (rcp.causaProvavel) texto += ` — Causa provável: ${rcp.causaProvavel}`;
+      if (rcp.observacoes) texto += ` — Obs: ${rcp.observacoes}`;
+      eventosRegistros.push(texto);
+    });
+
     const eventosTexto = eventosRegistros.length > 0
       ? eventosRegistros.join('\n')
       : 'Nenhum registro adicional no período.';

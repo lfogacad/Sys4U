@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, 
+import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, HeartPulse,
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
 Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast,
 CheckCircle2, Printer, BriefcaseMedical } from 'lucide-react';
@@ -193,6 +193,21 @@ const NursingDashboard = ({
     caracteristica: '',
     oxigenacaoPre: '',
     intercorrencias: ''
+  });
+
+  const [modalRCP, setModalRCP] = useState({
+    isOpen: false,
+    horarioInicioRCP: '',
+    horarioFimRCP: '',
+    ritmoInicial: '',
+    viaAerea: '',
+    adrenalinaAmpolas: '',
+    outrasDrogas: [],
+    desfibrilacao: '',
+    choques: '',
+    causaProvavel: '',
+    desfecho: '',
+    observacoes: '',
   });
 
   useEffect(() => {
@@ -807,6 +822,32 @@ const NursingDashboard = ({
     setModalAspiracao({ ...modalAspiracao, isOpen: false });
   };
 
+  const salvarRCP = async () => {
+    const { horarioParada, horarioInicioRCP } = modalRCP;
+    
+    const registro = {
+      tipo: 'RCP',
+      data: new Date().toISOString().slice(0, 10),
+      horarioInicioRCP: modalRCP.horarioInicioRCP || '',
+      horarioFimRCP: modalRCP.horarioFimRCP || '',
+      ritmoInicial: modalRCP.ritmoInicial || '',
+      viaAerea: modalRCP.viaAerea || '',
+      adrenalinaAmpolas: modalRCP.adrenalinaAmpolas || '',
+      outrasDrogas: modalRCP.outrasDrogas.join(', '),
+      desfibrilacao: modalRCP.desfibrilacao || '',
+      choques: modalRCP.choques || '',
+      causaProvavel: modalRCP.causaProvavel || '',
+      desfecho: modalRCP.desfecho || '',
+      observacoes: modalRCP.observacoes || '',
+      registradoEm: new Date().toISOString(),
+    };
+
+    const historico = Array.isArray(currentPatient?.enfermagem?.historicoRCP) ? currentPatient.enfermagem.historicoRCP : [];
+    updateNested('enfermagem', 'historicoRCP', [...historico, registro]);
+    handleBlurSave('Registrou RCP');
+    setModalRCP({ ...modalRCP, isOpen: false });
+  };
+
   // ==============================================================
   // GERADOR DE PDF — CHECKLIST INSERÇÃO CVC
   // ==============================================================
@@ -1390,6 +1431,11 @@ return (
                   <button onClick={() => handleAcaoEnfermagem('Aspiração Traqueal')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
                     <Wind size={20} className="text-slate-400" />
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Aspiração<br/>Traqueal</span>
+                  </button>
+
+                  <button onClick={() => setModalRCP({ ...modalRCP, isOpen: true })} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <HeartPulse size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">RCP /<br/>PCR</span>
                   </button>
 
                 </div>
@@ -3156,6 +3202,141 @@ return (
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalAspiracao({ ...modalAspiracao, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
                 <button disabled={!modalAspiracao.horario || !modalAspiracao.quantidade || !modalAspiracao.caracteristica} onClick={salvarAspiracao} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/*  */}
+      {/* MODAL: RCP (REANIMAÇÃO CARDIOPULMONAR) */}
+      {/*  */}
+      {modalRCP.isOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-red-500/20 my-auto">
+            <div className="bg-red-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><HeartPulse size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Registro de RCP</h2>
+              </div>
+              <button onClick={() => setModalRCP({ ...modalRCP, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-5 overflow-y-auto max-h-[70vh]">
+
+              {/* HORÁRIOS */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Início da RCP</label>
+                  <input
+                    type="time"
+                    value={modalRCP.horarioInicioRCP}
+                    onChange={(e) => setModalRCP({ ...modalRCP, horarioInicioRCP: e.target.value })}
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 font-black text-center text-lg cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Fim da RCP</label>
+                  <input
+                    type="time"
+                    value={modalRCP.horarioFimRCP}
+                    onChange={(e) => setModalRCP({ ...modalRCP, horarioFimRCP: e.target.value })}
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 font-black text-center text-lg cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* RITMO INICIAL */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Ritmo Inicial</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['FV/TV s/ Pulso', 'AESP', 'Assistolia'].map(r => (
+                    <button key={r} onClick={() => setModalRCP({ ...modalRCP, ritmoInicial: r })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalRCP.ritmoInicial === r ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>{r}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* VIA AÉREA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Via Aérea Avançada</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['IOT', 'Máscara Laríngea', 'Não'].map(v => (
+                    <button key={v} onClick={() => setModalRCP({ ...modalRCP, viaAerea: v })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalRCP.viaAerea === v ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>{v}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ADRENALINA */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Adrenalina (1mg/mL)</label>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-sm font-bold text-slate-500">Ampolas:</span>
+                  <select className="w-28 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalRCP.adrenalinaAmpolas} onChange={(e) => setModalRCP({ ...modalRCP, adrenalinaAmpolas: e.target.value })}>
+                    <option value="">0</option>
+                    {Array.from({length: 20}, (_, i) => String(i+1)).map(a => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* OUTRAS DROGAS */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Outras Drogas Utilizadas</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Amiodarona', 'Atropina', 'Bicarbonato', 'Gluconato de Cálcio', 'Sulfato de Magnésio', 'Lidocaína'].map(d => {
+                    const selected = modalRCP.outrasDrogas.includes(d);
+                    return (
+                      <button key={d} onClick={() => setModalRCP({ ...modalRCP, outrasDrogas: selected ? modalRCP.outrasDrogas.filter(item => item !== d) : [...modalRCP.outrasDrogas, d] })} className={`p-2.5 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${selected ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>{d}</button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* DESFIBRILAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Desfibrilação / Cardioversão</label>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  {['Sim', 'Não'].map(op => (
+                    <button key={op} onClick={() => setModalRCP({ ...modalRCP, desfibrilacao: op, choques: op === 'Não' ? '' : modalRCP.choques })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalRCP.desfibrilacao === op ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>{op}</button>
+                  ))}
+                </div>
+                {modalRCP.desfibrilacao === 'Sim' && (
+                  <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-xl">
+                    <span className="text-xs font-bold text-slate-500">Nº de Choques:</span>
+                    <select className="w-16 p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none focus:ring-2 focus:ring-red-300 font-black text-center cursor-pointer appearance-none" value={modalRCP.choques} onChange={(e) => setModalRCP({ ...modalRCP, choques: e.target.value })}>
+                      <option value="">0</option>
+                      {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* CAUSA PROVÁVEL */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Causa Provável da PCR</label>
+                <textarea value={modalRCP.causaProvavel} onChange={(e) => setModalRCP({ ...modalRCP, causaProvavel: e.target.value })} placeholder="Hipóteses diagnósticas..." className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 text-sm resize-none h-16" />
+              </div>
+
+              {/* DESFECHO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Desfecho</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['RCE', 'Óbito', 'RCE + Óbito'].map(d => (
+                    <button key={d} onClick={() => setModalRCP({ ...modalRCP, desfecho: d })} className={`p-4 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalRCP.desfecho === d ? (d === 'Óbito' || d === 'RCE + Óbito' ? 'border-red-600 bg-red-50 text-red-700 shadow-md scale-[1.02]' : 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md scale-[1.02]') : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'}`}>{d}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* OBSERVAÇÕES */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Observações</label>
+                <textarea value={modalRCP.observacoes} onChange={(e) => setModalRCP({ ...modalRCP, observacoes: e.target.value })} placeholder="Intercorrências, detalhes adicionais..." className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-red-300 text-sm resize-none h-16" />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalRCP({ ...modalRCP, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalRCP.desfecho} onClick={salvarRCP} className="flex-1 py-4 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><HeartPulse size={18} /> Salvar Registro</button>
               </div>
             </div>
           </div>
