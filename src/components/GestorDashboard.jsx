@@ -138,6 +138,8 @@ const GestorDashboard = ({ userProfile }) => {
     buscarHistorico();
   }, [db]);
 
+  const [modalRelatorioCarrinho, setModalRelatorioCarrinho] = useState({ isOpen: false, texto: '' });
+
   // CONTROLES DA AUDITORIA AUTOMATIZADA (IPCS-C)
   const [auditoriasIPCSC, setAuditoriasIPCSC] = useState([]);
   const [filtroStatusIPCSC, setFiltroStatusIPCSC] = useState('Suspeito');
@@ -1966,6 +1968,112 @@ const GestorDashboard = ({ userProfile }) => {
       alert("Erro ao sincronizar com o servidor.");
     }
     setIsSavingConfig(false);
+  };
+
+  const gerarRelatorioMensalCarrinho = () => {
+    const [ano, mes] = mesFiltroCarrinhoEMG.split('-').map(Number);
+    const diasNoMes = new Date(ano, mes, 0).getDate();
+    const nomeMes = new Date(ano, mes - 1).toLocaleString('pt-BR', { month: 'long' });
+
+    // Agrupa registros por dia
+    const diasComRegistro = {};
+    listaCarrinhoEMG.forEach(reg => {
+      if (!diasComRegistro[reg.data]) {
+        diasComRegistro[reg.data] = [];
+      }
+      diasComRegistro[reg.data].push(reg);
+    });
+
+    let totalDias0 = 0, totalDias1 = 0, totalDias2 = 0;
+    let linhas = [];
+
+    for (let i = 1; i <= diasNoMes; i++) {
+      const diaStr = `${mesFiltroCarrinhoEMG}-${String(i).padStart(2, '0')}`;
+      const registros = diasComRegistro[diaStr] || [];
+      const qtd = registros.length;
+
+      if (qtd === 0) {
+        const dataAtual = new Date();
+        const dataDia = new Date(ano, mes - 1, i);
+        // Só conta como não realizado se não for futuro
+        if (dataDia <= dataAtual) {
+          totalDias0++;
+          linhas.push(`   Dia ${String(i).padStart(2, '0')}/${mesFiltroCarrinhoEMG.slice(5)}: Não realizado`);
+        }
+      } else if (qtd === 1) {
+        totalDias1++;
+        const r = registros[0];
+        const itensOk = [
+          r.laringoscopio === 'Funcionante' || r.laringoscopio === 'Sim',
+          r.cardioversor === 'Funcionante' || r.cardioversor === 'Sim',
+          r.gelCondutor === 'Funcionante' || r.gelCondutor === 'Sim',
+          r.tabua === 'Funcionante' || r.tabua === 'Sim',
+        ];
+        const okCount = itensOk.filter(Boolean).length;
+        linhas.push(`   Dia ${String(i).padStart(2, '0')}/${mesFiltroCarrinhoEMG.slice(5)}: 1 verificação (${okCount}/4 itens OK)`);
+        if (!r.laringoscopio || !(r.laringoscopio === 'Funcionante' || r.laringoscopio === 'Sim')) linhas.push(`      - Laringoscópio: ${r.laringoscopio || 'N/I'}`);
+        if (!r.cardioversor || !(r.cardioversor === 'Funcionante' || r.cardioversor === 'Sim')) linhas.push(`      - Cardioversor: ${r.cardioversor || 'N/I'}`);
+        if (!r.gelCondutor || !(r.gelCondutor === 'Funcionante' || r.gelCondutor === 'Sim')) linhas.push(`      - Gel Condutor: ${r.gelCondutor || 'N/I'}`);
+        if (!r.tabua || !(r.tabua === 'Funcionante' || r.tabua === 'Sim')) linhas.push(`      - Tábua: ${r.tabua || 'N/I'}`);
+      } else if (qtd >= 2) {
+        totalDias2++;
+        const todosOk = registros.every(r =>
+          ['Funcionante', 'Sim'].includes(r.laringoscopio) &&
+          ['Funcionante', 'Sim'].includes(r.cardioversor) &&
+          ['Funcionante', 'Sim'].includes(r.gelCondutor) &&
+          ['Funcionante', 'Sim'].includes(r.tabua)
+        );
+        linhas.push(`   Dia ${String(i).padStart(2, '0')}/${mesFiltroCarrinhoEMG.slice(5)}: ${qtd} verificações${todosOk ? ' — Todos os itens OK' : ' — Com pendências'}`);
+      }
+    }
+
+    const totalDiasUteis = totalDias0 + totalDias1 + totalDias2;
+    const adesao = totalDiasUteis > 0 ? Math.round(((totalDias1 + totalDias2) / totalDiasUteis) * 100) : 0;
+
+    let texto = `=== RELATÓRIO MENSAL DE CHECKLIST DO CARRINHO DE EMERGÊNCIA ===\n`;
+    texto += `Mês: ${nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1)} de ${ano}\n`;
+    texto += `Total de dias no mês: ${diasNoMes}\n`;
+    texto += `Gerado em: ${new Date().toLocaleString('pt-BR')}\n\n`;
+
+    texto += `--- RESUMO ---\n`;
+    texto += `Dias com 2 verificações: ${totalDias2}\n`;
+    texto += `Dias com 1 verificação: ${totalDias1}\n`;
+    texto += `Dias sem verificação: ${totalDias0}\n`;
+    texto += `Taxa de adesão: ${adesao}%\n\n`;
+
+    texto += `--- DETALHAMENTO POR DIA ---\n`;
+    linhas.forEach(l => texto += l + '\n');
+
+    const sugestao = adesao < 80
+      ? `\n\nRECOMENDAÇÃO: A taxa de adesão está abaixo de 80%. Reforçar a importância da verificação diária do carrinho de emergência junto à equipe.`
+      : adesao < 100
+        ? `\n\nRECOMENDAÇÃO: Boa adesão, mas ainda há dias sem verificação. Manter orientação da equipe para atingir 100% de conformidade.`
+        : `\n\nAVALIAÇÃO: Adesão total. Consistência exemplar na verificação diária do carrinho de emergência.`;
+
+    texto += sugestao;
+
+    setModalRelatorioCarrinho({ isOpen: true, texto });
+  };
+
+  const imprimirRelatorioCarrinho = () => {
+    const conteudo = modalRelatorioCarrinho.texto;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Relatório Mensal - Carrinho de Emergência</title>
+<style>
+  @page { margin: 20mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.5; color: #1e293b; padding: 30px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.5; }
+  .footer { margin-top: 30px; text-align: center; font-size: 9px; color: #94a3b8; border-top: 1px solid #d1d5db; padding-top: 10px; }
+</style></head>
+<body>
+<pre>${conteudo}</pre>
+<div class="footer">Documento gerado automaticamente em ${new Date().toLocaleString('pt-BR')}</div>
+</body></html>`);
+    win.document.close();
+    setTimeout(() => { win.print(); }, 300);
   };
 
   // Função para ligar/desligar "Morador" ou "Bloqueado" direto no banco
@@ -6790,6 +6898,12 @@ const GestorDashboard = ({ userProfile }) => {
                     onChange={(e) => setMesFiltroCarrinhoEMG(e.target.value)}
                     className="bg-white border border-slate-200 p-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-amber-500 cursor-pointer"
                   />
+                  <button
+                    onClick={gerarRelatorioMensalCarrinho}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors"
+                  >
+                    <FileText size={14} /> Relatório Mensal
+                  </button>
                 </div>
               </div>
             </div>
@@ -6940,6 +7054,32 @@ const GestorDashboard = ({ userProfile }) => {
                 </>
               )}
             </div>
+
+            {/* MODAL: RELATÓRIO MENSAL CARRINHO DE EMERGÊNCIA */}
+            {modalRelatorioCarrinho.isOpen && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+                <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border-4 border-amber-500/20 animate-fade-in">
+                  <div className="bg-amber-600 p-5 text-white flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-full"><FileText size={20} /></div>
+                      <h2 className="text-lg font-black">Relatório Mensal</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={imprimirRelatorioCarrinho} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors">
+                        Imprimir / PDF
+                      </button>
+                      <button onClick={() => setModalRelatorioCarrinho({ ...modalRelatorioCarrinho, isOpen: false })} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors">Fechar</button>
+                    </div>
+                  </div>
+                  <div className="p-6 bg-slate-50 max-h-[70vh] overflow-y-auto">
+                    <pre className="text-sm text-slate-700 font-mono whitespace-pre-wrap leading-relaxed">
+                      {modalRelatorioCarrinho.texto}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
