@@ -6576,7 +6576,7 @@ const GestorDashboard = ({ userProfile }) => {
             <div className="p-5 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
                 <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                  <Activity className="text-blue-600" /> Auditoria de Escalas Clínicas Admissão
+                  <Activity className="text-blue-600" /> Auditoria de Escalas Clínicas
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">Verificação de conformidade do SAPS 3, Braden e Morse de todas as internações.</p>
               </div>
