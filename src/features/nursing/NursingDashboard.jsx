@@ -242,19 +242,31 @@ const NursingDashboard = ({
     return !temManutencaoHoje;
   };
 
-  const svdPrecisaManut = precisaManutencaoHoje(
-    currentPatient?.enfermagem?.svdData,
-    currentPatient?.enfermagem?.historicoManutencaoSVD
-  );
+  const hojeData = new Date();
+  const hojeISO = `${hojeData.getFullYear()}-${String(hojeData.getMonth() + 1).padStart(2, '0')}-${String(hojeData.getDate()).padStart(2, '0')}`;
 
-  const cvcPrecisaManut = precisaManutencaoHoje(
+  const cvcRetirada = currentPatient?.enfermagem?.cvcRetiradaData;
+  const cvcJaFoiRetirado = cvcRetirada && cvcRetirada <= hojeISO;
+
+  const cvcPrecisaManut = !cvcJaFoiRetirado && precisaManutencaoHoje(
     currentPatient?.enfermagem?.cvcData,
     currentPatient?.enfermagem?.historicoManutencaoCVC
   );
 
-  const shileyPrecisaManut = precisaManutencaoHoje(
+  const shileyRetirada = currentPatient?.enfermagem?.shileyRetiradaData;
+  const shileyJaFoiRetirado = shileyRetirada && shileyRetirada <= hojeISO;
+
+  const shileyPrecisaManut = !shileyJaFoiRetirado && precisaManutencaoHoje(
     currentPatient?.enfermagem?.shileyData,
     currentPatient?.enfermagem?.historicoManutencaoShiley
+  );
+
+  const svdRetirada = currentPatient?.enfermagem?.svdRetiradaData;
+  const svdJaFoiRetirado = svdRetirada && svdRetirada <= hojeISO;
+
+  const svdPrecisaManut = !svdJaFoiRetirado && precisaManutencaoHoje(
+    currentPatient?.enfermagem?.svdData,
+    currentPatient?.enfermagem?.historicoManutencaoSVD
   );
 
   // === BLOQUEIO POR MANUTENÇÃO PENDENTE (CVC / Shiley / SVD) ===

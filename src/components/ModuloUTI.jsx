@@ -1055,7 +1055,21 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
            }
         });
       }
+
       // =========================================================
+      // 🗺️ ORIGEM DA INTERNAÇÃO (MAPA EPIDEMIOLÓGICO)
+      // =========================================================
+      if (pacienteSeguro.idInternacao) {
+        await setDoc(doc(db, "origens_internacao", pacienteSeguro.idInternacao), {
+          nomePaciente: pacienteSeguro.nome || "",
+          origem: pacienteSeguro.procedencia || "",
+          dataInternacao: pacienteSeguro.dataInternacao || "",
+          status: pacienteSeguro.statusInternacao || "Ativo",
+          pacienteId: pacienteSeguro.id || docId,
+          idInternacao: pacienteSeguro.idInternacao,
+          ultimaAtualizacao: new Date().toISOString()
+        }, { merge: true });
+      }
 
       console.log(`[AUDITORIA]: ${logMsg} no documento ${docId}`);
     } catch (err) { 
@@ -4319,6 +4333,17 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         backupProntuario: JSON.parse(JSON.stringify(pacienteAtual))
       });
 
+      // ==========================================
+      // 🗺️ ATUALIZA ORIGEM DA INTERNAÇÃO (DESFECHO)
+      // ==========================================
+      if (pacienteAtual.idInternacao) {
+        await setDoc(doc(db, "origens_internacao", pacienteAtual.idInternacao), {
+          status: "Alta/Óbito",
+          desfecho: dischargeDestination,
+          dataSaida: hojeISO
+        }, { merge: true });
+      }
+            
       // ==========================================
       // 4. LIMPEZA DO LEITO ATIVO (BLINDADA)
       // ==========================================

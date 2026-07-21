@@ -7,7 +7,8 @@ import {
   BarChart2, ShieldAlert, FileCheck, Users, AlertTriangle, CheckCircle, Settings, CalendarDays, Microscope,
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
-  FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance
+  FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance, Truck,
+  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
@@ -49,6 +50,8 @@ const GestorDashboard = ({ userProfile }) => {
   const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
   const [extraTurno, setExtraTurno] = useState('DN');
   const [extraNome, setExtraNome] = useState('');
+
+  const [modalRelatorioEscalas, setModalRelatorioEscalas] = useState({ isOpen: false, texto: '' });
 
   const [listaCarrinhoEMG, setListaCarrinhoEMG] = useState([]);
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
@@ -421,7 +424,7 @@ const GestorDashboard = ({ userProfile }) => {
     new Date().toISOString().split('T')[0]
   );
 
-// =========================================================
+  // =========================================================
   // 1. ESTADOS (useState) - O ALMOXARIFADO
   // =========================================================
   const [leitosConfig, setLeitosConfig] = useState([]);
@@ -501,7 +504,7 @@ const GestorDashboard = ({ userProfile }) => {
   // Sincroniza Histórico de Internações
   useEffect(() => {
     if (!db) return;
-    const q = collection(db, "internacoes_historico"); 
+    const q = collection(db, "origens_internacao"); 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setListaHistorico(dados);
@@ -847,6 +850,111 @@ const GestorDashboard = ({ userProfile }) => {
     } finally {
       setSalvandoAuditoria(false);
     }
+  };
+
+  const gerarRelatorioEscalas = () => {
+    const dataInicio = filtroDataInicio || 'N/I';
+    const dataFim = filtroDataFim || 'N/I';
+    const totalPacientes = listaEscalas.length;
+    const dataGeracao = new Date().toLocaleString('pt-BR');
+
+    // Função auxiliar pra puxar admissionais
+    const getAdmissao = (pac, campo) => {
+      if (campo === 'saps3') return pac.saps3?.score ?? pac.saps3?.pontuacao;
+      if (campo === 'braden') return pac.braden?.score ?? pac.braden?.pontuacao;
+      if (campo === 'morse') return pac.morse?.score ?? pac.morse?.pontuacao;
+      if (campo === 'mrc') return pac.admissaoFisioterapia?.mrcScore || pac.physio?.mrcScore;
+      if (campo === 'ims') return pac.admissaoFisioterapia?.ims || pac.physio?.icuMobilityScale || pac.physio?.ims;
+      return null;
+    };
+
+    // Escalas com suas configs
+    const escalas = [
+      { id: 'SAPS 3', campo: 'saps3' },
+      { id: 'Braden', campo: 'braden' },
+      { id: 'Morse', campo: 'morse' },
+      { id: 'MRC', campo: 'mrc' },
+      { id: 'IMS', campo: 'ims' },
+    ];
+
+    let texto = `RELATORIO DE COBERTURA DAS ESCALAS ASSISTENCIAIS\n`;
+    texto += `${'='.repeat(55)}\n\n`;
+    texto += `Periodo: ${dataInicio} a ${dataFim}\n`;
+    texto += `Total de pacientes no radar: ${totalPacientes}\n`;
+    texto += `Gerado em: ${dataGeracao}\n\n`;
+
+    let totalGeralAdmissao = 0;
+    let totalGeralPacientes = 0;
+
+    escalas.forEach(esc => {
+      let comAdmissao = 0;
+      let semAdmissao = 0;
+      let pacientesPendentes = [];
+
+      listaEscalas.forEach(pac => {
+        const valor = getAdmissao(pac, esc.campo);
+        if (valor) {
+          comAdmissao++;
+        } else {
+          semAdmissao++;
+          pacientesPendentes.push(pac.nome);
+        }
+      });
+
+      const cobertura = totalPacientes > 0 ? Math.round((comAdmissao / totalPacientes) * 100) : 0;
+      totalGeralAdmissao += comAdmissao;
+      totalGeralPacientes += totalPacientes;
+
+      texto += `${esc.id}\n`;
+      texto += `${'-'.repeat(30)}\n`;
+      texto += `  Pacientes: ${totalPacientes}\n`;
+      texto += `  Admissao preenchida: ${comAdmissao}\n`;
+      texto += `  Pendente: ${semAdmissao}\n`;
+      texto += `  Cobertura: ${cobertura}%\n`;
+
+      if (pacientesPendentes.length > 0) {
+        texto += `  Pacientes sem admissao: ${pacientesPendentes.join(', ')}\n`;
+      }
+      texto += '\n';
+    });
+
+    const coberturaMedia = totalGeralPacientes > 0
+      ? Math.round((totalGeralAdmissao / (totalGeralPacientes * escalas.length)) * 100)
+      : 0;
+
+    texto += `${'='.repeat(55)}\n`;
+    texto += `COBERTURA GLOBAL: ${coberturaMedia}%\n`;
+
+    if (coberturaMedia < 70) {
+      texto += `AVALIACAO: Cobertura critica. Necessario reforco urgente para preenchimento das escalas admissionais.\n`;
+    } else if (coberturaMedia < 90) {
+      texto += `AVALIACAO: Cobertura satisfatoria, mas com margem para melhoria. Reforcar preenchimento das escalas pendentes.\n`;
+    } else {
+      texto += `AVALIACAO: Cobertura excelente. Manter o padrao.\n`;
+    }
+
+    setModalRelatorioEscalas({ isOpen: true, texto });
+  };
+
+  const imprimirRelatorioEscalas = () => {
+    const conteudo = modalRelatorioEscalas.texto;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Relatorio - Cobertura de Escalas</title>
+<style>
+  @page { margin: 20mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.5; color: #1e293b; padding: 30px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.5; }
+  .footer { margin-top: 30px; text-align: center; font-size: 9px; color: #94a3b8; border-top: 1px solid #d1d5db; padding-top: 10px; }
+</style></head>
+<body>
+<pre>${conteudo}</pre>
+<div class="footer">Documento gerado automaticamente em ${new Date().toLocaleString('pt-BR')}</div>
+</body></html>`);
+    win.document.close();
+    setTimeout(() => { win.print(); }, 300);
   };
 
   const abrirAuditoriaEscala = (nomeEscala, nomePaciente, dadosEscala, meta = {}) => {
@@ -6598,6 +6706,12 @@ const GestorDashboard = ({ userProfile }) => {
                   onChange={(e) => setFiltroDataFim(e.target.value)}
                   className="p-1.5 border border-slate-200 rounded text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
                 />
+                <button
+                  onClick={gerarRelatorioEscalas}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors"
+                >
+                  <FileText size={14} /> Relatório
+                </button>
               </div>
             </div>
 
@@ -6688,7 +6802,6 @@ const GestorDashboard = ({ userProfile }) => {
                               <span className="font-black text-slate-700 text-lg">
                                 {pac.admissaoFisioterapia?.mrcScore ?? '-'}
                               </span>
-                              {/* Botão de lupa removido. Mantido apenas o Histórico: */}
                               <button 
                                 onClick={() => abrirHistoricoEscalas('MRC', pac)} 
                                 className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors" 
@@ -6713,7 +6826,6 @@ const GestorDashboard = ({ userProfile }) => {
                                   return typeof imsValue === 'string' ? imsValue.split(' -')[0] : imsValue;
                                 })()}
                               </span>
-                              {/* Botão de lupa removido. Mantido apenas o Histórico: */}
                               <button 
                                 onClick={() => abrirHistoricoEscalas('IMS', pac)} 
                                 className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors" 
@@ -6733,6 +6845,31 @@ const GestorDashboard = ({ userProfile }) => {
                 </tbody>
               </table>
             </div>
+
+            {/* MODAL: RELATORIO DE COBERTURA DE ESCALAS */}
+            {modalRelatorioEscalas.isOpen && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+                <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border-4 border-blue-500/20 animate-fade-in">
+                  <div className="bg-blue-600 p-5 text-white flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-full"><FileText size={20} /></div>
+                      <h2 className="text-lg font-black">Relatorio de Cobertura</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={imprimirRelatorioEscalas} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors">
+                        Imprimir / PDF
+                      </button>
+                      <button onClick={() => setModalRelatorioEscalas({ ...modalRelatorioEscalas, isOpen: false })} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors">Fechar</button>
+                    </div>
+                  </div>
+                  <div className="p-6 bg-slate-50 max-h-[70vh] overflow-y-auto">
+                    <pre className="text-sm text-slate-700 font-mono whitespace-pre-wrap leading-relaxed">
+                      {modalRelatorioEscalas.texto}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -7612,15 +7749,16 @@ const GestorDashboard = ({ userProfile }) => {
 
     if (subViewEquipe === 'escalas') {
       const categorias = [
-        { id: 'Visão Geral', icon: <Shield size={16} /> },
-        { id: 'Médico', icon: <Activity size={16} /> }, 
-        { id: 'Enfermeiro', icon: <Users size={16} /> },
-        { id: 'Téc. Enfermagem', icon: <Users size={16} /> }, 
-        { id: 'Téc. Hemodiálise', icon: <Activity size={16} /> }, 
-        { id: 'Fisioterapeuta', icon: <Activity size={16} /> },
-        { id: 'Fonoaudiólogo', icon: <Activity size={16} /> }, 
-        { id: 'Nutricionista', icon: <Activity size={16} /> },
-        { id: 'Psicólogo', icon: <Activity size={16} /> },
+        { id: 'Visão Geral', icon: <LayoutDashboard size={16} /> },
+        { id: 'Médico', icon: <Stethoscope size={16} /> }, 
+        { id: 'Enfermeiro', icon: <UserRound size={16} /> },
+        { id: 'Téc. Enfermagem', icon: <Thermometer size={16} /> }, 
+        { id: 'Téc. Hemodiálise', icon: <Filter size={16} /> }, 
+        { id: 'Fisioterapeuta', icon: <Wind size={16} /> },
+        { id: 'Fonoaudiólogo', icon: <Mic size={16} /> }, 
+        { id: 'Nutricionista', icon: <Leaf size={16} /> },
+        { id: 'Psicólogo', icon: <Brain size={16} /> },
+        { id: 'Motorista', icon: <Truck size={16} /> },
         { id: 'Recepção', icon: <Users size={16} /> }, 
       ];
 
