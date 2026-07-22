@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, X, Copy, Activity, Shield, ClipboardCheck, Target } from 'lucide-react';
 import { ICU_MOBILITY_SCALE, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO } from '../../constants/clinicalLists';
+import { ModalPortal } from '../ModuloUTI';
 
 const PhysioEvoModal = ({
   showPhysioEvoModal,
@@ -52,8 +53,8 @@ const PhysioEvoModal = ({
         amplitudeMovimento: physio.amplitudeMovimento || "",
         amplitudeDescricao: physio.amplitudeDescricao || "",
         // Escalas Funcionais (agora puxam corretamente)
-        mrcScore: physio.mrcScore_plano || getLatest(physio.mrcScore),
-        ims: physio.ims || getLatest(physio.icuMobilityScale),
+        mrcScore: "",
+        ims: "",
         // Condutas e Planejamento
         condutas: physio.condutas || "",
         planoMetas: physio.planoMetas || "",
@@ -111,6 +112,8 @@ const PhysioEvoModal = ({
     }
     
     setIsSaving(false);
+    // Fecha o modal de evolução — o texto gerado será exibido pelo componente pai
+    setShowPhysioEvoModal(false);
   };
 
   const handleCopyGeneratedText = () => {
@@ -152,7 +155,8 @@ const PhysioEvoModal = ({
   // =======================================================================
   if (physioEvoText) {
     return (
-      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[90] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
+      <ModalPortal>
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[99999999] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
         <div className="bg-white w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl shadow-2xl flex flex-col">
           
           {/* HEADER */}
@@ -206,6 +210,7 @@ const PhysioEvoModal = ({
 
         </div>
       </div>
+      </ModalPortal>
     );
   }
 
@@ -213,7 +218,8 @@ const PhysioEvoModal = ({
   // TELA 1: FORMULÁRIO DE EDIÇÃO
   // =======================================================================
   return (
-    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[90] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
+    <ModalPortal>
+    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999999] flex items-center justify-center p-2 md:p-4 animate-fadeIn overflow-y-auto">
       <div className="bg-white w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl shadow-2xl flex flex-col">
         
         {/* HEADER */}
@@ -502,6 +508,7 @@ const PhysioEvoModal = ({
 
       </div>
     </div>
+    </ModalPortal>
   );
 };
 

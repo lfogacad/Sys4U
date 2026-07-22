@@ -1469,8 +1469,12 @@ const GestorDashboard = ({ userProfile }) => {
           procedencia = "Não Informada";
         }
         
-        if (!totaisPizza[procedencia]) totaisPizza[procedencia] = 0;
-        totaisPizza[procedencia]++;
+        // 🎯 Agrupa todas as variações de Ariquemes em uma só
+        const chavePizza = procedencia.toLowerCase().includes("ariquemes")
+          ? "Ariquemes"
+          : procedencia;
+        if (!totaisPizza[chavePizza]) totaisPizza[chavePizza] = 0;
+        totaisPizza[chavePizza]++;
 
         listaTabela.push({
           nome: pac.nomePaciente || pac.nome,
@@ -2323,7 +2327,7 @@ const GestorDashboard = ({ userProfile }) => {
           id: idAuditoria, pacienteId: formManualPAV.pacienteId,
           nome: p.nome, leito: leitoLimpo, // Puxando nome do estado e o leito limpo
           mesReferencia: mesRef, dataSuspeita: dataEventoDOE, dataEventoDOE: dataEventoDOE,
-          status: "Confirmado", 
+          status: formManualPAV.ehImportada ? "Importada" : "Confirmado", 
           evidencias: {
             radiologia: `Sim (Manual) em ${formManualPAV.dataRadiologia.split('-').reverse().join('/')}`,
             sistemicos: evidenciasSys,
@@ -2410,7 +2414,7 @@ const GestorDashboard = ({ userProfile }) => {
           id: idAuditoria, pacienteId: formManualIPCSC.pacienteId,
           nome: p.nome, leito: leitoLimpo, // Puxando nome do estado e o leito limpo
           mesReferencia: mesRef, dataSuspeita: dataEventoDOE, dataEventoDOE: dataEventoDOE,
-          status: "Confirmado", 
+          status: formManualIPCSC.ehImportada ? "Importada" : "Confirmado", 
           evidencias: {
             microbiologia: `${formManualIPCSC.germe} (${formManualIPCSC.tipoGerme === 'patogeno' ? 'Patógeno Reconhecido' : 'Comensal em amostras múltiplas'})`,
             sistemicos: evidenciasSys.length > 0 ? evidenciasSys : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
@@ -2469,7 +2473,7 @@ const GestorDashboard = ({ userProfile }) => {
         id: idAuditoria, pacienteId: formManualITU.pacienteId,
         nome: p.nome, leito: leitoLimpo, // Puxando nome do estado e o leito limpo
         mesReferencia: mesRef, dataSuspeita: formManualITU.dataColeta, dataEventoDOE: formManualITU.dataColeta,
-        status: "Confirmado",
+        status: formManualITU.ehImportada ? "Importada" : "Confirmado",
         evidencias: {
           microbiologia: `${formManualITU.germe} (${formManualITU.ufc} UFC/mL)`,
           sistemicos: evidenciasSys,
@@ -3728,7 +3732,7 @@ const GestorDashboard = ({ userProfile }) => {
 
           {/* CARD 3: TEMPO MÉDIO (LOS) */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Tempo Médio (LOS)</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Tempo de Permanência (LOS)</span>
             <div className="text-3xl font-black text-slate-800 mt-1">{metricasOperacionais.los} <span className="text-sm font-normal text-slate-500">dias</span></div>
           </div>
 
@@ -5051,24 +5055,35 @@ const GestorDashboard = ({ userProfile }) => {
                       </div>
 
                       {modalAuditoriaPAV.status === 'Suspeito' && (
-                        <div className="mt-6 flex gap-4 pt-4 border-t border-slate-100">
+                        <div className="mt-6 flex flex-col gap-3 pt-4 border-t border-slate-100">
+                          <div className="flex gap-4">
+                            <button 
+                              onClick={() => {
+                                atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Confirmado');
+                                setModalAuditoriaPAV(null);
+                              }} 
+                              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            >
+                              <CheckCircle size={18} /> Confirmar PAV
+                            </button>
+                            <button 
+                              onClick={() => {
+                                atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Descartado');
+                                setModalAuditoriaPAV(null);
+                              }} 
+                              className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
+                            >
+                              Descartar Suspeita
+                            </button>
+                          </div>
                           <button 
                             onClick={() => {
-                              atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Confirmado');
+                              atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Importada');
                               setModalAuditoriaPAV(null);
                             }} 
-                            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
                           >
-                            <CheckCircle size={18} /> Confirmar PAV
-                          </button>
-                          <button 
-                            onClick={() => {
-                              atualizarStatusPAV(modalAuditoriaPAV.firebaseId, 'Descartado');
-                              setModalAuditoriaPAV(null);
-                            }} 
-                            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
-                          >
-                            Descartar Suspeita
+                            <ShieldAlert size={18} /> Registrar como Importada (não contabiliza na UTI)
                           </button>
                         </div>
                       )}
@@ -5090,7 +5105,7 @@ const GestorDashboard = ({ userProfile }) => {
                 </div>
               )}
 
-              {/* MODAL GIGANTE DE INSERÇÃO MANUAL DE PAV */}
+              {/* MODAL DE INSERÇÃO MANUAL DE PAV */}
               {isModalManualPAVOpen && (
                 <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
                   <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-slideUp">
@@ -5207,6 +5222,22 @@ const GestorDashboard = ({ userProfile }) => {
                             <p className="text-[10px] text-purple-600 font-bold mt-1 italic">* Ao preencher este campo, o sistema exigirá apenas 1 sinal clínico (sistêmico ou respiratório) para fechar a PAV.</p>
                           </div>
                         )}
+                      </div>
+
+                      {/* PAV IMPORTADA */}
+                      <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 shadow-sm">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={formManualPAV.ehImportada || false}
+                            onChange={(e) => setFormManualPAV({...formManualPAV, ehImportada: e.target.checked})}
+                            className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500"
+                          />
+                          <div>
+                            <span className="text-sm font-bold text-amber-800">PAV Importada de outra unidade</span>
+                            <p className="text-[10px] text-amber-600">Caso registrado em outro serviço. Não entrará na taxa da sua UTI.</p>
+                          </div>
+                        </label>
                       </div>
 
                     </div>
@@ -5611,24 +5642,35 @@ const GestorDashboard = ({ userProfile }) => {
                       </div>
 
                       {modalAuditoriaIPCSC.status === 'Suspeito' && (
-                        <div className="mt-6 flex gap-4 pt-4 border-t border-slate-100">
+                        <div className="mt-6 flex flex-col gap-3 pt-4 border-t border-slate-100">
+                          <div className="flex gap-4">
+                            <button 
+                              onClick={() => {
+                                atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Confirmado');
+                                setModalAuditoriaIPCSC(null);
+                              }} 
+                              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            >
+                              <CheckCircle size={18} /> Confirmar IPCS-C
+                            </button>
+                            <button 
+                              onClick={() => {
+                                atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Descartado');
+                                setModalAuditoriaIPCSC(null);
+                              }} 
+                              className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
+                            >
+                              Descartar Suspeita
+                            </button>
+                          </div>
                           <button 
                             onClick={() => {
-                              atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Confirmado');
+                              atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Importada');
                               setModalAuditoriaIPCSC(null);
                             }} 
-                            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
                           >
-                            <CheckCircle size={18} /> Confirmar IPCS-C
-                          </button>
-                          <button 
-                            onClick={() => {
-                              atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Descartado');
-                              setModalAuditoriaIPCSC(null);
-                            }} 
-                            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
-                          >
-                            Descartar Suspeita
+                            <ShieldAlert size={18} /> Registrar como Importada (não contabiliza na UTI)
                           </button>
                         </div>
                       )}
@@ -5758,6 +5800,22 @@ const GestorDashboard = ({ userProfile }) => {
                             {formManualIPCSC.sysHipotensao && <input type="date" value={formManualIPCSC.dataHipotensao} onChange={e => setFormManualIPCSC({...formManualIPCSC, dataHipotensao: e.target.value})} className="p-1 border rounded text-xs ml-2" />}
                           </label>
                         </div>
+                      </div>
+
+                      {/* IPCS-C IMPORTADA */}
+                      <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 shadow-sm">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={formManualIPCSC.ehImportada || false}
+                            onChange={(e) => setFormManualIPCSC({...formManualIPCSC, ehImportada: e.target.checked})}
+                            className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500"
+                          />
+                          <div>
+                            <span className="text-sm font-bold text-amber-800">IPCS-C Importada de outra unidade</span>
+                            <p className="text-[10px] text-amber-600">Caso registrado em outro serviço. Não entrará na taxa da sua UTI.</p>
+                          </div>
+                        </label>
                       </div>
 
                     </div>
@@ -6136,24 +6194,35 @@ const GestorDashboard = ({ userProfile }) => {
                       </div>
 
                       {modalAuditoriaITU.status === 'Suspeito' && (
-                        <div className="mt-6 flex gap-4 pt-4 border-t border-slate-100">
+                        <div className="mt-6 flex flex-col gap-3 pt-4 border-t border-slate-100">
+                          <div className="flex gap-4">
+                            <button 
+                              onClick={() => {
+                                atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Confirmado');
+                                setModalAuditoriaITU(null);
+                              }} 
+                              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            >
+                              <CheckCircle size={18} /> Confirmar ITU-AC
+                            </button>
+                            <button 
+                              onClick={() => {
+                                atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Descartado');
+                                setModalAuditoriaITU(null);
+                              }} 
+                              className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
+                            >
+                              Descartar Suspeita
+                            </button>
+                          </div>
                           <button 
                             onClick={() => {
-                              atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Confirmado');
+                              atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Importada');
                               setModalAuditoriaITU(null);
                             }} 
-                            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
                           >
-                            <CheckCircle size={18} /> Confirmar ITU-AC
-                          </button>
-                          <button 
-                            onClick={() => {
-                              atualizarStatusITU(modalAuditoriaITU.firebaseId, 'Descartado');
-                              setModalAuditoriaITU(null);
-                            }} 
-                            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
-                          >
-                            Descartar Suspeita
+                            <ShieldAlert size={18} /> Registrar como Importada (não contabiliza na UTI)
                           </button>
                         </div>
                       )}
@@ -6285,6 +6354,22 @@ const GestorDashboard = ({ userProfile }) => {
                         </div>
                         <p className="text-[10px] text-slate-400 italic">* Para pacientes sedados ou intubados na UTI, a avaliação da dor costuma ser limitada, tornando a Febre o gatilho principal.</p>
                       </div>
+
+                      {/* ITU-AC IMPORTADA */}
+                      <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 shadow-sm">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={formManualITU.ehImportada || false}
+                            onChange={(e) => setFormManualITU({...formManualITU, ehImportada: e.target.checked})}
+                            className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500"
+                          />
+                          <div>
+                            <span className="text-sm font-bold text-amber-800">ITU-AC Importada de outra unidade</span>
+                            <p className="text-[10px] text-amber-600">Caso registrado em outro serviço. Não entrará na taxa da sua UTI.</p>
+                          </div>
+                        </label>
+                      </div>                      
 
                     </div>
 

@@ -1735,7 +1735,8 @@ const clearAntibiotic = (i) => {
       };
     }
 
-    const idInternacao = `${admissionData.cpf || 'SEM_CPF'}_${Date.now()}`;
+    const cpfPaciente = admissionData.cpf || currentPatient?.cpf || 'SEM_CPF';
+    const idInternacao = `${cpfPaciente}_${Date.now()}`;
     if (!r.idInternacao) r.idInternacao = idInternacao; 
 
     r.statusInternacao = "Ativo";
