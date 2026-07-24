@@ -1745,14 +1745,18 @@ const GestorDashboard = ({ userProfile }) => {
     // ================================================================
     const mortalidadeBrutaCalc = totalDesfechos30d > 0 ? ((obitosTotais30d / totalDesfechos30d) * 100).toFixed(1) : "0.0";
     const mortalidadeEsperadaCalc = pacientesComSaps30d > 0 ? ((obitosEsperadosSaps30d / pacientesComSaps30d) * 100).toFixed(1) : "0.0";
-    const smrCalculado = obitosEsperadosSaps30d > 0 ? (obitosObservadosSaps30d / obitosEsperadosSaps30d).toFixed(2) : "0.00";
+    const temObitoComSaps = obitosObservadosSaps30d > 0;
+    const smrCalculado = temObitoComSaps && obitosEsperadosSaps30d > 0 
+      ? (obitosObservadosSaps30d / obitosEsperadosSaps30d).toFixed(2) 
+      : "indisponivel";
+    
     const taxaReadmReal = totalDesfechos30d > 0 ? ((contagemReadmissao30d / totalDesfechos30d) * 100).toFixed(1) : "0.0";
     const taxaID30d = totalOcupados30d > 0 ? ((totalIdentificados30d / totalOcupados30d) * 100).toFixed(1) : "0.0";
 
     return {
       mortalidadeBruta: mortalidadeBrutaCalc,
       mortalidadeEsperada: mortalidadeEsperadaCalc,
-      smr: smrCalculado,
+      smr: smrCalculado, // ← Agora retorna "indisponivel" em vez de "0.00"
       taxaReadmissao: taxaReadmReal,
       taxaIdentificacao: taxaID30d
     };
@@ -3773,8 +3777,7 @@ const GestorDashboard = ({ userProfile }) => {
               const smrVal = parseFloat(metricasQualidade.smr);
               
               // 1. Tratamento da falta de dados corrigido!
-              // Só é "Sem Dados" se não houver Mortalidade Esperada calculada
-              const semDados = isNaN(smrVal) || metricasQualidade.mortalidadeEsperada === "0.0"; 
+              const semDados = isNaN(smrVal) || smrVal === "indisponivel" || metricasQualidade.mortalidadeEsperada === "0.0";
               
               if (semDados) {
                 return (
@@ -3782,7 +3785,7 @@ const GestorDashboard = ({ userProfile }) => {
                     <span className="text-[10px] font-bold uppercase text-slate-500">SMR (SAPS 3)</span>
                     <div className="text-3xl font-black mt-1 text-slate-400">-</div>
                     <div className="absolute bottom-2 right-4 text-[10px] font-bold px-2 py-1 rounded bg-slate-200 text-slate-500">
-                      Aguardando Saídas
+                      Aguardando Óbitos com SAPS
                     </div>
                   </div>
                 );

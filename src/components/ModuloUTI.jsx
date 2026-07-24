@@ -211,6 +211,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
   const [isReadOnly, setIsReadOnly] = useState(false);
 
+  const [notificacaoAlta, setNotificacaoAlta] = useState(null);
+
   const [isNutriReadOnly, setIsNutriReadOnly] = useState(false);
   
   const rawPatient = patients[activeTab] || defaultPatient(0);
@@ -4259,6 +4261,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
 
   // 2. O motor que salva o desfecho, verifica dispositivos e limpa o leito
   const confirmDischarge = async () => {
+    console.log("🔥 confirmDischarge DISPARADA", Date.now());
     if (!dischargeDestination) return alert("Selecione o destino do paciente.");
 
     const pacienteAtual = patients[activeTab];
@@ -4393,7 +4396,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       // Finaliza a interface
       setShowDischargeModal(false);
       setDischargeDestination("");
-      alert(`✅ Saída concluída! O leito de ${pacienteAtual.nome} agora está livre e limpo.`);
+      setNotificacaoAlta(`✅ Saída concluída! O leito de ${pacienteAtual.nome} agora está livre e limpo.`);
 
       // 🔽 ADICIONAR: Correção retroativa do censo diário
       const hojeDataStr = new Date().toISOString().split('T')[0];
@@ -4439,11 +4442,9 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         }
       }
 
-      alert(`✅ Saída concluída! O leito de ${pacienteAtual.nome} agora está livre e limpo.`);
-
     } catch (error) {
       console.error("Erro ao processar alta:", error);
-      alert("Erro crítico ao salvar indicadores. Verifique a conexão.");
+      setNotificacaoAlta("❌ Erro crítico ao salvar indicadores. Verifique a conexão.");
     } finally {
       setIsDischarging(false);
     }
@@ -5451,6 +5452,22 @@ const userRole = userProfile?.role || userProfile?.perfil;
         </div>
       </main>
 
+      {/* TOAST DE NOTIFICAÇÃO */}
+      {notificacaoAlta && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[99999] p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center animate-fadeIn">
+            <div className="text-4xl mb-4">✅</div>
+            <p className="text-slate-700 font-bold text-lg">{notificacaoAlta}</p>
+            <button 
+              onClick={() => setNotificacaoAlta(null)}
+              className="mt-6 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: HISTÓRICO DE EXAMES LABORATORIAIS */}
       <HistoryModal
         showHistoryModal={showHistoryModal}
@@ -5686,12 +5703,13 @@ const userRole = userProfile?.role || userProfile?.perfil;
 
             <div className="flex gap-3">
               <button 
-                onClick={() => { setShowDischargeModal(false); setDischargeDestination(""); }} 
+                onClick={() => { setShowDischargeModal(false); setDischargeDestination(""); setNotificacaoAlta(null); }} 
                 className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors"
               >
                 Cancelar
               </button>
               <button
+                type="button"
                 onClick={confirmDischarge}
                 disabled={!dischargeDestination || isDischarging}
                 className={`flex-1 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 ${
