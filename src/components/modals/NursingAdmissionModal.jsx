@@ -39,10 +39,24 @@ const NursingAdmissionModal = ({
                   {ESCALA_DOR.map((o) => <option key={o}>{o}</option>)}
                 </select>
               </div>
-              <div className="flex items-center">
+              <div>
                 <label className="flex items-center gap-2 font-bold text-slate-700">
-                  <input type="checkbox" className="w-4 h-4" checked={nursingData.hemodialise || false} onChange={(e) => setNursingData({ ...nursingData, hemodialise: e.target.checked })} disabled={isReadOnly}/> Hemodiálise
+                  <input type="checkbox" className="w-4 h-4" checked={nursingData.hemodialise || false} onChange={(e) => setNursingData({ ...nursingData, hemodialise: e.target.checked, acessoHemodialise: "" })} disabled={isReadOnly}/> Hemodiálise
                 </label>
+                {nursingData.hemodialise && (
+                  <div className="mt-3 flex gap-2 animate-fadeIn">
+                    <select
+                      className="w-full p-2 border rounded bg-white text-xs"
+                      value={nursingData.acessoHemodialise || ""}
+                      onChange={(e) => setNursingData({ ...nursingData, acessoHemodialise: e.target.value })}
+                      disabled={isReadOnly}
+                    >
+                      <option value="">Tipo de Acesso...</option>
+                      <option value="Permcath">Permcath</option>
+                      <option value="FAV">Fístula Arteriovenosa (FAV)</option>
+                    </select>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Precauções</label>
@@ -161,6 +175,149 @@ const NursingAdmissionModal = ({
                 <input className="w-full p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Tipo/Características" value={nursingData.drenoTipo || ""} onChange={(e) => setNursingData({ ...nursingData, drenoTipo: e.target.value })} disabled={isReadOnly}/>
               </div>
             </div>
+          </div>
+
+          {/* AVALIAÇÃO FÍSICA */}
+          <div className="p-4 border rounded-xl bg-orange-50/20 shadow-sm">
+            <h4 className="font-bold text-orange-800 mb-3">Avaliação Física</h4>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Pulsos Periféricos */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Pulsos Periféricos</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.pulsos || ""} onChange={(e) => setNursingData({ ...nursingData, pulsos: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Cheios e simétricos">Cheios e simétricos</option>
+                  <option value="Cheios e assimétricos">Cheios e assimétricos</option>
+                  <option value="Fracos">Fracos</option>
+                  <option value="Ausentes">Ausentes</option>
+                </select>
+              </div>
+              {/* Tempo de Enchimento Capilar */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Enchimento Capilar</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.enchimentoCapilar || ""} onChange={(e) => setNursingData({ ...nursingData, enchimentoCapilar: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="< 3 segundos">&lt; 3 segundos</option>
+                  <option value="≥ 3 segundos">≥ 3 segundos</option>
+                </select>
+              </div>
+              {/* Suporte de O2 */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Suporte de O₂</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.suporteO2 || ""} onChange={(e) => setNursingData({ ...nursingData, suporteO2: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Ar Ambiente">Ar Ambiente</option>
+                  <option value="Cateter Nasal">Cateter Nasal</option>
+                  <option value="Máscara de Venturi">Máscara de Venturi</option>
+                  <option value="Máscara não Reinalante">Máscara não Reinalante</option>
+                  <option value="VM (Ventilação Mecânica)">VM (Ventilação Mecânica)</option>
+                  <option value="VNI">VNI</option>
+                  <option value="TQT">Macronebulização por TQT</option>
+                </select>
+              </div>
+              {/* Esforço Respiratório */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Esforço Respiratório</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.esforcoRespiratorio || ""} onChange={(e) => setNursingData({ ...nursingData, esforcoRespiratorio: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Leve">Leve</option>
+                  <option value="Moderado">Moderado</option>
+                  <option value="Severo">Severo</option>
+                  <option value="Sem esforço">Sem esforço</option>
+                </select>
+              </div>
+              {/* Coloração da Pele (Hipocorado / Normocorado) */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Coloração da Pele</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.coloracaoPele || ""} onChange={(e) => setNursingData({ ...nursingData, coloracaoPele: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Normocorado">Normocorado</option>
+                  <option value="Hipocorado +/4">Hipocorado +/4</option>
+                  <option value="Hipocorado ++/4">Hipocorado ++/4</option>
+                  <option value="Hipocorado +++/4">Hipocorado +++/4</option>
+                  <option value="Hipocorado ++++/4">Hipocorado ++++/4</option>
+                </select>
+              </div>
+              {/* Cianose */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Cianose</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.cianose || ""} onChange={(e) => setNursingData({ ...nursingData, cianose: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Acianótico">Acianótico</option>
+                  <option value="Cianótico">Cianótico</option>
+                </select>
+              </div>
+              {/* Icterícia */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Icterícia</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.ictericia || ""} onChange={(e) => setNursingData({ ...nursingData, ictericia: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Anictérico">Anictérico</option>
+                  <option value="Ictérico +/4">Ictérico +/4</option>
+                  <option value="Ictérico ++/4">Ictérico ++/4</option>
+                  <option value="Ictérico +++/4">Ictérico +++/4</option>
+                  <option value="Ictérico ++++/4">Ictérico ++++/4</option>
+                </select>
+              </div>
+              {/* Diurese */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Diurese</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.diurese || ""} onChange={(e) => setNursingData({ ...nursingData, diurese: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Presente">Presente</option>
+                  <option value="Ausente">Ausente</option>
+                </select>
+              </div>
+              {/* Característica da Diurese */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Característica da Diurese</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.diureseCaracteristica || ""} onChange={(e) => setNursingData({ ...nursingData, diureseCaracteristica: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Clara">Clara</option>
+                  <option value="Turva">Turva</option>
+                  <option value="Concentrada">Concentrada</option>
+                  <option value="Hematúrica">Hematúrica</option>
+                  <option value="Sanguinolenta">Sanguinolenta</option>
+                </select>
+              </div>
+              {/* Acesso Venoso */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Acesso Venoso</label>
+                <select className="w-full p-2 border rounded bg-white" value={nursingData.acessoVenosoStatus || ""} onChange={(e) => setNursingData({ ...nursingData, acessoVenosoStatus: e.target.value })} disabled={isReadOnly}>
+                  <option value="">Selecione...</option>
+                  <option value="Pérvio">Pérvio</option>
+                  <option value="Obstruído">Obstruído</option>
+                </select>
+              </div>
+              {/* Sinais Flogísticos (aparece só se acesso venoso preenchido) */}
+              <div className="flex items-center">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer mt-6">
+                  <input type="checkbox" className="w-3.5 h-3.5" checked={nursingData.sinaisFlogisticos || false} onChange={(e) => setNursingData({ ...nursingData, sinaisFlogisticos: e.target.checked })} disabled={isReadOnly}/>
+                  Sinais Flogísticos
+                </label>
+              </div>
+            </div>
+            {/* Avaliação do Abdome */}
+            <div className="mt-4">
+              <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Avaliação do Abdome</label>
+              <textarea
+                className="w-full p-3 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-orange-200 resize-y h-16"
+                value={nursingData.abdome || "Flácido, indolor à palpação, ruídos hidroaéreos presentes"}
+                onChange={(e) => setNursingData({ ...nursingData, abdome: e.target.value })}
+                disabled={isReadOnly}
+              />
+            </div>
+          </div>
+
+          {/* CUIDADOS DE ENFERMAGEM */}
+          <div className="p-4 border rounded-xl bg-orange-50/20 shadow-sm">
+            <h4 className="font-bold text-orange-800 mb-3">Cuidados de Enfermagem</h4>
+            <textarea
+              className="w-full p-3 border rounded bg-white text-xs outline-none focus:ring-2 focus:ring-orange-200 resize-y h-28 leading-relaxed"
+              value={nursingData.cuidadosEnfermagem || "Instalação em leito, identificação e orientações ao paciente/acompanhante.\nVerificação de alergias e pulseira de identificação.\nManter oxigenoterapia para SpO₂ ≥ 92%, titular conforme necessidade.\nMonitorização contínua (cardioscopia, PA não invasiva a cada 15 min, oximetria).\nPunção de acesso venoso periférico, se necessário.\nControle de diurese e balanço hídrico estrito.\nAdministrar medicamentos prescritos conforme evolução.\nManter decúbito elevado (30–45°) para otimizar ventilação.\nMedidas de conforto e posicionamento no leito.\nOferecer apoio emocional e orientações iniciais ao acompanhante."}
+              onChange={(e) => setNursingData({ ...nursingData, cuidadosEnfermagem: e.target.value })}
+              disabled={isReadOnly}
+            />
           </div>
 
           {/* ========================================================= */}
