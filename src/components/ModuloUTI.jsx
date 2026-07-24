@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, arrayUnion, 
+import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, arrayUnion, writeBatch, increment, 
          onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
@@ -227,6 +227,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [showDischargeModal, setShowDischargeModal] = useState(false);
   const [dischargeDestination, setDischargeDestination] = useState("");
   const [isDischarging, setIsDischarging] = useState(false);
+  const [dischargeDate, setDischargeDate] = useState(new Date().toISOString().split('T')[0]);
 
   // --- ESTADOS DO MODAL DE ALERTAS DE LEITO ---
   const [alertasLeito, setAlertasLeito] = useState([]);
@@ -4262,6 +4263,11 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
 
     const pacienteAtual = patients[activeTab];
     const enf = pacienteAtual.enfermagem || {};
+    const tinhaVM = pacienteAtual.physio?.suporte === "VM" || pacienteAtual.fisioterapia?.suporte === "VM" || (pacienteAtual.dataIntubacao && !pacienteAtual.dataExtubacao);
+    const tinhaCVC = !!(enf.cvcData && !enf.cvcRetiradaData);
+    const tinhaSVD = !!(enf.svdData && !enf.svdRetiradaData);
+    const tinhaShiley = !!(enf.shileyData && !enf.shileyRetiradaData);
+    const ignorarEstatistica = pacienteAtual.ignorarEstatistica === true;
 
     // 1. Função Auxiliar de Cálculo (Garante que não retorne NaN)
     const calcularDias = (ini, fim) => {
@@ -4387,6 +4393,52 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       // Finaliza a interface
       setShowDischargeModal(false);
       setDischargeDestination("");
+      alert(`✅ Saída concluída! O leito de ${pacienteAtual.nome} agora está livre e limpo.`);
+
+      // 🔽 ADICIONAR: Correção retroativa do censo diário
+      const hojeDataStr = new Date().toISOString().split('T')[0];
+      if (dischargeDate < hojeDataStr && !ignorarEstatistica) {
+        try {
+          const batch = writeBatch(db);
+          const dataInicio = new Date(`${dischargeDate}T12:00:00`);
+          const dataFim = new Date(`${hojeDataStr}T12:00:00`);
+          dataFim.setDate(dataFim.getDate() - 1); // até ontem
+
+          const datasCorrigir = [];
+          let dataCorrente = new Date(dataInicio);
+          while (dataCorrente <= dataFim) {
+            datasCorrigir.push(dataCorrente.toISOString().split('T')[0]);
+            dataCorrente.setDate(dataCorrente.getDate() + 1);
+          }
+
+          if (datasCorrigir.length > 0) {
+            console.log(`Corrigindo censo de ${datasCorrigir[0]} até ${datasCorrigir[datasCorrigir.length - 1]}...`);
+            
+            const censoSnap = await getDocs(query(
+              collection(db, "censo_diario"),
+              where("data", ">=", datasCorrigir[0]),
+              where("data", "<=", datasCorrigir[datasCorrigir.length - 1])
+            ));
+
+            censoSnap.forEach(docSnap => {
+              batch.update(docSnap.ref, {
+                totalLeitosOcupados: increment(-1),
+                pacientesEmVM: tinhaVM ? increment(-1) : increment(0),
+                pacientesComCVC: tinhaCVC ? increment(-1) : increment(0),
+                pacientesComSVD: tinhaSVD ? increment(-1) : increment(0),
+                pacientesComShiley: tinhaShiley ? increment(-1) : increment(0),
+              });
+            });
+
+            await batch.commit();
+            console.log(`✅ Censo corrigido: ${datasCorrigir.length} dia(s) ajustado(s).`);
+          }
+        } catch (errCenso) {
+          console.error("Erro ao corrigir censo retroativo:", errCenso);
+          // Não trava o fluxo principal se a correção falhar
+        }
+      }
+
       alert(`✅ Saída concluída! O leito de ${pacienteAtual.nome} agora está livre e limpo.`);
 
     } catch (error) {
@@ -5591,6 +5643,21 @@ const userRole = userProfile?.role || userProfile?.perfil;
             <p className="text-slate-500 text-sm mb-6">
               Selecione o destino do paciente <b className="text-slate-700">{patients[activeTab]?.nome}</b>:
             </p>
+
+            <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Data da Saída:</label>
+              <input 
+                type="date" 
+                value={dischargeDate}
+                onChange={(e) => setDischargeDate(e.target.value)}
+                className="w-full p-3 border border-slate-300 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white"
+              />
+              {dischargeDate < new Date().toISOString().split('T')[0] && (
+                <p className="text-xs text-amber-600 mt-2 font-bold flex items-center gap-1">
+                  ⚠️ Data retroativa: o censo diário será corrigido automaticamente.
+                </p>
+              )}
+            </div>            
 
             <div className="space-y-3 mb-6">
               {['Alta Hospitalar', 'Transferência para Enfermaria', 'Transferência Externa (Outro Hospital)', 'Óbito'].map(destino => {
