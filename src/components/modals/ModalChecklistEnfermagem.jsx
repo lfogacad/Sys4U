@@ -51,6 +51,27 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
   const [intercorrencias, setIntercorrencias] = useState(currentPatient?.enfermagem?.intercorrencias || '');
   const [condutas, setCondutas] = useState(currentPatient?.enfermagem?.condutas || '');
 
+  // Hemodiálise
+  const [hemodialise, setHemodialise] = useState(false);
+  const [acessoHemodialise, setAcessoHemodialise] = useState('');
+
+  // Avaliação Física
+  const [pulsos, setPulsos] = useState('');
+  const [enchimentoCapilar, setEnchimentoCapilar] = useState('');
+  const [suporteO2, setSuporteO2] = useState('');
+  const [esforcoRespiratorio, setEsforcoRespiratorio] = useState('');
+  const [coloracaoPele, setColoracaoPele] = useState('');
+  const [cianose, setCianose] = useState('');
+  const [ictericia, setIctericia] = useState('');
+  const [diurese, setDiurese] = useState('');
+  const [diureseCaracteristica, setDiureseCaracteristica] = useState('');
+  const [acessoVenosoStatus, setAcessoVenosoStatus] = useState('');
+  const [sinaisFlogisticos, setSinaisFlogisticos] = useState(false);
+  const [abdome, setAbdome] = useState('');
+
+  // Cuidados de Enfermagem
+  const [cuidadosEnfermagem, setCuidadosEnfermagem] = useState('');
+
   useEffect(() => {
     if (isOpen && currentPatient) {
       const escalasHoje = currentPatient.enfermagem?.escalas_diarias?.[today];
@@ -74,6 +95,23 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       setInitialSvd(hasActiveSvd);
       setCvcLocal(enf.cvcLocal || '');
       setShileyLocal(enf.shileyLocal || '');
+
+      // Carrega dados salvos anteriormente (persistência diária)
+      setHemodialise(enf.hemodialise || false);
+      setAcessoHemodialise(enf.acessoHemodialise || '');
+      setPulsos(enf.pulsos || '');
+      setEnchimentoCapilar(enf.enchimentoCapilar || '');
+      setSuporteO2(enf.suporteO2 || '');
+      setEsforcoRespiratorio(enf.esforcoRespiratorio || '');
+      setColoracaoPele(enf.coloracaoPele || '');
+      setCianose(enf.cianose || '');
+      setIctericia(enf.ictericia || '');
+      setDiurese(enf.diurese || '');
+      setDiureseCaracteristica(enf.diureseCaracteristica || '');
+      setAcessoVenosoStatus(enf.acessoVenosoStatus || '');
+      setSinaisFlogisticos(enf.sinaisFlogisticos || false);
+      setAbdome(enf.abdome || 'Flácido, indolor à palpação, ruídos hidroaéreos presentes');
+      setCuidadosEnfermagem(enf.cuidadosEnfermagem || '');      
     }
   }, [isOpen, currentPatient, today]);
 
@@ -220,6 +258,29 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
     }
     if (condutas) {
       updateNested("enfermagem", "condutas", condutas);
+    }
+
+    // Salva dados de Hemodiálise
+    updateNested("enfermagem", "hemodialise", hemodialise);
+    updateNested("enfermagem", "acessoHemodialise", acessoHemodialise);
+
+    // Salva dados da Avaliação Física
+    updateNested("enfermagem", "pulsos", pulsos);
+    updateNested("enfermagem", "enchimentoCapilar", enchimentoCapilar);
+    updateNested("enfermagem", "suporteO2", suporteO2);
+    updateNested("enfermagem", "esforcoRespiratorio", esforcoRespiratorio);
+    updateNested("enfermagem", "coloracaoPele", coloracaoPele);
+    updateNested("enfermagem", "cianose", cianose);
+    updateNested("enfermagem", "ictericia", ictericia);
+    updateNested("enfermagem", "diurese", diurese);
+    updateNested("enfermagem", "diureseCaracteristica", diureseCaracteristica);
+    updateNested("enfermagem", "acessoVenosoStatus", acessoVenosoStatus);
+    updateNested("enfermagem", "sinaisFlogisticos", sinaisFlogisticos);
+    updateNested("enfermagem", "abdome", abdome);
+
+    // Salva Cuidados de Enfermagem
+    if (cuidadosEnfermagem) {
+      updateNested("enfermagem", "cuidadosEnfermagem", cuidadosEnfermagem);
     }
 
     // 5. Gera evolução passando os valores diretamente (sem depender do state)
@@ -395,6 +456,162 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
                   </div>
                 )}
               </div>
+
+              {/* HEMODIÁLISE */}
+              <div className={`p-3 rounded-lg border transition-colors ${hemodialise ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <input type="checkbox" checked={hemodialise} onChange={(e) => setHemodialise(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
+                    <span className="text-sm font-bold text-slate-700">Hemodiálise</span>
+                  </div>
+                </label>
+                {hemodialise && (
+                  <div className="mt-2 ml-8">
+                    <select
+                      value={acessoHemodialise}
+                      onChange={(e) => setAcessoHemodialise(e.target.value)}
+                      className="w-full p-2 border border-blue-200 rounded-lg outline-none focus:border-blue-500 text-sm font-medium text-slate-700 bg-white"
+                    >
+                      <option value="">Tipo de Acesso...</option>
+                      <option value="Permcath">Permcath</option>
+                      <option value="FAV">Fístula Arteriovenosa (FAV)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* AVALIAÇÃO FÍSICA */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2 border-b pb-2">
+              <Activity size={18} className="text-blue-500" /> Avaliação Física
+            </h3>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Pulsos Periféricos */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Pulsos Periféricos</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={pulsos} onChange={(e) => setPulsos(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Cheios e simétricos">Cheios e simétricos</option>
+                  <option value="Cheios e assimétricos">Cheios e assimétricos</option>
+                  <option value="Fracos">Fracos</option>
+                  <option value="Ausentes">Ausentes</option>
+                </select>
+              </div>
+              {/* Enchimento Capilar */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Enchimento Capilar</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={enchimentoCapilar} onChange={(e) => setEnchimentoCapilar(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="< 3 segundos">&lt; 3 segundos</option>
+                  <option value="≥ 3 segundos">≥ 3 segundos</option>
+                </select>
+              </div>
+              {/* Suporte de O2 */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Suporte de O₂</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={suporteO2} onChange={(e) => setSuporteO2(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Ar Ambiente">Ar Ambiente</option>
+                  <option value="Cateter Nasal">Cateter Nasal</option>
+                  <option value="Máscara de Venturi">Máscara de Venturi</option>
+                  <option value="Máscara não Reinalante">Máscara não Reinalante</option>
+                  <option value="VM (Ventilação Mecânica)">VM (Ventilação Mecânica)</option>
+                  <option value="VNI">VNI</option>
+                  <option value="TQT">Macronebulização por TQT</option>
+                </select>
+              </div>
+              {/* Esforço Respiratório */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Esforço Respiratório</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={esforcoRespiratorio} onChange={(e) => setEsforcoRespiratorio(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Leve">Leve</option>
+                  <option value="Moderado">Moderado</option>
+                  <option value="Severo">Severo</option>
+                  <option value="Sem esforço">Sem esforço</option>
+                </select>
+              </div>
+              {/* Coloração da Pele */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Coloração da Pele</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={coloracaoPele} onChange={(e) => setColoracaoPele(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Normocorado">Normocorado</option>
+                  <option value="Hipocorado +/4">Hipocorado +/4</option>
+                  <option value="Hipocorado ++/4">Hipocorado ++/4</option>
+                  <option value="Hipocorado +++/4">Hipocorado +++/4</option>
+                  <option value="Hipocorado ++++/4">Hipocorado ++++/4</option>
+                </select>
+              </div>
+              {/* Cianose */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Cianose</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={cianose} onChange={(e) => setCianose(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Acianótico">Acianótico</option>
+                  <option value="Cianótico">Cianótico</option>
+                </select>
+              </div>
+              {/* Icterícia */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Icterícia</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={ictericia} onChange={(e) => setIctericia(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Anictérico">Anictérico</option>
+                  <option value="Ictérico +/4">Ictérico +/4</option>
+                  <option value="Ictérico ++/4">Ictérico ++/4</option>
+                  <option value="Ictérico +++/4">Ictérico +++/4</option>
+                  <option value="Ictérico ++++/4">Ictérico ++++/4</option>
+                </select>
+              </div>
+              {/* Diurese */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Diurese</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={diurese} onChange={(e) => setDiurese(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Presente">Presente</option>
+                  <option value="Ausente">Ausente</option>
+                </select>
+              </div>
+              {/* Característica da Diurese */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Característica da Diurese</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={diureseCaracteristica} onChange={(e) => setDiureseCaracteristica(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Clara">Clara</option>
+                  <option value="Turva">Turva</option>
+                  <option value="Concentrada">Concentrada</option>
+                  <option value="Hematúrica">Hematúrica</option>
+                  <option value="Sanguinolenta">Sanguinolenta</option>
+                </select>
+              </div>
+              {/* Acesso Venoso */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Acesso Venoso</label>
+                <select className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50" value={acessoVenosoStatus} onChange={(e) => setAcessoVenosoStatus(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="Pérvio">Pérvio</option>
+                  <option value="Obstruído">Obstruído</option>
+                </select>
+              </div>
+              {/* Sinais Flogísticos */}
+              <div className="flex items-center">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                  <input type="checkbox" className="w-3.5 h-3.5 rounded" checked={sinaisFlogisticos} onChange={(e) => setSinaisFlogisticos(e.target.checked)} />
+                  Sinais Flogísticos
+                </label>
+              </div>
+            </div>
+            {/* Avaliação do Abdome */}
+            <div className="mt-4">
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Avaliação do Abdome</label>
+              <textarea
+                className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm bg-slate-50 resize-y h-16"
+                value={abdome}
+                onChange={(e) => setAbdome(e.target.value)}
+              />
             </div>
           </div>
 
@@ -418,6 +635,19 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
                 onChange={(e) => setCondutas(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* CUIDADOS DE ENFERMAGEM */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2 border-b pb-2">
+              <CheckCircle size={18} className="text-green-500" /> Cuidados de Enfermagem
+            </h3>
+            <textarea
+              className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-green-500 text-sm bg-slate-50 resize-y h-28 leading-relaxed"
+              value={cuidadosEnfermagem}
+              onChange={(e) => setCuidadosEnfermagem(e.target.value)}
+              placeholder="Instalação em leito, identificação e orientações ao paciente/acompanhante..."
+            />
           </div>
 
         </div>

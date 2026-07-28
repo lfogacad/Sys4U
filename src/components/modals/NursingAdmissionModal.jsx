@@ -105,7 +105,7 @@ const NursingAdmissionModal = ({
                     onChange={(e) => setNursingData({ ...nursingData, cvcLocal: e.target.value })} 
                     disabled={isReadOnly}
                   >
-                    <option value="">Selecione...</option>
+                    <option value="">Selecione o local...</option>
                     <option disabled className="font-bold text-slate-400">─── Acesso Central (CVC) ───</option>
                     <option value="Subclávia D">Subclávia D</option>
                     <option value="Subclávia E">Subclávia E</option>
@@ -116,7 +116,6 @@ const NursingAdmissionModal = ({
                     <option disabled className="font-bold text-slate-400">─── PICC ───</option>
                     <option value="PICC MSD">PICC MSD</option>
                     <option value="PICC MSE">PICC MSE</option>
-                    <option value="Outro">Outro</option>
                   </select>
                   <input type="date" className="w-40 p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" value={nursingData.cvcData || ""} onChange={(e) => setNursingData({ ...nursingData, cvcData: e.target.value })} disabled={isReadOnly}/>
                 </div>
@@ -132,14 +131,13 @@ const NursingAdmissionModal = ({
                     onChange={(e) => setNursingData({ ...nursingData, shileyLocal: e.target.value })} 
                     disabled={isReadOnly}
                   >
-                    <option value="">Selecione...</option>
+                    <option value="">Local...</option>
                     <option value="VJID">VJID</option>
                     <option value="VJIE">VJIE</option>
                     <option value="VSCD">VSCD</option>
                     <option value="VSCE">VSCE</option>
                     <option value="VFID">VFID</option>
                     <option value="VFIE">VFIE</option>
-                    <option value="Outro">Outro</option>
                   </select>
                   <input type="date" className="w-40 p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" value={nursingData.shileyData || ""} onChange={(e) => setNursingData({ ...nursingData, shileyData: e.target.value })} disabled={isReadOnly}/>
                 </div>
