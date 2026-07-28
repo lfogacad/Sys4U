@@ -3364,6 +3364,40 @@ ${conduta}
     const intercorrencias = (p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.") + rcpTexto;
     const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
 
+    // Dados do modal de evolução de enfermagem (avaliação física)
+    const enf = p.enfermagem || {};
+    const pulsos = enf.pulsos || "não especificado";
+    const enchimentoCapilar = enf.enchimentoCapilar || "não especificado";
+    const suporteO2 = enf.suporteO2 || "Ar Ambiente";
+    const esforcoResp = enf.esforcoRespiratorio || "não especificado";
+    const coloracaoPele = enf.coloracaoPele || "Normocorado";
+    const cianose = enf.cianose || "Acianótico";
+    const ictericia = enf.ictericia || "Anictérico";
+    const diurese = enf.diurese || "não avaliada";
+    const diureseCaract = enf.diureseCaracteristica || "";
+    const abdome = enf.abdome || "Flácido, indolor à palpação, ruídos hidroaéreos presentes";
+    const acessoVenosoStatus = enf.acessoVenosoStatus || "não avaliado";
+    const sinaisFlogisticos = enf.sinaisFlogisticos;
+    const cuidadosEnf = enf.cuidadosEnfermagem || "";
+    // Dados da admissão médica
+    const adm = p.admissionData || p.admissoes || {};
+    const nivelConsciencia = adm.conscienciaBasal || adm.exameNeuro || "não especificado";
+    const pupilas = adm.pupilas || "não especificado";
+
+    const descricaoEC = enchimentoCapilar.includes("<")
+      ? "preservado"
+      : enchimentoCapilar.includes("≥")
+        ? "lentificado"
+        : "não especificado";
+
+    const estaEmArAmbiente = suporteO2.toLowerCase().includes("ar ambiente");
+
+    let textoDiurese = diurese;
+    if (diureseCaract && diurese !== "Ausente") {
+      textoDiurese += ` (${diureseCaract})`;
+    }
+    const temSVD = p.enfermagem?.svd ? ", com sonda vesical de demora instalada" : "";
+
     // 9. O PROMPT BLINDADO
     return `
 DADOS ESTRUTURADOS:
@@ -3374,41 +3408,70 @@ DADOS ESTRUTURADOS:
 - GENI: ${geniFrase}.
 - PELE: ${tegumentarFrase}.
 DISPOSITIVOS ADICIONAIS:
-${dispositivos.length > 0 ? dispositivos.join("\n") : "- Nenhum."}
-
+${dispositivos.length > 0 ? dispositivos.join("\\n") : "- Nenhum."}
 REGISTROS DE ENFERMAGEM:
 ${eventosTexto}
-
+AVALIAÇÃO FÍSICA (MODAL DE ENFERMAGEM):
+- Pulsos periféricos: ${pulsos}
+- Enchimento capilar: ${enchimentoCapilar}
+- Suporte de O₂: ${suporteO2}
+- Esforço respiratório: ${esforcoResp}
+- Coloração da pele: ${coloracaoPele}
+- Cianose: ${cianose}
+- Icterícia: ${ictericia}
+- Diurese: ${textoDiurese}
+- Acesso venoso: ${acessoVenosoStatus}${sinaisFlogisticos ? " — ATENÇÃO: sinais flogísticos presentes" : ""}
+- Abdome: ${abdome}
+CUIDADOS DE ENFERMAGEM:
+${cuidadosEnf || "Instalação em leito, identificação e orientações ao paciente/acompanhante.\\nVerificação de alergias e pulseira de identificação.\\nManter oxigenoterapia para SpO₂ ≥ 92%, titular conforme necessidade.\\nMonitorização contínua (cardioscopia, PA não invasiva a cada 15 min, oximetria).\\nPunção de acesso venoso periférico, se necessário.\\nControle de diurese e balanço hídrico estrito.\\nAdministrar medicamentos prescritos conforme evolução.\\nManter decúbito elevado (30–45°) para otimizar ventilação.\\nMedidas de conforto e posicionamento no leito.\\nOferecer apoio emocional e orientações iniciais ao acompanhante."}
+SSVV DO DIA:
+FC: ${fcMin > 0 ? `${fcMin}-${fcMax}` : "n/r"} bpm | FR: ${frMin > 0 ? `${frMin}-${frMax}` : "n/r"} ipm | SpO₂: ${spo2Min < 100 ? `${spo2Min}%` : "n/r"}${tempMax > 0 ? ` | Temp: ${tempMin > 0 ? `${tempMin}-${tempMax}` : tempMax}°C` : ""}${pasMax > 0 ? ` | PA: ${pasMin}-${pasMax}/${primeiraPAD || "n/r"}` : ""}${primeiraPAM ? ` (PAM: ${primeiraPAM})` : ""}
+DADOS DA ADMISSÃO MÉDICA:
+- Nível de consciência: ${nivelConsciencia}
+- Pupilas: ${pupilas}
 INSTRUÇÕES PARA A IA (Enfermeiro da UTI):
 Escreva a EVOLUÇÃO DE ENFERMAGEM baseada EXATAMENTE nos dados acima.
-
 REGRAS CRÍTICAS ESTRITAS:
 1. NUNCA mencione o nome do paciente. NUNCA use "Paciente encontra-se" ou "O paciente apresenta" no início das frases.
 2. Inicie a frase de cada sistema DIRETAMENTE com o conteúdo fornecido (ex: "sem sedação contínua, com Glasgow 15" ou "em ar ambiente, com SpO2 rasa...").
 3. É OBRIGATÓRIO copiar o texto de cada sistema EXATAMENTE como foi formatado e montado nos "DADOS ESTRUTURADOS". Não adicione verbos auxiliares e não mude a ordem das palavras.
 4. Mantenha os títulos dos sistemas em maiúsculo, exatamente como no formato abaixo.
-
 FORMATO OBRIGATÓRIO:
-EVOLUÇÃO DE ENFERMAGEM:
+EVOLUÇÃO DE ENFERMAGEM
 
-SISTEMA NEUROLÓGICO: [Copia o texto do NEURO]
-SISTEMA RESPIRATÓRIO: [Copia o texto do RESPIRATÓRIO]
-SISTEMA CARDIOVASCULAR: [Copia o texto do CARDIO]
-SISTEMA DIGESTÓRIO: [Copia o texto do GASTRO]
-SISTEMA GENITURINÁRIO: [Copia o texto do GENI]
-SISTEMA TEGUMENTAR: [Copia o texto do PELE]
+HISTÓRIA CLÍNICA
+${p.admissionData?.historia || p.admissoes?.historia || "Sem registro prévio"}
+
+DADOS DE ENFERMAGEM
+Escala de Dor: ${p.enfermagem?.dor || "0"} | Hemodiálise: ${p.enfermagem?.hemodialise ? `Sim (Acesso: ${p.enfermagem?.acessoHemodialise || "não especificado"})` : "Não"}
+Precauções: ${p.enfermagem?.precaucao || "Padrão"}
+
+ESCALAS DE RISCO
+BRADEN: [pontuação e risco do modal de evolução]
+MORSE: [pontuação e risco do modal de evolução]
+
+AVALIAÇÃO POR SISTEMAS
+Neurológico: Paciente ${nivelConsciencia}, pupilas ${pupilas}.
+Cardiovascular: ${fcStatus} (FC: ${fcMin > 0 ? `${fcMin}-${fcMax}` : "n/r"} bpm), pulsos periféricos ${pulsos}, tempo de enchimento capilar ${descricaoEC}.
+Respiratório: ${frStatus} (FR: ${frMin > 0 ? `${frMin}-${frMax}` : "n/r"} ipm)${estaEmArAmbiente ? " em ar ambiente" : ` em ${suporteO2}`}, com esforço ventilatório ${esforcoResp}. Com ${spo2Status} (SpO₂: ${spo2Min < 100 ? `${spo2Min}%` : "n/r"}%).
+Abdome: ${abdome}.
+Pele e mucosas: ${coloracaoPele}, ${cianose}, ${ictericia}. ${tegumentarFrase}.
+Diurese: ${textoDiurese}${temSVD}.
 
 DISPOSITIVOS ADICIONAIS:
-[A lista fornecida no bloco de dados]
+${dispositivos.length > 0 ? dispositivos.join("\\n") : "- Nenhum."}
 
 REGISTROS DE ENFERMAGEM:
-[Os eventos registrados no período]
+${eventosTexto}
 
 INTERCORRÊNCIAS:
 ${intercorrencias}
 
 CONDUTAS:
-${condutas}`;
+${condutas}
+
+CUIDADOS DE ENFERMAGEM:
+${cuidadosEnf || "Instalação em leito, identificação e orientações ao paciente/acompanhante.\\nVerificação de alergias e pulseira de identificação.\\nManter oxigenoterapia para SpO₂ ≥ 92%, titular conforme necessidade.\\nMonitorização contínua (cardioscopia, PA não invasiva a cada 15 min, oximetria).\\nPunção de acesso venoso periférico, se necessário.\\nControle de diurese e balanço hídrico estrito.\\nAdministrar medicamentos prescritos conforme evolução.\\nManter decúbito elevado (30–45°) para otimizar ventilação.\\nMedidas de conforto e posicionamento no leito.\\nOferecer apoio emocional e orientações iniciais ao acompanhante."}`;
   };
 
 const generateNursingAI_Evolution = async () => {
@@ -3925,8 +3988,8 @@ const handleFinalizeNursingAdmission = async () => {
     // 
     // DADOS COMPLEMENTARES PARA O TEXTO DE ADMISSÃO
     // 
-    const nivelConsciencia = adm.nivelConsciencia || adm.neurologico?.nivelConsciencia || "não especificado";
-    const pupilas = adm.pupilas || adm.neurologico?.pupilas || "não especificado";
+    const nivelConsciencia = adm.conscienciaBasal || adm.exameNeuro || "não especificado";
+    const pupilas = adm.pupilas || "não especificado";
 
     // Primeiros Sinais Vitais (do BH de admissão)
     const todosBHs = [
@@ -3936,17 +3999,20 @@ const handleFinalizeNursingAdmission = async () => {
      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
     const bhAdmissao = todosBHs[0];
-    let primeiraFC = "", primeiraFR = "", primeiraSpO2 = "", primeiraPAS = "";
+    let primeiraFC = "", primeiraFR = "", primeiraSpO2 = "";
+    let primeiraPAS = "", primeiraPAD = "", primeiraPAM = "", primeiraTemp = "";
 
     if (bhAdmissao?.vitals) {
       const horarios = Object.keys(bhAdmissao.vitals).sort();
       for (let h of horarios) {
         const v = bhAdmissao.vitals[h];
         if (!primeiraFC && v["FC (bpm)"]) primeiraFC = v["FC (bpm)"];
-        if (!primeiraFR && v["FR"]) primeiraFR = v["FR"];
-        if (!primeiraSpO2 && v["SpO2"]) primeiraSpO2 = v["SpO2"];
+        if (!primeiraFR && v["FR (irpm)"]) primeiraFR = v["FR (irpm)"];
+        if (!primeiraSpO2 && v["SpO2 (%)"]) primeiraSpO2 = v["SpO2 (%)"];
         if (!primeiraPAS && v["PAS"]) primeiraPAS = v["PAS"];
-        if (primeiraFC && primeiraFR && primeiraSpO2) break;
+        if (!primeiraPAD && v["PAD"]) primeiraPAD = v["PAD"];
+        if (!primeiraPAM && v["PAM"]) primeiraPAM = v["PAM"];
+        if (!primeiraTemp && v["Temp (°C)"]) primeiraTemp = v["Temp (°C)"];
       }
     }
 
@@ -3992,7 +4058,7 @@ Escala de Dor: ${nursingData.dor || "0"} | Hemodiálise: ${nursingData.hemodiali
 Precauções: ${nursingData.precaucao || "Padrão"}
 
 SSVV DA ADMISSÃO
-${!isNaN(fcNum) ? `FC: ${fcNum} bpm` : "FC: não registrada"} | ${!isNaN(frNum) ? `FR: ${frNum} ipm` : "FR: não registrada"} | ${!isNaN(spo2Num) ? `SpO₂: ${spo2Num}%` : "SpO₂: não registrada"}
+${!isNaN(fcNum) ? `FC: ${fcNum} bpm` : "FC: não registrada"} | ${!isNaN(frNum) ? `FR: ${frNum} ipm` : "FR: não registrada"} | ${!isNaN(spo2Num) ? `SpO₂: ${spo2Num}%` : "SpO₂: não registrada"}${primeiraTemp ? ` | Temp: ${primeiraTemp}°C` : ""}${primeiraPAS ? ` | PA: ${primeiraPAS}` : ""}${primeiraPAD ? `/${primeiraPAD}` : ""}${primeiraPAM ? ` (PAM: ${primeiraPAM})` : ""}
 
 AVALIAÇÃO POR SISTEMAS
 Neurológico: Paciente ${nivelConsciencia}, pupilas ${pupilas}.

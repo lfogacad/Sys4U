@@ -1546,22 +1546,6 @@ return (
               {ESCALA_DOR.map((o) => <option key={o}>{o}</option>)}
             </select>
 
-            <label className="flex items-center gap-2 mb-4 font-bold">
-              <input 
-                type="checkbox" 
-                // Para a visualização, checamos se ALGUM dos dois marcou:
-                checked={currentPatient.enfermagem?.hemodialise || currentPatient.medical?.hemodialise || false} 
-                onChange={(e) => {
-                  const isChecked = e.target.checked;
-                  // Atualiza as duas abas simultaneamente!
-                  updateNested("enfermagem", "hemodialise", isChecked);
-                  updateNested("medical", "hemodialise", isChecked);
-                }} 
-                onBlur={() => handleBlurSave("Enfermagem: Alterou status de Hemodiálise")}
-              /> 
-              Hemodiálise
-            </label>
-            
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Precauções</label>
             <select 
               className="w-full p-2 border rounded" 
@@ -1813,6 +1797,46 @@ return (
                 />
               </div>
             </div>
+
+            {/* HEMODIÁLISE */}
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              <label className="flex items-center gap-2 font-bold text-slate-700">
+                <input 
+                  type="checkbox" 
+                  checked={currentPatient.enfermagem?.hemodialise || currentPatient.medical?.hemodialise || false} 
+                  onChange={(e) => {
+                    const isChecked = e.target.checked;
+                    updateNested("enfermagem", "hemodialise", isChecked);
+                    updateNested("medical", "hemodialise", isChecked);
+                    if (!isChecked) {
+                      updateNested("enfermagem", "acessoHemodialise", "");
+                      updateNested("medical", "acessoHemodialise", "");
+                    }
+                  }} 
+                  onBlur={() => handleBlurSave("Enfermagem: Alterou status de Hemodiálise")}
+                /> 
+                Hemodiálise
+              </label>
+              {currentPatient.enfermagem?.hemodialise && (
+                <div className="mt-3 animate-fadeIn">
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Tipo de Acesso</label>
+                  <select 
+                    className="w-full p-2 border rounded bg-white"
+                    value={currentPatient.enfermagem?.acessoHemodialise || ""}
+                    onChange={(e) => {
+                      updateNested("enfermagem", "acessoHemodialise", e.target.value);
+                      updateNested("medical", "acessoHemodialise", e.target.value);
+                    }}
+                    onBlur={() => handleBlurSave("Enfermagem: Alterou tipo de acesso hemodiálise")}
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="Permcath">Permcath</option>
+                    <option value="FAV">Fístula Arteriovenosa (FAV)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+                        
           </div>
 
           {/* PELE E CURATIVOS */}
