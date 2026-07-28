@@ -1303,6 +1303,17 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     }
   };
 
+const formatarData = (dataStr) => {
+  if (!dataStr) return "-";
+  // Aceita YYYY-MM-DD, YYYY-MM-DDT...
+  const match = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, ano, mes, dia] = match;
+    return `${dia}/${mes}/${ano}`;
+  }
+  return dataStr; // fallback: retorna como está
+};
+
 const clearAntibiotic = (i) => {
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
@@ -3911,6 +3922,65 @@ const handleFinalizeNursingAdmission = async () => {
       ? lesoesLista.map(l => `- [${l.origem === 'incidencia' ? 'ADQUIRIDA NA UTI' : 'PRÉVIA'}] ${l.localizacao}. Curativo: ${l.curativo || "Não especificado"}`).join('\n')
       : "Pele íntegra / Sem lesões por pressão.";
 
+    // 
+    // DADOS COMPLEMENTARES PARA O TEXTO DE ADMISSÃO
+    // 
+    const nivelConsciencia = adm.nivelConsciencia || adm.neurologico?.nivelConsciencia || "não especificado";
+    const pupilas = adm.pupilas || adm.neurologico?.pupilas || "não especificado";
+
+    // Primeiros Sinais Vitais (do BH de admissão)
+    const todosBHs = [
+      ...(r.historico_bh || []),
+      r.bh
+    ].filter(bh => bh && bh.vitals && bh.date)
+     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+    const bhAdmissao = todosBHs[0];
+    let primeiraFC = "", primeiraFR = "", primeiraSpO2 = "", primeiraPAS = "";
+
+    if (bhAdmissao?.vitals) {
+      const horarios = Object.keys(bhAdmissao.vitals).sort();
+      for (let h of horarios) {
+        const v = bhAdmissao.vitals[h];
+        if (!primeiraFC && v["FC (bpm)"]) primeiraFC = v["FC (bpm)"];
+        if (!primeiraFR && v["FR"]) primeiraFR = v["FR"];
+        if (!primeiraSpO2 && v["SpO2"]) primeiraSpO2 = v["SpO2"];
+        if (!primeiraPAS && v["PAS"]) primeiraPAS = v["PAS"];
+        if (primeiraFC && primeiraFR && primeiraSpO2) break;
+      }
+    }
+
+    const fcNum = parseInt(primeiraFC);
+    const frNum = parseInt(primeiraFR);
+    const spo2Num = parseInt(primeiraSpO2);
+
+    const statusCardio = isNaN(fcNum) ? "não avaliado" : fcNum > 100 ? "Taquicárdica" : fcNum < 60 ? "Bradicárdica" : "Normocárdica";
+    const statusResp = isNaN(frNum) ? "não avaliado" : frNum > 20 ? "Taquipneica" : frNum < 12 ? "Bradipneica" : "Eupneica";
+
+    let descricaoSat = "não avaliada";
+    if (!isNaN(spo2Num)) {
+      descricaoSat = spo2Num < 89 ? "baixa" : spo2Num <= 92 ? "rasa (89-92%)" : "boa";
+    }
+
+    const descricaoEC = nursingData.enchimentoCapilar?.includes("<")
+      ? "preservado"
+      : nursingData.enchimentoCapilar?.includes("≥")
+        ? "lentificado"
+        : "não especificado";
+
+    const estaEmArAmbiente = (nursingData.suporteO2 || "").toLowerCase().includes("ar ambiente");
+
+    let textoDiurese = nursingData.diurese || "não avaliada";
+    if (nursingData.diureseCaracteristica && nursingData.diurese !== "Ausente") {
+      textoDiurese += ` (${nursingData.diureseCaracteristica})`;
+    }
+    const temSVD = nursingData.svdData ? ", com sonda vesical de demora instalada" : "";
+
+    const statusAV = nursingData.acessoVenosoStatus || "não avaliado";
+    const temSinaisFlogisticos = nursingData.sinaisFlogisticos ? " — ATENÇÃO: sinais flogísticos presentes!" : "";
+
+    const cuidadosEnf = nursingData.cuidadosEnfermagem || "";
+          
     // 5. O NOVO CARIMBADOR (Texto Integrado para Evolução)
     const text = `ADMISSÃO DE ENFERMAGEM
 
@@ -3918,31 +3988,45 @@ const handleFinalizeNursingAdmission = async () => {
 ${historia}
 
 --- DADOS DE ENFERMAGEM ---
-Escala de Dor: ${nursingData.dor || "0"} | Hemodiálise: ${nursingData.hemodialise ? "Sim" : "Não"}
+Escala de Dor: ${nursingData.dor || "0"} | Hemodiálise: ${nursingData.hemodialise ? `Sim (Acesso: ${nursingData.acessoHemodialise || "não especificado"})` : "Não"}
 Precauções: ${nursingData.precaucao || "Padrão"}
 
-DISPOSITIVOS INVASIVOS E DATAS:
-AVP: ${nursingData.avpLocal ? `${nursingData.avpLocal} (Data: ${nursingData.avpData || "-"})` : "Não possui"}
-CVC/PICC: ${nursingData.cvcLocal ? `${nursingData.cvcLocal} (Ins: ${nursingData.cvcData || "-"}) ${nursingData.cvcRetiradaData ? `| RETIRADA: ${nursingData.cvcRetiradaData}` : ""}` : "Não possui"}
-SHILEY: ${nursingData.shileyLocal ? `${nursingData.shileyLocal} (Ins: ${nursingData.shileyData || "-"}) ${nursingData.shileyRetiradaData ? `| RETIRADA: ${nursingData.shileyRetiradaData}` : ""}` : "Não possui"}
-SVD: ${nursingData.svdData ? `Sim (Ins: ${nursingData.svdData}) ${nursingData.svdRetiradaData ? `| RETIRADA: ${nursingData.svdRetiradaData}` : ""}` : "Não possui"}
-SNE: ${nursingData.sneCm ? `Fixação em ${nursingData.sneCm} cm (Data: ${nursingData.sneData || "-"})` : "Não possui"}
+SSVV DA ADMISSÃO
+${!isNaN(fcNum) ? `FC: ${fcNum} bpm` : "FC: não registrada"} | ${!isNaN(frNum) ? `FR: ${frNum} ipm` : "FR: não registrada"} | ${!isNaN(spo2Num) ? `SpO₂: ${spo2Num}%` : "SpO₂: não registrada"}
+
+AVALIAÇÃO POR SISTEMAS
+Neurológico: Paciente ${nivelConsciencia}, pupilas ${pupilas}.
+Cardiovascular: ${statusCardio} (FC: ${primeiraFC || "n/r"} bpm), pulsos periféricos ${nursingData.pulsos || "não especificado"}, tempo de enchimento capilar ${descricaoEC}.
+Respiratório: ${statusResp} (FR: ${primeiraFR || "n/r"} ipm)${estaEmArAmbiente ? " em ar ambiente" : ` em ${nursingData.suporteO2 || "suporte de O2 não especificado"}`}, com esforço ventilatório ${nursingData.esforcoRespiratorio || "não especificado"}. Com ${descricaoSat} saturação periférica (SpO₂: ${primeiraSpO2 || "n/r"}%).
+Abdome: ${nursingData.abdome || "Flácido, indolor à palpação, ruídos hidroaéreos presentes."}
+Pele e mucosas: ${nursingData.coloracaoPele || "Normocorado(a)"}${nursingData.cianose === "Cianótico" ? ", Cianótico" : ", Acianótico"}${nursingData.ictericia?.includes("Ictérico") ? `, ${nursingData.ictericia}` : ", Anictérico"}. ${textoLesoes.includes("Pele íntegra") ? "Sem lesões cutâneas." : `\nLesões:\n${textoLesoes}`}
+Diurese: ${textoDiurese}${temSVD}.
+
+DISPOSITIVOS INVASIVOS:
+AVP: ${nursingData.avpLocal ? `${nursingData.avpLocal} (Data: ${formatarData(nursingData.avpData)})` : "Não possui"}
+CVC/PICC: ${nursingData.cvcLocal ? `${nursingData.cvcLocal} (Ins: ${formatarData(nursingData.cvcData)}) ${nursingData.cvcRetiradaData ? `| RETIRADA: ${formatarData(nursingData.cvcRetiradaData)}` : ""}` : "Não possui"}
+SHILEY: ${nursingData.shileyLocal ? `${nursingData.shileyLocal} (Ins: ${formatarData(nursingData.shileyData)}) ${nursingData.shileyRetiradaData ? `| RETIRADA: ${formatarData(nursingData.shileyRetiradaData)}` : ""}` : "Não possui"}
+SVD: ${nursingData.svdData ? `Sim (Ins: ${formatarData(nursingData.svdData)}) ${nursingData.svdRetiradaData ? `| RETIRADA: ${formatarData(nursingData.svdRetiradaData)}` : ""}` : "Não possui"}
+SNE: ${nursingData.sneCm ? `Fixação em ${nursingData.sneCm} cm (Data: ${formatarData(nursingData.sneData)})` : "Não possui"}
 Drenos: ${nursingData.drenoTipo || "Nenhum"}
 
 INTEGRIDADE CUTÂNEA E CURATIVOS:
 ${textoLesoes}
 
-ESCALAS DE RISCO:
+ESCALAS DE RISCO
 - BRADEN: ${bradenTotal} pontos (Risco: ${bradenRisco})
 - MORSE: ${morseTotal} pontos (Risco de Queda: ${morseRisco})
+
+CUIDADOS DE ENFERMAGEM INICIAIS
+${cuidadosEnf || "Instalação em leito, identificação e orientações ao paciente/acompanhante.\nVerificação de alergias e pulseira de identificação.\nManter oxigenoterapia para SpO₂ ≥ 92%, titular conforme necessidade.\nMonitorização contínua (cardioscopia, PA não invasiva a cada 15 min, oximetria).\nPunção de acesso venoso periférico, se necessário.\nControle de diurese e balanço hídrico estrito.\nAdministrar medicamentos prescritos conforme evolução.\nManter decúbito elevado (30–45°) para otimizar ventilação.\nMedidas de conforto e posicionamento no leito.\nOferecer apoio emocional e orientações iniciais ao acompanhante."}
 
 ---
 Documento gerado eletronicamente e registrado nos indicadores de performance da unidade.
 `;
 
-    // =========================================================================
-    // 6. 🛡️ ATUALIZAÇÃO BLINDADA DO OBJETO DO PACIENTE (Filtro Anti-Rejeição)
-    // =========================================================================
+    // 
+    // 6. 🛡️ ATUALIZAÇÃO BLINDADA DO OBJETO DO PACIENTE
+    //
     
     // O COFRE DA ENFERMAGEM: Se não existe, cria a admissão imutável
     if (!r.admissaoEnfermagem) {
