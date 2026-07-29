@@ -3047,18 +3047,13 @@ ${conduta}
     setShowNutriAdmissionModal(false);
   };
 
-  // ==========================================
-  // IA DA ENFERMAGEM (PROMPT E API)
-  // ==========================================
   const buildNursingAIPrompt = (p, registrosCarrinho = []) => {
     if (!p) return "";
-
     const safeNum = (val) => {
       const n = parseFloat(String(val).replace(",", "."));
       return isNaN(n) ? 0 : n;
     };
     const isFem = p.sexo === 'F';
-
     // 1. NEUROLÓGICO
     const sedacaoText = p.neuro?.sedacao ? "em sedação contínua" : "sem sedação contínua";
     const glasgowAO = p.neuro?.glasgowAO ? parseInt(p.neuro.glasgowAO) : 0;
@@ -3066,51 +3061,136 @@ ${conduta}
     const glasgowRM = p.neuro?.glasgowRM ? parseInt(p.neuro.glasgowRM) : 0;
     const glasgowTotal = (glasgowAO + glasgowRV + glasgowRM) || "NT";
     const rass = p.neuro?.rass || "NT";
-
     const neuroFrase = p.neuro?.sedacao
       ? `${sedacaoText}, com RASS ${rass}`
       : `${sedacaoText}, com Glasgow ${glasgowTotal}`;
-
-    // 2. SINAIS VITAIS (SpO2, FC, PA)
+    // 2. SINAIS VITAIS — análise completa de TODOS os registros do dia (com contagem de episódios)
     const vitals = p.bh?.vitals || {};
-    let spo2Min = 100, fcMax = 0, fcMin = 0, pasMax = 0, pasMin = 0;
     let hasSpo2 = false;
-
-    Object.values(vitals).forEach((v) => {
+    let tempMax = 0, tempMin = 0;
+    let epFebre = 0, epHipotermia = 0;
+    let epTaquicardia = 0, epBradicardia = 0;
+    let epTaquipneia = 0, epBradipneia = 0;
+    let epHipotensao = 0, epHipertensao = 0;
+    let epSpo2Rasa = 0, epSpo2Baixa = 0;
+    let fcMax = 0, fcMin = 0;
+    let frMax = 0, frMin = 0;
+    let pasMax = 0, pasMin = 0;
+    let spo2Min = 100;
+    let primeiraPAD = "", primeiraPAM = "";
+    Object.entries(vitals).forEach(([hora, v]) => {
       if (!v) return;
+      // Temperatura
+      const t = safeNum(v["Temp (ºC)"]);
+      if (t > 0) {
+        if (t > tempMax) tempMax = t;
+        if (tempMin === 0 || t < tempMin) tempMin = t;
+        if (t >= 37.8) epFebre++;
+        if (t < 35.0) epHipotermia++;
+      }
+      // SpO2
       const s = safeNum(v["SpO2 (%)"]);
-      if (s > 0) { hasSpo2 = true; if (s < spo2Min) spo2Min = s; }
-      
+      if (s > 0) {
+        hasSpo2 = true;
+        if (s < spo2Min) spo2Min = s;
+        if (s >= 89 && s <= 92) epSpo2Rasa++;
+        if (s < 89) epSpo2Baixa++;
+      }
+      // FC
       const fc = safeNum(v["FC (bpm)"]);
-      if (fc > 0) { if (fcMax === 0 || fc > fcMax) fcMax = fc; if (fcMin === 0 || fc < fcMin) fcMin = fc; }
-      
+      if (fc > 0) {
+        if (fc > fcMax) fcMax = fc;
+        if (fcMin === 0 || fc < fcMin) fcMin = fc;
+        if (fc > 100) epTaquicardia++;
+        if (fc < 60) epBradicardia++;
+      }
+      // PAS
       const pas = safeNum(v["PAS"]);
-      if (pas > 0) { if (pasMax === 0 || pas > pasMax) pasMax = pas; if (pasMin === 0 || pas < pasMin) pasMin = pas; }
+      if (pas > 0) {
+        if (pas > pasMax) pasMax = pas;
+        if (pasMin === 0 || pas < pasMin) pasMin = pas;
+        if (pas < 90) epHipotensao++;
+        if (pas > 160) epHipertensao++;
+      }
+      // PAD
+      const pad = safeNum(v["PAD"]);
+      if (pad > 0 && !primeiraPAD) primeiraPAD = String(pad);
+      // PAM
+      const pam = safeNum(v["PAM"]);
+      if (pam > 0 && !primeiraPAM) primeiraPAM = String(pam);
+      // FR
+      const fr = safeNum(v["FR (irpm)"]) || safeNum(v["FR (ipm)"]) || safeNum(v["FR"]);
+      if (fr > 0) {
+        if (fr > frMax) frMax = fr;
+        if (frMin === 0 || fr < frMin) frMin = fr;
+        if (fr > 20) epTaquipneia++;
+        if (fr < 12) epBradipneia++;
+      }
     });
-
+    // Status de FC
+    let fcStatus;
+    if (epTaquicardia === 0 && epBradicardia === 0) {
+      fcStatus = isFem ? "Normocárdica" : "Normocárdico";
+    } else {
+      const parts = [];
+      if (epTaquicardia > 0) parts.push(epTaquicardia === 1 ? "1 episódio de taquicardia" : "Taquicárdica");
+      if (epBradicardia > 0) parts.push(epBradicardia === 1 ? "1 episódio de bradicardia" : "Bradicárdica");
+      fcStatus = parts.join(" e ");
+    }
+    // Status de FR
+    let frStatus;
+    if (epTaquipneia === 0 && epBradipneia === 0) {
+      frStatus = isFem ? "Eupneica" : "Eupneico";
+    } else {
+      const parts = [];
+      if (epTaquipneia > 0) parts.push(epTaquipneia === 1 ? "1 episódio de taquipneia" : "Taquipneica");
+      if (epBradipneia > 0) parts.push(epBradipneia === 1 ? "1 episódio de bradipneia" : "Bradipneica");
+      frStatus = parts.join(" e ");
+    }
+    // Status de SpO2
+    let spo2Status = "sem registro de SpO2";
+    if (hasSpo2) {
+      if (epSpo2Rasa === 0 && epSpo2Baixa === 0) {
+        spo2Status = "boa saturação periférica";
+      } else {
+        const parts = [];
+        if (epSpo2Baixa > 0) parts.push(epSpo2Baixa === 1 ? "1 episódio de baixa SpO2" : "baixa SpO2");
+        if (epSpo2Rasa > 0) parts.push(epSpo2Rasa === 1 ? "1 episódio de SpO2 rasa" : "SpO2 rasa");
+        spo2Status = parts.join(" e ");
+      }
+    }
+    // Status de PA
+    let paStatus;
+    if (epHipotensao === 0 && epHipertensao === 0) {
+      paStatus = "normotensa";
+    } else {
+      const parts = [];
+      if (epHipotensao > 0) parts.push(epHipotensao === 1 ? "1 episódio de hipotensão" : "hipotensa");
+      if (epHipertensao > 0) parts.push(epHipertensao === 1 ? "1 episódio de hipertensão" : "hipertensa");
+      paStatus = parts.join(" e ");
+    }
+    // Status de Temperatura
+    let tempStatus;
+    if (epFebre === 0 && epHipotermia === 0) {
+      tempStatus = "afebril";
+    } else {
+      const parts = [];
+      if (epFebre > 0) parts.push(epFebre === 1 ? "1 episódio de febre" : "febril");
+      if (epHipotermia > 0) parts.push(epHipotermia === 1 ? "1 episódio de hipotermia" : "hipotérmico");
+      tempStatus = parts.join(" e ");
+    }
     // 3. RESPIRATÓRIO
     let suporteVM = p.physio?.suporte || "Ar Ambiente";
     if (suporteVM.toLowerCase() === "ar ambiente") suporteVM = "em ar ambiente";
     else if (suporteVM === "VM") suporteVM = "em VM por TOT";
     else suporteVM = `em uso de ${suporteVM}`;
-
-    let spo2Status = "sem registro de SpO2";
-    if (hasSpo2) {
-      if (spo2Min > 92) spo2Status = "mantendo boa SpO2";
-      else if (spo2Min >= 89) spo2Status = "com SpO2 rasa";
-      else spo2Status = "com baixa SpO2";
-    }
-
     const secrecao = p.physio?.secrecao 
       ? `presença de secreção (${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"})` 
       : "sem evidência de secreções em via aérea";
-
     const respFrase = `${suporteVM}, ${spo2Status}, ${secrecao}`;
-
     // 4. CARDIOVASCULAR
     const usaDVA = p.cardio?.dva === true;
     let hemodinamicaStatus = "Compensado hemodinamicamente";
-
     if (usaDVA && p.bh?.gains && typeof BH_HOURS !== 'undefined') {
       let noraVals = [];
       BH_HOURS.forEach((h) => {
@@ -3130,14 +3210,10 @@ ${conduta}
     } else if (!usaDVA) {
        hemodinamicaStatus = "Estável hemodinamicamente";
     }
-
-    const fcStatus = fcMax > 100 ? (isFem ? "taquicárdica" : "taquicárdico") : (fcMin > 0 && fcMin < 60 ? (isFem ? "bradicárdica" : "bradicárdico") : (isFem ? "normocárdica" : "normocárdico"));
-    const paStatus = (pasMin > 0 && pasMin < 90) ? (isFem ? "hipotensa" : "hipotenso") : (pasMax > 160 ? (isFem ? "hipertensa" : "hipertenso") : (isFem ? "normotensa" : "normotenso"));
-
+    const fcStatusOld = fcMax > 100 ? (isFem ? "taquicárdica" : "taquicárdico") : (fcMin > 0 && fcMin < 60 ? (isFem ? "bradicárdica" : "bradicárdico") : (isFem ? "normocárdica" : "normocárdico"));
+    const paStatusOld = (pasMin > 0 && pasMin < 90) ? (isFem ? "hipotensa" : "hipotenso") : (pasMax > 160 ? (isFem ? "hipertensa" : "hipertenso") : (isFem ? "normotensa" : "normotenso"));
     const dvaFrase = usaDVA ? `(em uso de DVA: ${p.cardio?.drogasDVA?.join(", ") || "N/A"})` : "(sem uso de DVA)";
-    
-    const cardioFrase = `${hemodinamicaStatus} ${dvaFrase}, apresentando-se ${fcStatus} e ${paStatus}`;
-
+    const cardioFrase = `${hemodinamicaStatus} ${dvaFrase}, apresentando-se ${fcStatusOld} e ${paStatusOld}`;
     // 5. DIGESTÓRIO
     const temRegistroPositivo = (valor) => {
       if (!valor) return false;
@@ -3145,7 +3221,6 @@ ${conduta}
       if (texto === "" || texto === "0" || texto === "n" || texto === "nao" || texto === "não" || texto === "-") return false;
       return true; 
     };
-
     let temVomitoNoBH = false, temDiarreiaNoBH = false, temEvacuacaoNoBH = false; 
     if (p.bh?.losses) {
       Object.values(p.bh.losses).forEach(hora => {
@@ -3155,23 +3230,18 @@ ${conduta}
         if (temRegistroPositivo(hora["Evacuação"]) || temRegistroPositivo(hora["Evacuacao"]) || temRegistroPositivo(hora["Fezes"])) temEvacuacaoNoBH = true;
       });
     }
-
     const viaDieta = p.nutri?.via ? p.nutri.via : "via não especificada";
     const sneTexto = p.enfermagem?.sneData ? `Sonda Nasoenteral (SNE) a ${p.enfermagem.sneCm || "NT"}cm em uso. ` : "";
-    
     const dataEvac = p.gastro?.dataUltimaEvacuacao;
     let evacDaysStr = dataEvac 
       ? (typeof calculateEvacDays === 'function' ? calculateEvacDays(dataEvac) : dataEvac)
       : "sem registro de evacuações durante essa internação";
     if (temEvacuacaoNoBH) evacDaysStr = "hoje";
-
     let tgiIntercorrencias = "";
     if (temVomitoNoBH && temDiarreiaNoBH) tgiIntercorrencias = " Houve registro de vômitos e diarreia.";
     else if (temVomitoNoBH) tgiIntercorrencias = " Houve registro de vômito.";
     else if (temDiarreiaNoBH) tgiIntercorrencias = " Houve registro de diarreia.";
-
     const digestorioFrase = `Dieta via ${viaDieta}. ${sneTexto}Última evacuação: ${evacDaysStr}.${tgiIntercorrencias}`;
-
     // 6. GENITURINÁRIO
     let diureseStatus = "débito urinário não calculado";
     if (typeof calculateDiurese12hMlKgH === "function") {
@@ -3184,11 +3254,9 @@ ${conduta}
     }
     const svdTexto = p.enfermagem?.svd ? "Sonda Vesical de Demora (SVD) em uso" : "Sem SVD em uso";
     const diureseAspecto = p.enfermagem?.diureseCaracteristica || "não especificado";
-
     const geniFrase = diureseStatus === "débito urinário não calculado"
       ? `${svdTexto}, débito urinário não calculado${diureseAspecto !== "não especificado" ? `, aspecto ${diureseAspecto.toLowerCase()}` : ""}`
       : `${svdTexto}, com ${diureseStatus} de aspecto ${diureseAspecto.toLowerCase()}`;
-
     // 7. TEGUMENTAR
     const lesoesArray = p.enfermagem?.lesoes || [];
     const tegumentarFrase = lesoesArray.length > 0 
@@ -3196,114 +3264,91 @@ ${conduta}
           `${l.origem === 'incidencia' ? 'Lesão adquirida na UTI' : 'Lesão prévia'}: ${l.localizacao}${l.curativo ? ` — Curativo: ${l.curativo}` : ''}`
         ).join('. ')
       : "Pele íntegra";
-
     // 8. DISPOSITIVOS E INTERCORRÊNCIAS
     const hoje = new Date();
     const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
-
     const dispositivos = [
       // AVP
       ...(p.enfermagem?.avpLocal ? [`- Acesso Venoso Periférico (AVP) em ${p.enfermagem.avpLocal}${p.enfermagem.avpCalibre ? ` (${p.enfermagem.avpCalibre})` : ''}`] : []),
-      
       // CVC / PICC (só se NÃO foi retirado hoje)
       ...(p.enfermagem?.cvcLocal && p.enfermagem?.cvcRetiradaData !== hojeISO ? [`- ${p.enfermagem.cvcTipo === 'PICC' ? 'Cateter de Inserção Periférica (PICC)' : 'Cateter Venoso Central (CVC)'} em ${p.enfermagem.cvcLocal}`] : []),
-      
       // Shiley / Traqueostomia (só se NÃO foi retirado hoje)
-      ...(p.enfermagem?.shileyLocal && p.enfermagem?.shileyRetiradaData !== hojeISO ? [`- Traqueostomia (Shiley) em ${p.enfermagem.shileyLocal}`] : []),
-      
+      ...(p.enfermagem?.shileyLocal && p.enfermagem?.shileyRetiradaData !== hojeISO ? [`- Cateter de Shiley em ${p.enfermagem.shileyLocal}`] : []),
       // SVD (só se NÃO foi retirado hoje)
       ...(p.enfermagem?.svd && p.enfermagem?.svdRetiradaData !== hojeISO ? ['- Sonda Vesical de Demora (SVD) em uso'] : []),
-      
       // SNE
       ...(p.enfermagem?.sneData ? [`- Sonda Nasoenteral (SNE) a ${p.enfermagem.sneCm || 'NT'}cm`] : []),
-      
       // Dreno
       ...(p.enfermagem?.drenoTipo ? [`- Dreno ${p.enfermagem.drenoTipo}`] : []),
     ].filter(Boolean);
-  
     // 9. REGISTROS DE ENFERMAGEM (Eventos dos Modais - SOMENTE HOJE)
     const eventosRegistros = [];
-
-    // Filtra eventos de HOJE e ordena por horário
     const filtrarHoje = (historico) => {
       if (!Array.isArray(historico)) return [];
       return historico
         .filter(e => {
-          // Aceita ambos os formatos: YYYY-MM-DD (ISO) ou DD/MM/YYYY (brasileiro)
           const dataEvento = e.data || '';
           const dataISO = dataEvento.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, '$3-$2-$1');
           return dataISO === hojeISO;
         })
         .sort((a, b) => (a.horario || a.horarioInicio || '').localeCompare(b.horario || b.horarioInicio || ''));
     };
-
     // Manutenção SVD
     const svdsHoje = filtrarHoje(p.enfermagem?.historicoManutencaoSVD);
     svdsHoje.forEach(ultimoSVD => {
       const todosCumpridos = ultimoSVD.itens?.todosCumpridos ? '✅' : '❌';
       eventosRegistros.push(`- Manutenção SVD ${ultimoSVD.horario} — ${ultimoSVD.itens?.resumo || 'N/A'} ${todosCumpridos}${ultimoSVD.unidadeInserção ? ` (inserido na ${ultimoSVD.unidadeInserção})` : ''}${ultimoSVD.tipoSonda ? ` — Sonda ${ultimoSVD.tipoSonda}` : ''}`);
     });
-
     // Gasometria
     const gasesHoje = filtrarHoje(p.enfermagem?.historicoGasometria);
     gasesHoje.forEach(gas => {
       eventosRegistros.push(`- Gasometria ${gas.horario} — ${gas.tipoGasometria}`);
     });
-
     // Hemotransfusão
     const hemosHoje = filtrarHoje(p.enfermagem?.historicoHemotransfusao);
     hemosHoje.forEach(hemo => {
       eventosRegistros.push(`- Hemotransfusão ${hemo.horarioInicio} — ${hemo.hemocomponente}${hemo.reacao ? ` — Reação: ${hemo.reacao}` : ''}${hemo.suspendeu ? ' ⚠️ Suspensa' : ''}`);
     });
-
     // ECG
     const ecgsHoje = filtrarHoje(p.enfermagem?.historicoECG);
     ecgsHoje.forEach(ecg => {
       eventosRegistros.push(`- ECG ${ecg.horario}${ecg.posicionamentoV3R ? ' (com V3R/V4R)' : ''}`);
     });
-
     // Fleet Enema
     const fleetsHoje = filtrarHoje(p.enfermagem?.historicoFleetEnema);
     fleetsHoje.forEach(fleet => {
       eventosRegistros.push(`- Fleet Enema ${fleet.horario}`);
     });
-
     // NPT
     const nptsHoje = filtrarHoje(p.enfermagem?.historicoNPT);
     nptsHoje.forEach(npt => {
       eventosRegistros.push(`- NPT ${npt.horario}${npt.acessoCentralExclusivo ? ' (Acesso Central / Via Exclusiva ✅)' : ''}`);
     });
-
     // Aspiração Traqueal
     const aspsHoje = filtrarHoje(p.enfermagem?.historicoAspiracao);
     aspsHoje.forEach(asp => {
       eventosRegistros.push(`- Aspiração Traqueal ${asp.horario} — ${asp.quantidade} / ${asp.caracteristica}${asp.viaAerea ? ` (${asp.viaAerea})` : ''}${asp.oxigenacaoPre ? ` — SatO₂ pré: ${asp.oxigenacaoPre}` : ''}`);
     });
-
     // Inserção CVC (historicoCVC)
     const cvcsHoje = filtrarHoje(p.enfermagem?.historicoCVC);
     cvcsHoje.forEach(cvc => {
       eventosRegistros.push(`- Inserção CVC ${cvc.horario} — ${cvc.tipoCateter} em ${cvc.localInserção}${cvc.barreiras ? ` (Checklist: ${cvc.barreiras.cumpridas}/${cvc.barreiras.total})` : ''}`);
     });
-
     // Manutenção CVC (historicoManutencaoCVC)
     const manutCVCsHoje = filtrarHoje(p.enfermagem?.historicoManutencaoCVC);
     manutCVCsHoje.forEach(mcvc => {
       eventosRegistros.push(`- Manutenção CVC ${mcvc.horario}${mcvc.trocaCurativo ? ' — Troca de curativo' : ''}`);
     });
-
     // Manutenção Shiley (historicoManutencaoShiley)
     const manutShileysHoje = filtrarHoje(p.enfermagem?.historicoManutencaoShiley);
     manutShileysHoje.forEach(mshiley => {
       eventosRegistros.push(`- Manutenção Shiley ${mshiley.horario}${mshiley.trocaCurativo ? ' — Troca de curativo' : ''}`);
     });
-
     // Inserção SVD (historicoSVD)
     const svdsInsercaoHoje = filtrarHoje(p.enfermagem?.historicoSVD || []);
     svdsInsercaoHoje.forEach(svd => {
       eventosRegistros.push(`- Inserção SVD ${svd.horario} — ${svd.genero || ''} (${svd.indicacao || 'N/I'}) — ${svd.itens?.resumo || ''}`);
     });
-
     // Retirada de dispositivos (checklist de dispositivos)
     if (p.enfermagem?.cvcRetiradaData === hojeISO) {
       eventosRegistros.push(`- Retirado CVC de ${p.enfermagem.cvcLocal || 'local não especificado'}`);
@@ -3314,7 +3359,6 @@ ${conduta}
     if (p.enfermagem?.svdRetiradaData === hojeISO) {
       eventosRegistros.push(`- Retirado SVD`);
     }
-
     // Curativo (dentro de lesoes[].historicoCurativos)
     const lesoes = p.enfermagem?.lesoes || [];
     lesoes.forEach(lesao => {
@@ -3323,23 +3367,19 @@ ${conduta}
         eventosRegistros.push(`- Curativo ${cur.horario} — ${lesao.localizacao || 'N/A'}: ${cur.tipo}${cur.obs ? ` (${cur.obs})` : ''}`);
       });
     });
-
-    // Curativos avulsos (histórico independente — pacientes sem lesão prévia)
+    // Curativos avulsos
     const curativosAvulsosHoje = filtrarHoje(p.enfermagem?.historicoCurativos);
     curativosAvulsosHoje.forEach(cur => {
       eventosRegistros.push(`- Curativo ${cur.horario} — ${cur.local}: ${cur.tipoCurativo}${cur.observacao ? ` (${cur.observacao})` : ''}`);
     });
-
-    // Acesso Periférico (campos avulsos — pega o último registro)
+    // Acesso Periférico
     if (p.enfermagem?.avpData === hojeISO && p.enfermagem?.avpHorario) {
       eventosRegistros.push(`- Acesso Periférico ${p.enfermagem.avpHorario} — ${p.enfermagem.avpLocal} (${p.enfermagem.avpCalibre || 'N/A'})`);
     }
-
     const eventosTexto = eventosRegistros.length > 0
       ? eventosRegistros.join('\n')
       : 'Nenhum registro adicional no período.';
-
-    // Monta texto de RCP para anexar às intercorrências
+    // RCP
     const rcpsHojeIntercorrencia = (Array.isArray(p.enfermagem?.historicoRCP) ? p.enfermagem.historicoRCP : [])
       .filter(e => {
         const dataEvento = e.data || '';
@@ -3347,7 +3387,6 @@ ${conduta}
         return dataISO === hojeISO;
       })
       .sort((a, b) => (a.horarioInicioRCP || '').localeCompare(b.horarioInicioRCP || ''));
-    
     let rcpTexto = '';
     rcpsHojeIntercorrencia.forEach(rcp => {
       rcpTexto += `\n- RCP ${rcp.horarioInicioRCP || 'N/I'} às ${rcp.horarioFimRCP || 'N/I'}`;
@@ -3360,10 +3399,8 @@ ${conduta}
       if (rcp.causaProvavel) rcpTexto += ` — Causa provável: ${rcp.causaProvavel}`;
       if (rcp.observacoes) rcpTexto += ` — Obs: ${rcp.observacoes}`;
     });
-
     const intercorrencias = (p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.") + rcpTexto;
     const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
-
     // Dados do modal de evolução de enfermagem (avaliação física)
     const enf = p.enfermagem || {};
     const pulsos = enf.pulsos || "não especificado";
@@ -3383,22 +3420,18 @@ ${conduta}
     const adm = p.admissionData || p.admissoes || {};
     const nivelConsciencia = adm.conscienciaBasal || adm.exameNeuro || "não especificado";
     const pupilas = adm.pupilas || "não especificado";
-
     const descricaoEC = enchimentoCapilar.includes("<")
       ? "preservado"
       : enchimentoCapilar.includes("≥")
         ? "lentificado"
         : "não especificado";
-
     const estaEmArAmbiente = suporteO2.toLowerCase().includes("ar ambiente");
-
     let textoDiurese = diurese;
     if (diureseCaract && diurese !== "Ausente") {
       textoDiurese += ` (${diureseCaract})`;
     }
-    const temSVD = p.enfermagem?.svd ? ", com sonda vesical de demora instalada" : "";
-
-    // 9. O PROMPT BLINDADO
+    const temSVD = (p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData) ? ", com sonda vesical de demora instalada" : "";
+    // 10. O PROMPT
     return `
 DADOS ESTRUTURADOS:
 - NEURO: ${neuroFrase}.
@@ -3433,9 +3466,17 @@ INSTRUÇÕES PARA A IA (Enfermeiro da UTI):
 Escreva a EVOLUÇÃO DE ENFERMAGEM baseada EXATAMENTE nos dados acima.
 REGRAS CRÍTICAS ESTRITAS:
 1. NUNCA mencione o nome do paciente. NUNCA use "Paciente encontra-se" ou "O paciente apresenta" no início das frases.
-2. Inicie a frase de cada sistema DIRETAMENTE com o conteúdo fornecido (ex: "sem sedação contínua, com Glasgow 15" ou "em ar ambiente, com SpO2 rasa...").
+2. Inicie a frase de cada sistema DIRETAMENTE com o conteúdo fornecido (ex: "Sem sedação contínua, com Glasgow 15" ou "Em ar ambiente, com SpO2 rasa...").
 3. É OBRIGATÓRIO copiar o texto de cada sistema EXATAMENTE como foi formatado e montado nos "DADOS ESTRUTURADOS". Não adicione verbos auxiliares e não mude a ordem das palavras.
 4. Mantenha os títulos dos sistemas em maiúsculo, exatamente como no formato abaixo.
+5. HISTÓRIA CLÍNICA: Use APENAS o texto fornecido após o título "HISTÓRIA CLÍNICA". NÃO misture com os DADOS ESTRUTURADOS. A história clínica é um texto narrativo da admissão, não os dados do dia.
+6. "sem" no início da frase neurológica: escreva "Sem" com S maiúsculo.
+7. Diurese: NÃO repita a informação da diurese. Se já foi mencionada em "AVALIAÇÃO POR SISTEMAS > Diurese", não repita em "Pele e mucosas" ou em outro lugar.
+8. FC, FR, SpO₂, PA: Quando houver apenas UM episódio de alteração (ex: 1 episódio de taquicardia), escreva "apresentou um episódio de taquicardia" em vez de "Taquicárdica". Quando houver MÚLTIPLOS episódios, use o termo direto (ex: "Taquicárdica"). NÃO coloque os valores numéricos entre parênteses — eles já estão no texto.
+9. Pulsos periféricos: escreva com letra minúscula (ex: "cheios e simétricos", não "Cheios e simétricos").
+10. Abdome: Se a via da dieta não foi especificada, escreva apenas "Dieta via não especificada" (não repita "via" duas vezes).
+11. Cateter de Shiley: NÃO chame de "Traqueostomia". Use "Cateter de Shiley".
+12. SVD: Considere como "em uso" se existir data de inserção (svdData) e NÃO existir data de retirada (svdRetiradaData).
 FORMATO OBRIGATÓRIO:
 EVOLUÇÃO DE ENFERMAGEM
 

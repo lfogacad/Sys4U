@@ -211,6 +211,12 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       } 
     });
 
+    // Salva resultado consolidado do Braden e Morse no documento do paciente
+    updateNested("enfermagem", "bradenResult", bradenScore);
+    updateNested("enfermagem", "bradenRisk", bradenRisk);
+    updateNested("enfermagem", "morseResult", morseScore);
+    updateNested("enfermagem", "morseRisk", morseRisk);
+
     // 3. Lógica Bidirecional de Dispositivos (Corrigido para salvar em "enfermagem")
     if (!initialCvc && cvcActive) {
       updateNested("enfermagem", "cvcData", today);
