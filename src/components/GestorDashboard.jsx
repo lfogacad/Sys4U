@@ -21,6 +21,7 @@ import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
 import RelatorioANVISA from './relatorios/RelatorioANVISA';
 import PainelAuditoriaTab from './tabs/PainelAuditoriaTab';
+import RelatorioChecklistCVC from './relatorios/RelatorioChecklistCVC';
 
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
@@ -52,6 +53,10 @@ const GestorDashboard = ({ userProfile }) => {
   const [extraNome, setExtraNome] = useState('');
 
   const [modalRelatorioEscalas, setModalRelatorioEscalas] = useState({ isOpen: false, texto: '' });
+
+  const [checklistsCVCDoMes, setChecklistsCVCDoMes] = useState([]);
+  const [checklistSelecionado, setChecklistSelecionado] = useState(null);
+  const [modalRelatorioCVC, setModalRelatorioCVC] = useState(false);
 
   const [listaCarrinhoEMG, setListaCarrinhoEMG] = useState([]);
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
@@ -851,6 +856,199 @@ const GestorDashboard = ({ userProfile }) => {
       setSalvandoAuditoria(false);
     }
   };
+
+  const imprimirRelatorioCVC = (checklists, mesAno, metricas, acessosMes) => {
+    // Análise das barreiras mais falhas
+    const analiseBarreiras = {};
+    let totalItens = 0;
+    let totalCumpridos = 0;
+
+    checklists.forEach(c => {
+      if (!c.itens || !Array.isArray(c.itens)) return;
+      c.itens.forEach(item => {
+        totalItens++;
+        if (item.cumprida) totalCumpridos++;
+        
+        const nome = item.label || item.key || `Item`;
+        if (!analiseBarreiras[nome]) {
+          analiseBarreiras[nome] = { total: 0, cumpridas: 0, falhas: 0 };
+        }
+        analiseBarreiras[nome].total++;
+        if (item.cumprida) {
+          analiseBarreiras[nome].cumpridas++;
+        } else {
+          analiseBarreiras[nome].falhas++;
+        }
+      });
+    });
+
+    const barreirasOrdenadas = Object.entries(analiseBarreiras)
+      .map(([nome, dados]) => ({
+        nome,
+        ...dados,
+        taxaFalha: dados.total > 0 ? Math.round((dados.falhas / dados.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.taxaFalha - a.taxaFalha);
+
+    const [ano, mes] = mesAno ? mesAno.split('-') : ['', ''];
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const nomeMes = meses[parseInt(mes) - 1] || mes;
+
+    const totalChecklists = checklists.length;
+    const total100Porcento = checklists.filter(c => c.todasCumpridas).length;
+    const cobertura = acessosMes > 0 ? Math.round((totalChecklists / acessosMes) * 100) : 0;
+    const conformidadeGeral = totalItens > 0 ? Math.round((totalCumpridos / totalItens) * 100) : 0;
+
+    // Monta as linhas da tabela de barreiras
+    const linhasBarreiras = barreirasOrdenadas.map(b => `
+      <tr${b.taxaFalha > 0 ? ' style="background-color: #fef2f2;"' : ''}>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${b.nome}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.total}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.cumpridas}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.falhas}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${b.taxaFalha > 0 ? '#b91c1c' : '#047857'};">${b.taxaFalha}%</td>
+      </tr>
+    `).join('');
+
+    // Monta as linhas da tabela de checklists
+    const linhasChecklists = checklists.map((c, i) => `
+      <tr${i % 2 === 0 ? '' : ' style="background-color: #f8fafc;"'}>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.paciente}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.leito}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data} ${c.horario}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.tipoCateter}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.localInsercao}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.medico}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${c.todasCumpridas ? '#047857' : '#b91c1c'};">${c.cumpridas}/${c.total}</td>
+      </tr>
+    `).join('');
+
+    const dataEmissao = new Date().toLocaleDateString('pt-BR');
+
+    const html = `<!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Relatório de Checklists CVC - ${nomeMes}/${ano}</title>
+    <style>
+      @page { margin: 20mm 15mm; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { 
+        font-family: Arial, Helvetica, sans-serif; 
+        font-size: 12px; 
+        color: #1e293b; 
+        line-height: 1.5;
+        padding: 20px;
+      }
+      .header {
+        text-align: center;
+        border-bottom: 2px solid #1e293b;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+      }
+      .header h1 { font-size: 18px; text-transform: uppercase; letter-spacing: 1px; }
+      .header p { font-size: 12px; color: #64748b; margin-top: 4px; }
+      h2 { 
+        font-size: 14px; 
+        border-bottom: 1px solid #cbd5e1; 
+        padding-bottom: 4px; 
+        margin-bottom: 10px; 
+        margin-top: 20px; 
+      }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+      th { 
+        background-color: #f1f5f9; 
+        padding: 8px; 
+        text-align: left; 
+        font-size: 11px; 
+        text-transform: uppercase; 
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #cbd5e1;
+      }
+      th.center { text-align: center; }
+      .resumo-table td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
+      .resumo-table td:first-child { font-weight: 600; width: 280px; }
+      .footer { 
+        border-top: 1px solid #cbd5e1; 
+        padding-top: 10px; 
+        margin-top: 30px; 
+        text-align: center; 
+        font-size: 10px; 
+        color: #94a3b8; 
+      }
+      @media print {
+        body { padding: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Relatório de Checklists CVC</h1>
+      <p>Período: ${nomeMes} / ${ano} &nbsp;|&nbsp; Emitido em: ${dataEmissao}</p>
+    </div>
+
+    <h2>1. Resumo do Período</h2>
+    <table class="resumo-table">
+      <tr><td>Total de checklists registrados</td><td>${totalChecklists}</td></tr>
+      <tr><td>Total de acessos realizados</td><td>${acessosMes}</td></tr>
+      <tr><td>Taxa de cobertura</td><td>${cobertura}%</td></tr>
+      <tr><td>Checklists com 100% das barreiras</td><td>${total100Porcento} (${totalChecklists > 0 ? Math.round((total100Porcento / totalChecklists) * 100) : 0}%)</td></tr>
+      <tr><td>Conformidade geral (itens)</td><td>${conformidadeGeral}% (${totalCumpridos}/${totalItens} itens)</td></tr>
+    </table>
+
+    <h2>2. Análise de Barreiras</h2>
+    ${barreirasOrdenadas.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Barreira</th>
+          <th class="center">Total</th>
+          <th class="center">Cumpridas</th>
+          <th class="center">Falhas</th>
+          <th class="center">Taxa de Falha</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhasBarreiras}
+      </tbody>
+    </table>
+    ` : '<p style="color: #94a3b8; font-style: italic;">Nenhum checklist com itens detalhados registrado no período.</p>'}
+
+    <h2>3. Checklists Registrados</h2>
+    ${checklists.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Paciente</th>
+          <th>Leito</th>
+          <th>Data</th>
+          <th>Cateter</th>
+          <th>Local</th>
+          <th>Médico</th>
+          <th class="center">Barreiras</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhasChecklists}
+      </tbody>
+    </table>
+    ` : '<p style="color: #94a3b8; font-style: italic;">Nenhum checklist registrado no período.</p>'}
+
+    <div class="footer">
+      <p>Relatório gerado automaticamente pelo sistema de gestão de leitos UTI</p>
+      <p>Documento institucional — UTI Municipal de Ariquemes</p>
+    </div>
+
+    <script>
+      window.onload = function() { window.print(); };
+    <\/script>
+  </body>
+  </html>`;
+
+    const janela = window.open('', '_blank');
+    janela.document.write(html);
+    janela.document.close();
+  };  
 
   const gerarRelatorioEscalas = () => {
     const dataInicio = filtroDataInicio || 'N/I';
@@ -1973,13 +2171,12 @@ const GestorDashboard = ({ userProfile }) => {
 
   // Carrega os leitos quando o gestor entra na tela de Configuração
   useEffect(() => {
-    if (subViewEquipe === 'config') {
+    if (subViewEquipe === 'config' || abaRiscoAtiva === 'checklistCVC') {
       const carregarLeitosConfig = async () => {
         const snap = await getDocs(collection(db, 'leitos_uti'));
         const leitos = [];
         snap.forEach(d => leitos.push({ id: d.id, ...d.data() }));
         
-        // Ordena para Leito 1, Leito 2, etc.
         leitos.sort((a, b) => {
           const numA = parseInt(a.nome?.replace(/\D/g, '')) || 0;
           const numB = parseInt(b.nome?.replace(/\D/g, '')) || 0;
@@ -1991,7 +2188,7 @@ const GestorDashboard = ({ userProfile }) => {
       };
       carregarLeitosConfig();
     }
-  }, [subViewEquipe]);
+  }, [subViewEquipe, abaRiscoAtiva]);
 
   // Efeito 3: Busca de Métricas da Equipe (Coleção Profissionais)
   useEffect(() => {
@@ -2085,6 +2282,115 @@ const GestorDashboard = ({ userProfile }) => {
     }
     setIsSavingConfig(false);
   };
+
+  useEffect(() => {
+  if (!mesFiltroCVC || !leitosConfig || leitosConfig.length === 0) {
+    setChecklistsCVCDoMes([]);
+    return;
+  }
+
+  const buscarChecklists = async () => {
+      const [ano, mes] = mesFiltroCVC.split('-').map(Number);
+      const resultados = [];
+
+      // 1. Busca dos leitos ativos
+      leitosConfig.forEach(patient => {
+        const bedId = patient.id || patient.nome || 'bed_unknown';
+        const historico = patient?.enfermagem?.historicoCVC || [];
+        if (!Array.isArray(historico)) return;
+
+        historico.forEach((checklist, idx) => {
+          const dataChecklist = checklist.data || '';
+          if (!dataChecklist) return;
+          
+          const partes = dataChecklist.split('-');
+          if (partes.length !== 3) return;
+          const cAno = parseInt(partes[0]);
+          const cMes = parseInt(partes[1]);
+          
+          if (cAno === ano && cMes === mes) {
+            resultados.push({
+              id: `${bedId}-${dataChecklist}-${checklist.horario || '00:00'}-${idx}`,
+              leito: bedId,
+              paciente: patient.nome || patient.admissionData?.nome || 'Não identificado',
+              data: dataChecklist,
+              horario: checklist.horario || '',
+              medico: checklist.medicoResponsavel || 'Não informado',
+              tipoCateter: checklist.tipoCateter || 'N/I',
+              localInsercao: checklist.localInserção || '',
+              indicacao: checklist.indicacao || '',
+              passagem: checklist.passagem || '',
+              puncaoUnica: checklist.puncaoUnica,
+              todasCumpridas: checklist.barreiras?.todasCumpridas || false,
+              cumpridas: checklist.barreiras?.cumpridas || 0,
+              total: checklist.barreiras?.total || 0,
+              itens: checklist.barreiras?.itens || checklist.itens || [],
+              dificuldades: checklist.dificuldades || '',
+              eventoAdverso: checklist.eventoAdverso || '',
+              teveEvento: checklist.teveEventoAdverso || false,
+              resumo: checklist.itens?.resumo || checklist.barreiras?.resumo || '',
+            });
+          }
+        });
+      });
+
+      // 2. Busca do internacoes_historico
+      try {
+        const historicoSnap = await getDocs(collection(db, 'internacoes_historico'));
+        historicoSnap.forEach(d => {
+          const patient = { id: d.id, ...d.data() };
+          const historico = patient?.enfermagem?.historicoCVC || [];
+          if (!Array.isArray(historico)) return;
+
+          historico.forEach((checklist, idx) => {
+            const dataChecklist = checklist.data || '';
+            if (!dataChecklist) return;
+            
+            const partes = dataChecklist.split('-');
+            if (partes.length !== 3) return;
+            const cAno = parseInt(partes[0]);
+            const cMes = parseInt(partes[1]);
+            
+            if (cAno === ano && cMes === mes) {
+              resultados.push({
+                id: `hist-${d.id}-${dataChecklist}-${checklist.horario || '00:00'}-${idx}`,
+                leito: d.id,
+                paciente: patient.nome || patient.admissionData?.nome || 'Não identificado',
+                data: dataChecklist,
+                horario: checklist.horario || '',
+                medico: checklist.medicoResponsavel || 'Não informado',
+                tipoCateter: checklist.tipoCateter || 'N/I',
+                localInsercao: checklist.localInserção || '',
+                indicacao: checklist.indicacao || '',
+                passagem: checklist.passagem || '',
+                puncaoUnica: checklist.puncaoUnica,
+                todasCumpridas: checklist.barreiras?.todasCumpridas || false,
+                cumpridas: checklist.barreiras?.cumpridas || 0,
+                total: checklist.barreiras?.total || 0,
+                itens: checklist.barreiras?.itens || checklist.itens || [],
+                dificuldades: checklist.dificuldades || '',
+                eventoAdverso: checklist.eventoAdverso || '',
+                teveEvento: checklist.teveEventoAdverso || false,
+                resumo: checklist.itens?.resumo || checklist.barreiras?.resumo || '',
+              });
+            }
+          });
+        });
+      } catch (err) {
+        console.error("Erro ao buscar internacoes_historico:", err);
+      }
+
+      // Ordena por data e horário (mais recente primeiro)
+      resultados.sort((a, b) => {
+        if (a.data !== b.data) return b.data.localeCompare(a.data);
+        return (b.horario || '').localeCompare(a.horario || '');
+      });
+
+      setChecklistsCVCDoMes(resultados);
+    };
+
+    buscarChecklists();
+  }, [mesFiltroCVC, leitosConfig]);
 
   const gerarRelatorioMensalCarrinho = () => {
     const [ano, mes] = mesFiltroCarrinhoEMG.split('-').map(Number);
@@ -6975,14 +7281,22 @@ const GestorDashboard = ({ userProfile }) => {
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">Monitoramento de conformidade dos checklists de inserção de CVC/PICC/Shiley.</p>
                 </div>
-                <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                  <span className="text-xs font-bold text-slate-600 uppercase">Mês:</span>
-                  <input 
-                    type="month" 
-                    value={mesFiltroCVC} 
-                    onChange={(e) => setMesFiltroCVC(e.target.value)}
-                    className="bg-white border border-slate-200 p-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-sky-500 cursor-pointer"
-                  />
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                    <span className="text-xs font-bold text-slate-600 uppercase">Mês:</span>
+                    <input 
+                      type="month" 
+                      value={mesFiltroCVC} 
+                      onChange={(e) => setMesFiltroCVC(e.target.value)}
+                      className="bg-white border border-slate-200 p-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-sky-500 cursor-pointer"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setModalRelatorioCVC(true)}
+                    className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    <FileText size={14} /> Relatório
+                  </button>
                 </div>
               </div>
             </div>
@@ -7097,6 +7411,231 @@ const GestorDashboard = ({ userProfile }) => {
                 </div>
               )}
             </div>
+
+            {/* LISTA DE CHECKLISTS DO MÊS */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-4">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <ClipboardList size={16} className="text-sky-500" /> Checklists do Mês
+              </h4>
+              <p className="text-xs text-slate-500 mb-4">
+                {checklistsCVCDoMes.length > 0 
+                  ? `${checklistsCVCDoMes.length} checklist(s) registrado(s) em ${mesFiltroCVC}`
+                  : 'Nenhum checklist registrado neste mês.'}
+              </p>
+
+              {checklistsCVCDoMes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left p-2 font-bold text-slate-600">Paciente</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Leito</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Horário</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Cateter</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Local</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Médico</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Barreiras</th>
+                        <th className="text-center p-2 font-bold text-slate-600">100%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checklistsCVCDoMes.map((c, idx) => (
+                        <tr key={c.id} className={`border-b border-slate-100 hover:bg-slate-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
+                        onClick={() => setChecklistSelecionado(c)}
+                        >
+                          <td className="p-2 font-semibold text-slate-700">{c.paciente}</td>
+                          <td className="p-2 text-slate-500">{c.leito}</td>
+                          <td className="p-2 text-slate-700">{c.data}</td>
+                          <td className="p-2 text-slate-500">{c.horario}</td>
+                          <td className="p-2 text-slate-700">{c.tipoCateter}</td>
+                          <td className="p-2 text-slate-500">{c.localInsercao}</td>
+                          <td className="p-2 text-slate-700">{c.medico}</td>
+                          <td className="p-2 text-center">
+                            <span className="font-bold">{c.cumpridas}/{c.total}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            {c.todasCumpridas ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
+                                <ShieldCheck size={14} /> Sim
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-red-500 font-bold">
+                                <X size={14} /> Não
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400 italic text-xs">
+                  Nenhum checklist de CVC registrado neste período.
+                </div>
+              )}
+
+            {/* MODAL DE DETALHES DO CHECKLIST */}
+            {checklistSelecionado && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setChecklistSelecionado(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  
+                  {/* Cabeçalho */}
+                  <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Checklist de Inserção CVC</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {checklistSelecionado.paciente} — {checklistSelecionado.leito}
+                      </p>
+                    </div>
+                    <button onClick={() => setChecklistSelecionado(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={20} className="text-slate-400" />
+                    </button>
+                  </div>
+
+                  {/* Informações gerais */}
+                  <div className="p-5 border-b border-slate-100">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="font-bold text-slate-500 block">Data / Horário</span>
+                        <span className="text-slate-800">{checklistSelecionado.data} {checklistSelecionado.horario}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Médico Responsável</span>
+                        <span className="text-slate-800">{checklistSelecionado.medico}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Tipo de Cateter</span>
+                        <span className="text-slate-800">{checklistSelecionado.tipoCateter}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Local de Inserção</span>
+                        <span className="text-slate-800">{checklistSelecionado.localInsercao || 'N/I'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Indicação</span>
+                        <span className="text-slate-800">{checklistSelecionado.indicacao || 'N/I'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Passagem</span>
+                        <span className="text-slate-800">{checklistSelecionado.passagem || 'N/I'}</span>
+                      </div>
+                      {checklistSelecionado.puncaoUnica !== undefined && (
+                        <div className="col-span-2">
+                          <span className="font-bold text-slate-500 block">Punção Única</span>
+                          <span className={`font-bold ${checklistSelecionado.puncaoUnica ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {checklistSelecionado.puncaoUnica ? 'Sim' : 'Não'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Lista de barreiras */}
+                  <div className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-bold text-slate-700 text-xs uppercase">Barreiras</h4>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        checklistSelecionado.todasCumpridas 
+                          ? 'bg-emerald-100 text-emerald-700' 
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {checklistSelecionado.cumpridas}/{checklistSelecionado.total}
+                      </span>
+                    </div>
+
+                    {checklistSelecionado.itens && checklistSelecionado.itens.length > 0 ? (
+                      <div className="space-y-2">
+                        {checklistSelecionado.itens.map((item, i) => (
+                          <div key={i} className={`flex items-center gap-3 p-2.5 rounded-lg ${
+                            item.cumprida ? 'bg-emerald-50' : 'bg-red-50'
+                          }`}>
+                            {item.cumprida ? (
+                              <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                                <ShieldCheck size={14} className="text-white" />
+                              </div>
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-red-400 flex items-center justify-center flex-shrink-0">
+                                <X size={14} className="text-white" />
+                              </div>
+                            )}
+                            <span className={`text-sm ${item.cumprida ? 'text-slate-700' : 'text-red-700 font-medium'}`}>
+                              {item.label || item.key || `Item ${i + 1}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500 leading-relaxed">
+                        {checklistSelecionado.resumo || 'Nenhum item disponível.'}
+                      </div>
+                    )}
+
+                    {checklistSelecionado.dificuldades && (
+                      <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                        <span className="text-xs font-bold text-amber-700 block mb-1">⚠️ Dificuldades</span>
+                        <span className="text-xs text-amber-800">{checklistSelecionado.dificuldades}</span>
+                      </div>
+                    )}
+                    {checklistSelecionado.teveEvento && checklistSelecionado.eventoAdverso && (
+                      <div className="mt-2 p-3 bg-red-50 rounded-lg border border-red-200">
+                        <span className="text-xs font-bold text-red-700 block mb-1">🚨 Evento Adverso</span>
+                        <span className="text-xs text-red-800">{checklistSelecionado.eventoAdverso}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Fechar */}
+                  <div className="p-4 border-t border-slate-100 text-center">
+                    <button 
+                      onClick={() => setChecklistSelecionado(null)}
+                      className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Relatório CVC */}
+            {modalRelatorioCVC && (
+              <div className="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-4xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-slideUp">
+                  <div className="p-4 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                    <h2 className="font-bold flex items-center gap-2">
+                      <FileText size={20} /> Relatório de Checklists CVC
+                    </h2>
+                    <div className="flex gap-2">
+                        <button 
+                          onClick={() => imprimirRelatorioCVC(checklistsCVCDoMes, mesFiltroCVC, metricasCVC, acessosMesCVC ?? metricasCVC.totalChecklists)}
+                          className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded text-sm font-bold transition-colors"
+                        >
+                          Imprimir / Salvar PDF
+                        </button>
+                      <button 
+                        onClick={() => setModalRelatorioCVC(false)} 
+                        className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-bold transition-colors"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 overflow-auto bg-white p-8">
+                    <RelatorioChecklistCVC 
+                      checklists={checklistsCVCDoMes}
+                      mesAno={mesFiltroCVC}
+                      metricas={metricasCVC}
+                      acessosMes={acessosMesCVC ?? metricasCVC.totalChecklists}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}            
+
+            </div>            
 
           </div>
         )}
