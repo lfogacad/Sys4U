@@ -3420,6 +3420,12 @@ ${conduta}
     const adm = p.admissionData || p.admissoes || {};
     const nivelConsciencia = adm.conscienciaBasal || adm.exameNeuro || "não especificado";
     const pupilas = adm.pupilas || "não especificado";
+    // Escalas diárias (Braden e Morse) — salvas em escalas_diarias > data > braden/morse
+    const escalasHoje = p.enfermagem?.escalas_diarias?.[hojeISO] || {};
+    const bradenScore = escalasHoje.braden?.score ?? "não avaliado";
+    const bradenRisco = escalasHoje.braden?.risco || "";
+    const morseScore = escalasHoje.morse?.score ?? "não avaliado";
+    const morseRisco = escalasHoje.morse?.risco || "";
     const descricaoEC = enchimentoCapilar.includes("<")
       ? "preservado"
       : enchimentoCapilar.includes("≥")
@@ -3466,54 +3472,97 @@ INSTRUÇÕES PARA A IA (Enfermeiro da UTI):
 Escreva a EVOLUÇÃO DE ENFERMAGEM baseada EXATAMENTE nos dados acima.
 REGRAS CRÍTICAS ESTRITAS:
 1. NUNCA mencione o nome do paciente. NUNCA use "Paciente encontra-se" ou "O paciente apresenta" no início das frases.
-2. Inicie a frase de cada sistema DIRETAMENTE com o conteúdo fornecido (ex: "Sem sedação contínua, com Glasgow 15" ou "Em ar ambiente, com SpO2 rasa...").
+2. Inicie a frase de cada sistema DIRETAMENTE com o conteúdo fornecido (ex: "Sem sedação contínua, com Glasgow 15" ou "Em uso de Cateter Nasal...").
 3. É OBRIGATÓRIO copiar o texto de cada sistema EXATAMENTE como foi formatado e montado nos "DADOS ESTRUTURADOS". Não adicione verbos auxiliares e não mude a ordem das palavras.
 4. Mantenha os títulos dos sistemas em maiúsculo, exatamente como no formato abaixo.
-5. HISTÓRIA CLÍNICA: Use APENAS o texto fornecido após o título "HISTÓRIA CLÍNICA". NÃO misture com os DADOS ESTRUTURADOS. A história clínica é um texto narrativo da admissão, não os dados do dia.
+5. HISTÓRIA CLÍNICA: Use APENAS o texto fornecido após o título "HISTÓRIA CLÍNICA". NÃO misture com os DADOS ESTRUTURADOS.
 6. "sem" no início da frase neurológica: escreva "Sem" com S maiúsculo.
-7. Diurese: NÃO repita a informação da diurese. Se já foi mencionada em "AVALIAÇÃO POR SISTEMAS > Diurese", não repita em "Pele e mucosas" ou em outro lugar.
-8. FC, FR, SpO₂, PA: Quando houver apenas UM episódio de alteração (ex: 1 episódio de taquicardia), escreva "apresentou um episódio de taquicardia" em vez de "Taquicárdica". Quando houver MÚLTIPLOS episódios, use o termo direto (ex: "Taquicárdica"). NÃO coloque os valores numéricos entre parênteses — eles já estão no texto.
+7. NÃO crie a linha "Diurese:" separada. A diurese já está incluída dentro de "Genitourinário:".
+8. FC, FR, SpO₂, PA: Quando houver APENAS 1 episódio de alteração, escreva "Apresentou 1 episódio de taquicardia/hipotensão/etc." em vez do termo direto. Quando houver 2 ou MAIS episódios, use o termo direto (ex: "Taquicárdico", "Hipotenso"). NÃO coloque os valores numéricos entre parênteses.
 9. Pulsos periféricos: escreva com letra minúscula (ex: "cheios e simétricos", não "Cheios e simétricos").
 10. Abdome: Se a via da dieta não foi especificada, escreva apenas "Dieta via não especificada" (não repita "via" duas vezes).
 11. Cateter de Shiley: NÃO chame de "Traqueostomia". Use "Cateter de Shiley".
 12. SVD: Considere como "em uso" se existir data de inserção (svdData) e NÃO existir data de retirada (svdRetiradaData).
-FORMATO OBRIGATÓRIO:
+13. NÃO coloque "Nível de consciência:" antes do valor. Escreva apenas o valor diretamente (ex: "LOTE, pupilas ISOFOTO").
+14. Respiratório: NÃO repita o valor da SpO₂ após a FR. Mantenha apenas a FR.
+15. O título "Genitourinário" deve ser escrito por extenso, não abreviado como "Geni".
+16. Secreção: inclua a quantidade da secreção quando disponível (ex: "Presença de secreção (Fluída, Transparente)" → se houver quantidade, escreva "Presença de secreção (Fluída, Transparente, [quantidade])").
+FORMATO OBRIGATÓRIO (gere exatamente esta estrutura, preenchendo com os dados fornecidos):
+
 EVOLUÇÃO DE ENFERMAGEM
 
 HISTÓRIA CLÍNICA
-${p.admissionData?.historia || p.admissoes?.historia || "Sem registro prévio"}
+Use o texto exato do campo "HISTÓRIA CLÍNICA" fornecido abaixo. Se estiver vazio, escreva "Sem registro prévio".
 
 DADOS DE ENFERMAGEM
-Escala de Dor: ${p.enfermagem?.dor || "0"} | Hemodiálise: ${p.enfermagem?.hemodialise ? `Sim (Acesso: ${p.enfermagem?.acessoHemodialise || "não especificado"})` : "Não"}
-Precauções: ${p.enfermagem?.precaucao || "Padrão"}
+Escala de Dor: [Use o valor exato do campo "Escala de Dor" da AVALIAÇÃO FÍSICA] | Hemodiálise: [Use "Sim (Acesso: ...)" ou "Não" conforme o campo "Hemodiálise" da AVALIAÇÃO FÍSICA]
+Precauções: [Use o valor do campo "Precauções"]
 
 ESCALAS DE RISCO
-BRADEN: [pontuação e risco do modal de evolução]
-MORSE: [pontuação e risco do modal de evolução]
+BRADEN: [Use o valor do campo BRADEN] pontos (Risco: [risco])
+MORSE: [Use o valor do campo MORSE] pontos (Risco de Queda: [risco])
 
 AVALIAÇÃO POR SISTEMAS
-Neurológico: Paciente ${nivelConsciencia}, pupilas ${pupilas}.
-Cardiovascular: ${fcStatus} (FC: ${fcMin > 0 ? `${fcMin}-${fcMax}` : "n/r"} bpm), pulsos periféricos ${pulsos}, tempo de enchimento capilar ${descricaoEC}.
-Respiratório: ${frStatus} (FR: ${frMin > 0 ? `${frMin}-${frMax}` : "n/r"} ipm)${estaEmArAmbiente ? " em ar ambiente" : ` em ${suporteO2}`}, com esforço ventilatório ${esforcoResp}. Com ${spo2Status} (SpO₂: ${spo2Min < 100 ? `${spo2Min}%` : "n/r"}%).
-Abdome: ${abdome}.
-Pele e mucosas: ${coloracaoPele}, ${cianose}, ${ictericia}. ${tegumentarFrase}.
-Diurese: ${textoDiurese}${temSVD}.
+Neurológico: Sem sedação contínua, com Glasgow [valor]. [nível de consciência], pupilas [valor].
+Cardiovascular: [status hemodinâmico] (em uso de DVA ou sem uso de DVA). [status FC conforme regra 8]. [status PA conforme regra 8]. Pulsos periféricos [valor em minúsculo], tempo de enchimento capilar [valor].
+Respiratório: Em [suporte O₂], com esforço ventilatório [valor] (FR: [valor] ipm). [status SpO₂ conforme regra 8]. [status secreção].
+Gastro: Dieta via [via]. [se SNE: Sonda Nasoenteral (SNE) a Xcm em uso]. Última evacuação: [valor].
+Genitourinário: [SVD em uso ou não], com [status diurese] de aspecto [valor].
+Abdome: [valor do exame do abdome].
+Pele e mucosas: [coloração], [cianose], [icterícia]. [status pele].
 
 DISPOSITIVOS ADICIONAIS:
-${dispositivos.length > 0 ? dispositivos.join("\\n") : "- Nenhum."}
+[Lista de dispositivos]
 
 REGISTROS DE ENFERMAGEM:
-${eventosTexto}
+[Eventos do período]
 
 INTERCORRÊNCIAS:
-${intercorrencias}
+[Texto do campo intercorrências]
 
 CONDUTAS:
-${condutas}
+[Texto do campo condutas]
 
 CUIDADOS DE ENFERMAGEM:
-${cuidadosEnf || "Instalação em leito, identificação e orientações ao paciente/acompanhante.\\nVerificação de alergias e pulseira de identificação.\\nManter oxigenoterapia para SpO₂ ≥ 92%, titular conforme necessidade.\\nMonitorização contínua (cardioscopia, PA não invasiva a cada 15 min, oximetria).\\nPunção de acesso venoso periférico, se necessário.\\nControle de diurese e balanço hídrico estrito.\\nAdministrar medicamentos prescritos conforme evolução.\\nManter decúbito elevado (30–45°) para otimizar ventilação.\\nMedidas de conforto e posicionamento no leito.\\nOferecer apoio emocional e orientações iniciais ao acompanhante."}`;
-  };
+[Texto do campo cuidados de enfermagem]
+
+DADOS FORNECIDOS (use estes valores literais):
+- Nível de consciência: ${nivelConsciencia}
+- Pupilas: ${pupilas}
+- Escala de Dor: ${p.enfermagem?.dor || "0"}
+- Hemodiálise: ${p.enfermagem?.hemodialise ? `Sim (Acesso: ${p.enfermagem?.acessoHemodialise || "não especificado"})` : "Não"}
+- Precauções: ${p.enfermagem?.precaucao || "Padrão"}
+- BRADEN: ${bradenScore} pontos (Risco: ${bradenRisco})
+- MORSE: ${morseScore} pontos (Risco de Queda: ${morseRisco})
+- FC: ${fcMin > 0 ? `${fcMin}-${fcMax}` : "n/r"} bpm (epTaquicardia=${epTaquicardia}, epBradicardia=${epBradicardia})
+- FR: ${frMin > 0 ? `${frMin}-${frMax}` : "n/r"} ipm (epTaquipneia=${epTaquipneia}, epBradipneia=${epBradipneia})
+- SpO₂: ${spo2Min < 100 ? `${spo2Min}%` : "n/r"} (epSpo2Baixa=${epSpo2Baixa}, epSpo2Rasa=${epSpo2Rasa})
+- PA: ${pasMin > 0 ? `${pasMin}-${pasMax}` : "n/r"}/${primeiraPAD || "n/r"} (epHipotensao=${epHipotensao}, epHipertensao=${epHipertensao})
+- Temperatura: ${tempMin > 0 ? `${tempMin}-${tempMax}` : tempMax > 0 ? tempMax : "n/r"}°C (epFebre=${epFebre}, epHipotermia=${epHipotermia})
+- Status hemodinâmico: ${hemodinamicaStatus}
+- DVA: ${usaDVA ? `Sim (${p.cardio?.drogasDVA?.join(", ") || "N/A"})` : "Não"}
+- Suporte O₂: ${suporteO2}
+- Esforço respiratório: ${esforcoResp}
+- Pulsos periféricos: ${pulsos}
+- Enchimento capilar: ${enchimentoCapilar} (${descricaoEC})
+- Coloração da pele: ${coloracaoPele}, ${cianose}, ${ictericia}
+- Pele: ${tegumentarFrase}
+- Abdome: ${abdome}
+- Diurese: ${textoDiurese}
+- SVD: ${p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData ? "Em uso" : "Não em uso"}
+- Via dieta: ${viaDieta}
+- SNE: ${p.enfermagem?.sneData ? `Sim, a ${p.enfermagem.sneCm || "NT"}cm` : "Não"}
+- Última evacuação: ${evacDaysStr}
+- TGI intercorrências: ${tgiIntercorrencias || "Nenhuma"}
+- Secreção: ${p.physio?.secrecao ? `${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"}${p.physio?.secrecaoQuantidade ? `, ${p.physio.secrecaoQuantidade}` : ""}` : "Sem secreção"}
+- História clínica: ${p.admissionData?.historia || p.admissoes?.historia || "Sem registro prévio"}
+- Intercorrências (texto literal): ${p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada."}
+- Condutas (texto literal): ${p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos."}
+- Cuidados de enfermagem (texto literal): ${cuidadosEnf || "Instalação em leito, identificação e orientações ao paciente/acompanhante."}
+- Dispositivos: ${dispositivos.length > 0 ? dispositivos.join(" | ") : "Nenhum"}
+- Registros de enfermagem: ${eventosTexto}
+`;
+  }
 
 const generateNursingAI_Evolution = async () => {
     if (!currentPatient) return;
