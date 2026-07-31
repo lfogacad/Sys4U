@@ -8,7 +8,7 @@ import {
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
   FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance, Truck,
-  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain
+  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain, Droplets
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
@@ -22,6 +22,7 @@ import ImportadorEscala from './ImportadorEscala';
 import RelatorioANVISA from './relatorios/RelatorioANVISA';
 import PainelAuditoriaTab from './tabs/PainelAuditoriaTab';
 import RelatorioChecklistCVC from './relatorios/RelatorioChecklistCVC';
+import RelatorioChecklistSVD from './relatorios/RelatorioChecklistSVD';
 
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
@@ -57,6 +58,13 @@ const GestorDashboard = ({ userProfile }) => {
   const [checklistsCVCDoMes, setChecklistsCVCDoMes] = useState([]);
   const [checklistSelecionado, setChecklistSelecionado] = useState(null);
   const [modalRelatorioCVC, setModalRelatorioCVC] = useState(false);
+
+  // ===== MANUTENÇÃO CVC =====
+  const [manutencaoCVCPacientes, setManutencaoCVCPacientes] = useState([]);
+  const [manutencaoCVCPacienteSelecionado, setManutencaoCVCPacienteSelecionado] = useState(null);
+  const [manutencaoCVCDias, setManutencaoCVCDias] = useState([]);
+  const [manutencaoCVCDiaSelecionado, setManutencaoCVCDiaSelecionado] = useState(null);
+  const [manutencaoCVCModalDia, setManutencaoCVCModalDia] = useState(false);
 
   const [listaCarrinhoEMG, setListaCarrinhoEMG] = useState([]);
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
@@ -467,6 +475,13 @@ const GestorDashboard = ({ userProfile }) => {
 
   const [mesFiltroCVC, setMesFiltroCVC] = useState(new Date().toISOString().slice(0, 7));
   const [acessosMesCVC, setAcessosMesCVC] = useState(null);
+
+  // ===== CHECKLIST SVD =====
+  const [mesFiltroSVD, setMesFiltroSVD] = useState(new Date().toISOString().slice(0, 7));
+  const [acessosMesSVD, setAcessosMesSVD] = useState(null);
+  const [checklistsSVDDoMes, setChecklistsSVDDoMes] = useState([]);
+  const [checklistSVDSelecionado, setChecklistSVDSelecionado] = useState(null);
+  const [modalRelatorioSVD, setModalRelatorioSVD] = useState(false);  
 
   // =========================================================
   // 2. EFEITOS (useEffect) - OS SINCRONIZADORES (DADOS BRUTOS)
@@ -914,8 +929,7 @@ const GestorDashboard = ({ userProfile }) => {
     const linhasChecklists = checklists.map((c, i) => `
       <tr${i % 2 === 0 ? '' : ' style="background-color: #f8fafc;"'}>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.paciente}</td>
-        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.leito}</td>
-        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data} ${c.horario}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data?.split('-').reverse().join('/')} ${c.horario}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.tipoCateter}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.localInsercao}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.medico}</td>
@@ -1026,6 +1040,192 @@ const GestorDashboard = ({ userProfile }) => {
           <th>Local</th>
           <th>Médico</th>
           <th class="center">Barreiras</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhasChecklists}
+      </tbody>
+    </table>
+    ` : '<p style="color: #94a3b8; font-style: italic;">Nenhum checklist registrado no período.</p>'}
+
+    <div class="footer">
+      <p>Relatório gerado automaticamente pelo sistema de gestão de leitos UTI</p>
+      <p>Documento institucional — UTI Municipal de Ariquemes</p>
+    </div>
+
+    <script>
+      window.onload = function() { window.print(); };
+    <\/script>
+  </body>
+  </html>`;
+
+    const janela = window.open('', '_blank');
+    janela.document.write(html);
+    janela.document.close();
+  };  
+
+  const imprimirRelatorioSVD = (checklists, mesAno, metricas, acessosMes) => {
+    const analiseItens = {};
+    let totalItens = 0;
+    let totalCumpridos = 0;
+
+    checklists.forEach(c => {
+      if (!c.itens || !Array.isArray(c.itens)) return;
+      c.itens.forEach(item => {
+        totalItens++;
+        if (item.cumprida) totalCumpridos++;
+        const nome = item.label || item.key || `Item`;
+        if (!analiseItens[nome]) {
+          analiseItens[nome] = { total: 0, cumpridas: 0, falhas: 0 };
+        }
+        analiseItens[nome].total++;
+        if (item.cumprida) {
+          analiseItens[nome].cumpridas++;
+        } else {
+          analiseItens[nome].falhas++;
+        }
+      });
+    });
+
+    const itensOrdenados = Object.entries(analiseItens)
+      .map(([nome, dados]) => ({
+        nome,
+        ...dados,
+        taxaFalha: dados.total > 0 ? Math.round((dados.falhas / dados.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.taxaFalha - a.taxaFalha);
+
+    const [ano, mes] = mesAno ? mesAno.split('-') : ['', ''];
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const nomeMes = meses[parseInt(mes) - 1] || mes;
+
+    const totalChecklists = checklists.length;
+    const total100Porcento = checklists.filter(c => c.todasCumpridas).length;
+    const cobertura = acessosMes > 0 ? Math.round((totalChecklists / acessosMes) * 100) : 0;
+    const conformidadeGeral = totalItens > 0 ? Math.round((totalCumpridos / totalItens) * 100) : 0;
+
+    const linhasItens = itensOrdenados.map(b => `
+      <tr${b.taxaFalha > 0 ? ' style="background-color: #fef2f2;"' : ''}>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${b.nome}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.total}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.cumpridas}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.falhas}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${b.taxaFalha > 0 ? '#b91c1c' : '#047857'};">${b.taxaFalha}%</td>
+      </tr>
+    `).join('');
+
+    const linhasChecklists = checklists.map((c, i) => `
+      <tr${i % 2 === 0 ? '' : ' style="background-color: #f8fafc;"'}>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.paciente}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data?.split('-').reverse().join('/')} ${c.horario}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.indicacao}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.enfermeiro}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${c.todasCumpridas ? '#047857' : '#b91c1c'};">${c.cumpridas}/${c.total}</td>
+      </tr>
+    `).join('');
+
+    const dataEmissao = new Date().toLocaleDateString('pt-BR');
+
+    const html = `<!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Relatório de Checklists SVD - ${nomeMes}/${ano}</title>
+    <style>
+      @page { margin: 20mm 15mm; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { 
+        font-family: Arial, Helvetica, sans-serif; 
+        font-size: 12px; 
+        color: #1e293b; 
+        line-height: 1.5;
+        padding: 20px;
+      }
+      .header {
+        text-align: center;
+        border-bottom: 2px solid #1e293b;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+      }
+      .header h1 { font-size: 18px; text-transform: uppercase; letter-spacing: 1px; }
+      .header p { font-size: 12px; color: #64748b; margin-top: 4px; }
+      h2 { 
+        font-size: 14px; 
+        border-bottom: 1px solid #cbd5e1; 
+        padding-bottom: 4px; 
+        margin-bottom: 10px; 
+        margin-top: 20px; 
+      }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+      th { 
+        background-color: #f1f5f9; 
+        padding: 8px; 
+        text-align: left; 
+        font-size: 11px; 
+        text-transform: uppercase; 
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #cbd5e1;
+      }
+      th.center { text-align: center; }
+      .resumo-table td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
+      .resumo-table td:first-child { font-weight: 600; width: 280px; }
+      .footer { 
+        border-top: 1px solid #cbd5e1; 
+        padding-top: 10px; 
+        margin-top: 30px; 
+        text-align: center; 
+        font-size: 10px; 
+        color: #94a3b8; 
+      }
+      @media print {
+        body { padding: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Relatório de Checklists SVD</h1>
+      <p>Período: ${nomeMes} / ${ano} &nbsp;|&nbsp; Emitido em: ${dataEmissao}</p>
+    </div>
+
+    <h2>1. Resumo do Período</h2>
+    <table class="resumo-table">
+      <tr><td>Total de checklists registrados</td><td>${totalChecklists}</td></tr>
+      <tr><td>Total de sondagens realizadas</td><td>${acessosMes}</td></tr>
+      <tr><td>Taxa de cobertura</td><td>${cobertura}%</td></tr>
+      <tr><td>Checklists com 100% dos itens</td><td>${total100Porcento} (${totalChecklists > 0 ? Math.round((total100Porcento / totalChecklists) * 100) : 0}%)</td></tr>
+      <tr><td>Conformidade geral (itens)</td><td>${conformidadeGeral}% (${totalCumpridos}/${totalItens} itens)</td></tr>
+    </table>
+
+    <h2>2. Análise de Itens</h2>
+    ${itensOrdenados.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="center">Total</th>
+          <th class="center">Cumpridas</th>
+          <th class="center">Falhas</th>
+          <th class="center">Taxa de Falha</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhasItens}
+      </tbody>
+    </table>
+    ` : '<p style="color: #94a3b8; font-style: italic;">Nenhum checklist com itens detalhados registrado no período.</p>'}
+
+    <h2>3. Checklists Registrados</h2>
+    ${checklists.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Paciente</th>
+          <th>Leito</th>
+          <th>Data</th>
+          <th>Indicação</th>
+          <th>Enfermeiro(a)</th>
+          <th class="center">Itens</th>
         </tr>
       </thead>
       <tbody>
@@ -2338,8 +2538,10 @@ const GestorDashboard = ({ userProfile }) => {
       try {
         const historicoSnap = await getDocs(collection(db, 'internacoes_historico'));
         historicoSnap.forEach(d => {
-          const patient = { id: d.id, ...d.data() };
-          const historico = patient?.enfermagem?.historicoCVC || [];
+          const data = d.data();
+          const patient = { id: d.id, ...data };
+          const backup = data.backupProntuario || {};
+          const historico = backup?.enfermagem?.historicoCVC || patient?.enfermagem?.historicoCVC || [];
           if (!Array.isArray(historico)) return;
 
           historico.forEach((checklist, idx) => {
@@ -2355,7 +2557,7 @@ const GestorDashboard = ({ userProfile }) => {
               resultados.push({
                 id: `hist-${d.id}-${dataChecklist}-${checklist.horario || '00:00'}-${idx}`,
                 leito: d.id,
-                paciente: patient.nome || patient.admissionData?.nome || 'Não identificado',
+                paciente: backup?.nome || backup?.admissionData?.nome || patient.nome || patient.admissionData?.nome || 'Não identificado',
                 data: dataChecklist,
                 horario: checklist.horario || '',
                 medico: checklist.medicoResponsavel || 'Não informado',
@@ -2391,6 +2593,195 @@ const GestorDashboard = ({ userProfile }) => {
 
     buscarChecklists();
   }, [mesFiltroCVC, leitosConfig]);
+
+  useEffect(() => {
+    const buscarPacientesCVC = () => {
+      const todosPacientes = [...leitosConfig, ...listaHistorico];
+      const pacientes = [];
+
+    todosPacientes.forEach(pac => {
+      const backup = pac.backupProntuario || {};
+      const historicoManutencao = pac.enfermagem?.historicoManutencaoCVC || 
+                                  backup?.enfermagem?.historicoManutencaoCVC || [];
+      if (!Array.isArray(historicoManutencao) || historicoManutencao.length === 0) return;
+
+        // Pega a data do primeiro checklist (admissão do dispositivo)
+        const datas = historicoManutencao
+          .filter(m => m.data)
+          .map(m => m.data)
+          .sort();
+        
+        if (datas.length === 0) return;
+
+        const dataAdmissao = datas[0];
+
+      // Pega dataSaida do documento raiz (internacoes_historico) ou do registro de retirada
+      const dataSaida = pac.dataSaida || null;
+
+        pacientes.push({
+          id: pac.id || pac.nome || 'unknown',
+          nome: backup?.nome || backup?.admissionData?.nome || pac.nome || pac.admissionData?.nome || 'Não identificado',
+          leito: pac.id || pac.nome || 'N/I',
+          dataAdmissao,
+          dataSaida,
+          totalChecklists: historicoManutencao.length,
+          ultimoChecklist: datas[datas.length - 1],
+        });
+      });
+
+      // Ordena por data de admissão (mais recente primeiro)
+      pacientes.sort((a, b) => b.dataAdmissao.localeCompare(a.dataAdmissao));
+      setManutencaoCVCPacientes(pacientes);
+    };
+
+    buscarPacientesCVC();
+  }, [leitosConfig, listaHistorico]);  
+
+  const gerarDiasManutencaoCVC = (paciente) => {
+    if (!paciente) return [];
+
+    const dataInicio = new Date(paciente.dataAdmissao + 'T00:00:00');
+    const dataFim = paciente.dataSaida 
+      ? new Date(paciente.dataSaida + 'T00:00:00')
+      : new Date();
+
+    const dias = [];
+    const current = new Date(dataInicio);
+
+    // Busca o historicoCVC do paciente
+    const pacienteOriginal = [...leitosConfig, ...listaHistorico].find(
+      p => (p.id === paciente.id || p.nome === paciente.nome)
+    );
+    
+    const backup = pacienteOriginal?.backupProntuario || {};
+    const historicoManutencao = pacienteOriginal?.enfermagem?.historicoManutencaoCVC ||
+                                backup?.enfermagem?.historicoManutencaoCVC || [];
+
+    while (current <= dataFim) {
+      const dataStr = current.toISOString().split('T')[0];
+      
+      const manutencoesDoDia = historicoManutencao.filter(m => m.data === dataStr);
+
+      dias.push({
+        data: dataStr,
+        checklists: [],
+        manutencoes: manutencoesDoDia,
+        temRegistro: manutencoesDoDia.length > 0,
+      });
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    return dias;
+  };
+
+  const abrirModalDiaManutencaoCVC = (paciente, dia) => {
+    setManutencaoCVCDiaSelecionado(dia);
+    setManutencaoCVCModalDia(true);
+};
+
+  useEffect(() => {
+    if (!mesFiltroSVD || !leitosConfig || leitosConfig.length === 0) {
+      setChecklistsSVDDoMes([]);
+      return;
+    }
+
+    const buscarChecklistsSVD = async () => {
+      const [ano, mes] = mesFiltroSVD.split('-').map(Number);
+      const resultados = [];
+
+      // 1. Leitos ativos
+      leitosConfig.forEach(patient => {
+        const bedId = patient.id || patient.nome || 'bed_unknown';
+        const historico = patient?.enfermagem?.historicoSVD || [];
+        if (!Array.isArray(historico)) return;
+
+        historico.forEach((checklist, idx) => {
+          const dataChecklist = checklist.data || '';
+          if (!dataChecklist) return;
+          const partes = dataChecklist.split('-');
+          if (partes.length !== 3) return;
+          const cAno = parseInt(partes[0]);
+          const cMes = parseInt(partes[1]);
+
+          if (cAno === ano && cMes === mes) {
+            const itensObj = checklist.itens || {};
+            resultados.push({
+              id: `svd-${bedId}-${dataChecklist}-${checklist.horario || '00:00'}-${idx}`,
+              leito: bedId,
+              paciente: patient.nome || patient.admissionData?.nome || 'Não identificado',
+              data: dataChecklist,
+              horario: checklist.horario || '',
+              indicacao: checklist.indicacao || '',
+              justificativa: checklist.justificativa || '',
+              genero: checklist.genero || '',
+              enfermeiro: checklist.enfermeiroResponsavel || 'Não informado',
+              todasCumpridas: itensObj.todosCumpridos || false,
+              cumpridas: itensObj.cumpridos || 0,
+              total: itensObj.total || 0,
+              itens: itensObj.lista || [],
+              observacao: checklist.observacao || '',
+              resumo: itensObj.resumo || '',
+            });
+          }
+        });
+      });
+
+      // 2. internacoes_historico
+      try {
+        const historicoSnap = await getDocs(collection(db, 'internacoes_historico'));
+        historicoSnap.forEach(d => {
+          const data = d.data();
+          const patient = { id: d.id, ...data };
+          const backup = data.backupProntuario || {};
+          const historico = backup?.enfermagem?.historicoSVD || patient?.enfermagem?.historicoSVD || [];
+          if (!Array.isArray(historico)) return;
+
+          historico.forEach((checklist, idx) => {
+            const dataChecklist = checklist.data || '';
+            if (!dataChecklist) return;
+            const partes = dataChecklist.split('-');
+            if (partes.length !== 3) return;
+            const cAno = parseInt(partes[0]);
+            const cMes = parseInt(partes[1]);
+
+            if (cAno === ano && cMes === mes) {
+              const itensObj = checklist.itens || {};
+              resultados.push({
+                id: `svd-hist-${d.id}-${dataChecklist}-${checklist.horario || '00:00'}-${idx}`,
+                leito: d.id,
+                paciente: backup?.nome || backup?.admissionData?.nome || patient.nome || patient.admissionData?.nome || 'Não identificado',
+                data: dataChecklist,
+                horario: checklist.horario || '',
+                indicacao: checklist.indicacao || '',
+                justificativa: checklist.justificativa || '',
+                genero: checklist.genero || '',
+                enfermeiro: checklist.enfermeiroResponsavel || 'Não informado',
+                todasCumpridas: itensObj.todosCumpridos || false,
+                cumpridas: itensObj.cumpridos || 0,
+                total: itensObj.total || 0,
+                itens: itensObj.lista || [],
+                observacao: checklist.observacao || '',
+                resumo: itensObj.resumo || '',
+              });
+            }
+          });
+        });
+      } catch (err) {
+        console.error("Erro ao buscar internacoes_historico (SVD):", err);
+      }
+
+      resultados.sort((a, b) => {
+        if (a.data !== b.data) return b.data.localeCompare(a.data);
+        return (b.horario || '').localeCompare(a.horario || '');
+      });
+
+      setChecklistsSVDDoMes(resultados);
+    };
+
+    buscarChecklistsSVD();
+  }, [mesFiltroSVD, leitosConfig]);
+
 
   const gerarRelatorioMensalCarrinho = () => {
     const [ano, mes] = mesFiltroCarrinhoEMG.split('-').map(Number);
@@ -6843,7 +7234,8 @@ const GestorDashboard = ({ userProfile }) => {
       let total100Porcento = 0;
 
       todosPacientes.forEach(pac => {
-        const historico = pac.enfermagem?.historicoCVC || [];
+        const historico = pac.enfermagem?.historicoCVC || 
+                          pac.backupProntuario?.enfermagem?.historicoCVC || [];
         historico.forEach(registro => {
           if (registro.data && registro.data.startsWith(mesReferencia)) {
             totalChecklists++;
@@ -6858,6 +7250,31 @@ const GestorDashboard = ({ userProfile }) => {
     };
 
     const metricasCVC = calcularMetricasCVC(mesFiltroCVC);
+
+  const calcularMetricasSVD = (mesReferencia) => {
+    const todosPacientes = [...leitosConfig, ...listaHistorico];
+    let totalChecklists = 0;
+    let total100Porcento = 0;
+
+    todosPacientes.forEach(pac => {
+      const historico = pac.enfermagem?.historicoSVD || 
+                        pac.backupProntuario?.enfermagem?.historicoSVD || [];
+      
+      historico.forEach(registro => {
+        if (registro.data && registro.data.startsWith(mesReferencia)) {
+          totalChecklists++;
+          const itensObj = registro.itens || {};
+          if (itensObj.todosCumpridos) {
+            total100Porcento++;
+          }
+        }
+      });
+    });
+
+    return { totalChecklists, total100Porcento };
+  };
+
+  const metricasSVD = calcularMetricasSVD(mesFiltroSVD);
 
     return (
       <div className="animate-fadeIn">
@@ -6890,13 +7307,31 @@ const GestorDashboard = ({ userProfile }) => {
             Escalas Assistenciais
           </button>
 
-          {/* 💡 NOVA ABA: CHECKLIST CVC */}
+          {/* CHECKLIST CVC */}
           <button 
             onClick={() => setAbaRiscoAtiva('checklistCVC')}
             className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'checklistCVC' ? 'border-sky-600 text-sky-700 bg-sky-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
           >
             <Syringe size={18} />
             Checklist CVC
+          </button>
+
+          {/* ABA: MANUTENÇÃO CVC */}
+          <button 
+            onClick={() => setAbaRiscoAtiva('manutencaoCVC')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'manutencaoCVC' ? 'border-teal-600 text-teal-700 bg-teal-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Syringe size={18} />
+            Manutenção CVC
+          </button>
+
+          {/* CHECKLIST SVD */}
+          <button 
+            onClick={() => setAbaRiscoAtiva('checklistSVD')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'checklistSVD' ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Droplets size={18} />
+            Checklist SVD
           </button>
 
           {/* 💡 NOVA ABA: CARRINHO EMG */}
@@ -7429,7 +7864,6 @@ const GestorDashboard = ({ userProfile }) => {
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200">
                         <th className="text-left p-2 font-bold text-slate-600">Paciente</th>
-                        <th className="text-left p-2 font-bold text-slate-600">Leito</th>
                         <th className="text-left p-2 font-bold text-slate-600">Data</th>
                         <th className="text-left p-2 font-bold text-slate-600">Horário</th>
                         <th className="text-left p-2 font-bold text-slate-600">Cateter</th>
@@ -7445,7 +7879,6 @@ const GestorDashboard = ({ userProfile }) => {
                         onClick={() => setChecklistSelecionado(c)}
                         >
                           <td className="p-2 font-semibold text-slate-700">{c.paciente}</td>
-                          <td className="p-2 text-slate-500">{c.leito}</td>
                           <td className="p-2 text-slate-700">{c.data}</td>
                           <td className="p-2 text-slate-500">{c.horario}</td>
                           <td className="p-2 text-slate-700">{c.tipoCateter}</td>
@@ -7637,6 +8070,587 @@ const GestorDashboard = ({ userProfile }) => {
 
             </div>            
 
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* ABA: MANUTENÇÃO CVC                                            */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'manutencaoCVC' && (
+          <div className="animate-fadeIn">
+            {/* CABEÇALHO */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4">
+              <div className="flex items-center gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Syringe className="text-teal-600" /> Manutenção de CVC
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Acompanhamento diário dos pacientes com CVC/Shiley — admissão, manutenções e retirada.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* LISTA DE PACIENTES */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <Syringe size={16} className="text-teal-500" /> Pacientes com CVC
+              </h4>
+              <p className="text-xs text-slate-500 mb-4">
+                {manutencaoCVCPacientes.length > 0 
+                  ? `${manutencaoCVCPacientes.length} paciente(s) com histórico de CVC`
+                  : 'Nenhum paciente com CVC encontrado.'}
+              </p>
+
+              {manutencaoCVCPacientes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left p-2 font-bold text-slate-600">Paciente</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Leito</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data de Admissão</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data de Saída</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Checklists</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {manutencaoCVCPacientes.map((pac, idx) => (
+                        <tr key={pac.id} className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                          <td className="p-2 font-semibold text-slate-700">{pac.nome}</td>
+                          <td className="p-2 text-slate-500">{pac.leito}</td>
+                          <td className="p-2 text-slate-700">{pac.dataAdmissao}</td>
+                          <td className="p-2 text-slate-700">{pac.dataSaida || '—'}</td>
+                          <td className="p-2 text-center">
+                            <span className="font-bold">{pac.totalChecklists}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            <button
+                              onClick={() => {
+                                const dias = gerarDiasManutencaoCVC(pac);
+                                setManutencaoCVCPacienteSelecionado({ ...pac, dias });
+                              }}
+                              className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            >
+                              Ver Dias
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400 italic text-xs">
+                  Nenhum paciente com CVC encontrado.
+                </div>
+              )}
+            </div>
+
+            {/* MODAL: DIAS DO PACIENTE */}
+            {manutencaoCVCPacienteSelecionado && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setManutencaoCVCPacienteSelecionado(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Cabeçalho */}
+                  <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Acompanhamento Diário</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {manutencaoCVCPacienteSelecionado.nome} — {manutencaoCVCPacienteSelecionado.leito}
+                      </p>
+                    </div>
+                    <button onClick={() => setManutencaoCVCPacienteSelecionado(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={20} className="text-slate-400" />
+                    </button>
+                  </div>
+
+                  {/* Informações do paciente */}
+                  <div className="p-5 border-b border-slate-100">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="font-bold text-slate-500 block">Data de Admissão</span>
+                        <span className="text-slate-800">{manutencaoCVCPacienteSelecionado.dataAdmissao}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Data de Saída</span>
+                        <span className="text-slate-800">{manutencaoCVCPacienteSelecionado.dataSaida || 'Ainda internado'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Total de Dias</span>
+                        <span className="text-slate-800">{manutencaoCVCPacienteSelecionado.dias?.length || 0} dias</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Total de Checklists</span>
+                        <span className="text-slate-800">{manutencaoCVCPacienteSelecionado.totalChecklists}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Lista de dias */}
+                  <div className="p-5">
+                    <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Registros Diários</h4>
+                    
+                    {manutencaoCVCPacienteSelecionado.dias && manutencaoCVCPacienteSelecionado.dias.length > 0 ? (
+                      <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+                        {manutencaoCVCPacienteSelecionado.dias.map((dia, i) => (
+                          <button
+                            key={i}
+                            onClick={() => abrirModalDiaManutencaoCVC(manutencaoCVCPacienteSelecionado, dia)}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 text-xs font-bold transition-all ${
+                              dia.temRegistro
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400'
+                                : 'border-red-200 bg-red-50 text-red-600 hover:border-red-400'
+                            }`}
+                          >
+                            <span>{dia.data}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              dia.temRegistro
+                                ? 'bg-emerald-200 text-emerald-800'
+                                : 'bg-red-200 text-red-800'
+                            }`}>
+                              {dia.temRegistro 
+                                ? `${dia.checklists.length} checklist(s)${dia.manutencoes.length > 0 ? ` + ${dia.manutencoes.length} manut.` : ''}`
+                                : 'Não realizado'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-slate-400 italic text-xs">
+                        Nenhum dia disponível.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Fechar */}
+                  <div className="p-4 border-t border-slate-100 text-center">
+                    <button 
+                      onClick={() => setManutencaoCVCPacienteSelecionado(null)}
+                      className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MODAL: DETALHES DO DIA */}
+            {manutencaoCVCModalDia && manutencaoCVCDiaSelecionado && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]" onClick={() => setManutencaoCVCModalDia(false)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Cabeçalho */}
+                  <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Registros do Dia</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {manutencaoCVCDiaSelecionado.data} — {manutencaoCVCPacienteSelecionado?.nome}
+                      </p>
+                    </div>
+                    <button onClick={() => setManutencaoCVCModalDia(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={20} className="text-slate-400" />
+                    </button>
+                  </div>
+
+                  <div className="p-5">
+                    {manutencaoCVCDiaSelecionado.temRegistro ? (
+                      <>
+                        {/* Manutenções do dia */}
+                        {manutencaoCVCDiaSelecionado.manutencoes?.length > 0 && (
+                          <div>
+                            <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Manutenções do Dia</h4>
+                            <div className="space-y-2">
+                              {manutencaoCVCDiaSelecionado.manutencoes.map((m, i) => (
+                                <div key={i} className="p-3 bg-teal-50 rounded-xl border border-teal-200">
+                                  <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                      <span className="font-bold text-slate-500 block">Horário</span>
+                                      <span className="text-slate-800">{m.horario || 'N/I'}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-bold text-slate-500 block">Curativo</span>
+                                      <span className="text-slate-800">{m.trocaCurativo || 'N/I'}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-bold text-slate-500 block">Dispositivo</span>
+                                      <span className="text-slate-800">{m.dispositivo || 'N/I'}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-bold text-slate-500 block">Tipo</span>
+                                      <span className="font-bold text-teal-600">{m.motivo?.tipo || m.tipo || 'N/I'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-center py-12">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <X size={24} className="text-red-500" />
+                        </div>
+                        <p className="text-sm font-bold text-red-600">Nenhum registro neste dia</p>
+                        <p className="text-xs text-slate-400 mt-1">Manutenção não realizada</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Fechar */}
+                  <div className="p-4 border-t border-slate-100 text-center">
+                    <button 
+                      onClick={() => setManutencaoCVCModalDia(false)}
+                      className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* ABA: CHECKLIST SVD                                              */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'checklistSVD' && (
+          <div className="animate-fadeIn">
+            {/* CABEÇALHO COM FILTRO DE MÊS */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Droplets className="text-indigo-600" /> Checklist de Inserção SVD
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Monitoramento de conformidade dos checklists de inserção de Sonda Vesical de Demora.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                    <span className="text-xs font-bold text-slate-600 uppercase">Mês:</span>
+                    <input 
+                      type="month" 
+                      value={mesFiltroSVD} 
+                      onChange={(e) => setMesFiltroSVD(e.target.value)}
+                      className="bg-white border border-slate-200 p-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 cursor-pointer"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setModalRelatorioSVD(true)}
+                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    <FileText size={14} /> Relatório
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* CARDS DE MÉTRICAS */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {/* Card 1: Acessos Realizados */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-indigo-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+                    <Droplets size={14} /> Sondagens Realizadas
+                  </span>
+                  <div className="flex items-center gap-3 mt-3">
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={acessosMesSVD !== null ? acessosMesSVD : metricasSVD.totalChecklists}
+                      onChange={(e) => setAcessosMesSVD(Number(e.target.value))}
+                      className="w-24 p-2 text-2xl font-black text-indigo-700 bg-indigo-50 border-2 border-indigo-200 rounded-xl outline-none focus:border-indigo-500 text-center"
+                    />
+                    <span className="text-xs text-slate-400 font-medium">
+                      Total de sondagens<br/>no mês
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2 italic">* Campo editável — insira o total real de sondagens do mês</p>
+                </div>
+              </div>
+
+              {/* Card 2: Checklists Preenchidos */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1">
+                    <ClipboardList size={14} /> Checklists Preenchidos
+                  </span>
+                  <div className="text-4xl font-black text-blue-700 mt-3">
+                    {metricasSVD.totalChecklists}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {metricasSVD.totalChecklists === 1 ? '1 checklist' : `${metricasSVD.totalChecklists} checklists`} registrados no mês
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 3: 100% dos Itens */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
+                    <ShieldCheck size={14} /> 100% dos Itens
+                  </span>
+                  <div className="flex items-end gap-3 mt-3">
+                    <span className="text-4xl font-black text-emerald-700">{metricasSVD.total100Porcento}</span>
+                    {metricasSVD.totalChecklists > 0 && (
+                      <span className="text-lg font-bold text-emerald-500 mb-1">
+                        ({Math.round((metricasSVD.total100Porcento / metricasSVD.totalChecklists) * 100)}%)
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${metricasSVD.totalChecklists > 0 ? (metricasSVD.total100Porcento / metricasSVD.totalChecklists) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {metricasSVD.totalChecklists > 0 
+                      ? `${metricasSVD.total100Porcento} de ${metricasSVD.totalChecklists} checklists cumpriram todos os critérios`
+                      : 'Nenhum checklist registrado no período'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* TAXA DE COBERTURA */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <BarChart2 size={16} className="text-indigo-500" /> Taxa de Cobertura (Checklists × Sondagens)
+              </h4>
+              <p className="text-xs text-slate-500 mb-4">Relação entre checklists preenchidos e o total de sondagens realizadas no mês.</p>
+              {metricasSVD.totalChecklists > 0 && (acessosMesSVD ?? metricasSVD.totalChecklists) > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <span className="text-xs font-bold text-slate-600">Cobertura</span>
+                    <span className="text-2xl font-black text-blue-600">
+                      {Math.round((metricasSVD.totalChecklists / (acessosMesSVD ?? metricasSVD.totalChecklists)) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden">
+                    <div 
+                      className="bg-gradient-to-r from-indigo-400 to-violet-500 h-5 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.min((metricasSVD.totalChecklists / (acessosMesSVD ?? metricasSVD.totalChecklists)) * 100, 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>{metricasSVD.totalChecklists} checklists preenchidos</span>
+                    <span>{(acessosMesSVD ?? metricasSVD.totalChecklists)} sondagens realizadas</span>
+                  </div>
+                  {(acessosMesSVD ?? metricasSVD.totalChecklists) > metricasSVD.totalChecklists && (
+                    <p className="text-[10px] text-amber-600 font-bold mt-2">
+                      ⚠️ {(acessosMesSVD ?? metricasSVD.totalChecklists) - metricasSVD.totalChecklists} sondagens sem checklist registrado
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-slate-400 italic text-xs">
+                  Aguardando dados de checklists e sondagens do mês.
+                </div>
+              )}
+            </div>
+
+            {/* LISTA DE CHECKLISTS DO MÊS */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-4">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <ClipboardList size={16} className="text-indigo-500" /> Checklists do Mês
+              </h4>
+              <p className="text-xs text-slate-500 mb-4">
+                {checklistsSVDDoMes.length > 0 
+                  ? `${checklistsSVDDoMes.length} checklist(s) registrado(s) em ${mesFiltroSVD}`
+                  : 'Nenhum checklist registrado neste mês.'}
+              </p>
+              {checklistsSVDDoMes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left p-2 font-bold text-slate-600">Paciente</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Horário</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Indicação</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Enfermeiro(a)</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Itens</th>
+                        <th className="text-center p-2 font-bold text-slate-600">100%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checklistsSVDDoMes.map((c, idx) => (
+                        <tr key={c.id} className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
+                        onClick={() => setChecklistSVDSelecionado(c)}
+                        >
+                          <td className="p-2 font-semibold text-slate-700">{c.paciente}</td>
+                          <td className="p-2 text-slate-700">{c.data}</td>
+                          <td className="p-2 text-slate-500">{c.horario}</td>
+                          <td className="p-2 text-slate-700">{c.indicacao}</td>
+                          <td className="p-2 text-slate-700">{c.enfermeiro}</td>
+                          <td className="p-2 text-center">
+                            <span className="font-bold">{c.cumpridas}/{c.total}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            {c.todasCumpridas ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
+                                <ShieldCheck size={14} /> Sim
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-red-500 font-bold">
+                                <X size={14} /> Não
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400 italic text-xs">
+                  Nenhum checklist de SVD registrado neste período.
+                </div>
+              )}
+            </div>
+
+            {/* MODAL DE DETALHES DO CHECKLIST SVD */}
+            {checklistSVDSelecionado && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setChecklistSVDSelecionado(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Cabeçalho */}
+                  <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Checklist de Inserção SVD</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {checklistSVDSelecionado.paciente} — {checklistSVDSelecionado.leito}
+                      </p>
+                    </div>
+                    <button onClick={() => setChecklistSVDSelecionado(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={20} className="text-slate-400" />
+                    </button>
+                  </div>
+                  {/* Informações gerais */}
+                  <div className="p-5 border-b border-slate-100">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="font-bold text-slate-500 block">Data / Horário</span>
+                        <span className="text-slate-800">{checklistSVDSelecionado.data} {checklistSVDSelecionado.horario}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Enfermeiro(a) Responsável</span>
+                        <span className="text-slate-800">{checklistSVDSelecionado.enfermeiro}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Indicação</span>
+                        <span className="text-slate-800">{checklistSVDSelecionado.indicacao || 'N/I'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Gênero (tipo de sonda)</span>
+                        <span className="text-slate-800">{checklistSVDSelecionado.genero || 'N/I'}</span>
+                      </div>
+                      {checklistSVDSelecionado.justificativa && (
+                        <div className="col-span-2">
+                          <span className="font-bold text-slate-500 block">Justificativa</span>
+                          <span className="text-slate-800">{checklistSVDSelecionado.justificativa}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Lista de itens */}
+                  <div className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-bold text-slate-700 text-xs uppercase">Itens do Procedimento</h4>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        checklistSVDSelecionado.todasCumpridas 
+                          ? 'bg-emerald-100 text-emerald-700' 
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {checklistSVDSelecionado.cumpridas}/{checklistSVDSelecionado.total}
+                      </span>
+                    </div>
+                    {checklistSVDSelecionado.itens && checklistSVDSelecionado.itens.length > 0 ? (
+                      <div className="space-y-2">
+                        {checklistSVDSelecionado.itens.map((item, i) => (
+                          <div key={i} className={`flex items-center gap-3 p-2.5 rounded-lg ${
+                            item.cumprida ? 'bg-emerald-50' : 'bg-red-50'
+                          }`}>
+                            {item.cumprida ? (
+                              <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                                <ShieldCheck size={14} className="text-white" />
+                              </div>
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-red-400 flex items-center justify-center flex-shrink-0">
+                                <X size={14} className="text-white" />
+                              </div>
+                            )}
+                            <span className={`text-sm ${item.cumprida ? 'text-slate-700' : 'text-red-700 font-medium'}`}>
+                              {item.label || item.key || `Item ${i + 1}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500 leading-relaxed">
+                        {checklistSVDSelecionado.resumo || 'Nenhum item disponível.'}
+                      </div>
+                    )}
+                    {checklistSVDSelecionado.observacao && (
+                      <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                        <span className="text-xs font-bold text-amber-700 block mb-1">📝 Observações</span>
+                        <span className="text-xs text-amber-800">{checklistSVDSelecionado.observacao}</span>
+                      </div>
+                    )}
+                  </div>
+                  {/* Fechar */}
+                  <div className="p-4 border-t border-slate-100 text-center">
+                    <button 
+                      onClick={() => setChecklistSVDSelecionado(null)}
+                      className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Relatório SVD */}
+            {modalRelatorioSVD && (
+              <div className="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-4xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-slideUp">
+                  <div className="p-4 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                    <h2 className="font-bold flex items-center gap-2">
+                      <FileText size={20} /> Relatório de Checklists SVD
+                    </h2>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => imprimirRelatorioSVD(checklistsSVDDoMes, mesFiltroSVD, metricasSVD, acessosMesSVD ?? metricasSVD.totalChecklists)}
+                        className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded text-sm font-bold transition-colors"
+                      >
+                        Imprimir / Salvar PDF
+                      </button>
+                      <button 
+                        onClick={() => setModalRelatorioSVD(false)} 
+                        className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-bold transition-colors"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-auto bg-white p-8">
+                    <RelatorioChecklistSVD 
+                      checklists={checklistsSVDDoMes}
+                      mesAno={mesFiltroSVD}
+                      metricas={metricasSVD}
+                      acessosMes={acessosMesSVD ?? metricasSVD.totalChecklists}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

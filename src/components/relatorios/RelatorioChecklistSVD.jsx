@@ -1,9 +1,7 @@
 import React from 'react';
-import { FileText } from 'lucide-react';
 
-const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => {
-  // Análise das barreiras mais falhas
-  const analiseBarreiras = {};
+const RelatorioChecklistSVD = ({ checklists, mesAno, metricas, acessosMes }) => {
+  const analiseItens = {};
   let totalItens = 0;
   let totalCumpridos = 0;
 
@@ -12,22 +10,20 @@ const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => 
     c.itens.forEach(item => {
       totalItens++;
       if (item.cumprida) totalCumpridos++;
-      
       const nome = item.label || item.key || `Item`;
-      if (!analiseBarreiras[nome]) {
-        analiseBarreiras[nome] = { total: 0, cumpridas: 0, falhas: 0 };
+      if (!analiseItens[nome]) {
+        analiseItens[nome] = { total: 0, cumpridas: 0, falhas: 0 };
       }
-      analiseBarreiras[nome].total++;
+      analiseItens[nome].total++;
       if (item.cumprida) {
-        analiseBarreiras[nome].cumpridas++;
+        analiseItens[nome].cumpridas++;
       } else {
-        analiseBarreiras[nome].falhas++;
+        analiseItens[nome].falhas++;
       }
     });
   });
 
-  // Ordena barreiras por taxa de falha (decrescente)
-  const barreirasOrdenadas = Object.entries(analiseBarreiras)
+  const itensOrdenados = Object.entries(analiseItens)
     .map(([nome, dados]) => ({
       nome,
       ...dados,
@@ -48,7 +44,7 @@ const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => 
     <div className="text-slate-800" style={{ fontFamily: 'Arial, sans-serif' }}>
       {/* Cabeçalho institucional */}
       <div className="text-center border-b-2 border-slate-800 pb-4 mb-6">
-        <h1 className="text-xl font-bold uppercase tracking-wide">Relatório de Checklists CVC</h1>
+        <h1 className="text-xl font-bold uppercase tracking-wide">Relatório de Checklists SVD</h1>
         <p className="text-sm text-slate-500 mt-1">Período: {nomeMes} / {ano}</p>
         <p className="text-xs text-slate-400 mt-0.5">Emitido em: {new Date().toLocaleDateString('pt-BR')}</p>
       </div>
@@ -63,7 +59,7 @@ const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => 
               <td className="py-1.5">{totalChecklists}</td>
             </tr>
             <tr className="border-b border-slate-200">
-              <td className="py-1.5 font-semibold">Total de acessos realizados</td>
+              <td className="py-1.5 font-semibold">Total de sondagens realizadas</td>
               <td className="py-1.5">{acessosMes}</td>
             </tr>
             <tr className="border-b border-slate-200">
@@ -71,7 +67,7 @@ const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => 
               <td className="py-1.5">{cobertura}%</td>
             </tr>
             <tr className="border-b border-slate-200">
-              <td className="py-1.5 font-semibold">Checklists com 100% das barreiras</td>
+              <td className="py-1.5 font-semibold">Checklists com 100% dos itens</td>
               <td className="py-1.5">{total100Porcento} ({totalChecklists > 0 ? Math.round((total100Porcento / totalChecklists) * 100) : 0}%)</td>
             </tr>
             <tr className="border-b border-slate-200">
@@ -82,46 +78,35 @@ const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => 
         </table>
       </div>
 
-      {/* Análise de barreiras */}
+      {/* Análise de itens */}
       <div className="mb-6">
-        <h2 className="text-base font-bold border-b border-slate-300 pb-1 mb-3">2. Análise de Barreiras</h2>
+        <h2 className="text-base font-bold border-b border-slate-300 pb-1 mb-3">2. Análise de Itens</h2>
         
-        {barreirasOrdenadas.length > 0 ? (
-          <>
-            <table className="w-full text-sm border-collapse mb-3">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300">
-                  <th className="text-left p-2 font-bold">Barreira</th>
-                  <th className="text-center p-2 font-bold">Total</th>
-                  <th className="text-center p-2 font-bold">Cumpridas</th>
-                  <th className="text-center p-2 font-bold">Falhas</th>
-                  <th className="text-center p-2 font-bold">Taxa de Falha</th>
+        {itensOrdenados.length > 0 ? (
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-slate-100 border-b border-slate-300">
+                <th className="text-left p-2 font-bold">Item</th>
+                <th className="text-center p-2 font-bold">Total</th>
+                <th className="text-center p-2 font-bold">Cumpridas</th>
+                <th className="text-center p-2 font-bold">Falhas</th>
+                <th className="text-center p-2 font-bold">Taxa de Falha</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itensOrdenados.map((b, i) => (
+                <tr key={i} className={`border-b border-slate-200 ${b.taxaFalha > 0 ? 'bg-red-50' : ''}`}>
+                  <td className="p-2 font-medium">{b.nome}</td>
+                  <td className="p-2 text-center">{b.total}</td>
+                  <td className="p-2 text-center">{b.cumpridas}</td>
+                  <td className="p-2 text-center">{b.falhas}</td>
+                  <td className={`p-2 text-center font-bold ${b.taxaFalha > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                    {b.taxaFalha}%
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {barreirasOrdenadas.map((b, i) => (
-                  <tr key={i} className={`border-b border-slate-200 ${b.taxaFalha > 0 ? 'bg-red-50' : ''}`}>
-                    <td className="p-2 font-medium">{b.nome}</td>
-                    <td className="p-2 text-center">{b.total}</td>
-                    <td className="p-2 text-center">{b.cumpridas}</td>
-                    <td className="p-2 text-center">{b.falhas}</td>
-                    <td className={`p-2 text-center font-bold ${b.taxaFalha > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-                      {b.taxaFalha}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {barreirasOrdenadas.filter(b => b.falhas === 0).length > 0 && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded p-3">
-                <h3 className="font-bold text-emerald-800 text-sm mb-2">Barreiras com 100% de conformidade</h3>
-                <p className="text-sm text-emerald-700">
-                  {barreirasOrdenadas.filter(b => b.falhas === 0).map(b => b.nome).join(', ')}.
-                </p>
-              </div>
-            )}
-          </>
+              ))}
+            </tbody>
+          </table>
         ) : (
           <p className="text-sm text-slate-500 italic">Nenhum checklist com itens detalhados registrado no período.</p>
         )}
@@ -137,10 +122,9 @@ const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => 
               <tr className="bg-slate-100 border-b border-slate-300">
                 <th className="text-left p-2 font-bold">Paciente</th>
                 <th className="text-left p-2 font-bold">Data</th>
-                <th className="text-left p-2 font-bold">Cateter</th>
-                <th className="text-left p-2 font-bold">Local</th>
-                <th className="text-left p-2 font-bold">Médico</th>
-                <th className="text-center p-2 font-bold">Barreiras</th>
+                <th className="text-left p-2 font-bold">Indicação</th>
+                <th className="text-left p-2 font-bold">Enfermeiro(a)</th>
+                <th className="text-center p-2 font-bold">Itens</th>
               </tr>
             </thead>
             <tbody>
@@ -148,9 +132,8 @@ const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => 
                 <tr key={c.id} className={`border-b border-slate-200 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                   <td className="p-2">{c.paciente}</td>
                   <td className="p-2">{c.data?.split('-').reverse().join('/')} {c.horario}</td>
-                  <td className="p-2">{c.tipoCateter}</td>
-                  <td className="p-2">{c.localInsercao}</td>
-                  <td className="p-2">{c.medico}</td>
+                  <td className="p-2">{c.indicacao}</td>
+                  <td className="p-2">{c.enfermeiro}</td>
                   <td className="p-2 text-center">
                     <span className={c.todasCumpridas ? 'text-emerald-700 font-bold' : 'text-red-700 font-bold'}>
                       {c.cumpridas}/{c.total}
@@ -174,4 +157,4 @@ const RelatorioChecklistCVC = ({ checklists, mesAno, metricas, acessosMes }) => 
   );
 };
 
-export default RelatorioChecklistCVC;
+export default RelatorioChecklistSVD;
