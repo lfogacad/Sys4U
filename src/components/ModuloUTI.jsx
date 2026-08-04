@@ -2269,8 +2269,8 @@ const handleFinalizePhysioAdmission = () => {
     const gasoText = physioData.gasoHora ? `${physioData.gasoHora}h - pH: ${physioData.gaso_pH || "-"} | pCO2: ${physioData.gaso_pCO2 || "-"} | PaO2: ${physioData.gaso_PaO2 || "-"} | BE: ${physioData.gaso_BE || "-"} | HCO3: ${physioData.gaso_HCO3 || "-"} | SatO2: ${physioData.gaso_SatO2 || "-"} | FiO2: ${physioData.gaso_FiO2 || "-"} | P/F: ${physioData.gaso_PF || "-"}` : "Não realizada.";
 
     let dispositivosText = [];
-    if (physioData.filtroHMEF) dispositivosText.push(`Filtro HMEF (Instalação: ${physioData.dataHMEF || "não informada"})`);
-    if (physioData.sistemaFechado) dispositivosText.push(`Sistema Fechado de Aspiração (Instalação: ${physioData.dataSFA || "não informada"})`);
+    if (physioData.filtroHMEF) dispositivosText.push(`Filtro HMEF (Instalação: ${physioData.dataHMEF ? physioData.dataHMEF.split('-').reverse().join('/') : "não informada"})`);
+    if (physioData.sistemaFechado) dispositivosText.push(`Sistema Fechado de Aspiração (Instalação: ${physioData.dataSFA ? physioData.dataSFA.split('-').reverse().join('/') : "não informada"})`);
     if (physioData.cuff) dispositivosText.push(`Pressão do Cuff: ${physioData.cuff} cmH2O`);
     const blocoDispositivos = dispositivosText.length > 0 ? `\n\nDISPOSITIVOS DE VIA AÉREA:\n${dispositivosText.join("\n")}` : "";
 
