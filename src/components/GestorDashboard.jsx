@@ -66,6 +66,13 @@ const GestorDashboard = ({ userProfile }) => {
   const [manutencaoCVCDiaSelecionado, setManutencaoCVCDiaSelecionado] = useState(null);
   const [manutencaoCVCModalDia, setManutencaoCVCModalDia] = useState(false);
 
+  // ===== MANUTENÇÃO SVD =====
+  const [manutencaoSVDPacientes, setManutencaoSVDPacientes] = useState([]);
+  const [manutencaoSVDPacienteSelecionado, setManutencaoSVDPacienteSelecionado] = useState(null);
+  const [manutencaoSVCDias, setManutencaoSVCDias] = useState([]);
+  const [manutencaoSVCDiaSelecionado, setManutencaoSVCDiaSelecionado] = useState(null);
+  const [manutencaoSVDModalDia, setManutencaoSVDModalDia] = useState(false);
+
   const [listaCarrinhoEMG, setListaCarrinhoEMG] = useState([]);
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
   const [loadingCarrinhoEMG, setLoadingCarrinhoEMG] = useState(false);
@@ -2615,8 +2622,11 @@ const GestorDashboard = ({ userProfile }) => {
 
         const dataAdmissao = datas[0];
 
-      // Pega dataSaida do documento raiz (internacoes_historico) ou do registro de retirada
-      const dataSaida = pac.dataSaida || null;
+          // dataSaida pode vir como string "2026-07-24" ou timestamp "2026-07-24T14:10:38.199Z"
+          let dataSaida = null;
+          if (pac.dataSaida) {
+            dataSaida = pac.dataSaida.split('T')[0]; // Pega só a parte da data
+          }
 
         pacientes.push({
           id: pac.id || pac.nome || 'unknown',
@@ -2635,7 +2645,50 @@ const GestorDashboard = ({ userProfile }) => {
     };
 
     buscarPacientesCVC();
-  }, [leitosConfig, listaHistorico]);  
+  }, [leitosConfig, listaHistorico]);
+
+useEffect(() => {
+  const buscarPacientesSVD = () => {
+    const todosPacientes = [...leitosConfig, ...listaHistorico];
+    const pacientes = [];
+
+    todosPacientes.forEach(pac => {
+      const backup = pac.backupProntuario || {};
+      const historicoManutencao = pac.enfermagem?.historicoManutencaoSVD || 
+                                  backup?.enfermagem?.historicoManutencaoSVD || [];
+      if (!Array.isArray(historicoManutencao) || historicoManutencao.length === 0) return;
+
+      const datas = historicoManutencao
+        .filter(m => m.data)
+        .map(m => m.data)
+        .sort();
+
+      if (datas.length === 0) return;
+
+      const dataAdmissao = datas[0];
+
+      // dataSaida pode vir como string "2026-07-24" ou timestamp "2026-07-24T14:10:38.199Z"
+      let dataSaida = null;
+      if (pac.dataSaida) {
+        dataSaida = pac.dataSaida.split('T')[0];
+      }
+
+      pacientes.push({
+        id: pac.id || pac.nome || 'unknown',
+        nome: backup?.nome || backup?.admissionData?.nome || pac.nome || pac.admissionData?.nome || 'Não identificado',
+        dataAdmissao,
+        dataSaida,
+        totalChecklists: historicoManutencao.length,
+        ultimoChecklist: datas[datas.length - 1],
+      });
+    });
+
+    pacientes.sort((a, b) => b.dataAdmissao.localeCompare(a.dataAdmissao));
+    setManutencaoSVDPacientes(pacientes);
+  };
+
+  buscarPacientesSVD();
+}, [leitosConfig, listaHistorico]);
 
   const gerarDiasManutencaoCVC = (paciente) => {
     if (!paciente) return [];
@@ -2648,14 +2701,16 @@ const GestorDashboard = ({ userProfile }) => {
     const dias = [];
     const current = new Date(dataInicio);
 
-    // Busca o historicoCVC do paciente
-    const pacienteOriginal = [...leitosConfig, ...listaHistorico].find(
-      p => (p.id === paciente.id || p.nome === paciente.nome)
-    );
-    
-    const backup = pacienteOriginal?.backupProntuario || {};
-    const historicoManutencao = pacienteOriginal?.enfermagem?.historicoManutencaoCVC ||
-                                backup?.enfermagem?.historicoManutencaoCVC || [];
+  // Busca o paciente original comparando por nome (mais confiável que ID)
+  const pacienteOriginal = [...leitosConfig, ...listaHistorico].find(p => {
+    const nomeP = p.nome || p.admissionData?.nome || '';
+    const nomeBackup = p.backupProntuario?.nome || '';
+    return nomeP === paciente.nome || nomeBackup === paciente.nome;
+  });
+  
+  const backup = pacienteOriginal?.backupProntuario || {};
+  const historicoManutencao = pacienteOriginal?.enfermagem?.historicoManutencaoCVC ||
+                              backup?.enfermagem?.historicoManutencaoCVC || [];
 
     while (current <= dataFim) {
       const dataStr = current.toISOString().split('T')[0];
@@ -2674,6 +2729,49 @@ const GestorDashboard = ({ userProfile }) => {
 
     return dias;
   };
+
+const gerarDiasManutencaoSVD = (paciente) => {
+  if (!paciente) return [];
+
+  const dataInicio = new Date(paciente.dataAdmissao + 'T00:00:00');
+  const dataFim = paciente.dataSaida 
+    ? new Date(paciente.dataSaida + 'T00:00:00')
+    : new Date();
+
+  const dias = [];
+  const current = new Date(dataInicio);
+
+  const pacienteOriginal = [...leitosConfig, ...listaHistorico].find(p => {
+    const nomeP = p.nome || p.admissionData?.nome || '';
+    const nomeBackup = p.backupProntuario?.nome || '';
+    return nomeP === paciente.nome || nomeBackup === paciente.nome;
+  });
+
+  const backup = pacienteOriginal?.backupProntuario || {};
+  const historicoManutencao = pacienteOriginal?.enfermagem?.historicoManutencaoSVD ||
+                              backup?.enfermagem?.historicoManutencaoSVD || [];
+
+  while (current <= dataFim) {
+    const dataStr = current.toISOString().split('T')[0];
+
+    const manutencoesDoDia = historicoManutencao.filter(m => m.data === dataStr);
+
+    dias.push({
+      data: dataStr,
+      manutencoes: manutencoesDoDia,
+      temRegistro: manutencoesDoDia.length > 0,
+    });
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dias;
+};
+
+const abrirModalDiaManutencaoSVD = (paciente, dia) => {
+  setManutencaoSVCDiaSelecionado(dia);
+  setManutencaoSVDModalDia(true);
+};
 
   const abrirModalDiaManutencaoCVC = (paciente, dia) => {
     setManutencaoCVCDiaSelecionado(dia);
@@ -2781,7 +2879,6 @@ const GestorDashboard = ({ userProfile }) => {
 
     buscarChecklistsSVD();
   }, [mesFiltroSVD, leitosConfig]);
-
 
   const gerarRelatorioMensalCarrinho = () => {
     const [ano, mes] = mesFiltroCarrinhoEMG.split('-').map(Number);
@@ -7334,6 +7431,15 @@ const GestorDashboard = ({ userProfile }) => {
             Checklist SVD
           </button>
 
+          {/* ABA: MANUTENÇÃO SVD */}
+          <button 
+            onClick={() => setAbaRiscoAtiva('manutencaoSVD')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'manutencaoSVD' ? 'border-amber-600 text-amber-700 bg-amber-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Droplets size={18} />
+            Manutenção SVD
+          </button>
+
           {/* 💡 NOVA ABA: CARRINHO EMG */}
           <button 
             onClick={() => setAbaRiscoAtiva('carrinhoEMG')}
@@ -8109,7 +8215,6 @@ const GestorDashboard = ({ userProfile }) => {
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200">
                         <th className="text-left p-2 font-bold text-slate-600">Paciente</th>
-                        <th className="text-left p-2 font-bold text-slate-600">Leito</th>
                         <th className="text-left p-2 font-bold text-slate-600">Data de Admissão</th>
                         <th className="text-left p-2 font-bold text-slate-600">Data de Saída</th>
                         <th className="text-center p-2 font-bold text-slate-600">Checklists</th>
@@ -8120,9 +8225,8 @@ const GestorDashboard = ({ userProfile }) => {
                       {manutencaoCVCPacientes.map((pac, idx) => (
                         <tr key={pac.id} className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
                           <td className="p-2 font-semibold text-slate-700">{pac.nome}</td>
-                          <td className="p-2 text-slate-500">{pac.leito}</td>
-                          <td className="p-2 text-slate-700">{pac.dataAdmissao}</td>
-                          <td className="p-2 text-slate-700">{pac.dataSaida || '—'}</td>
+                          <td className="p-2 text-slate-700">{pac.dataAdmissao?.split('-').reverse().join('/')}</td>
+                          <td className="p-2 text-slate-700">{pac.dataSaida ? pac.dataSaida.split('-').reverse().join('/') : '—'}</td>
                           <td className="p-2 text-center">
                             <span className="font-bold">{pac.totalChecklists}</span>
                           </td>
@@ -8171,11 +8275,11 @@ const GestorDashboard = ({ userProfile }) => {
                     <div className="grid grid-cols-2 gap-3 text-xs">
                       <div>
                         <span className="font-bold text-slate-500 block">Data de Admissão</span>
-                        <span className="text-slate-800">{manutencaoCVCPacienteSelecionado.dataAdmissao}</span>
+                        <span className="text-slate-800">{manutencaoCVCPacienteSelecionado.dataAdmissao?.split('-').reverse().join('/')}</span>
                       </div>
                       <div>
                         <span className="font-bold text-slate-500 block">Data de Saída</span>
-                        <span className="text-slate-800">{manutencaoCVCPacienteSelecionado.dataSaida || 'Ainda internado'}</span>
+                        <span className="text-slate-800">{manutencaoCVCPacienteSelecionado.dataSaida ? manutencaoCVCPacienteSelecionado.dataSaida.split('-').reverse().join('/') : 'Ainda internado'}</span>
                       </div>
                       <div>
                         <span className="font-bold text-slate-500 block">Total de Dias</span>
@@ -8204,14 +8308,14 @@ const GestorDashboard = ({ userProfile }) => {
                                 : 'border-red-200 bg-red-50 text-red-600 hover:border-red-400'
                             }`}
                           >
-                            <span>{dia.data}</span>
+                            <span>{dia.data?.split('-').reverse().join('/')}</span>
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               dia.temRegistro
                                 ? 'bg-emerald-200 text-emerald-800'
                                 : 'bg-red-200 text-red-800'
                             }`}>
                               {dia.temRegistro 
-                                ? `${dia.checklists.length} checklist(s)${dia.manutencoes.length > 0 ? ` + ${dia.manutencoes.length} manut.` : ''}`
+                                ? `${dia.manutencoes.length} ${dia.manutencoes.length === 1 ? 'manutenção' : 'manutenções'}`
                                 : 'Não realizado'}
                             </span>
                           </button>
@@ -8246,7 +8350,7 @@ const GestorDashboard = ({ userProfile }) => {
                     <div>
                       <h3 className="font-bold text-slate-800 text-base">Registros do Dia</h3>
                       <p className="text-xs text-slate-500 mt-1">
-                        {manutencaoCVCDiaSelecionado.data} — {manutencaoCVCPacienteSelecionado?.nome}
+                        {manutencaoCVCDiaSelecionado.data?.split('-').reverse().join('/')} — {manutencaoCVCPacienteSelecionado?.nome}
                       </p>
                     </div>
                     <button onClick={() => setManutencaoCVCModalDia(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
@@ -8303,6 +8407,269 @@ const GestorDashboard = ({ userProfile }) => {
                   <div className="p-4 border-t border-slate-100 text-center">
                     <button 
                       onClick={() => setManutencaoCVCModalDia(false)}
+                      className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* ABA: MANUTENÇÃO SVD                                            */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'manutencaoSVD' && (
+          <div className="animate-fadeIn">
+            {/* CABEÇALHO */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4">
+              <div className="flex items-center gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Droplets className="text-amber-600" /> Manutenção de SVD
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Acompanhamento diário dos pacientes com Sonda Vesical de Demora — admissão, manutenções e retirada.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* LISTA DE PACIENTES */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <Droplets size={16} className="text-amber-500" /> Pacientes com SVD
+              </h4>
+              <p className="text-xs text-slate-500 mb-4">
+                {manutencaoSVDPacientes.length > 0 
+                  ? `${manutencaoSVDPacientes.length} paciente(s) com histórico de SVD`
+                  : 'Nenhum paciente com SVD encontrado.'}
+              </p>
+
+              {manutencaoSVDPacientes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left p-2 font-bold text-slate-600">Paciente</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data de Admissão</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data de Saída</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Manutenções</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {manutencaoSVDPacientes.map((pac, idx) => (
+                        <tr key={pac.id} className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                          <td className="p-2 font-semibold text-slate-700">{pac.nome}</td>
+                          <td className="p-2 text-slate-700">{pac.dataAdmissao?.split('-').reverse().join('/')}</td>
+                          <td className="p-2 text-slate-700">{pac.dataSaida ? pac.dataSaida.split('-').reverse().join('/') : '—'}</td>
+                          <td className="p-2 text-center">
+                            <span className="font-bold">{pac.totalChecklists}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            <button
+                              onClick={() => {
+                                const dias = gerarDiasManutencaoSVD(pac);
+                                setManutencaoSVDPacienteSelecionado({ ...pac, dias });
+                              }}
+                              className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            >
+                              Ver Dias
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400 italic text-xs">
+                  Nenhum paciente com SVD encontrado.
+                </div>
+              )}
+            </div>
+
+            {/* MODAL: DIAS DO PACIENTE */}
+            {manutencaoSVDPacienteSelecionado && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setManutencaoSVDPacienteSelecionado(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Acompanhamento Diário</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {manutencaoSVDPacienteSelecionado.nome}
+                      </p>
+                    </div>
+                    <button onClick={() => setManutencaoSVDPacienteSelecionado(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={20} className="text-slate-400" />
+                    </button>
+                  </div>
+
+                  <div className="p-5 border-b border-slate-100">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="font-bold text-slate-500 block">Data de Admissão</span>
+                        <span className="text-slate-800">{manutencaoSVDPacienteSelecionado.dataAdmissao?.split('-').reverse().join('/')}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Data de Saída</span>
+                        <span className="text-slate-800">{manutencaoSVDPacienteSelecionado.dataSaida ? manutencaoSVDPacienteSelecionado.dataSaida.split('-').reverse().join('/') : 'Ainda internado'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Total de Dias</span>
+                        <span className="text-slate-800">{manutencaoSVDPacienteSelecionado.dias?.length || 0} dias</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Total de Manutenções</span>
+                        <span className="text-slate-800">{manutencaoSVDPacienteSelecionado.totalChecklists}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-5">
+                    <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Registros Diários</h4>
+                    
+                    {manutencaoSVDPacienteSelecionado.dias && manutencaoSVDPacienteSelecionado.dias.length > 0 ? (
+                      <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+                        {manutencaoSVDPacienteSelecionado.dias.map((dia, i) => (
+                          <button
+                            key={i}
+                            onClick={() => abrirModalDiaManutencaoSVD(manutencaoSVDPacienteSelecionado, dia)}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 text-xs font-bold transition-all ${
+                              dia.temRegistro
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400'
+                                : 'border-red-200 bg-red-50 text-red-600 hover:border-red-400'
+                            }`}
+                          >
+                            <span>{dia.data?.split('-').reverse().join('/')}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              dia.temRegistro
+                                ? 'bg-emerald-200 text-emerald-800'
+                                : 'bg-red-200 text-red-800'
+                            }`}>
+                              {dia.temRegistro 
+                                ? `${dia.manutencoes.length} ${dia.manutencoes.length === 1 ? 'manutenção' : 'manutenções'}`
+                                : 'Não realizado'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-slate-400 italic text-xs">
+                        Nenhum dia disponível.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 border-t border-slate-100 text-center">
+                    <button 
+                      onClick={() => setManutencaoSVDPacienteSelecionado(null)}
+                      className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* MODAL: DETALHES DO DIA */}
+            {manutencaoSVDModalDia && manutencaoSVCDiaSelecionado && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]" onClick={() => setManutencaoSVDModalDia(false)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Registros do Dia</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {manutencaoSVCDiaSelecionado.data?.split('-').reverse().join('/')} — {manutencaoSVDPacienteSelecionado?.nome}
+                      </p>
+                    </div>
+                    <button onClick={() => setManutencaoSVDModalDia(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={20} className="text-slate-400" />
+                    </button>
+                  </div>
+
+                  <div className="p-5">
+                    {manutencaoSVCDiaSelecionado.temRegistro ? (
+                      <>
+                        <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Manutenções do Dia</h4>
+                        <div className="space-y-2">
+                          {manutencaoSVCDiaSelecionado.manutencoes.map((m, i) => (
+                          <div key={i} className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <span className="font-bold text-slate-500 block">Horário</span>
+                                <span className="text-slate-800">{m.horario || 'N/I'}</span>
+                              </div>
+                              <div>
+                                <span className="font-bold text-slate-500 block">Unidade</span>
+                                <span className="text-slate-800">{m.unidadeInserção || 'N/I'}</span>
+                              </div>
+                              <div>
+                                <span className="font-bold text-slate-500 block">Tipo de Sonda</span>
+                                <span className="text-slate-800">{m.tipoSonda || 'N/I'}</span>
+                              </div>
+                              <div>
+                                <span className="font-bold text-slate-500 block">Itens Cumpridos</span>
+                                <span className="text-slate-800">
+                                  {m.itens?.cumpridos || 0}/{m.itens?.total || 0}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Lista de itens da manutenção */}
+                            {m.itens?.lista && m.itens.lista.length > 0 && (
+                              <div className="mt-3">
+                                <span className="font-bold text-slate-500 block text-[10px] mb-1.5">Itens do Checklist</span>
+                                <div className="space-y-1">
+                                  {m.itens.lista.map((item, j) => (
+                                    <div key={j} className={`flex items-center gap-2 p-1.5 rounded-lg ${
+                                      item.cumprida ? 'bg-emerald-50' : 'bg-red-50'
+                                    }`}>
+                                      {item.cumprida ? (
+                                        <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                                          <ShieldCheck size={12} className="text-white" />
+                                        </div>
+                                      ) : (
+                                        <div className="w-5 h-5 rounded-full bg-red-400 flex items-center justify-center flex-shrink-0">
+                                          <X size={12} className="text-white" />
+                                        </div>
+                                      )}
+                                      <span className={`text-xs ${item.cumprida ? 'text-slate-700' : 'text-red-700 font-medium'}`}>
+                                        {item.label || item.item || `Item ${j + 1}`}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {m.observacao && (
+                              <div className="mt-2 p-2 bg-white rounded-lg border border-amber-100">
+                                <span className="font-bold text-slate-500 block text-[10px]">Observações</span>
+                                <span className="text-slate-700">{m.observacao}</span>
+                              </div>
+                            )}
+                          </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center py-12">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <X size={24} className="text-red-500" />
+                        </div>
+                        <p className="text-sm font-bold text-red-600">Nenhum registro neste dia</p>
+                        <p className="text-xs text-slate-400 mt-1">Manutenção não realizada</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 border-t border-slate-100 text-center">
+                    <button 
+                      onClick={() => setManutencaoSVDModalDia(false)}
                       className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
                     >
                       Fechar
