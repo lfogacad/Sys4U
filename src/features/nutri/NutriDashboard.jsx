@@ -303,17 +303,65 @@ const NutriDashboard = ({
             )}
 
             {currentPatient.nutri?.via === "Mista" && (
-              <div className="grid grid-cols-2 gap-3 mt-2 animate-fadeIn">
-                <input
-                  placeholder="Enteral: Vazão (ml/h)"
-                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
-                  value={currentPatient.nutri?.vazao || ""}
-                  onChange={(e) => updateNested("nutri", "vazao", e.target.value)}
-                  onBlur={() => handleBlurSave("Nutrição: Editou Vazão da Dieta Mista")}
-                />
-                <div className="text-xs text-slate-500 font-bold p-2 border rounded bg-slate-50 flex items-center justify-center text-center shadow-inner">
-                  Oral / Fórmula Mista
+              <div className="mt-3 p-3 bg-lime-50/50 border border-lime-200 rounded-xl animate-fadeIn">
+                <label className="block text-xs font-bold text-gray-500 mb-2">Vias que compõem a dieta mista</label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {['Parenteral', 'Enteral', 'Oral'].map((viaMista) => {
+                    const selecionada = (currentPatient.nutri?.viasMistas || []).includes(viaMista);
+                    return (
+                      <button
+                        key={viaMista}
+                        type="button"
+                        onClick={() => toggleArrayItem("nutri", "viasMistas", viaMista)}
+                        onBlur={() => handleBlurSave(`Nutrição: Alterou via da dieta mista (${viaMista})`)}
+                        className={`px-3 py-1.5 rounded-lg border-2 text-xs font-bold transition-all ${
+                          selecionada
+                            ? 'border-lime-600 bg-lime-100 text-lime-800'
+                            : 'border-slate-200 bg-white text-slate-500 hover:border-lime-300'
+                        }`}
+                      >
+                        {selecionada ? '✓ ' : ''}{viaMista}
+                      </button>
+                    );
+                  })}
                 </div>
+
+                {(currentPatient.nutri?.viasMistas || []).includes('Enteral') && (
+                  <div className="grid grid-cols-2 gap-3 mb-3 animate-fadeIn">
+                    <input
+                      placeholder="Tipo/Fórmula (Enteral)"
+                      className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                      value={currentPatient.nutri?.tipoDietaEnteral || ""}
+                      onChange={(e) => updateNested("nutri", "tipoDietaEnteral", e.target.value)}
+                      onBlur={() => handleBlurSave("Nutrição: Editou Tipo/Fórmula Enteral da Dieta Mista")}
+                    />
+                    <input
+                      placeholder="Vazão (ml/h) — Enteral"
+                      className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                      value={currentPatient.nutri?.vazaoEnteral || ""}
+                      onChange={(e) => updateNested("nutri", "vazaoEnteral", e.target.value)}
+                      onBlur={() => handleBlurSave("Nutrição: Editou Vazão Enteral da Dieta Mista")}
+                    />
+                  </div>
+                )}
+
+                {(currentPatient.nutri?.viasMistas || []).includes('Parenteral') && (
+                  <div className="mb-3 animate-fadeIn">
+                    <input
+                      placeholder="Vazão (ml/h) — Parenteral"
+                      className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                      value={currentPatient.nutri?.vazaoParenteral || ""}
+                      onChange={(e) => updateNested("nutri", "vazaoParenteral", e.target.value)}
+                      onBlur={() => handleBlurSave("Nutrição: Editou Vazão Parenteral da Dieta Mista")}
+                    />
+                  </div>
+                )}
+
+                {(currentPatient.nutri?.viasMistas || []).includes('Oral') && (
+                  <div className="p-2 bg-white border border-lime-200 rounded-lg text-[11px] text-slate-500 font-bold animate-fadeIn">
+                    ✓ Via Oral selecionada — use as características da dieta acima para definir hipossódica, DM, laxativa, etc.
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -7595,7 +7595,7 @@ const imprimirRelatorioGeladeira = () => {
             onClick={() => setAbaRiscoAtiva('eventos')}
             className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaRiscoAtiva === 'eventos' ? 'border-red-600 text-red-700 bg-red-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
           >
-            Notificações de Eventos Adversos
+            Eventos Adversos
           </button>
           
           <button 
@@ -9683,7 +9683,7 @@ const imprimirRelatorioGeladeira = () => {
             )}
           </div>
         )}
-        
+
         {/*  */}
         {/* ABA: HEMOTRANSFUSÃO                                        */}
         {/*  */}

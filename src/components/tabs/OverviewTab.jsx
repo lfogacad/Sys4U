@@ -154,10 +154,19 @@ const OverviewTab = ({
             </div>
           )}
           {currentPatient.nutri?.via === "Mista" && (
-            <div className="text-xs text-lime-600 mt-1">
-              <p>Fórmula (SNE): <b>{currentPatient.nutri?.tipoDieta || "-"}</b></p>
-              <p>Vazão: <b>{currentPatient.nutri?.vazao || "-"} ml/h</b></p>
-              <p className="mt-1">VO (Consistência): <b>{currentPatient.fono?.consistencia || "-"}</b></p>
+            <div className="text-xs text-lime-600 mt-1 space-y-1">
+              {(currentPatient.nutri?.viasMistas || []).includes('Enteral') && (
+                <p>Enteral: <b>{currentPatient.nutri?.tipoDietaEnteral || "-"}</b> • <b>{currentPatient.nutri?.vazaoEnteral || "-"} ml/h</b></p>
+              )}
+              {(currentPatient.nutri?.viasMistas || []).includes('Parenteral') && (
+                <p>Parenteral: <b>{currentPatient.nutri?.vazaoParenteral || "-"} ml/h</b></p>
+              )}
+              {(currentPatient.nutri?.viasMistas || []).includes('Oral') && (
+                <p>VO (Consistência): <b>{currentPatient.fono?.consistencia || "-"}</b></p>
+              )}
+              {(currentPatient.nutri?.viasMistas || []).length === 0 && (
+                <p>Vias não especificadas</p>
+              )}
             </div>
           )}
           {currentPatient.nutri?.caracteristicasDieta?.length > 0 && (

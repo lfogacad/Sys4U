@@ -3005,7 +3005,11 @@ ${conduta}
       metaProtTotal: "",
       risco_nutricional: "",
       via: "",
-      caracteristicasDieta: []
+      caracteristicasDieta: [],
+      viasMistas: [],
+      tipoDietaEnteral: "",
+      vazaoEnteral: "",
+      vazaoParenteral: "",
     });
 
     setShowNutriAdmissionModal(true);

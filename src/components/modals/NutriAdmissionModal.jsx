@@ -122,6 +122,90 @@ const NutriAdmissionModal = ({
                 <option value="Mista">Mista</option>
               </select>
             </div>
+            {/* SELEÇÃO MÚLTIPLA QUANDO VIA = MISTA */}
+            {nutriData.via === "Mista" && (
+              <div className="mt-4 p-4 bg-lime-50/50 border-2 border-lime-200 rounded-xl animate-fadeIn">
+                <label className="text-xs font-bold text-slate-600 uppercase mb-2 block">
+                  Vias que compõem a dieta mista
+                </label>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {['Parenteral', 'Enteral', 'Oral'].map((viaMista) => {
+                    const selecionada = (nutriData.viasMistas || []).includes(viaMista);
+                    return (
+                      <button
+                        key={viaMista}
+                        type="button"
+                        disabled={isReadOnly}
+                        onClick={() => {
+                          if (isReadOnly) return;
+                          setNutriData(prev => {
+                            let arr = prev.viasMistas || [];
+                            if (arr.includes(viaMista)) arr = arr.filter(v => v !== viaMista);
+                            else arr = [...arr, viaMista];
+                            return { ...prev, viasMistas: arr };
+                          });
+                        }}
+                        className={`px-4 py-2 rounded-xl border-2 font-bold text-sm transition-all ${
+                          selecionada
+                            ? 'border-lime-600 bg-lime-100 text-lime-800 shadow-sm'
+                            : 'border-slate-200 bg-white text-slate-500 hover:border-lime-300'
+                        } ${isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+                      >
+                        {selecionada ? '✓ ' : ''}{viaMista}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* SUBOPÇÕES POR VIA SELECIONADA */}
+                {(nutriData.viasMistas || []).includes('Enteral') && (
+                  <div className="grid grid-cols-2 gap-3 mb-3 animate-fadeIn">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Tipo/Fórmula (Enteral)</label>
+                      <input
+                        type="text"
+                        disabled={isReadOnly}
+                        className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500"
+                        value={nutriData.tipoDietaEnteral || ""}
+                        onChange={(e) => setNutriData({ ...nutriData, tipoDietaEnteral: e.target.value })}
+                        placeholder="Ex: HP Energy, Isosource, etc."
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Vazão (ml/h) — Enteral</label>
+                      <input
+                        type="number"
+                        disabled={isReadOnly}
+                        className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500"
+                        value={nutriData.vazaoEnteral || ""}
+                        onChange={(e) => setNutriData({ ...nutriData, vazaoEnteral: e.target.value })}
+                        placeholder="Ex: 50"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {(nutriData.viasMistas || []).includes('Parenteral') && (
+                  <div className="mb-3 animate-fadeIn">
+                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Vazão (ml/h) — Parenteral</label>
+                    <input
+                      type="number"
+                      disabled={isReadOnly}
+                      className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500"
+                      value={nutriData.vazaoParenteral || ""}
+                      onChange={(e) => setNutriData({ ...nutriData, vazaoParenteral: e.target.value })}
+                      placeholder="Ex: 40"
+                    />
+                  </div>
+                )}
+
+                {(nutriData.viasMistas || []).includes('Oral') && (
+                  <div className="p-3 bg-white border border-lime-200 rounded-lg text-xs text-slate-500 font-bold animate-fadeIn">
+                    ✓ Via Oral selecionada — use as características da dieta abaixo para definir hipossódica, DM, laxativa, etc.
+                  </div>
+                )}
+              </div>
+            )}            
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {CARACTERISTICAS_DIETA.map((c) => (
                 <label key={c} className={`flex items-center gap-2 text-sm text-slate-700 bg-slate-50 p-2 rounded border ${isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
