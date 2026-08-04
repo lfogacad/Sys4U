@@ -73,6 +73,11 @@ const GestorDashboard = ({ userProfile }) => {
   const [manutencaoSVCDiaSelecionado, setManutencaoSVCDiaSelecionado] = useState(null);
   const [manutencaoSVDModalDia, setManutencaoSVDModalDia] = useState(false);
 
+  // ===== HEMOTRANSFUSÃO =====
+  const [hemotransfusoesLista, setHemotransfusoesLista] = useState([]);
+  const [hemotransfusaoSelecionada, setHemotransfusaoSelecionada] = useState(null);
+  const [modalHemotransfusaoDetalhe, setModalHemotransfusaoDetalhe] = useState(false);
+
   const [listaCarrinhoEMG, setListaCarrinhoEMG] = useState([]);
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
   const [loadingCarrinhoEMG, setLoadingCarrinhoEMG] = useState(false);
@@ -2688,6 +2693,52 @@ useEffect(() => {
   };
 
   buscarPacientesSVD();
+}, [leitosConfig, listaHistorico]);
+
+useEffect(() => {
+  const buscarHemotransfusoes = () => {
+    const todosPacientes = [...leitosConfig, ...listaHistorico];
+    const registros = [];
+
+    todosPacientes.forEach(pac => {
+      const backup = pac.backupProntuario || {};
+      const historico = pac.enfermagem?.historicoHemotransfusao || 
+                        backup?.enfermagem?.historicoHemotransfusao || [];
+      if (!Array.isArray(historico) || historico.length === 0) return;
+
+      // Nome do paciente (com fallback para backupProntuario)
+      const nome = backup?.nome || backup?.admissionData?.nome || 
+                   pac.nome || pac.admissionData?.nome || 'Não identificado';
+
+      // Data de admissão (raiz do doc no histórico, ou admissionData nos leitos ativos)
+      const dataAdmissao = pac.dataEntrada || pac.admissionData?.dataEntrada || 
+                           backup?.dataEntrada || historico[0]?.data || null;
+
+      // Data de saída (raiz do doc, pode vir com timestamp)
+      let dataSaida = null;
+      if (pac.dataSaida) {
+        dataSaida = pac.dataSaida.split('T')[0];
+      }
+
+      historico.forEach((h, idx) => {
+        if (!h.data) return;
+        registros.push({
+          id: `${pac.id || pac.nome}-${h.data}-${h.horarioInicio || '00:00'}-${idx}`,
+          paciente: nome,
+          dataAdmissao,
+          dataSaida,
+          dataHemotransfusao: h.data,
+          registro: h,
+        });
+      });
+    });
+
+    // Ordena decrescente pela data da hemotransfusão
+    registros.sort((a, b) => b.dataHemotransfusao.localeCompare(a.dataHemotransfusao));
+    setHemotransfusoesLista(registros);
+  };
+
+  buscarHemotransfusoes();
 }, [leitosConfig, listaHistorico]);
 
   const gerarDiasManutencaoCVC = (paciente) => {
@@ -7449,6 +7500,15 @@ const abrirModalDiaManutencaoSVD = (paciente, dia) => {
             Carrinho EMG
           </button>
 
+          {/* ABA: HEMOTRANSFUSÃO */}
+          <button 
+            onClick={() => setAbaRiscoAtiva('hemotransfusao')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'hemotransfusao' ? 'border-red-600 text-red-700 bg-red-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Droplets size={18} />
+            Hemotransfusão
+          </button>
+
           {/* 💡 A NOVA ABA: CAIXA PRETA / AUDITORIA */}
           <button 
             onClick={() => setAbaRiscoAtiva('auditoria')}
@@ -9225,6 +9285,271 @@ const abrirModalDiaManutencaoSVD = (paciente, dia) => {
               </div>
             )}
 
+          </div>
+        )}
+
+        {/*  */}
+        {/* ABA: HEMOTRANSFUSÃO                                        */}
+        {/*  */}
+        {abaRiscoAtiva === 'hemotransfusao' && (
+          <div className="animate-fadeIn">
+            {/* CABEÇALHO */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4">
+              <div className="flex items-center gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Droplets className="text-red-600" /> Hemotransfusão
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Registro das transfusões realizadas — dados da bolsa, dupla checagem e sinais vitais.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* LISTA DE HEMOTRANSFUSÕES */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <Droplets size={16} className="text-red-500" /> Pacientes com Hemotransfusão
+              </h4>
+              <p className="text-xs text-slate-500 mb-4">
+                {hemotransfusoesLista.length > 0 
+                  ? `${hemotransfusoesLista.length} hemotransfusão(ões) registrada(s)`
+                  : 'Nenhuma hemotransfusão encontrada.'}
+              </p>
+
+              {hemotransfusoesLista.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left p-2 font-bold text-slate-600">Paciente</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data de Admissão</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data de Saída</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data da Hemotransfusão</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hemotransfusoesLista.map((item, idx) => (
+                        <tr key={item.id} className={`border-b border-slate-100 cursor-pointer hover:bg-red-50/40 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`} onClick={() => { setHemotransfusaoSelecionada(item); setModalHemotransfusaoDetalhe(true); }}>
+                          <td className="p-2 font-semibold text-slate-700">{item.paciente}</td>
+                          <td className="p-2 text-slate-700">{item.dataAdmissao ? item.dataAdmissao.split('-').reverse().join('/') : '—'}</td>
+                          <td className="p-2 text-slate-700">{item.dataSaida ? item.dataSaida.split('-').reverse().join('/') : '—'}</td>
+                          <td className="p-2 text-slate-700">{item.dataHemotransfusao.split('-').reverse().join('/')}</td>
+                          <td className="p-2 text-center">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setHemotransfusaoSelecionada(item); setModalHemotransfusaoDetalhe(true); }}
+                              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            >
+                              Ver Checklist
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400 italic text-xs">
+                  Nenhuma hemotransfusão encontrada.
+                </div>
+              )}
+            </div>
+
+            {/* MODAL: DETALHES DA HEMOTRANSFUSÃO */}
+            {modalHemotransfusaoDetalhe && hemotransfusaoSelecionada && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]" onClick={() => setModalHemotransfusaoDetalhe(false)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Cabeçalho */}
+                  <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-red-700 rounded-t-2xl">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-full"><Droplets size={18} className="text-white" /></div>
+                      <div>
+                        <h3 className="font-bold text-white text-base">Checklist de Hemotransfusão</h3>
+                        <p className="text-xs text-red-100 mt-0.5">
+                          {hemotransfusaoSelecionada.paciente} — {hemotransfusaoSelecionada.dataHemotransfusao.split('-').reverse().join('/')} às {hemotransfusaoSelecionada.registro.horarioInicio || 'N/I'}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => setModalHemotransfusaoDetalhe(false)} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors">
+                      <X size={20} className="text-white" />
+                    </button>
+                  </div>
+
+                  <div className="p-5 space-y-5">
+                    {/* DADOS DA BOLSA */}
+                    <div>
+                      <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Dados da Bolsa</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <span className="font-bold text-slate-500 block">Hemocomponente</span>
+                          <span className="text-slate-800 font-semibold">{hemotransfusaoSelecionada.registro.hemocomponente || 'N/I'}</span>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <span className="font-bold text-slate-500 block">Nº da Bolsa</span>
+                          <span className="text-slate-800 font-semibold">{hemotransfusaoSelecionada.registro.numeroBolsa || 'N/I'}</span>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <span className="font-bold text-slate-500 block">Volume (ml)</span>
+                          <span className="text-slate-800 font-semibold">{hemotransfusaoSelecionada.registro.volume || 'N/I'}</span>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <span className="font-bold text-slate-500 block">Grupo ABO / Rh</span>
+                          <span className="text-slate-800 font-semibold">
+                            {hemotransfusaoSelecionada.registro.grupoABO || '—'} {hemotransfusaoSelecionada.registro.rh === 'Positivo' ? '+' : hemotransfusaoSelecionada.registro.rh === 'Negativo' ? '−' : ''}
+                          </span>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <span className="font-bold text-slate-500 block">Validade</span>
+                          <span className="text-slate-800 font-semibold">{hemotransfusaoSelecionada.registro.validade ? hemotransfusaoSelecionada.registro.validade.split('-').reverse().join('/') : 'N/I'}</span>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <span className="font-bold text-slate-500 block">Volume Infundido (ml)</span>
+                          <span className="text-slate-800 font-semibold">{hemotransfusaoSelecionada.registro.volumeInfundido || 'N/I'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* HORÁRIOS */}
+                    <div>
+                      <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Horários</h4>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <span className="font-bold text-slate-500 block">Início</span>
+                          <span className="text-slate-800 font-semibold">{hemotransfusaoSelecionada.registro.horarioInicio || 'N/I'}</span>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <span className="font-bold text-slate-500 block">Término</span>
+                          <span className="text-slate-800 font-semibold">{hemotransfusaoSelecionada.registro.horarioTermino || 'N/I'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* DUPLA CHECAGEM */}
+                    <div>
+                      <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Dupla Checagem de Segurança</h4>
+                      <div className="space-y-1.5">
+                        {[
+                          { key: 'crossmatch', label: 'Teste de compatibilidade (crossmatch) realizado' },
+                          { key: 'acessoVenoso', label: 'Acesso venoso calibroso e pérvio' },
+                          { key: 'equipoFiltro', label: 'Equipo de infusão com filtro para hemocomponente' }
+                        ].map(item => {
+                          const cumprido = hemotransfusaoSelecionada.registro.duplaChecagem?.[item.key];
+                          return (
+                            <div key={item.key} className={`flex items-center gap-2 p-2.5 rounded-xl border ${cumprido ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                              {cumprido ? (
+                                <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                                  <ShieldCheck size={12} className="text-white" />
+                                </div>
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-red-400 flex items-center justify-center flex-shrink-0">
+                                  <X size={12} className="text-white" />
+                                </div>
+                              )}
+                              <span className={`text-xs ${cumprido ? 'text-slate-700' : 'text-red-700 font-medium'}`}>{item.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* SINAIS VITAIS */}
+                    <div>
+                      <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Sinais Vitais</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-slate-100">
+                              <th className="p-2 font-bold text-slate-600 text-left">Momento</th>
+                              <th className="p-2 font-bold text-slate-600">PA</th>
+                              <th className="p-2 font-bold text-slate-600">FC</th>
+                              <th className="p-2 font-bold text-slate-600">FR</th>
+                              <th className="p-2 font-bold text-slate-600">SatO₂</th>
+                              <th className="p-2 font-bold text-slate-600">Temp</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[
+                              { key: 'pre', label: 'Pré-transfusional' },
+                              { key: 'min15', label: '15 min' },
+                              { key: 'min30', label: '30 min' },
+                              { key: 'min60', label: '1 hora' },
+                              { key: 'final', label: 'Final' }
+                            ].map(momento => {
+                              const sv = hemotransfusaoSelecionada.registro.sinaisVitais?.[momento.key] || {};
+                              return (
+                                <tr key={momento.key} className="border-b border-slate-100">
+                                  <td className="p-2 font-bold text-slate-600 text-left">{momento.label}</td>
+                                  <td className="p-2 text-center text-slate-700">{sv.pa || '—'}</td>
+                                  <td className="p-2 text-center text-slate-700">{sv.fc || '—'}</td>
+                                  <td className="p-2 text-center text-slate-700">{sv.fr || '—'}</td>
+                                  <td className="p-2 text-center text-slate-700">{sv.sat || '—'}</td>
+                                  <td className="p-2 text-center text-slate-700">{sv.temp || '—'}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* REAÇÕES ADVERSAS */}
+                    {(hemotransfusaoSelecionada.registro.reacao || hemotransfusaoSelecionada.registro.conduta) && (
+                      <div>
+                        <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Reações Adversas</h4>
+                        <div className="p-3 bg-red-50 rounded-xl border border-red-200 space-y-2 text-xs">
+                          {hemotransfusaoSelecionada.registro.reacao && (
+                            <div>
+                              <span className="font-bold text-slate-500 block">Reação</span>
+                              <span className="text-red-700 font-semibold">{hemotransfusaoSelecionada.registro.reacao}</span>
+                            </div>
+                          )}
+                          {hemotransfusaoSelecionada.registro.reacaoDescricao && (
+                            <div>
+                              <span className="font-bold text-slate-500 block">Descrição</span>
+                              <span className="text-slate-700">{hemotransfusaoSelecionada.registro.reacaoDescricao}</span>
+                            </div>
+                          )}
+                          {hemotransfusaoSelecionada.registro.suspendeu && (
+                            <div>
+                              <span className="font-bold text-slate-500 block">Suspendeu a Transfusão</span>
+                              <span className="text-red-700 font-semibold">Sim</span>
+                            </div>
+                          )}
+                          {hemotransfusaoSelecionada.registro.conduta && (
+                            <div>
+                              <span className="font-bold text-slate-500 block">Conduta</span>
+                              <span className="text-slate-700">{hemotransfusaoSelecionada.registro.conduta}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* OBSERVAÇÕES */}
+                    {hemotransfusaoSelecionada.registro.observacao && (
+                      <div>
+                        <h4 className="font-bold text-slate-700 text-xs uppercase mb-3">Observações</h4>
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-slate-700 text-xs">{hemotransfusaoSelecionada.registro.observacao}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Fechar */}
+                  <div className="p-4 border-t border-slate-100 text-center">
+                    <button 
+                      onClick={() => setModalHemotransfusaoDetalhe(false)}
+                      className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
