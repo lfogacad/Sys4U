@@ -1968,7 +1968,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       gaso_PF: "",                    // Calculado automaticamente pelo useEffect do modal
 
       // Bloco 6: Condutas Fisioterapêuticas (Mantido o texto padrão sugerido)
-      condutas: `• Monitorização contínua de sinais vitais e vigilância respiratória;\n• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;\n• Avaliação de mecânica ventilatória e parâmetros do ventilador.`
+      condutas: `• Monitorização contínua de sinais vitais e vigilância respiratória;\n• Posicionamento funcional e terapêutico em leito com cabeceira a 30° a 45º;\n• Posicionamento correto do circuito de ventilação mecânica;\n• Avaliação de mecânica ventilatória e parâmetros do ventilador.`
     };
 
     // 2. Atualiza o estado no modulouti.jsx enviando o objeto correto
