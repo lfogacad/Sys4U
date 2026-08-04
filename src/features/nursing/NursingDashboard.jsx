@@ -54,7 +54,9 @@ const NursingDashboard = ({
       assepsia: false,
       tecnicaAssptica: false,
       curativo24h: false
-    }
+    },
+    teveEventoAdverso: false,
+    eventoAdverso: '',
   });
 
   const [modalManutencaoCVC, setModalManutencaoCVC] = useState({
@@ -447,7 +449,7 @@ const NursingDashboard = ({
     setModalAcessoPeriferico({ ...modalAcessoPeriferico, isOpen: false });
   };
 
-  const salvarCVC = () => {
+  const salvarCVC = async () => {
     if (!modalCVC.horario || !modalCVC.tipoCateter || !modalCVC.localInserção) return;
 
     const hoje = new Date();
@@ -518,8 +520,40 @@ const NursingDashboard = ({
       updateNested("enfermagem", "cvcData", dataISO);
     }
 
+    // Se houve evento adverso, registra também na coleção do GestorDashboard
+    if (modalCVC.teveEventoAdverso && modalCVC.eventoAdverso) {
+      const nomePaciente = currentPatient?.nome || '';
+      const iniciais = nomePaciente.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+      const leitoPaciente = String(currentPatient?.leito || '').padStart(2, '0');
+
+      const eventoPadronizado = {
+        tipoEvento: modalCVC.eventoAdverso,
+        dataHoraOcorrencia: `${dataISO}T${modalCVC.horario}:00`,
+        leitoOcorrencia: leitoPaciente,
+        pacienteIniciais: iniciais,
+        grauDano: '',
+        statusAnalise: 'Pendente NSP',
+        relato: `Evento adverso durante inserção de ${modalCVC.tipoCateter} em ${modalCVC.localInserção}: ${modalCVC.eventoAdverso}.`,
+        acoesImediatas: '',
+        origem: 'CVCInsercao',
+        dataNotificacao: new Date().toISOString(),
+      };
+
+      // 1. Salva no paciente (histórico local)
+      const eventosAnteriores = Array.isArray(currentPatient?.eventosAdversos) ? currentPatient.eventosAdversos : [];
+      updateNested('eventosAdversos', [...eventosAnteriores, eventoPadronizado]);
+
+      // 2. Salva na coleção global que alimenta o GestorDashboard
+      try {
+        await addDoc(collection(db, "eventos_adversos"), eventoPadronizado);
+      } catch (e) {
+        // Se db não estiver disponível, falha silenciosa (já salvou no paciente)
+        console.error("Erro ao salvar evento adverso na coleção global:", e);
+      }
+    }    
+
     handleBlurSave(`Enfermagem: Inserção ${modalCVC.tipoCateter} em ${modalCVC.localInserção} - Barreiras: ${barreirasFeitas}/${totalBarreiras}`);
-    setModalCVC({ ...modalCVC, isOpen: false });
+    setModalCVC({ ...modalCVC, isOpen: false });    
     
     const printWindow = window.open("", "_blank");
     const profNome = userProfile?.nome || "_____________________________";
@@ -2334,6 +2368,68 @@ return (
                     );
                   })}
                 </div>
+              </div>
+
+              {/* EVENTO ADVERSO */}
+              <div className="border-t-2 border-red-200 pt-4 mt-2">
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">
+                  Houve Evento Adverso relacionado ao procedimento?
+                </label>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {['Sim', 'Não'].map((op) => {
+                    const selected = modalCVC.teveEventoAdverso === (op === 'Sim');
+                    return (
+                      <button
+                        key={op}
+                        type="button"
+                        onClick={() => setModalCVC({ ...modalCVC, teveEventoAdverso: op === 'Sim', eventoAdverso: op === 'Sim' ? modalCVC.eventoAdverso : '' })}
+                        className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${
+                          selected
+                            ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]'
+                            : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'
+                        }`}
+                      >
+                        {op === 'Sim' ? '🔴 Sim' : '✅ Não'}
+                      </button>
+                    );
+                  })}
+                </div>
+                {modalCVC.teveEventoAdverso && (
+                  <div className="animate-fadeIn">
+                    <label className="text-xs font-bold text-slate-600 mb-3 block text-center">
+                      Selecione o Evento
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        'Pneumotórax',
+                        'Hematoma',
+                        'Punção Arterial Acidental',
+                        'Arritmia',
+                        'Má Posição do Cateter',
+                        'Sangramento Excessivo',
+                        'Lesão de Estruturas Adjacentes',
+                        'Óbito',
+                        'Outro'
+                      ].map((evt) => {
+                        const selected = modalCVC.eventoAdverso === evt;
+                        return (
+                          <button
+                            key={evt}
+                            type="button"
+                            onClick={() => setModalCVC({ ...modalCVC, eventoAdverso: evt })}
+                            className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${
+                              selected
+                                ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-[1.02]'
+                                : 'border-slate-200 bg-white text-slate-500 hover:border-red-200'
+                            }`}
+                          >
+                            {evt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
