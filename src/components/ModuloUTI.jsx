@@ -11,8 +11,8 @@ import {
   Printer, Bot, BrainCircuit, Sparkles, Mic, Table, UploadCloud,
   FolderInput, List, Copy, User, Search, ArrowLeft, X, PlusCircle,
   Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle,
-  Loader2, ChevronRight, ChevronDown, Clock, RotateCcw, Filter,
-  CalendarX, UserPlus, LogOut, ArrowRightLeft, Ambulance, Save
+  Loader2, ChevronRight, ChevronDown, Clock, RotateCcw, Filter, CheckCircle2,
+  CalendarX, UserPlus, LogOut, ArrowRightLeft, Ambulance, Save, Refrigerator
 } from "lucide-react";
 
 import {
@@ -260,6 +260,12 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     tabua: ''
   });
   const [salvandoCarrinho, setSalvandoCarrinho] = useState(false);
+
+  const [modalGeladeiraAberto, setModalGeladeiraAberto] = useState(false);
+  const [modalGeladeira, setModalGeladeira] = useState({
+    horario: '',
+    temperatura: '',
+  });
 
   const [listaCarrinhoEMG, setListaCarrinhoEMG] = useState([]);
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
@@ -1300,6 +1306,25 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       alert('Erro ao salvar. Tente novamente.');
     } finally {
       setSalvandoCarrinho(false);
+    }
+  };
+
+  const salvarGeladeira = async () => {
+    if (!modalGeladeira.horario || !modalGeladeira.temperatura) return;
+
+    try {
+      const hoje = new Date().toISOString().split('T')[0];
+      await addDoc(collection(db, 'geladeira'), {
+        data: hoje,
+        horario: modalGeladeira.horario,
+        temperatura: modalGeladeira.temperatura,
+        preenchidoPor: userProfile?.nome || 'Não identificado',
+        timestamp: new Date().toISOString(),
+      });
+      setModalGeladeiraAberto(false);
+      setModalGeladeira({ horario: '', temperatura: '', preenchidoPor: '' });
+    } catch (err) {
+      console.error('Erro ao salvar geladeira:', err);
     }
   };
 
@@ -5135,124 +5160,132 @@ const userRole = userProfile?.role || userProfile?.perfil;
             className="absolute -top-6 right-0 md:-right-40 w-[280px] md:w-[350px] opacity-5 pointer-events-none z-0" 
             onError={(e) => e.target.style.display = 'none'}
           />
-{/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE (Carrossel Inteligente) */}
-<div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6 md:mt-20 order-1 md:order-1">
-  <div className="relative mb-6 md:mb-0 print:hidden">
+          {/* LADO ESQUERDO: BARRA DE NAVEGAÇÃO FLUTUANTE (Carrossel Inteligente) */}
+          <div className="w-full md:w-12 flex-shrink-0 relative z-[60] print:hidden self-start md:sticky md:top-6 md:mt-20 order-1 md:order-1">
+            <div className="relative mb-6 md:mb-0 print:hidden">
 
-    {/* CONTAINER DO CARROSSEL */}
-    <div
-      ref={navScrollRef}
-      onScroll={handleNavScroll}
-      style={{ WebkitOverflowScrolling: 'touch' }} 
-      className={`flex overflow-x-auto md:overflow-visible md:flex-col pb-4 md:pb-0 scrollbar-hide items-center transition-all duration-300
-        ${allNavButtons.length > 3 
-          ? "gap-0 md:gap-3 snap-x snap-mandatory touch-pan-x before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden" 
-          : "gap-4 justify-center w-full"
-        }
-      `}
-    >
-      {(() => {
-        const carouselItems = [
-          ...allNavButtons.map(btn => ({ ...btn, type: 'nav' })),
-          { id: 'carrinho', label: 'Carrinho EMG', icon: <Ambulance size={22} />, type: 'carrinho' },
-          { id: 'notificacao', label: 'Notificar Evento', icon: <AlertTriangle size={22} />, type: 'notificacao' },
-        ];
-
-        const poucasAbas = carouselItems.length <= 3;
-
-        return carouselItems.map((btn, index) => {
-          const isActive = btn.type === 'nav' && viewMode === btn.id;
-          const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
-
-          const centerIndex = carouselItems.findIndex(b => b.id === (centerTab || carouselItems[0]?.id));
-          const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
-          const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
-
-          let btnClass = '';
-          let iconClass = '';
-          if (btn.type === 'nav') {
-            btnClass = isActive
-              ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
-              : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm";
-            iconClass = isActive ? 'text-white' : 'text-slate-500';
-          } else if (btn.type === 'carrinho') {
-            btnClass = "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100";
-            iconClass = 'text-amber-600';
-          } else {
-            btnClass = "bg-red-50 border-red-200 text-red-600 hover:bg-red-100";
-            iconClass = 'text-red-600';
-          }
-
-          const labelClass = btn.type === 'carrinho' ? 'text-amber-700' : btn.type === 'notificacao' ? 'text-red-700' : '';
-
-          const handleClick = () => {
-            const isMobile = window.innerWidth < 768;
-            if (btn.type === 'carrinho') {
-              setModalCarrinhoAberto(true);
-              return;
-            }
-            if (btn.type === 'notificacao') {
-              setIsEventModalOpen(true);
-              return;
-            }
-            if (isMobile && !poucasAbas) {
-              if (centerTab !== btn.id) {
-                const el = document.getElementById(`nav-${btn.id}`);
-                if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-              } else {
-                setViewMode(btn.id);
-              }
-            } else {
-              setViewMode(btn.id);
-              if (isMobile) {
-                const el = document.getElementById(`nav-${btn.id}`);
-                if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-              }
-            }
-          };
-
-          return (
-            <div
-              key={btn.id}
-              id={`nav-${btn.id}`}
-              style={{ zIndex: zIndexCascata }}
-              className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out
-                ${!poucasAbas ? 'snap-center' : ''}
-                ${window.innerWidth < 768 && !poucasAbas ? '-ml-5 first:ml-0' : ''}
-                md:hover:z-[100]
-                ${btn.type !== 'nav' ? 'md:mt-4' : ''}
-              `}
-            >
-              <button
-                onClick={handleClick}
-                className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg ${btnClass}
-                  ${isExpandedMobile ? "w-[170px]" : "w-14"}
-                  md:w-12 ${btn.type === 'carrinho' ? 'md:hover:w-[190px]' : btn.type === 'notificacao' ? 'md:hover:w-[190px]' : 'md:hover:w-[180px]'}
+              {/* CONTAINER DO CARROSSEL */}
+              <div
+                ref={navScrollRef}
+                onScroll={handleNavScroll}
+                style={{ WebkitOverflowScrolling: 'touch' }} 
+                className={`flex overflow-x-auto md:overflow-visible md:flex-col pb-4 md:pb-0 scrollbar-hide items-center transition-all duration-300
+                  ${allNavButtons.length > 3 
+                    ? "gap-0 md:gap-3 snap-x snap-mandatory touch-pan-x before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden" 
+                    : "gap-4 justify-center w-full"
+                  }
                 `}
-                title={btn.label}
               >
-                <div className={`flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300 ${iconClass}`}>
-                  <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
-                    {btn.icon}
-                  </div>
-                </div>
-                <div
-                  className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
-                    ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
-                  `}
-                >
-                  <span className={`text-xs md:text-sm font-bold tracking-wide ${labelClass}`}>
-                    {btn.label}
-                  </span>
-                </div>
-              </button>
+                {(() => {
+                const carouselItems = [
+                  ...allNavButtons.map(btn => ({ ...btn, type: 'nav' })),
+                  { id: 'carrinho', label: 'Carrinho EMG', icon: <Ambulance size={22} />, type: 'carrinho' },
+                  { id: 'geladeira', label: 'Geladeira', icon: <Refrigerator size={22} />, type: 'geladeira' },
+                  { id: 'notificacao', label: 'Notificar Evento', icon: <AlertTriangle size={22} />, type: 'notificacao' },
+                ];
+
+                  const poucasAbas = carouselItems.length <= 3;
+
+                  return carouselItems.map((btn, index) => {
+                    const isActive = btn.type === 'nav' && viewMode === btn.id;
+                    const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
+
+                    const centerIndex = carouselItems.findIndex(b => b.id === (centerTab || carouselItems[0]?.id));
+                    const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
+                    const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
+
+                    let btnClass = '';
+                    let iconClass = '';
+                    if (btn.type === 'nav') {
+                      btnClass = isActive
+                        ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
+                        : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm";
+                      iconClass = isActive ? 'text-white' : 'text-slate-500';
+                    } else if (btn.type === 'carrinho') {
+                      btnClass = "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100";
+                      iconClass = 'text-amber-600';
+                    } else if (btn.type === 'geladeira') {
+                      btnClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100";
+                      iconClass = 'text-sky-600';
+                    } else {
+                      btnClass = "bg-red-50 border-red-200 text-red-600 hover:bg-red-100";
+                      iconClass = 'text-red-600';
+                    }
+
+                    const labelClass = btn.type === 'carrinho' ? 'text-amber-700' : btn.type === 'geladeira' ? 'text-sky-700' : btn.type === 'notificacao' ? 'text-red-700' : '';
+
+                    const handleClick = () => {
+                      const isMobile = window.innerWidth < 768;
+                      if (btn.type === 'carrinho') {
+                        setModalCarrinhoAberto(true);
+                        return;
+                      }
+                      if (btn.type === 'geladeira') {
+                        setModalGeladeiraAberto(true);
+                        return;
+                      }
+                      if (btn.type === 'notificacao') {
+                        setIsEventModalOpen(true);
+                        return;
+                      }
+                      if (isMobile && !poucasAbas) {
+                        if (centerTab !== btn.id) {
+                          const el = document.getElementById(`nav-${btn.id}`);
+                          if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                        } else {
+                          setViewMode(btn.id);
+                        }
+                      } else {
+                        setViewMode(btn.id);
+                        if (isMobile) {
+                          const el = document.getElementById(`nav-${btn.id}`);
+                          if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                        }
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={btn.id}
+                        id={`nav-${btn.id}`}
+                        style={{ zIndex: zIndexCascata }}
+                        className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out
+                          ${!poucasAbas ? 'snap-center' : ''}
+                          ${window.innerWidth < 768 && !poucasAbas ? '-ml-5 first:ml-0' : ''}
+                          md:hover:z-[100]
+                          ${btn.type !== 'nav' ? 'md:mt-4' : ''}
+                        `}
+                      >
+                        <button
+                          onClick={handleClick}
+                          className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg ${btnClass}
+                            ${isExpandedMobile ? "w-[170px]" : "w-14"}
+                            md:w-12 ${btn.type === 'carrinho' || btn.type === 'geladeira' ? 'md:hover:w-[190px]' : btn.type === 'notificacao' ? 'md:hover:w-[190px]' : 'md:hover:w-[180px]'}
+                          `}
+                          title={btn.label}
+                        >
+                          <div className={`flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300 ${iconClass}`}>
+                            <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
+                              {btn.icon}
+                            </div>
+                          </div>
+                          <div
+                            className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+                              ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
+                            `}
+                          >
+                            <span className={`text-xs md:text-sm font-bold tracking-wide ${labelClass}`}>
+                              {btn.label}
+                            </span>
+                          </div>
+                        </button>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
             </div>
-          );
-        });
-      })()}
-    </div>
-  </div>
-</div>
+          </div>
 
           {/* ========================================== */}
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
@@ -6146,6 +6179,59 @@ const userRole = userProfile?.role || userProfile?.perfil;
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* MODAL: REGISTRO DE TEMPERATURA DA GELADEIRA              */}
+      {/* ======================================================== */}
+      {modalGeladeiraAberto && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-sky-500/20 my-auto">
+            <div className="bg-gradient-to-r from-sky-500 to-blue-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Refrigerator size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Registro da Geladeira</h2>
+              </div>
+              <button onClick={() => setModalGeladeiraAberto(false)} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-5 overflow-y-auto max-h-[70vh]">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Verificação</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalGeladeira.horario ? modalGeladeira.horario.split(':')[0] : "00"} onChange={(e) => setModalGeladeira({ ...modalGeladeira, horario: `${e.target.value}:${modalGeladeira.horario ? modalGeladeira.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalGeladeira.horario ? modalGeladeira.horario.split(':')[1] : "00"} onChange={(e) => setModalGeladeira({ ...modalGeladeira, horario: `${modalGeladeira.horario ? modalGeladeira.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* TEMPERATURA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Temperatura (°C)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={modalGeladeira.temperatura}
+                  onChange={(e) => setModalGeladeira({ ...modalGeladeira, temperatura: e.target.value })}
+                  placeholder="Ex: 4.5"
+                  className="w-full p-4 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 text-center text-2xl font-black"
+                />
+                <p className="text-[10px] text-slate-400 text-center mt-1">Temperatura ideal de medicamentos: 2°C a 8°C</p>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalGeladeiraAberto(false)} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalGeladeira.horario || !modalGeladeira.temperatura} onClick={salvarGeladeira} className="flex-1 py-4 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}      
 
           {/* ============================================== */}
           {/* MODAL GLOBAL DE EVENTOS ADVERSOS                 */}

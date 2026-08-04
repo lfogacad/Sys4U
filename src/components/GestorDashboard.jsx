@@ -8,7 +8,7 @@ import {
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
   FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance, Truck,
-  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain, Droplets
+  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain, Droplets, Refrigerator
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
@@ -82,6 +82,16 @@ const GestorDashboard = ({ userProfile }) => {
   const [mesFiltroCarrinhoEMG, setMesFiltroCarrinhoEMG] = useState(new Date().toISOString().slice(0, 7));
   const [loadingCarrinhoEMG, setLoadingCarrinhoEMG] = useState(false);
   const [modalDetalheCarrinho, setModalDetalheCarrinho] = useState({ isOpen: false, dia: '', registros: [] });
+
+  // ===== GELADEIRA =====
+  const [mesFiltroGeladeira, setMesFiltroGeladeira] = useState(() => {
+    const agora = new Date();
+    return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [listaGeladeira, setListaGeladeira] = useState([]);
+  const [loadingGeladeira, setLoadingGeladeira] = useState(true);
+  const [modalDetalheGeladeira, setModalDetalheGeladeira] = useState({ isOpen: false, dia: null, registros: [] });
+  const [modalRelatorioGeladeira, setModalRelatorioGeladeira] = useState({ isOpen: false, texto: '' });
 
   // Variáveis para o Módulo de IRAS (CCIH)
   const [formDDD, setFormDDD] = useState({ mes: new Date().toISOString().slice(0,7), atb: '', gramas: '' });
@@ -2695,6 +2705,35 @@ useEffect(() => {
   buscarPacientesSVD();
 }, [leitosConfig, listaHistorico]);
 
+  useEffect(() => {
+    const buscarGeladeira = async () => {
+      if (!mesFiltroGeladeira) return;
+      setLoadingGeladeira(true);
+      try {
+        const q = query(
+          collection(db, 'geladeira'),
+          where('data', '>=', `${mesFiltroGeladeira}-01`),
+          where('data', '<=', `${mesFiltroGeladeira}-31`)
+        );
+        const snap = await getDocs(q);
+        const registros = [];
+        snap.forEach(d => registros.push({ id: d.id, ...d.data() }));
+        // Ordena por data e horário
+        registros.sort((a, b) => {
+          if (a.data !== b.data) return a.data.localeCompare(b.data);
+          return (a.horario || '').localeCompare(b.horario || '');
+        });
+        setListaGeladeira(registros);
+      } catch (err) {
+        console.error('Erro ao buscar geladeira:', err);
+        setListaGeladeira([]);
+      } finally {
+        setLoadingGeladeira(false);
+      }
+    };
+    buscarGeladeira();
+  }, [mesFiltroGeladeira]);
+
 useEffect(() => {
   const buscarHemotransfusoes = () => {
     const todosPacientes = [...leitosConfig, ...listaHistorico];
@@ -3036,6 +3075,117 @@ const abrirModalDiaManutencaoSVD = (paciente, dia) => {
     win.document.close();
     setTimeout(() => { win.print(); }, 300);
   };
+
+const gerarRelatorioMensalGeladeira = () => {
+  if (!mesFiltroGeladeira) return;
+  const [ano, mes] = mesFiltroGeladeira.split('-').map(Number);
+  const diasNoMes = new Date(ano, mes, 0).getDate();
+  const nomeMes = new Date(ano, mes - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+  const linhas = [];
+  let totalVerificacoes = 0;
+  let diasComRegistro = 0;
+  let foraDaFaixa = 0;
+
+  for (let dia = 1; dia <= diasNoMes; dia++) {
+    const diaStr = `${mesFiltroGeladeira}-${String(dia).padStart(2, '0')}`;
+    const registros = listaGeladeira.filter(r => r.data === diaStr);
+    const dataBR = `${String(dia).padStart(2, '0')}-${String(mes).padStart(2, '0')}-${ano}`;
+
+    if (registros.length === 0) {
+      linhas.push(`${dataBR}  |  NÃO REALIZADO`);
+    } else {
+      diasComRegistro++;
+      registros.forEach(r => {
+        totalVerificacoes++;
+        const temp = parseFloat(r.temperatura);
+        const ok = !isNaN(temp) && temp >= 2 && temp <= 8;
+        if (!ok) foraDaFaixa++;
+        linhas.push(`${dataBR}  |  ${r.horario || '--:--'}  |  ${r.temperatura || '--'}°C  |  ${ok ? 'OK' : 'FORA DA FAIXA'}  |  ${r.preenchidoPor || 'Não identificado'}`);
+      });
+    }
+  }
+
+  const texto = `RELATÓRIO MENSAL — GELADEIRA
+Mês de referência: ${nomeMes}
+==============================================
+
+RESUMO:
+- Dias com verificação: ${diasComRegistro}/${diasNoMes}
+- Total de verificações: ${totalVerificacoes}
+- Verificações fora da faixa (2-8°C): ${foraDaFaixa}
+- Taxa de cobertura: ${diasNoMes > 0 ? Math.round((diasComRegistro / diasNoMes) * 100) : 0}%
+
+==============================================
+DETALHAMENTO DIÁRIO:
+${linhas.join('\n')}`;
+
+  setModalRelatorioGeladeira({ isOpen: true, texto });
+};
+
+const imprimirRelatorioGeladeira = () => {
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(`
+    <html>
+      <head>
+        <title>Relatório Mensal — Geladeira</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 30px; color: #1e293b; }
+          h1 { color: #0284c7; font-size: 20px; margin-bottom: 4px; }
+          h2 { color: #475569; font-size: 14px; font-weight: normal; margin-top: 0; }
+          .resumo { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 13px; line-height: 1.8; }
+          .resumo b { color: #0369a1; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+          th { background: #0284c7; color: white; padding: 8px; text-align: left; }
+          td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+          .nao-realizado { color: #dc2626; font-weight: bold; }
+          .ok { color: #059669; font-weight: bold; }
+          .fora { color: #dc2626; font-weight: bold; }
+          @media print { body { padding: 10px; } }
+        </style>
+      </head>
+      <body>
+        <h1>Relatório Mensal — Geladeira</h1>
+        <h2>Mês de referência: ${new Date(Number(mesFiltroGeladeira.split('-')[0]), Number(mesFiltroGeladeira.split('-')[1]) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</h2>
+        <div class="resumo">
+          <b>Dias com verificação:</b> ${listaGeladeira.filter((v, i, a) => a.findIndex(r => r.data === v.data) === i).length} dias<br>
+          <b>Total de verificações:</b> ${listaGeladeira.length}<br>
+          <b>Verificações fora da faixa (2-8°C):</b> ${listaGeladeira.filter(r => { const t = parseFloat(r.temperatura); return isNaN(t) || t < 2 || t > 8; }).length}
+        </div>
+        <table>
+          <thead>
+            <tr><th>Data</th><th>Horário</th><th>Temperatura</th><th>Status</th><th>Responsável</th></tr>
+          </thead>
+          <tbody>
+            ${(() => {
+              const [ano, mes] = mesFiltroGeladeira.split('-').map(Number);
+              const diasNoMes = new Date(ano, mes, 0).getDate();
+              let linhas = '';
+              for (let dia = 1; dia <= diasNoMes; dia++) {
+                const diaStr = `${mesFiltroGeladeira}-${String(dia).padStart(2, '0')}`;
+                const regs = listaGeladeira.filter(r => r.data === diaStr);
+                const dataBR = `${String(dia).padStart(2, '0')}-${String(mes).padStart(2, '0')}-${ano}`;
+                if (regs.length === 0) {
+                  linhas += `<tr><td>${dataBR}</td><td colspan="4" class="nao-realizado">NÃO REALIZADO</td></tr>`;
+                } else {
+                  regs.forEach(r => {
+                    const t = parseFloat(r.temperatura);
+                    const ok = !isNaN(t) && t >= 2 && t <= 8;
+                    linhas += `<tr><td>${dataBR}</td><td>${r.horario || '--:--'}</td><td>${r.temperatura || '--'}°C</td><td class="${ok ? 'ok' : 'fora'}">${ok ? 'OK' : 'FORA DA FAIXA'}</td><td>${r.preenchidoPor || 'Não identificado'}</td></tr>`;
+                  });
+                }
+              }
+              return linhas;
+            })()}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+  win.document.close();
+  win.print();
+};
 
   // Função para ligar/desligar "Morador" ou "Bloqueado" direto no banco
   const toggleLeitoConfig = async (bedId, campo, valorAtual) => {
@@ -7500,6 +7650,15 @@ const abrirModalDiaManutencaoSVD = (paciente, dia) => {
             Carrinho EMG
           </button>
 
+          {/* ABA: GELADEIRA */}
+          <button 
+            onClick={() => setAbaRiscoAtiva('geladeira')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'geladeira' ? 'border-sky-600 text-sky-700 bg-sky-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Refrigerator size={18} />
+            Geladeira
+          </button>
+
           {/* ABA: HEMOTRANSFUSÃO */}
           <button 
             onClick={() => setAbaRiscoAtiva('hemotransfusao')}
@@ -9288,6 +9447,243 @@ const abrirModalDiaManutencaoSVD = (paciente, dia) => {
           </div>
         )}
 
+        {/*  */}
+        {/* ABA: GELADEIRA                                                */}
+        {/*  */}
+        {abaRiscoAtiva === 'geladeira' && (
+          <div className="animate-fadeIn">
+            {/* CABEÇALHO */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Refrigerator className="text-sky-600" /> Check-list Geladeira
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Monitoramento da verificação diária da temperatura da geladeira da UTI.</p>
+                </div>
+                <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <span className="text-xs font-bold text-slate-600 uppercase">Mês:</span>
+                  <input 
+                    type="month" 
+                    value={mesFiltroGeladeira} 
+                    onChange={(e) => setMesFiltroGeladeira(e.target.value)}
+                    className="bg-white border border-slate-200 p-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-sky-500 cursor-pointer"
+                  />
+                  <button
+                    onClick={gerarRelatorioMensalGeladeira}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-lg transition-colors"
+                  >
+                    <FileText size={14} /> Relatório Mensal
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* KPIs */}
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Dias com verificação</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">{listaGeladeira.filter((v,i,a) => a.findIndex(r => r.data === v.data) === i).length}</div>
+              </div>
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Total verificações</span>
+                <div className="text-2xl font-black text-sky-600 mt-1">{listaGeladeira.length}</div>
+              </div>
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Dias no mês</span>
+                <div className="text-2xl font-black text-slate-600 mt-1">
+                  {new Date(Number(mesFiltroGeladeira.split('-')[0]), Number(mesFiltroGeladeira.split('-')[1]), 0).getDate()}
+                </div>
+              </div>
+            </div>
+
+            {/* CALENDÁRIO */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              {loadingGeladeira ? (
+                <div className="text-center py-12 text-slate-400">
+                  <span className="animate-spin inline-block">⏳</span> Carregando...
+                </div>
+              ) : (
+                <>
+                  {/* Legenda */}
+                  <div className="flex items-center gap-4 mb-4 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></div>
+                      <span className="text-slate-500 font-medium">2+ verificações</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded bg-amber-100 border border-amber-300"></div>
+                      <span className="text-slate-500 font-medium">1 verificação</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded bg-red-100 border border-red-200"></div>
+                      <span className="text-slate-500 font-medium">Não realizado</span>
+                    </div>
+                  </div>
+
+                  {/* Grid do Calendário */}
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+                      <div key={d} className="text-center text-[10px] font-bold text-slate-400 uppercase py-2">{d}</div>
+                    ))}
+                    {(() => {
+                      const [ano, mes] = mesFiltroGeladeira.split('-').map(Number);
+                      const primeiroDiaSemana = new Date(ano, mes - 1, 1).getDay();
+                      return Array.from({ length: primeiroDiaSemana }, (_, i) => (
+                        <div key={`blank-${i}`} />
+                      ));
+                    })()}
+                    {(() => {
+                      const [ano, mes] = mesFiltroGeladeira.split('-').map(Number);
+                      const diasNoMes = new Date(ano, mes, 0).getDate();
+                      return Array.from({ length: diasNoMes }, (_, i) => {
+                        const dia = i + 1;
+                        const diaStr = `${mesFiltroGeladeira}-${String(dia).padStart(2, '0')}`;
+                        const registrosHoje = listaGeladeira.filter(r => r.data === diaStr);
+                        const qtd = registrosHoje.length;
+                        const isFuture = new Date(diaStr) > new Date();
+                        // Temperatura OK = entre 2°C e 8°C
+                        const tempOk = (reg) => {
+                          const t = parseFloat(reg.temperatura);
+                          return !isNaN(t) && t >= 2 && t <= 8;
+                        };
+                        const coresPontinhos = registrosHoje.map(reg =>
+                          tempOk(reg) ? 'bg-emerald-500' : 'bg-red-500'
+                        );
+                        let bgColor, textColor, podeClicar;
+                        if (qtd >= 2) {
+                          bgColor = 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100';
+                          textColor = 'text-emerald-700';
+                          podeClicar = true;
+                        } else if (qtd === 1) {
+                          bgColor = 'bg-amber-50 border-amber-300 hover:bg-amber-100';
+                          textColor = 'text-amber-700';
+                          podeClicar = true;
+                        } else if (isFuture) {
+                          bgColor = 'bg-white border-slate-100';
+                          textColor = 'text-slate-200';
+                          podeClicar = false;
+                        } else {
+                          bgColor = 'bg-red-50 border-red-200';
+                          textColor = 'text-red-400';
+                          podeClicar = false;
+                        }
+                        return (
+                          <button
+                            key={dia}
+                            onClick={() => {
+                              if (podeClicar) {
+                                setModalDetalheGeladeira({ isOpen: true, dia: diaStr, registros: registrosHoje });
+                              }
+                            }}
+                            disabled={!podeClicar}
+                            className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center transition-all ${bgColor} ${podeClicar ? 'cursor-pointer' : 'cursor-default'}`}
+                          >
+                            <span className={`text-sm font-black ${textColor}`}>{dia}</span>
+                            {qtd > 0 && (
+                              <div className="flex gap-0.5 mt-0.5">
+                                {coresPontinhos.map((cor, idx) => (
+                                  <div key={idx} className={`w-1.5 h-1.5 rounded-full ${cor}`}></div>
+                                ))}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+
+                  {/* Mensagem vazia */}
+                  {listaGeladeira.length === 0 && (
+                    <div className="text-center py-6 text-slate-400 italic text-xs mt-4 border-t border-slate-100 pt-4">
+                      <Refrigerator size={24} className="mx-auto mb-1 text-slate-300" />
+                      Nenhuma verificação registrada neste mês.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* MODAL: DETALHES DO DIA — GELADEIRA */}
+            {modalDetalheGeladeira.isOpen && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+                <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-sky-500/20 my-auto">
+                  <div className="bg-gradient-to-r from-sky-500 to-blue-600 p-5 text-white flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-full"><Refrigerator size={20} /></div>
+                      <h2 className="text-lg font-black tracking-wide leading-tight">
+                        Verificações de {modalDetalheGeladeira.dia ? new Date(modalDetalheGeladeira.dia + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' }) : ''}
+                      </h2>
+                    </div>
+                    <button onClick={() => setModalDetalheGeladeira({ ...modalDetalheGeladeira, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+                  </div>
+
+                  <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                    {modalDetalheGeladeira.registros.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400 italic">Nenhum registro para esta data.</div>
+                    ) : (
+                      modalDetalheGeladeira.registros.map((reg, idx) => {
+                        const t = parseFloat(reg.temperatura);
+                        const ok = !isNaN(t) && t >= 2 && t <= 8;
+                        return (
+                          <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                            <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                              <span className="text-xs font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                🧊 Geladeira • 🕐 {reg.horario}
+                              </span>
+                              <span className="text-xs font-bold text-slate-600">
+                                👤 {reg.preenchidoPor || 'Não identificado'}
+                              </span>
+                            </div>
+                            <div className={`p-3 rounded-lg text-sm font-bold flex items-center justify-between ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                              <span>🌡️ Temperatura:</span>
+                              <span className="text-lg font-black">{reg.temperatura || '--'}°C</span>
+                            </div>
+                            <div className={`text-xs font-bold px-2 py-1 rounded-lg inline-block ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                              {ok ? '✅ Dentro da faixa (2-8°C)' : '❌ Fora da faixa (2-8°C)'}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+
+                    <div className="pt-3">
+                      <button onClick={() => setModalDetalheGeladeira({ ...modalDetalheGeladeira, isOpen: false })} className="w-full py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MODAL: RELATÓRIO MENSAL GELADEIRA */}
+            {modalRelatorioGeladeira.isOpen && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+                <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border-4 border-sky-500/20 animate-fade-in">
+                  <div className="bg-sky-600 p-5 text-white flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-full"><FileText size={20} /></div>
+                      <h2 className="text-lg font-black">Relatório Mensal</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={imprimirRelatorioGeladeira} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors">
+                        Imprimir / PDF
+                      </button>
+                      <button onClick={() => setModalRelatorioGeladeira({ ...modalRelatorioGeladeira, isOpen: false })} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors">Fechar</button>
+                    </div>
+                  </div>
+                  <div className="p-6 bg-slate-50 max-h-[70vh] overflow-y-auto">
+                    <pre className="text-sm text-slate-700 font-mono whitespace-pre-wrap leading-relaxed">
+                      {modalRelatorioGeladeira.texto}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        
         {/*  */}
         {/* ABA: HEMOTRANSFUSÃO                                        */}
         {/*  */}
