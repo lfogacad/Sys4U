@@ -203,12 +203,13 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
 
     // 2. Salva localmente no paciente para manter a memória do modal
     const escalasDiarias = currentPatient.enfermagem?.escalas_diarias || {};
+    const escalasHojePayload = {
+      braden: { score: bradenScore, risco: bradenRisk, detalhes: bradenData },
+      morse: { score: morseScore, risco: morseRisk, detalhes: morseData }
+    };
     updateNested("enfermagem", "escalas_diarias", { 
       ...escalasDiarias, 
-      [today]: {
-        braden: { score: bradenScore, risco: bradenRisk, detalhes: bradenData },
-        morse: { score: morseScore, risco: morseRisk, detalhes: morseData }
-      } 
+      [today]: escalasHojePayload
     });
 
     // Salva resultado consolidado do Braden e Morse no documento do paciente
@@ -216,6 +217,16 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
     updateNested("enfermagem", "bradenRisk", bradenRisk);
     updateNested("enfermagem", "morseResult", morseScore);
     updateNested("enfermagem", "morseRisk", morseRisk);
+
+    // 🔑 MUTAÇÃO DIRETA no currentPatient (mesmo padrão dos dispositivos)
+    // Garante que o gerador de evolução (onGenerateAI) enxergue as escalas de hoje na MESMA chamada
+    if (!currentPatient.enfermagem) currentPatient.enfermagem = {};
+    if (!currentPatient.enfermagem.escalas_diarias) currentPatient.enfermagem.escalas_diarias = {};
+    currentPatient.enfermagem.escalas_diarias[today] = escalasHojePayload;
+    currentPatient.enfermagem.bradenResult = bradenScore;
+    currentPatient.enfermagem.bradenRisk = bradenRisk;
+    currentPatient.enfermagem.morseResult = morseScore;
+    currentPatient.enfermagem.morseRisk = morseRisk;
 
     // 3. Lógica Bidirecional de Dispositivos (Corrigido para salvar em "enfermagem")
     if (!initialCvc && cvcActive) {

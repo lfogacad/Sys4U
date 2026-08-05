@@ -3285,7 +3285,9 @@ ${conduta}
     const diureseAspecto = p.enfermagem?.diureseCaracteristica || "não especificado";
     const geniFrase = diureseStatus === "débito urinário não calculado"
       ? `${svdTexto}, débito urinário não calculado${diureseAspecto !== "não especificado" ? `, aspecto ${diureseAspecto.toLowerCase()}` : ""}`
-      : `${svdTexto}, com ${diureseStatus} de aspecto ${diureseAspecto.toLowerCase()}`;
+      : diureseStatus === "anúria"
+        ? `${svdTexto}, com ${diureseStatus}`
+        : `${svdTexto}, com ${diureseStatus} de aspecto ${diureseAspecto.toLowerCase()}`;
     // 7. TEGUMENTAR
     const lesoesArray = p.enfermagem?.lesoes || [];
     const tegumentarFrase = lesoesArray.length > 0 
@@ -5135,6 +5137,15 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 return new Date(s.data) >= new Date(dataInternacao);
               });
               const showPsiBadge = userRole === 'Psicólogo' && hasPsiPendente;
+
+              // 🔴 BOLINHA DO NEFROLOGISTA: baixo clearance de creatinina OU baixa diurese nas últimas 12h
+              const crclNefro = calculateCreatinineClearance(p);
+              const crclBaixo = crclNefro !== "---" && crclNefro !== "Falta Sexo" && parseFloat(crclNefro) < 30;
+              const diureseNefro = calculateDiurese12hMlKgH(p);
+              const diureseBaixa = diureseNefro !== "---" && parseFloat(diureseNefro) < 0.5;
+              const precisaNefro = crclBaixo || diureseBaixa;
+              const showNefroBadge = userRole === 'Nefrologista' && precisaNefro;
+
               return (
                 <button
                   key={p.id || idx}
@@ -5146,6 +5157,9 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   }`}
                 >
                   {showPsiBadge && (
+                    <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse z-10"></span>
+                  )}
+                  {showNefroBadge && (
                     <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse z-10"></span>
                   )}
                   <span className="text-[9px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">Leito</span>
