@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, ClipboardSignature, 
          Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History, RefreshCw, ChevronDown, ChevronRight,
-         Gauge, Timer, ArrowUpCircle, ClipboardList, BicepsFlexed, Map, ChartLine, TestTube } from 'lucide-react';
+         Gauge, Timer, ArrowUpCircle, ClipboardList, BicepsFlexed, Map, ChartLine, TestTube, Stethoscope } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, 
          MOBILIZACAO, ICU_MOBILITY_SCALE, GASOMETRIA_PARAMS } from '../../constants/clinicalLists';
 import { formatDateDDMM } from '../../utils/core';
@@ -62,6 +62,8 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   fr: "",
   spo2: ""
 });
+
+const [modalIOT, setModalIOT] = useState(null);
 
 const [modalTRE, setModalTRE] = useState({
   isOpen: false,
@@ -434,6 +436,80 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
   }
 
   setModalVNI(prev => ({ ...prev, isOpen: false }));
+};
+
+const IOT_ITENS_LABELS = {
+  material: 'Selecionou e conferiu o material?',
+  identificacao: 'Conferiu a identificação do paciente?',
+  semAdornos: 'Equipe sem adornos?',
+  higieneMaos: 'Foi realizado higiene das mãos com a técnica correta?',
+  gorro: 'Foi utilizado gorro?',
+  mascara: 'Uso de Máscara por todos os envolvidos?',
+  avental: 'Uso de Avental?',
+  luvaEsteril: 'Uso de Luva Estéril?',
+  xylocaina: 'Uso de Xylocaína Spray?',
+  inducao: 'Realizou indução medicamentosa?',
+  oportunidadeUnica: 'Inserção em oportunidade única?',
+  aspiradoVAS: 'Aspirado VAS antes do procedimento?',
+  ausculta: 'Feito ausculta pulmonar para fixação do TOT?',
+  fixado: 'Fixado TOT corretamente?',
+  sedacao: 'Instalou sedação conforme prescrição médica?',
+  riscoExtubacao: 'Risco para extubação acidental?',
+  cuff: 'Ajustou pressão do Cuff entre 20 e 30 cmH2O?'
+};
+
+const salvarIOT = async () => {
+  if (!modalIOT.horario || !modalIOT.tentativa || !modalIOT.condicao || !modalIOT.localInserção) return;
+
+  const textoProcedimento = `Checklist de IOT (${modalIOT.localInserção}) - Tentativa: ${modalIOT.tentativa}. Condição: ${modalIOT.condicao}. Tubo nº ${modalIOT.numeroTubo || '-'} (Rima ${modalIOT.rima || '-'}). Conformidade: ${conformes} itens conformes, ${naoConformes} não conformes, ${depoisLembrado} depois de lembrado.`;
+  
+  const hoje = new Date();
+  const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+
+  // Calcula totais de conformidade
+  const valores = Object.values(modalIOT.conformidade);
+  const conformes = valores.filter(v => v === 'Sim').length;
+  const naoConformes = valores.filter(v => v === 'Não').length;
+  const depoisLembrado = valores.filter(v => v === 'Sim, depois de lembrado').length;
+
+  const registro = {
+    tipo: 'Checklist IOT',
+    data: dataISO,
+    horario: modalIOT.horario,
+    tentativa: modalIOT.tentativa,
+    condicao: modalIOT.condicao,
+    numeroTubo: modalIOT.numeroTubo || '',
+    rima: modalIOT.rima || '',
+    indicacao: modalIOT.indicacao,
+    indicacaoOutros: modalIOT.indicacao === 'Outros' ? modalIOT.indicacaoOutros : '',
+    localInserção: modalIOT.localInserção,
+    medicoResponsavel: modalIOT.medicoResponsavel || '',
+    auditor: modalIOT.auditor || '',
+    conformidade: modalIOT.conformidade,
+    totais: { conformes, naoConformes, depoisLembrado },
+    barreiras: {
+      itens: Object.entries(modalIOT.conformidade).map(([key, valor]) => ({
+        key,
+        label: IOT_ITENS_LABELS[key] || key,
+        cumprida: valor === 'Sim'
+      })),
+      total: Object.keys(modalIOT.conformidade).length,
+      cumpridas: conformes,
+      todasCumpridas: naoConformes === 0 && depoisLembrado === 0,
+      resumo: `${conformes}/${Object.keys(modalIOT.conformidade).length}`
+    },    
+    informacoesAdicionais: modalIOT.informacoesAdicionais || '',
+    textoFormatado: textoProcedimento
+  };
+
+  // Salva no histórico do fisio
+  const historico = [...(currentPatient.physio?.historicoIOT || []), registro];
+  updateNested("physio", "historicoIOT", historico);
+  updateNested("physio", "ultimoIOT", registro);
+
+  handleBlurSave(`Fisioterapia: Checklist de IOT registrado (${modalIOT.localInserção}) - Conformes: ${conformes}, Não conformes: ${naoConformes}, Depois de lembrado: ${depoisLembrado}`);
+
+  setModalIOT(null);
 };
 
   const salvarTRE = () => {
@@ -863,6 +939,33 @@ const TRE_CHECKLIST = [
               >
                 <Gauge size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
                 <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Sessão<br/>de VNI</span>
+              </button>
+
+              <button 
+                type="button"
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  const agora = new Date();
+                  const horaStr = String(agora.getHours()).padStart(2, '0');
+                  setModalIOT({
+                    isOpen: true,
+                    horario: `${horaStr}:00`,
+                    tentativa: "", condicao: "", numeroTubo: "", rima: "",
+                    indicacao: "", indicacaoOutros: "", localInserção: "",
+                    // Checklist de conformidade (17 itens)
+                    conformidade: {
+                      material: "", identificacao: "", semAdornos: "", higieneMaos: "",
+                      gorro: "", mascara: "", avental: "", luvaEsteril: "",
+                      xylocaina: "", inducao: "", oportunidadeUnica: "", aspiradoVAS: "",
+                      ausculta: "", fixado: "", sedacao: "", riscoExtubacao: "", cuff: ""
+                    },
+                    medicoResponsavel: "", auditor: "", informacoesAdicionais: ""
+                  });
+                }} 
+                className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
+              >
+                <Stethoscope size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Checklist<br/>de IOT</span>
               </button>
 
               <button 
@@ -1980,6 +2083,192 @@ const TRE_CHECKLIST = [
                 className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
               >
                 Salvar Sessão
+              </button>
+            </div>
+
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/*  */}
+      {/* MODAL EXCLUSIVO: CHECKLIST DE IOT - PREVENÇÃO DE PAV                      */}
+      {/*  */}
+      {modalIOT?.isOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
+            
+            {/* CABEÇALHO FIXO */}
+            <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Stethoscope size={20} /></div>
+                <div>
+                  <h2 className="text-lg font-black tracking-wide">Checklist de IOT</h2>
+                  <p className="text-[10px] text-cyan-100 font-semibold">Prevenção de Pneumonia Associada à Ventilação Mecânica (PAV)</p>
+                </div>
+              </div>
+              <button onClick={() => setModalIOT(null)} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* CORPO ROLÁVEL */}
+            <div className="p-5 bg-slate-50 space-y-6 overflow-y-auto">
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário do Procedimento</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalIOT.horario ? modalIOT.horario.split(':')[0] : "08"} onChange={(e) => setModalIOT({ ...modalIOT, horario: `${e.target.value}:${modalIOT.horario ? modalIOT.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalIOT.horario ? modalIOT.horario.split(':')[1] : "00"} onChange={(e) => setModalIOT({ ...modalIOT, horario: `${modalIOT.horario ? modalIOT.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* INSERÇÃO DO TUBO */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-black text-cyan-700 uppercase tracking-wider border-b border-cyan-200 pb-1">Inserção do Tubo</h3>
+
+                {/* TENTATIVA */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Inserção do Tubo Traqueal</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['Primeira Tentativa', 'Segunda Tentativa', 'Outras'].map(op => (
+                      <button key={op} type="button" onClick={() => setModalIOT({ ...modalIOT, tentativa: op })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalIOT.tentativa === op ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{op}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* CONDIÇÃO */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Condição</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['Urgência e Emergência', 'Programado'].map(op => (
+                      <button key={op} type="button" onClick={() => setModalIOT({ ...modalIOT, condicao: op })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalIOT.condicao === op ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{op}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* NÚMERO DO TUBO E RIMA */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Nº do Tubo Orotraqueal</label>
+                    <input type="text" value={modalIOT.numeroTubo || ""} onChange={(e) => setModalIOT({ ...modalIOT, numeroTubo: e.target.value })} placeholder="Ex: 7.5" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center text-sm font-bold" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Rima</label>
+                    <input type="text" value={modalIOT.rima || ""} onChange={(e) => setModalIOT({ ...modalIOT, rima: e.target.value })} placeholder="Ex: 21 cm" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-center text-sm font-bold" />
+                  </div>
+                </div>
+
+                {/* INDICAÇÃO */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Indicação</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['Rebaixamento de nível de consciência', 'IRPA', 'Cirurgia eletiva', 'Outros'].map(op => (
+                      <button key={op} type="button" onClick={() => setModalIOT({ ...modalIOT, indicacao: op })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalIOT.indicacao === op ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{op}</button>
+                    ))}
+                  </div>
+                  {modalIOT.indicacao === 'Outros' && (
+                    <input type="text" value={modalIOT.indicacaoOutros || ""} onChange={(e) => setModalIOT({ ...modalIOT, indicacaoOutros: e.target.value })} placeholder="Especifique a indicação..." className="w-full p-3 mt-2 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm" />
+                  )}
+                </div>
+
+                {/* LOCAL DA INSERÇÃO */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Local da Inserção</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['Orotraqueal', 'Nasotraqueal', 'Traqueostomia'].map(op => (
+                      <button key={op} type="button" onClick={() => setModalIOT({ ...modalIOT, localInserção: op })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalIOT.localInserção === op ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{op}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* CHECKLIST DE CONFORMIDADE */}
+              <div>
+                <h3 className="text-xs font-black text-cyan-700 uppercase tracking-wider border-b border-cyan-200 pb-1 mb-3">Checklist de Boas Práticas</h3>
+                <p className="text-[10px] text-slate-400 mb-3 text-center font-semibold">Conformidade: Sim / Não / Sim, depois de lembrado</p>
+                <div className="space-y-2">
+                  {[
+                    { key: 'material', label: 'Selecionou e conferiu o material?' },
+                    { key: 'identificacao', label: 'Conferiu a identificação do paciente?' },
+                    { key: 'semAdornos', label: 'Equipe sem adornos?' },
+                    { key: 'higieneMaos', label: 'Foi realizado higiene das mãos com a técnica correta?' },
+                    { key: 'gorro', label: 'Foi utilizado gorro?' },
+                    { key: 'mascara', label: 'Uso de Máscara por todos os envolvidos?' },
+                    { key: 'avental', label: 'Uso de Avental?' },
+                    { key: 'luvaEsteril', label: 'Uso de Luva Estéril?' },
+                    { key: 'xylocaina', label: 'Uso de Xylocaína Spray?' },
+                    { key: 'inducao', label: 'Realizou indução medicamentosa?' },
+                    { key: 'oportunidadeUnica', label: 'Inserção em oportunidade única?' },
+                    { key: 'aspiradoVAS', label: 'Aspirado VAS antes do procedimento?' },
+                    { key: 'ausculta', label: 'Feito ausculta pulmonar para fixação do TOT?' },
+                    { key: 'fixado', label: 'Fixado TOT corretamente?' },
+                    { key: 'sedacao', label: 'Instalou sedação conforme prescrição médica?' },
+                    { key: 'riscoExtubacao', label: 'Risco para extubação acidental?' },
+                    { key: 'cuff', label: 'Ajustou pressão do Cuff entre 20 e 30 cmH2O?' }
+                  ].map(item => (
+                    <div key={item.key} className="bg-white border border-slate-200 rounded-xl p-2.5">
+                      <p className="text-xs font-semibold text-slate-700 mb-2">{item.label}</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {['Sim', 'Não', 'Sim, depois de lembrado'].map(op => (
+                          <button key={op} type="button" onClick={() => setModalIOT({ ...modalIOT, conformidade: { ...modalIOT.conformidade, [item.key]: op } })} className={`p-1.5 rounded-lg border-2 font-bold text-[9px] uppercase tracking-wide transition-all ${modalIOT.conformidade[item.key] === op ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-400 hover:border-cyan-200'}`}>{op}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* MÉDICO RESPONSÁVEL (lista) */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Médico Responsável pela IOT</label>
+                <select 
+                  value={modalIOT.medicoResponsavel || ""} 
+                  onChange={(e) => setModalIOT({ ...modalIOT, medicoResponsavel: e.target.value })} 
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-300 outline-none text-slate-800 font-bold text-sm"
+                >
+                  <option value="">Selecione o médico...</option>
+                  {listaProfissionais
+                    .filter(prof => prof.categoria === 'Médico')
+                    .map((med) => (
+                      <option key={med.id} value={med.nome}>{med.nome}</option>
+                    ))
+                  }
+                </select>
+              </div>
+
+              {/* AUDITOR DO CHECKLIST */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Auditor do Checklist</label>
+                <input type="text" value={modalIOT.auditor || ""} onChange={(e) => setModalIOT({ ...modalIOT, auditor: e.target.value })} placeholder="Nome do auditor" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm" />
+              </div>
+
+              {/* INFORMAÇÕES ADICIONAIS */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Informações Adicionais</label>
+                <textarea value={modalIOT.informacoesAdicionais || ""} onChange={(e) => setModalIOT({ ...modalIOT, informacoesAdicionais: e.target.value })} placeholder="Observações relevantes..." className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm resize-none h-16" />
+              </div>
+            </div>
+
+            {/* RODAPÉ FIXO COM BOTÕES */}
+            <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setModalIOT(null)} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                disabled={!modalIOT.horario || !modalIOT.tentativa || !modalIOT.condicao || !modalIOT.localInserção} 
+                onClick={salvarIOT} 
+                className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+              >
+                Salvar
               </button>
             </div>
 

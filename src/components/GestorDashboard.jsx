@@ -505,6 +505,14 @@ const GestorDashboard = ({ userProfile }) => {
   const [checklistSVDSelecionado, setChecklistSVDSelecionado] = useState(null);
   const [modalRelatorioSVD, setModalRelatorioSVD] = useState(false);  
 
+    // ===== CHECKLIST IOT =====
+  const [mesFiltroIOT, setMesFiltroIOT] = useState('');
+  const [checklistsIOTDoMes, setChecklistsIOTDoMes] = useState([]);
+  const [metricasIOT, setMetricasIOT] = useState({ totalChecklists: 0, total100Porcento: 0 });
+  const [acessosMesIOT, setAcessosMesIOT] = useState(null);
+  const [checklistIOTSelecionado, setChecklistIOTSelecionado] = useState(null);
+  const [modalRelatorioIOT, setModalRelatorioIOT] = useState(false);
+
   // =========================================================
   // 2. EFEITOS (useEffect) - OS SINCRONIZADORES (DADOS BRUTOS)
   // =========================================================
@@ -2661,6 +2669,136 @@ const GestorDashboard = ({ userProfile }) => {
 
     buscarPacientesCVC();
   }, [leitosConfig, listaHistorico]);
+
+  useEffect(() => {
+  if (!mesFiltroIOT || !leitosConfig || leitosConfig.length === 0) {
+    setChecklistsIOTDoMes([]);
+    return;
+  }
+
+  const buscarChecklistsIOT = async () => {
+      const [ano, mes] = mesFiltroIOT.split('-').map(Number);
+      const resultados = [];
+
+      // 1. Busca dos leitos ativos (physio.historicoIOT)
+      leitosConfig.forEach(patient => {
+        const bedId = patient.id || patient.nome || 'bed_unknown';
+        const historico = patient?.physio?.historicoIOT || [];
+        if (!Array.isArray(historico)) return;
+
+        historico.forEach((checklist, idx) => {
+          const dataChecklist = checklist.data || '';
+          if (!dataChecklist) return;
+          
+          const partes = dataChecklist.split('-');
+          if (partes.length !== 3) return;
+          const cAno = parseInt(partes[0]);
+          const cMes = parseInt(partes[1]);
+          
+          if (cAno === ano && cMes === mes) {
+            resultados.push({
+              id: `${bedId}-${dataChecklist}-${checklist.horario || '00:00'}-${idx}`,
+              leito: bedId,
+              paciente: patient.nome || patient.admissionData?.nome || 'Não identificado',
+              data: dataChecklist,
+              horario: checklist.horario || '',
+              medico: checklist.medicoResponsavel || 'Não informado',
+              tipoCateter: checklist.tipoCateter || 'IOT',
+              localInsercao: checklist.localInserção || '',
+              indicacao: checklist.indicacao || '',
+              passagem: checklist.condicao || '',
+              puncaoUnica: checklist.puncaoUnica,
+              todasCumpridas: checklist.barreiras?.todasCumpridas || false,
+              cumpridas: checklist.barreiras?.cumpridas || 0,
+              total: checklist.barreiras?.total || 0,
+              itens: checklist.barreiras?.itens || checklist.itens || [],
+              dificuldades: checklist.dificuldades || '',
+              eventoAdverso: checklist.eventoAdverso || '',
+              teveEvento: checklist.teveEventoAdverso || false,
+              resumo: checklist.itens?.resumo || checklist.barreiras?.resumo || '',
+              // Campos específicos do IOT
+              tentativa: checklist.tentativa || '',
+              condicao: checklist.condicao || '',
+              numeroTubo: checklist.numeroTubo || '',
+              rima: checklist.rima || '',
+              auditor: checklist.auditor || '',
+              informacoesAdicionais: checklist.informacoesAdicionais || '',
+            });
+          }
+        });
+      });
+
+      // 2. Busca do internacoes_historico
+      try {
+        const historicoSnap = await getDocs(collection(db, 'internacoes_historico'));
+        historicoSnap.forEach(d => {
+          const data = d.data();
+          const patient = { id: d.id, ...data };
+          const backup = data.backupProntuario || {};
+          const historico = backup?.physio?.historicoIOT || patient?.physio?.historicoIOT || [];
+          if (!Array.isArray(historico)) return;
+
+          historico.forEach((checklist, idx) => {
+            const dataChecklist = checklist.data || '';
+            if (!dataChecklist) return;
+            
+            const partes = dataChecklist.split('-');
+            if (partes.length !== 3) return;
+            const cAno = parseInt(partes[0]);
+            const cMes = parseInt(partes[1]);
+            
+            if (cAno === ano && cMes === mes) {
+              resultados.push({
+                id: `hist-${d.id}-${dataChecklist}-${checklist.horario || '00:00'}-${idx}`,
+                leito: d.id,
+                paciente: backup?.nome || backup?.admissionData?.nome || patient.nome || patient.admissionData?.nome || 'Não identificado',
+                data: dataChecklist,
+                horario: checklist.horario || '',
+                medico: checklist.medicoResponsavel || 'Não informado',
+                tipoCateter: checklist.tipoCateter || 'IOT',
+                localInsercao: checklist.localInserção || '',
+                indicacao: checklist.indicacao || '',
+                passagem: checklist.condicao || '',
+                puncaoUnica: checklist.puncaoUnica,
+                todasCumpridas: checklist.barreiras?.todasCumpridas || false,
+                cumpridas: checklist.barreiras?.cumpridas || 0,
+                total: checklist.barreiras?.total || 0,
+                itens: checklist.barreiras?.itens || checklist.itens || [],
+                dificuldades: checklist.dificuldades || '',
+                eventoAdverso: checklist.eventoAdverso || '',
+                teveEvento: checklist.teveEventoAdverso || false,
+                resumo: checklist.itens?.resumo || checklist.barreiras?.resumo || '',
+                tentativa: checklist.tentativa || '',
+                condicao: checklist.condicao || '',
+                numeroTubo: checklist.numeroTubo || '',
+                rima: checklist.rima || '',
+                auditor: checklist.auditor || '',
+                informacoesAdicionais: checklist.informacoesAdicionais || '',
+              });
+            }
+          });
+        });
+      } catch (err) {
+        console.error("Erro ao buscar internacoes_historico (IOT):", err);
+      }
+
+      // Ordena por data e horário (mais recente primeiro)
+      resultados.sort((a, b) => {
+        if (a.data !== b.data) return b.data.localeCompare(a.data);
+        return (b.horario || '').localeCompare(a.horario || '');
+      });
+
+      setChecklistsIOTDoMes(resultados);
+    };
+
+    buscarChecklistsIOT();
+  }, [mesFiltroIOT, leitosConfig]);
+
+  useEffect(() => {
+    const total = checklistsIOTDoMes.length;
+    const total100 = checklistsIOTDoMes.filter(c => c.todasCumpridas).length;
+    setMetricasIOT({ totalChecklists: total, total100Porcento: total100 });
+  }, [checklistsIOTDoMes]);
 
 useEffect(() => {
   const buscarPacientesSVD = () => {
