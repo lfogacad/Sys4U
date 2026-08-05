@@ -3,7 +3,7 @@ import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
 Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast,
 CheckCircle2, Printer, BriefcaseMedical } from 'lucide-react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { ESCALA_DOR, PRECAUCOES, CARACTERISTICAS_DIURESE } from '../../constants/clinicalLists';
 import ModalChecklistEnfermagem from '../../components/modals/ModalChecklistEnfermagem';
