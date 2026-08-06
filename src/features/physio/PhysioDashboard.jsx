@@ -536,6 +536,13 @@ const salvarIOT = async () => {
   const historico = [...(currentPatient.physio?.historicoIOT || []), registro];
   updateNested("physio", "historicoIOT", historico);
   updateNested("physio", "ultimoIOT", registro);
+  updateP("dataIntubacao", dataISO);
+  if (modalIOT.numeroTubo) {
+    updateNested("physio", "totNumero", modalIOT.numeroTubo);
+  }
+  if (modalIOT.rima) {
+    updateNested("physio", "totRima", modalIOT.rima);
+  }  
 
   handleBlurSave(`Fisioterapia: Checklist de IOT registrado (${modalIOT.localInserção}) - Conformes: ${conformes}, Não conformes: ${naoConformes}, Depois de lembrado: ${depoisLembrado}${modalIOT.reintubacao48h ? ' | REINTUBAÇÃO <48h' : ''}`);
 
