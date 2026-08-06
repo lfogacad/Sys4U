@@ -507,7 +507,7 @@ const GestorDashboard = ({ userProfile }) => {
   const [modalRelatorioSVD, setModalRelatorioSVD] = useState(false);  
 
     // ===== CHECKLIST IOT =====
-  const [mesFiltroIOT, setMesFiltroIOT] = useState('');
+  const [mesFiltroIOT, setMesFiltroIOT] = useState(new Date().toISOString().slice(0, 7));
   const [checklistsIOTDoMes, setChecklistsIOTDoMes] = useState([]);
   const [metricasIOT, setMetricasIOT] = useState({ totalChecklists: 0, total100Porcento: 0 });
   const [acessosMesIOT, setAcessosMesIOT] = useState(null);
@@ -1928,6 +1928,35 @@ const GestorDashboard = ({ userProfile }) => {
     }
 
     // =========================================================
+    // 🔍 2.5. A CAÇADA ÀS REINTUBAÇÕES <48H (Checklists IOT)
+    // =========================================================
+    const iotPorDia = {};
+    const reintubacoesPorDia = {};
+    const coletarIOT = (historicoIOT) => {
+      if (!Array.isArray(historicoIOT)) return;
+      historicoIOT.forEach(chk => {
+        const dia = getPadraoDate(chk.data);
+        if (!dia) return;
+        iotPorDia[dia] = (iotPorDia[dia] || 0) + 1;
+        if (chk.reintubacao48h) {
+          reintubacoesPorDia[dia] = (reintubacoesPorDia[dia] || 0) + 1;
+        }
+      });
+    };
+    if (typeof listaHistorico !== 'undefined') {
+      listaHistorico.forEach(doc => {
+        const backup = doc.backupProntuario || {};
+        coletarIOT(backup?.physio?.historicoIOT);
+        coletarIOT(doc.physio?.historicoIOT);
+      });
+    }
+    if (typeof leitosConfig !== 'undefined') {
+      leitosConfig.forEach(patient => {
+        coletarIOT(patient?.physio?.historicoIOT);
+      });
+    }    
+
+    // =========================================================
     // 📊 3. DESENHANDO A LINHA DO TEMPO (Restaurando Original)
     // =========================================================
     
@@ -1985,9 +2014,10 @@ const GestorDashboard = ({ userProfile }) => {
     }
 
     // 2. Se for um indicador clínico, "puxa" também os dias que tiveram eventos mas esqueceram do Censo
-    if (['mortalidade', 'readmissao', 'smr'].includes(indicadorTendencia)) {
+    if (['mortalidade', 'readmissao', 'smr', 'reintubacao48h'].includes(indicadorTendencia)) {
       Object.keys(obitosPorDia).forEach(d => diasComDados.add(d));
       Object.keys(readmissoesPorDia).forEach(d => diasComDados.add(d));
+      Object.keys(iotPorDia).forEach(d => diasComDados.add(d));
     }
 
     // 3. Filtra pelo calendário selecionado e ordena cronologicamente
@@ -2030,7 +2060,12 @@ const GestorDashboard = ({ userProfile }) => {
         
       } else if (indicadorTendencia === 'utilizacaoSVD') {
         valorCalculado = pacientesOcupando > 0 ? ((Number(diaCenso.pacientesComSVD) || 0) / pacientesOcupando) * 100 : 0;
-        
+
+      } else if (indicadorTendencia === 'reintubacao48h') {
+        const iotDia = iotPorDia[dataPadrao] || 0;
+        const reintDia = reintubacoesPorDia[dataPadrao] || 0;
+        valorCalculado = iotDia > 0 ? (reintDia / iotDia) * 100 : 0;
+              
       } else {
         valorCalculado = Number(diaCenso[indicadorTendencia]) || 0;
       }
@@ -5582,6 +5617,7 @@ const imprimirRelatorioGeladeira = () => {
   const configIndicadores = {
     mortalidade:      { label: 'Taxa de Mortalidade Bruta (%)', color: '#ef4444' }, 
     smr:              { label: 'SMR (SAPS 3)', color: '#10b981' }, 
+    reintubacao48h:  { label: 'Taxa de Reintubação <48h (%)', color: '#f43f5e' },
     identificacao:    { label: 'Identificação Correta do Paciente (%)', color: '#06b6d4' }, 
     utilizacaoVM:     { label: 'Taxa de Utilização de Ventilação Mecânica (%)', color: '#3b82f6' },
     utilizacaoSVD:    { label: 'Taxa de Utilização de SVD (%)', color: '#0ea5e9' },
@@ -5636,6 +5672,7 @@ const imprimirRelatorioGeladeira = () => {
                 <option value="smr">SMR (SAPS 3)</option>
                 <option value="identificacao">Identificação Correta (%)</option>
                 <option value="readmissao">Readmissão em 48h (Nº Absoluto)</option>
+                <option value="reintubacao48h">Reintubação em 48h (%)</option>
               </optgroup>
               
               <optgroup label="Dispositivos Invasivos (% Uso Diário)">

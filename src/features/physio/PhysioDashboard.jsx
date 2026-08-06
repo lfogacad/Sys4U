@@ -524,7 +524,7 @@ const salvarIOT = async () => {
       })),
       total: Object.keys(modalIOT.conformidade).length,
       cumpridas: conformes,
-      todasCumpridas: naoConformes === 0 && depoisLembrado === 0,
+      todasCumpridas: conformes > 0 && naoConformes === 0 && depoisLembrado === 0,
       resumo: `${conformes}/${Object.keys(modalIOT.conformidade).length}`
     },    
     informacoesAdicionais: modalIOT.informacoesAdicionais || '',
@@ -534,17 +534,30 @@ const salvarIOT = async () => {
 
   // Salva no histórico do fisio
   const historico = [...(currentPatient.physio?.historicoIOT || []), registro];
-  updateNested("physio", "historicoIOT", historico);
-  updateNested("physio", "ultimoIOT", registro);
-  updateP("dataIntubacao", dataISO);
+
+  // Monta o paciente com TODAS as alterações em um único objeto:
+  // checklist IOT + data de intubação + tubo + rima
+  const pacienteAtualizado = JSON.parse(JSON.stringify(currentPatient));
+  if (!pacienteAtualizado.physio) pacienteAtualizado.physio = {};
+  pacienteAtualizado.physio.historicoIOT = historico;
+  pacienteAtualizado.physio.ultimoIOT = registro;
+  pacienteAtualizado.dataIntubacao = dataISO;
   if (modalIOT.numeroTubo) {
-    updateNested("physio", "totNumero", modalIOT.numeroTubo);
+    pacienteAtualizado.physio.totNumero = modalIOT.numeroTubo;
   }
   if (modalIOT.rima) {
-    updateNested("physio", "totRima", modalIOT.rima);
-  }  
+    pacienteAtualizado.physio.totRima = modalIOT.rima;
+  }
 
-  handleBlurSave(`Fisioterapia: Checklist de IOT registrado (${modalIOT.localInserção}) - Conformes: ${conformes}, Não conformes: ${naoConformes}, Depois de lembrado: ${depoisLembrado}${modalIOT.reintubacao48h ? ' | REINTUBAÇÃO <48h' : ''}`);
+  // Atualiza o estado de uma vez só
+  setPatients(prev => {
+    const novos = [...prev];
+    novos[activeTab] = pacienteAtualizado;
+    return novos;
+  });
+
+  // Persiste no Firebase UMA única vez (com o paciente completo)
+  save(pacienteAtualizado, `Fisioterapia: Checklist de IOT registrado (${modalIOT.localInserção}) - Conformes: ${conformes}, Não conformes: ${naoConformes}, Depois de lembrado: ${depoisLembrado}${modalIOT.reintubacao48h ? ' | REINTUBAÇÃO <48h' : ''}`);
 
   setModalIOT(null);
 };
