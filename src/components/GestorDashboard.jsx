@@ -23,6 +23,7 @@ import RelatorioANVISA from './relatorios/RelatorioANVISA';
 import PainelAuditoriaTab from './tabs/PainelAuditoriaTab';
 import RelatorioChecklistCVC from './relatorios/RelatorioChecklistCVC';
 import RelatorioChecklistSVD from './relatorios/RelatorioChecklistSVD';
+import RelatorioChecklistIOT from './relatorios/RelatorioChecklistIOT';
 
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
@@ -1279,6 +1280,200 @@ const GestorDashboard = ({ userProfile }) => {
     janela.document.write(html);
     janela.document.close();
   };  
+
+  const imprimirRelatorioIOT = (checklists, mesAno, metricas, acessosMes) => {
+    // Análise dos itens de conformidade mais falhos
+    const analiseItens = {};
+    let totalItens = 0;
+    let totalCumpridos = 0;
+
+    checklists.forEach(c => {
+      if (!c.itens || !Array.isArray(c.itens)) return;
+      c.itens.forEach(item => {
+        totalItens++;
+        if (item.cumprida) totalCumpridos++;
+        
+        const nome = item.label || item.key || `Item`;
+        if (!analiseItens[nome]) {
+          analiseItens[nome] = { total: 0, cumpridas: 0, falhas: 0 };
+        }
+        analiseItens[nome].total++;
+        if (item.cumprida) {
+          analiseItens[nome].cumpridas++;
+        } else {
+          analiseItens[nome].falhas++;
+        }
+      });
+    });
+
+    const itensOrdenados = Object.entries(analiseItens)
+      .map(([nome, dados]) => ({
+        nome,
+        ...dados,
+        taxaFalha: dados.total > 0 ? Math.round((dados.falhas / dados.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.taxaFalha - a.taxaFalha);
+
+    const [ano, mes] = mesAno ? mesAno.split('-') : ['', ''];
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const nomeMes = meses[parseInt(mes) - 1] || mes;
+
+    const totalChecklists = checklists.length;
+    const total100Porcento = checklists.filter(c => c.todasCumpridas).length;
+    const cobertura = acessosMes > 0 ? Math.round((totalChecklists / acessosMes) * 100) : 0;
+    const conformidadeGeral = totalItens > 0 ? Math.round((totalCumpridos / totalItens) * 100) : 0;
+    const totalReintubacoes48h = checklists.filter(c => c.reintubacao48h).length;
+
+    // Monta as linhas da tabela de itens de conformidade
+    const linhasItens = itensOrdenados.map(b => `
+      <tr${b.taxaFalha > 0 ? ' style="background-color: #fef2f2;"' : ''}>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${b.nome}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.total}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.cumpridas}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${b.falhas}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${b.taxaFalha > 0 ? '#b91c1c' : '#047857'};">${b.taxaFalha}%</td>
+      </tr>
+    `).join('');
+
+    // Monta as linhas da tabela de checklists
+    const linhasChecklists = checklists.map((c, i) => `
+      <tr${i % 2 === 0 ? '' : ' style="background-color: #f8fafc;"'}>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.paciente}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data?.split('-').reverse().join('/')} ${c.horario}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.localInsercao}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.tentativa || '-'}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.medico}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${c.todasCumpridas ? '#047857' : '#b91c1c'};">${c.cumpridas}/${c.total}</td>
+      </tr>
+    `).join('');
+
+    const dataEmissao = new Date().toLocaleDateString('pt-BR');
+
+    const html = `<!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Relatório de Checklists IOT - ${nomeMes}/${ano}</title>
+    <style>
+      @page { margin: 20mm 15mm; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { 
+        font-family: Arial, Helvetica, sans-serif; 
+        font-size: 12px; 
+        color: #1e293b; 
+        line-height: 1.5;
+        padding: 20px;
+      }
+      .header {
+        text-align: center;
+        border-bottom: 2px solid #1e293b;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+      }
+      .header h1 { font-size: 18px; text-transform: uppercase; letter-spacing: 1px; }
+      .header p { font-size: 12px; color: #64748b; margin-top: 4px; }
+      h2 { 
+        font-size: 14px; 
+        border-bottom: 1px solid #cbd5e1; 
+        padding-bottom: 4px; 
+        margin-bottom: 10px; 
+        margin-top: 20px; 
+      }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+      th { 
+        background-color: #f1f5f9; 
+        padding: 8px; 
+        text-align: left; 
+        font-size: 11px; 
+        text-transform: uppercase; 
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #cbd5e1;
+      }
+      th.center { text-align: center; }
+      .resumo-table td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
+      .resumo-table td:first-child { font-weight: 600; width: 280px; }
+      .footer { 
+        border-top: 1px solid #cbd5e1; 
+        padding-top: 10px; 
+        margin-top: 30px; 
+        text-align: center; 
+        font-size: 10px; 
+        color: #94a3b8; 
+      }
+      @media print {
+        body { padding: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Relatório de Checklists IOT</h1>
+      <p>Prevenção de Pneumonia Associada à Ventilação Mecânica (PAV)</p>
+      <p>Período: ${nomeMes} / ${ano} &nbsp;|&nbsp; Emitido em: ${dataEmissao}</p>
+    </div>
+
+    <h2>1. Resumo do Período</h2>
+    <table class="resumo-table">
+      <tr><td>Total de checklists registrados</td><td>${totalChecklists}</td></tr>
+      <tr><td>Total de intubações realizadas</td><td>${acessosMes}</td></tr>
+      <tr><td>Taxa de cobertura</td><td>${cobertura}%</td></tr>
+      <tr><td>Checklists com 100% de conformidade</td><td>${total100Porcento} (${totalChecklists > 0 ? Math.round((total100Porcento / totalChecklists) * 100) : 0}%)</td></tr>
+      <tr><td>Conformidade geral (itens)</td><td>${conformidadeGeral}% (${totalCumpridos}/${totalItens} itens)</td></tr>
+      <tr><td>Reintubações &lt;48h</td><td>${totalReintubacoes48h}</td></tr>
+    </table>
+
+    <h2>2. Análise de Conformidade</h2>
+    ${itensOrdenados.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Item de Boa Prática</th>
+          <th class="center">Total</th>
+          <th class="center">Cumpridos</th>
+          <th class="center">Falhas</th>
+          <th class="center">Taxa de Falha</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhasItens}
+      </tbody>
+    </table>
+    ` : '<p style="color: #94a3b8; font-style: italic;">Nenhum checklist com itens detalhados registrado no período.</p>'}
+
+    <h2>3. Checklists Registrados</h2>
+    ${checklists.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Paciente</th>
+          <th>Data</th>
+          <th>Local</th>
+          <th>Tentativa</th>
+          <th>Médico</th>
+          <th class="center">Conformidade</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhasChecklists}
+      </tbody>
+    </table>
+    ` : '<p style="color: #94a3b8; font-style: italic;">Nenhum checklist registrado no período.</p>'}
+
+    <div class="footer">
+      <p>Relatório gerado automaticamente pelo sistema de gestão de leitos UTI</p>
+      <p>Documento institucional — UTI Municipal de Ariquemes</p>
+    </div>
+
+    <script>
+      window.onload = function() { window.print(); };
+    <\/script>
+  </body>
+  </html>`;
+
+    const janela = window.open('', '_blank');
+    janela.document.write(html);
+    janela.document.close();
+  };
 
   const gerarRelatorioEscalas = () => {
     const dataInicio = filtroDataInicio || 'N/I';
@@ -2723,6 +2918,7 @@ const GestorDashboard = ({ userProfile }) => {
               rima: checklist.rima || '',
               auditor: checklist.auditor || '',
               informacoesAdicionais: checklist.informacoesAdicionais || '',
+              reintubacao48h: checklist.reintubacao48h || false,
             });
           }
         });
@@ -2774,6 +2970,7 @@ const GestorDashboard = ({ userProfile }) => {
                 rima: checklist.rima || '',
                 auditor: checklist.auditor || '',
                 informacoesAdicionais: checklist.informacoesAdicionais || '',
+                reintubacao48h: checklist.reintubacao48h || false,
               });
             }
           });
@@ -7779,6 +7976,15 @@ const imprimirRelatorioGeladeira = () => {
             Manutenção SVD
           </button>
 
+          {/* CHECKLIST IOT */}
+          <button
+            onClick={() => setAbaRiscoAtiva('checklistIOT')}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${abaRiscoAtiva === 'checklistIOT' ? 'border-rose-600 text-rose-700 bg-rose-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Stethoscope size={18} />
+            Checklist IOT
+          </button>
+
           {/* 💡 NOVA ABA: CARRINHO EMG */}
           <button 
             onClick={() => setAbaRiscoAtiva('carrinhoEMG')}
@@ -9377,6 +9583,363 @@ const imprimirRelatorioGeladeira = () => {
             )}
           </div>
         )}
+
+        {/* ============================================================== */}
+        {/* ABA: CHECKLIST IOT                                              */}
+        {/* ============================================================== */}
+        {abaRiscoAtiva === 'checklistIOT' && (
+          <div className="animate-fadeIn">
+            {/* CABEÇALHO COM FILTRO DE MÊS */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Stethoscope className="text-rose-600" /> Checklist de IOT
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Monitoramento de conformidade dos checklists de Intubação Orotraqueal — Prevenção de PAV.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                    <span className="text-xs font-bold text-slate-600 uppercase">Mês:</span>
+                    <input 
+                      type="month" 
+                      value={mesFiltroIOT} 
+                      onChange={(e) => setMesFiltroIOT(e.target.value)}
+                      className="bg-white border border-slate-200 p-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-rose-500 cursor-pointer"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setModalRelatorioIOT(true)}
+                    className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    <FileText size={14} /> Relatório
+                  </button>
+                </div>
+              </div>
+            </div>
+            {/* CARDS DE MÉTRICAS */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {/* Card 1: Intubações Realizadas (Editável Manualmente) */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-rose-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider flex items-center gap-1">
+                    <Stethoscope size={14} /> Intubações Realizadas
+                  </span>
+                  <div className="flex items-center gap-3 mt-3">
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={acessosMesIOT !== null ? acessosMesIOT : metricasIOT.totalChecklists}
+                      onChange={(e) => setAcessosMesIOT(Number(e.target.value))}
+                      className="w-24 p-2 text-2xl font-black text-rose-700 bg-rose-50 border-2 border-rose-200 rounded-xl outline-none focus:border-rose-500 text-center"
+                    />
+                    <span className="text-xs text-slate-400 font-medium">
+                      Total de intubações<br/>no mês
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2 italic">* Campo editável — insira o total real de intubações do mês</p>
+                </div>
+              </div>
+              {/* Card 2: Checklists Preenchidos (Automático) */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1">
+                    <ClipboardList size={14} /> Checklists Preenchidos
+                  </span>
+                  <div className="text-4xl font-black text-blue-700 mt-3">
+                    {metricasIOT.totalChecklists}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {metricasIOT.totalChecklists === 1 ? '1 checklist' : `${metricasIOT.totalChecklists} checklists`} registrados no mês
+                  </p>
+                </div>
+              </div>
+              {/* Card 3: 100% de Conformidade (Automático) */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-10 -mt-10"></div>
+                <div className="relative">
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
+                    <ShieldCheck size={14} /> 100% de Conformidade
+                  </span>
+                  <div className="flex items-end gap-3 mt-3">
+                    <span className="text-4xl font-black text-emerald-700">{metricasIOT.total100Porcento}</span>
+                    {metricasIOT.totalChecklists > 0 && (
+                      <span className="text-lg font-bold text-emerald-500 mb-1">
+                        ({Math.round((metricasIOT.total100Porcento / metricasIOT.totalChecklists) * 100)}%)
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${metricasIOT.totalChecklists > 0 ? (metricasIOT.total100Porcento / metricasIOT.totalChecklists) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {metricasIOT.totalChecklists > 0 
+                      ? `${metricasIOT.total100Porcento} de ${metricasIOT.totalChecklists} checklists cumpriram todos os critérios`
+                      : 'Nenhum checklist registrado no período'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            {/* TAXA DE COBERTURA */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <BarChart2 size={16} className="text-rose-500" /> Taxa de Cobertura (Checklists × Intubações)
+              </h4>
+              <p className="text-xs text-slate-500 mb-4">Relação entre checklists preenchidos e o total de intubações realizadas no mês.</p>
+              {metricasIOT.totalChecklists > 0 && (acessosMesIOT ?? metricasIOT.totalChecklists) > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <span className="text-xs font-bold text-slate-600">Cobertura</span>
+                    <span className="text-2xl font-black text-blue-600">
+                      {Math.round((metricasIOT.totalChecklists / (acessosMesIOT ?? metricasIOT.totalChecklists)) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden">
+                    <div 
+                      className="bg-gradient-to-r from-blue-400 to-indigo-500 h-5 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.min((metricasIOT.totalChecklists / (acessosMesIOT ?? metricasIOT.totalChecklists)) * 100, 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>{metricasIOT.totalChecklists} checklists preenchidos</span>
+                    <span>{(acessosMesIOT ?? metricasIOT.totalChecklists)} intubações realizadas</span>
+                  </div>
+                  {(acessosMesIOT ?? metricasIOT.totalChecklists) > metricasIOT.totalChecklists && (
+                    <p className="text-[10px] text-amber-600 font-bold mt-2">
+                      ⚠️ {(acessosMesIOT ?? metricasIOT.totalChecklists) - metricasIOT.totalChecklists} intubações sem checklist registrado
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-slate-400 italic text-xs">
+                  Aguardando dados de checklists e intubações do mês.
+                </div>
+              )}
+            </div>
+            {/* LISTA DE CHECKLISTS DO MÊS */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-4">
+              <h4 className="font-bold text-slate-700 text-sm uppercase flex items-center gap-2 mb-4">
+                <ClipboardList size={16} className="text-rose-500" /> Checklists do Mês
+              </h4>
+              <p className="text-xs text-slate-500 mb-4">
+                {checklistsIOTDoMes.length > 0 
+                  ? `${checklistsIOTDoMes.length} checklist(s) registrado(s) em ${mesFiltroIOT}`
+                  : 'Nenhum checklist registrado neste mês.'}
+              </p>
+              {checklistsIOTDoMes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left p-2 font-bold text-slate-600">Paciente</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Data</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Horário</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Local</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Tentativa</th>
+                        <th className="text-left p-2 font-bold text-slate-600">Médico</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Conformidade</th>
+                        <th className="text-center p-2 font-bold text-slate-600">100%</th>
+                        <th className="text-center p-2 font-bold text-slate-600">Reintub. &lt;48h</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checklistsIOTDoMes.map((c, idx) => (
+                        <tr key={c.id} className={`border-b border-slate-100 hover:bg-slate-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
+                        onClick={() => setChecklistIOTSelecionado(c)}
+                        >
+                          <td className="p-2 font-semibold text-slate-700">{c.paciente}</td>
+                          <td className="p-2 text-slate-700">{c.data}</td>
+                          <td className="p-2 text-slate-500">{c.horario}</td>
+                          <td className="p-2 text-slate-500">{c.localInsercao}</td>
+                          <td className="p-2 text-slate-500">{c.tentativa}</td>
+                          <td className="p-2 text-slate-700">{c.medico}</td>
+                          <td className="p-2 text-center">
+                            <span className="font-bold">{c.cumpridas}/{c.total}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            {c.todasCumpridas ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
+                                <ShieldCheck size={14} /> Sim
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-red-500 font-bold">
+                                <X size={14} /> Não
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2 text-center">
+                            {c.reintubacao48h ? (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">Sim</span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Não</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400 italic text-xs">
+                  Nenhum checklist de IOT registrado neste período.
+                </div>
+              )}
+            {/* MODAL DE DETALHES DO CHECKLIST */}
+            {checklistIOTSelecionado && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setChecklistIOTSelecionado(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Cabeçalho */}
+                  <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Checklist de IOT</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {checklistIOTSelecionado.paciente} — {checklistIOTSelecionado.leito}
+                      </p>
+                    </div>
+                    <button onClick={() => setChecklistIOTSelecionado(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={20} className="text-slate-400" />
+                    </button>
+                  </div>
+                  {/* Informações gerais */}
+                  <div className="p-5 border-b border-slate-100">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="font-bold text-slate-500 block">Data / Horário</span>
+                        <span className="text-slate-800">{checklistIOTSelecionado.data} {checklistIOTSelecionado.horario}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Médico Responsável</span>
+                        <span className="text-slate-800">{checklistIOTSelecionado.medico}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Local de Inserção</span>
+                        <span className="text-slate-800">{checklistIOTSelecionado.localInsercao || 'N/I'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Tentativa</span>
+                        <span className="text-slate-800">{checklistIOTSelecionado.tentativa || 'N/I'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Condição</span>
+                        <span className="text-slate-800">{checklistIOTSelecionado.condicao || 'N/I'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Nº do Tubo</span>
+                        <span className="text-slate-800">{checklistIOTSelecionado.numeroTubo || 'N/I'}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">Reintubação &lt;48h</span>
+                        <span className={checklistIOTSelecionado.reintubacao48h ? 'text-red-600 font-bold' : 'text-slate-800'}>
+                          {checklistIOTSelecionado.reintubacao48h ? 'Sim' : 'Não'}
+                        </span>
+                      </div>
+                      {checklistIOTSelecionado.auditor && (
+                        <div className="col-span-2">
+                          <span className="font-bold text-slate-500 block">Auditor do Checklist</span>
+                          <span className="text-slate-800">{checklistIOTSelecionado.auditor}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Lista de itens de conformidade */}
+                  <div className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-bold text-slate-700 text-xs uppercase">Itens de Conformidade</h4>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        checklistIOTSelecionado.todasCumpridas 
+                          ? 'bg-emerald-100 text-emerald-700' 
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {checklistIOTSelecionado.cumpridas}/{checklistIOTSelecionado.total}
+                      </span>
+                    </div>
+                    {checklistIOTSelecionado.itens && checklistIOTSelecionado.itens.length > 0 ? (
+                      <div className="space-y-2">
+                        {checklistIOTSelecionado.itens.map((item, i) => (
+                          <div key={i} className={`flex items-center gap-3 p-2.5 rounded-lg ${
+                            item.cumprida ? 'bg-emerald-50' : 'bg-red-50'
+                          }`}>
+                            {item.cumprida ? (
+                              <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                                <ShieldCheck size={14} className="text-white" />
+                              </div>
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-red-400 flex items-center justify-center flex-shrink-0">
+                                <X size={14} className="text-white" />
+                              </div>
+                            )}
+                            <span className={`text-sm ${item.cumprida ? 'text-slate-700' : 'text-red-700 font-medium'}`}>
+                              {item.label || item.key || `Item ${i + 1}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500 leading-relaxed">
+                        {checklistIOTSelecionado.resumo || 'Nenhum item disponível.'}
+                      </div>
+                    )}
+                    {checklistIOTSelecionado.informacoesAdicionais && (
+                      <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <span className="text-xs font-bold text-slate-600 block mb-1">📝 Informações Adicionais</span>
+                        <span className="text-xs text-slate-700">{checklistIOTSelecionado.informacoesAdicionais}</span>
+                      </div>
+                    )}
+                  </div>
+                  {/* Fechar */}
+                  <div className="p-4 border-t border-slate-100 text-center">
+                    <button 
+                      onClick={() => setChecklistIOTSelecionado(null)}
+                      className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* Modal de Relatório IOT */}
+            {modalRelatorioIOT && (
+              <div className="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-4xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-slideUp">
+                  <div className="p-4 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                    <h2 className="font-bold flex items-center gap-2">
+                      <FileText size={20} /> Relatório de Checklists IOT
+                    </h2>
+                    <div className="flex gap-2">
+                        <button 
+                          onClick={() => imprimirRelatorioIOT(checklistsIOTDoMes, mesFiltroIOT, metricasIOT, acessosMesIOT ?? metricasIOT.totalChecklists)}
+                          className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded text-sm font-bold transition-colors"
+                        >
+                          Imprimir / Salvar PDF
+                        </button>
+                      <button 
+                        onClick={() => setModalRelatorioIOT(false)} 
+                        className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-bold transition-colors"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-auto bg-white p-8">
+                    <RelatorioChecklistIOT 
+                      checklists={checklistsIOTDoMes}
+                      mesAno={mesFiltroIOT}
+                      metricas={metricasIOT}
+                      acessosMes={acessosMesIOT ?? metricasIOT.totalChecklists}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}            
+            </div>            
+          </div>
+        )}        
 
         {/* ============================================================== */}
         {/* ABA: CARRINHO EMG                                               */}

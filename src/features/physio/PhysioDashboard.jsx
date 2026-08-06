@@ -8,6 +8,8 @@ import { formatDateDDMM } from '../../utils/core';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import PhysioEvoModal from '../../components/modals/PhysioEvoModal';
 import { ModalPortal } from '../../components/ModuloUTI';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 
 const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients, activeTab, setPatients, save, handlePhysioAdmission, handleViewPhysioAdmission, clearDate, updateP, updateNested, handleBlurSave, setShowVmFlowsheet, handleSuporteChange, toggleArrayItem, calculateExchangeDate, isDeviceExpired, handlePrintGasometria, handleGeneratePhysioEvo, getTempoVMText, isOverviewEditable, localEditRef }) => {
   
@@ -17,6 +19,8 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   const [editingHora, setEditingHora] = useState({}); // { "23/06 (Adm)": "10:00", ... }
 
   const [showAcoesFisio, setShowAcoesFisio] = useState(false);
+
+  const [listaMedicos, setListaMedicos] = useState([]);
 
   const [showEvolucaoModal, setShowEvolucaoModal] = useState(false);
   const [evolucaoData, setEvolucaoData] = useState({
@@ -214,6 +218,31 @@ const LISTAS_MOBILIZACAO = {
     const interval = setInterval(checkAndResetCuff, 60000);
     return () => clearInterval(interval);
   }, [currentPatient?.id]);
+
+  // BUSCA A EQUIPE DE MÉDICOS NO FIREBASE
+  useEffect(() => {
+    const carregarEquipeMedica = async () => {
+      try {
+        const profRef = collection(db, "profissionais");
+        const q = query(profRef, where("categoria", "==", "Médico")); 
+        
+        const querySnapshot = await getDocs(q);
+        const medicosTemp = [];
+        
+        querySnapshot.forEach((doc) => {
+          medicosTemp.push({ id: doc.id, ...doc.data() });
+        });
+
+        medicosTemp.sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+        
+        setListaMedicos(medicosTemp);
+      } catch (error) {
+        console.error("Erro ao carregar a lista de médicos:", error);
+      }
+    };
+
+    carregarEquipeMedica();
+  }, []);  
 
   const onSuporteChange = (novoSuporte) => {
     updateNested("physio", "suporte", novoSuporte);
@@ -461,16 +490,16 @@ const IOT_ITENS_LABELS = {
 const salvarIOT = async () => {
   if (!modalIOT.horario || !modalIOT.tentativa || !modalIOT.condicao || !modalIOT.localInserção) return;
 
-  const textoProcedimento = `Checklist de IOT (${modalIOT.localInserção}) - Tentativa: ${modalIOT.tentativa}. Condição: ${modalIOT.condicao}. Tubo nº ${modalIOT.numeroTubo || '-'} (Rima ${modalIOT.rima || '-'}). Conformidade: ${conformes} itens conformes, ${naoConformes} não conformes, ${depoisLembrado} depois de lembrado.`;
-  
-  const hoje = new Date();
-  const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
-
-  // Calcula totais de conformidade
-  const valores = Object.values(modalIOT.conformidade);
+  // 🔑 Calcular PRIMEIRO os totais de conformidade (antes de usar no registro)
+  const valores = Object.values(modalIOT.conformidade || {});
   const conformes = valores.filter(v => v === 'Sim').length;
   const naoConformes = valores.filter(v => v === 'Não').length;
   const depoisLembrado = valores.filter(v => v === 'Sim, depois de lembrado').length;
+
+  const textoProcedimento = `Checklist de IOT (${modalIOT.localInserção}) - Tentativa: ${modalIOT.tentativa}. Condição: ${modalIOT.condicao}. Tubo nº ${modalIOT.numeroTubo || '-'} (Rima ${modalIOT.rima || '-'}). Conformidade: ${conformes} itens conformes, ${naoConformes} não conformes, ${depoisLembrado} depois de lembrado. Reintubação <48h: ${modalIOT.reintubacao48h ? 'Sim' : 'Não'}.`;
+
+  const hoje = new Date();
+  const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
   const registro = {
     tipo: 'Checklist IOT',
@@ -499,6 +528,7 @@ const salvarIOT = async () => {
       resumo: `${conformes}/${Object.keys(modalIOT.conformidade).length}`
     },    
     informacoesAdicionais: modalIOT.informacoesAdicionais || '',
+    reintubacao48h: modalIOT.reintubacao48h || false,
     textoFormatado: textoProcedimento
   };
 
@@ -507,7 +537,7 @@ const salvarIOT = async () => {
   updateNested("physio", "historicoIOT", historico);
   updateNested("physio", "ultimoIOT", registro);
 
-  handleBlurSave(`Fisioterapia: Checklist de IOT registrado (${modalIOT.localInserção}) - Conformes: ${conformes}, Não conformes: ${naoConformes}, Depois de lembrado: ${depoisLembrado}`);
+  handleBlurSave(`Fisioterapia: Checklist de IOT registrado (${modalIOT.localInserção}) - Conformes: ${conformes}, Não conformes: ${naoConformes}, Depois de lembrado: ${depoisLembrado}${modalIOT.reintubacao48h ? ' | REINTUBAÇÃO <48h' : ''}`);
 
   setModalIOT(null);
 };
@@ -952,6 +982,7 @@ const TRE_CHECKLIST = [
                     horario: `${horaStr}:00`,
                     tentativa: "", condicao: "", numeroTubo: "", rima: "",
                     indicacao: "", indicacaoOutros: "", localInserção: "",
+                    reintubacao48h: false,
                     // Checklist de conformidade (17 itens)
                     conformidade: {
                       material: "", identificacao: "", semAdornos: "", higieneMaos: "",
@@ -2190,6 +2221,27 @@ const TRE_CHECKLIST = [
                 </div>
               </div>
 
+              {/* REINTUBAÇÃO < 48H */}
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-amber-700 uppercase tracking-wider block">Reintubação &lt; 48h</label>
+                    <p className="text-[10px] text-amber-600/80 mt-0.5">Clique se o paciente foi reintubado em menos de 48h após extubação prévia</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalIOT({ ...modalIOT, reintubacao48h: !modalIOT.reintubacao48h })}
+                    className={`px-4 py-2.5 rounded-xl border-2 font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shrink-0 ${
+                      modalIOT.reintubacao48h
+                        ? 'border-red-500 bg-red-500 text-white shadow-md scale-[1.02]'
+                        : 'border-amber-300 bg-white text-amber-600 hover:border-amber-400'
+                    }`}
+                  >
+                    {modalIOT.reintubacao48h ? '✓ Sim' : 'Não'}
+                  </button>
+                </div>
+              </div>              
+
               {/* CHECKLIST DE CONFORMIDADE */}
               <div>
                 <h3 className="text-xs font-black text-cyan-700 uppercase tracking-wider border-b border-cyan-200 pb-1 mb-3">Checklist de Boas Práticas</h3>
@@ -2235,12 +2287,9 @@ const TRE_CHECKLIST = [
                   className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-300 outline-none text-slate-800 font-bold text-sm"
                 >
                   <option value="">Selecione o médico...</option>
-                  {listaProfissionais
-                    .filter(prof => prof.categoria === 'Médico')
-                    .map((med) => (
-                      <option key={med.id} value={med.nome}>{med.nome}</option>
-                    ))
-                  }
+                  {listaMedicos.map((med) => (
+                    <option key={med.id} value={med.nome}>{med.nome}</option>
+                  ))}
                 </select>
               </div>
 
