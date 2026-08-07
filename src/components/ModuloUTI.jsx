@@ -10,7 +10,7 @@ import {
   Activity, ClipboardCheck, FileText, FileCheck, Target, ShieldAlert,
   Printer, Bot, BrainCircuit, Sparkles, Mic, Table, UploadCloud,
   FolderInput, List, Copy, User, Search, ArrowLeft, X, PlusCircle,
-  Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle,
+  Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle, Wrench,
   Loader2, ChevronRight, ChevronDown, Clock, RotateCcw, Filter, CheckCircle2,
   CalendarX, UserPlus, LogOut, ArrowRightLeft, Ambulance, Save, Refrigerator
 } from "lucide-react";
@@ -168,6 +168,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [checkData, setCheckData] = useState({ estadoGeral: "REG", usaDva: false, dvas: [], usaSedacao: false, sedativos: [], rass: "", glasgow: "", atbs: "" });
 
   const [patients, setPatients] = useState(Array(11).fill(null).map((_, i) => defaultPatient(i)));
+
+  const [modalGasometria, setModalGasometria] = useState({ isOpen: false, cartuchos: 0, cartuchosLactato: 0, selecionados: [] });
   
   const leitosDisponiveis = useMemo(() => {
     return ['1','2','3','4','5','6','7','8','9','10'];
@@ -1260,6 +1262,64 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     } catch (err) {
       console.error("Erro ao resolver alerta:", err);
     }
+  };
+
+  const pacientesInternados = patients.filter(p => p.nome && p.nome.trim() !== '');
+
+  const imprimirGasometria = () => {
+    const hoje = new Date();
+    const dataBR = `${String(hoje.getDate()).padStart(2, '0')}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${hoje.getFullYear()}`;
+    const pacientesLista = pacientesInternados.map(p => `<li>${p.nome} - Leito ${p.leito}</li>`).join('');
+
+    const conteudoHTML = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Solicitação de Cartuchos de Gasometria</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111; margin: 40px; }
+            .cabecalho { text-align: center; font-weight: bold; line-height: 1.6; margin-bottom: 40px; }
+            .solicitacao { margin-bottom: 30px; font-size: 15px; line-height: 1.5; }
+            .titulo-lista { font-weight: bold; margin-bottom: 10px; }
+            ul { list-style: none; padding: 0; }
+            ul li { padding: 5px 0; border-bottom: 1px dotted #ccc; font-size: 14px; }
+            .data { margin-top: 60px; text-align: right; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="cabecalho">
+            <div>PREFEITURA DO MUNICÍPIO DE ARIQUEMES</div>
+            <div>SECRETARIA MUNICIPAL DE SAÚDE</div>
+            <div>UTI – HOSPITAL MUNICIPAL DE ARIQUEMES</div>
+          </div>
+          <div class="solicitacao">
+            Solicito "${modalGasometria.cartuchos}" cartuchos de gasometria, sendo "${modalGasometria.cartuchosLactato}" cartuchos com lactato para os pacientes internados nesta unidade.
+          </div>
+          <div class="titulo-lista">Lista dos pacientes</div>
+          <ul>${pacientesLista}</ul>
+          <div class="data">Ariquemes, ${dataBR}.</div>
+          <script>window.onload = function() { window.print(); };</script>
+        </body>
+      </html>
+    `;
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) {
+      alert('Permita pop-ups para imprimir o documento.');
+      return;
+    }
+    win.document.write(conteudoHTML);
+    win.document.close();
+  };  
+
+  const togglePacienteGasometria = (id) => {
+    setModalGasometria(prev => {
+      const selecionados = prev.selecionados.includes(id)
+        ? prev.selecionados.filter(s => s !== id)
+        : [...prev.selecionados, id];
+      return { ...prev, selecionados, cartuchos: selecionados.length };
+    });
   };
 
   const salvarCarrinhoEMG = async () => {
@@ -5074,21 +5134,53 @@ const userRole = userProfile?.role || userProfile?.perfil;
           </div>
 
           {/* LADO DIREITO DO CABEÇALHO: Upload de Lote e Cápsula de Usuário */}
-          <div className="flex items-center gap-4">
-            {/* BOTÃO DE UPLOAD (Vindo da Main) */}
-            <label
-              className="bg-white/10 hover:bg-white/20 p-2.5 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm"
-              title="Upload Lote"
-            >
-              <FolderInput size={20} />
-              <input
-                type="file"
-                multiple
-                accept="application/pdf"
-                className="hidden"
-                onChange={handleBulkUpload}
-              />
-            </label>
+          <div className="flex items-center gap-4 relative z-[9999]">
+            {/* BOTÃO DE FERRAMENTAS COM DROPDOWN (Upload Lote + Gasometria) */}
+            <div className="relative group">
+              {/* ÍCONE PRINCIPAL: FERRAMENTA */}
+              <button
+                className="bg-white/10 hover:bg-white/20 p-2.5 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm"
+                title="Ferramentas"
+              >
+                <Wrench size={20} />
+              </button>
+
+              {/* DROPDOWN QUE ABRE PARA BAIXO AO PASSAR O MOUSE */}
+              <div className="absolute right-0 top-full pt-2 hidden group-hover:block z-[9999]">
+                <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-slate-200 p-2 animate-fadeIn">
+                  {/* ÍCONE 1: UPLOAD DE EXAMES */}
+                  <label
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors text-slate-700"
+                    title="Upload de Exames"
+                  >
+                    <FolderInput size={18} className="text-teal-600" />
+                    <span className="text-xs font-bold whitespace-nowrap">Upload Exames</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={handleBulkUpload}
+                    />
+                  </label>
+
+                  {/* ÍCONE 2: GASOMETRIA (função a definir) */}
+                  <button
+                    onClick={() => setModalGasometria({
+                      isOpen: true,
+                      cartuchos: pacientesInternados.length,
+                      cartuchosLactato: 0,
+                      selecionados: pacientesInternados.map(p => p.id)
+                    })}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors text-slate-700 w-full text-left"
+                    title="Gasometria"
+                  >
+                    <Droplets size={18} className="text-cyan-600" />
+                    <span className="text-xs font-bold whitespace-nowrap">Gasometria</span>
+                  </button>
+                </div>
+              </div>
+            </div>
 
             {/* CÁPSULA DE USUÁRIO (Design Main + Dados V2) */}
             <div className="flex items-center bg-white rounded-full p-1.5 pr-2 shadow-lg gap-3">
@@ -5942,6 +6034,106 @@ const userRole = userProfile?.role || userProfile?.perfil;
         physioEvoText={physioEvoText}
         setPhysioEvoText={setPhysioEvoText}
       />
+
+      {/* MODAL DE SOLICITAÇÃO DE GASOMETRIA */}
+      {modalGasometria.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* CABEÇALHO */}
+            <div className="bg-[#008f8f] text-white px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-lg flex items-center gap-2">
+                  <Droplets size={20} /> Solicitação de Cartuchos de Gasometria
+                </h2>
+                <p className="text-xs text-white/80 mt-0.5">Selecione a quantidade de cartuchos e confira os pacientes internados</p>
+              </div>
+              <button
+                onClick={() => setModalGasometria({ ...modalGasometria, isOpen: false })}
+                className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors"
+                title="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* CORPO */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+               {/* SELETORES DE CARTUCHOS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4">
+                  <label className="text-xs font-bold text-cyan-800 uppercase tracking-wider block mb-2">Cartuchos de Gasometria</label>
+                  <div className="w-full p-2.5 border border-cyan-300 rounded-lg bg-white text-sm font-bold text-cyan-700">
+                    {modalGasometria.cartuchos}
+                  </div>
+                  <p className="text-[10px] text-cyan-600 mt-1.5">Atualizado automaticamente conforme a seleção de pacientes.</p>
+                </div>
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                  <label className="text-xs font-bold text-rose-800 uppercase tracking-wider block mb-2">Cartuchos com Lactato</label>
+                  <select
+                    value={modalGasometria.cartuchosLactato}
+                    onChange={(e) => setModalGasometria({ ...modalGasometria, cartuchosLactato: Number(e.target.value) })}
+                    className="w-full p-2.5 border border-rose-300 rounded-lg bg-white text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-300"
+                  >
+                    {[...Array(51).keys()].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* LISTA DE PACIENTES */}
+              <div>
+                <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">
+                  Lista dos Pacientes Internados ({modalGasometria.selecionados.length} selecionados)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+                  {pacientesInternados.map((p, idx) => {
+                    const selecionado = modalGasometria.selecionados.includes(p.id);
+                    return (
+                      <label
+                        key={p.id || idx}
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 border cursor-pointer transition-colors ${
+                          selecionado
+                            ? 'bg-cyan-50 border-cyan-300'
+                            : 'bg-slate-50 border-slate-200 opacity-60'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selecionado}
+                          onChange={() => togglePacienteGasometria(p.id)}
+                          className="w-4 h-4 accent-cyan-600 shrink-0"
+                        />
+                        <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                          {p.leito}
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 truncate">{p.nome}</span>
+                      </label>
+                    );
+                  })}
+                  {pacientesInternados.length === 0 && (
+                    <p className="text-sm text-slate-400 italic col-span-2">Nenhum paciente internado.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* RODAPÉ */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setModalGasometria({ ...modalGasometria, isOpen: false })}
+                className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-bold text-sm hover:bg-slate-100 transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={imprimirGasometria}
+                className="px-5 py-2.5 rounded-xl bg-[#008f8f] hover:bg-[#007a7a] text-white font-bold text-sm flex items-center gap-2 transition-colors shadow-sm"
+              >
+                <Printer size={16} /> Imprimir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE DESFECHO / SAÍDA DA UTI */}
       {showDischargeModal && (
