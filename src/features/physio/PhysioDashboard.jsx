@@ -483,7 +483,6 @@ const IOT_ITENS_LABELS = {
   ausculta: 'Feito ausculta pulmonar para fixação do TOT?',
   fixado: 'Fixado TOT corretamente?',
   sedacao: 'Instalou sedação conforme prescrição médica?',
-  riscoExtubacao: 'Risco para extubação acidental?',
   cuff: 'Ajustou pressão do Cuff entre 20 e 30 cmH2O?'
 };
 
@@ -1008,7 +1007,7 @@ const TRE_CHECKLIST = [
                       material: "", identificacao: "", semAdornos: "", higieneMaos: "",
                       gorro: "", mascara: "", avental: "", luvaEsteril: "",
                       xylocaina: "", inducao: "", oportunidadeUnica: "", aspiradoVAS: "",
-                      ausculta: "", fixado: "", sedacao: "", riscoExtubacao: "", cuff: ""
+                      ausculta: "", fixado: "", sedacao: "", cuff: ""
                     },
                     medicoResponsavel: "", auditor: "", informacoesAdicionais: ""
                   });
@@ -2283,7 +2282,6 @@ const TRE_CHECKLIST = [
                     { key: 'ausculta', label: 'Feito ausculta pulmonar para fixação do TOT?' },
                     { key: 'fixado', label: 'Fixado TOT corretamente?' },
                     { key: 'sedacao', label: 'Instalou sedação conforme prescrição médica?' },
-                    { key: 'riscoExtubacao', label: 'Risco para extubação acidental?' },
                     { key: 'cuff', label: 'Ajustou pressão do Cuff entre 20 e 30 cmH2O?' }
                   ].map(item => (
                     <div key={item.key} className="bg-white border border-slate-200 rounded-xl p-2.5">
