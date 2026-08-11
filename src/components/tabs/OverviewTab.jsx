@@ -1,10 +1,14 @@
 import React from 'react';
 import { Activity, ChevronDown, ChevronRight, Wind, Utensils, Brain, HeartPulse, Droplets, Clock, Table as TableIcon, Edit3 } from 'lucide-react';
 import { BH_HOURS } from '../../constants/clinicalLists';
-import ModuloCulturas from '../ModuloCulturas'; 
+import ModuloCulturas from '../ModuloCulturas';
+import VisitaMultiTab from './VisitaMultiTab';
 
 const OverviewTab = ({
   viewMode,
+  abaTopo,
+  setAbaTopo,
+  save,
   isOverviewEditable,
   currentPatient,
   handleUnlockSAPS3,
@@ -48,6 +52,32 @@ const OverviewTab = ({
 
   return (
     <div className="space-y-6 animate-fadeIn text-left">
+    <div className="flex gap-2 mb-4 border-b border-slate-200 pb-3">
+      <button
+        onClick={() => setAbaTopo('visaoGeral')}
+        className={`px-4 py-2 rounded-t-xl font-bold text-sm transition-colors ${
+          abaTopo === 'visaoGeral'
+            ? 'bg-teal-600 text-white shadow-sm'
+            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+        }`}
+      >
+        Visão Geral
+      </button>
+      <button
+        onClick={() => setAbaTopo('visitaMulti')}
+        className={`px-4 py-2 rounded-t-xl font-bold text-sm transition-colors ${
+          abaTopo === 'visitaMulti'
+            ? 'bg-teal-600 text-white shadow-sm'
+            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+        }`}
+      >
+        Visita Multi
+      </button>
+    </div>
+
+    {/* 🔸 ABRE A CONDICIONAL */}
+    {abaTopo === 'visaoGeral' ? (
+      <>      
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2">
           <Activity className="text-blue-500" /> Resumo do Plantão
@@ -427,6 +457,14 @@ const OverviewTab = ({
           )}
         </div>
       </div>
+      </>
+      ) : (
+        <VisitaMultiTab
+          currentPatient={currentPatient}
+          userProfile={userProfile}
+          save={save}
+        />
+      )}      
     </div>
   );
 };

@@ -140,6 +140,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [viewMode, setViewMode] = useState("overview");
+  const [abaTopo, setAbaTopo] = useState('visaoGeral');
   const [viewingPreviousBH, setViewingPreviousBH] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showATBHistoryModal, setShowATBHistoryModal] = useState(false);
@@ -5004,7 +5005,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
 
   // --- LÓGICA DE INTERFACE (Botões Base) ---
   const baseNavButtons = [
-    { id: "overview", label: "Visita Multi", icon: <Activity size={20} /> },
+    { id: "overview", label: "Painel Geral", icon: <Activity size={20} /> },
     { id: "medical", label: "Médico", icon: <Stethoscope size={20} /> },
     { id: "nursing", label: "Enfermeiro", icon: <NurseCap size={20} /> },
     { id: "physio", label: "Fisioterapeuta", icon: <Wind size={20} /> },
@@ -5594,7 +5595,10 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     ) : (
                       <OverviewTab
                         currentPatient={currentPatient}
-                        viewMode={viewMode} // ou activeTab (depende de como o senhor chamou aí em cima)
+                        viewMode={viewMode}
+                        abaTopo={abaTopo}
+                        setAbaTopo={setAbaTopo}
+                        save={save}
                         handleBlurSave={handleBlurSave}
                         updateP={updateP}
 
