@@ -463,6 +463,7 @@ const OverviewTab = ({
           currentPatient={currentPatient}
           userProfile={userProfile}
           save={save}
+          calculateDiurese12hMlKgH={calculateDiurese12hMlKgH}
         />
       )}      
     </div>

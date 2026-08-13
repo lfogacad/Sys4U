@@ -1037,6 +1037,24 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     // SUTURA DE SEGURANÇA: Esterilizando o payload
     const pacienteSeguro = JSON.parse(JSON.stringify(updatedPatient));
 
+    // 🔄 SINCRONIZAÇÃO BH HISTÓRICO → bh_previous
+    const dataBHPrev = pacienteSeguro.bh_previous?.date;
+    if (dataBHPrev && Array.isArray(pacienteSeguro.historico_bh)) {
+      const itemHistorico = pacienteSeguro.historico_bh.find(h => h.date === dataBHPrev);
+      if (itemHistorico) {
+        pacienteSeguro.bh_previous = JSON.parse(JSON.stringify(itemHistorico));
+      }
+    }
+
+    // Sincroniza também o estado em memória (sem isso, a UI só atualizaria após F5)
+    if (pacienteSeguro.bh_previous && JSON.stringify(updatedPatient.bh_previous || null) !== JSON.stringify(pacienteSeguro.bh_previous)) {
+      setPatients(prev => {
+        const copia = [...prev];
+        if (copia[activeTab]) copia[activeTab] = { ...copia[activeTab], bh_previous: pacienteSeguro.bh_previous };
+        return copia;
+      });
+    }
+
     try {
       // Normalização do ID
       let idBruto = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;

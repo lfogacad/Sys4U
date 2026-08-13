@@ -1,24 +1,35 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-// ============================================================
-// VisitaMultiTab - Visita Multidisciplinar integrada ao Firestore
-// Grava em currentPatient.visita[dataISO] via save()
-// ============================================================
+/* ============================================================
+   VisitaMultiTab — Visita Multidisciplinar (Sys4U / UTI)
+   ------------------------------------------------------------
+   • Cada profissional preenche a sua aba (campos fixos + observações)
+   • Painel "Metas do Dia" COMPARTILHADO, visível em TODAS as abas
+   • Metas automáticas (análise clínica da aba do Técnico) ficam
+     "aguardando" até o Médico RT ou o Médico Plantonista confirmar
+     ou rejeitar
+   • Metas canceladas (com justificativa) e não cumpridas aparecem
+     na visita do dia seguinte
+   • Persistência: currentPatient.visita[dataISO] via save()
+   ============================================================ */
 
-// Estrutura vazia padrão de um dia de visita
+// ⚠️ AJUSTE AQUI: nome do(s) campo(s) de sexo do paciente no seu Firestore
+// (ex: "sexo", "genero"...). Usado apenas para concordância de gênero
+// nas frases de SSVV (eucárdica/eucárdico, hipotensa/hipotenso...).
+const obterSexoPaciente = (p) => String(p?.sexo || p?.genero || '').toUpperCase();
+
 const criarVisitaVazia = () => ({
   medicoRotina: {
     planoTerapeutico: '', sedacaoAnalgesia: '', antibiotico: '',
     desmameVentilatorio: '', diretivas: '', observacoes: '',
     profilaxias: {
-      tvp: { avaliado: false, fatoresRisco: {}, contraindicacoes: {}, indicada: false, tipo: 'farmacologica', farmaco: '' },
-      ulceraEstresse: { avaliado: false, fatoresRisco: {}, indicada: false, farmaco: '' }
+      tvp: { fatoresRisco: {}, contraindicacoes: {}, indicada: false, tipo: 'farmacologica', farmaco: '' },
+      ulceraEstresse: { fatoresRisco: {}, indicada: false, farmaco: '' }
     },
     tot: {
-      avaliado: false, manterTOT: true,
-      criteriosDespertar: { satAplicavel: false, semSedacaoContinua: false, semBloqueioNeuromuscular: false, semAtividadeEpileptica: false, semIsquemiaMiocardica: false, semPicElevada: false, semVasopressorAltaDose: false, semHipoxemiaGrave: false, satRealizado: false, motivoNao: '' },
-      tre: { treAplicavel: false, causaIpraEmResolucao: false, pao2Fio2Adequado: false, semVasopressorOuBaixaDose: false, semSedacaoContinua: false, esforcoInspiratorioPresente: false, semAcidoseRespiratoria: false, semSecrecoesExcessivas: false, semInstabilidadeNeurologica: false, treRealizado: false, motivoNao: '' },
-      conduta: ''
+      manterTOT: true, conduta: '',
+      criteriosDespertar: { semSedacaoContinua: false, semBloqueioNeuromuscular: false, semAtividadeEpileptica: false, semIsquemiaMiocardica: false, semPicElevada: false, semVasopressorAltaDose: false, semHipoxemiaGrave: false, motivoNao: '' },
+      tre: { causaIpraEmResolucao: false, pao2Fio2Adequado: false, semVasopressorOuBaixaDose: false, semSedacaoContinua: false, esforcoInspiratorioPresente: false, semAcidoseRespiratoria: false, semSecrecoesExcessivas: false, semInstabilidadeNeurologica: false, motivoNao: '' }
     }
   },
   medicoPlantonista: { evolucaoPlantao: '', intercorrencias24h: '', condutasPlantao: '', observacoes: '' },
@@ -35,14 +46,11 @@ const criarVisitaVazia = () => ({
   },
   coordenadorFisioterapia: { indicadores: '', observacoes: '' },
   nutricionista: { viaAcesso: '', dieta: '', metaCalorica: '', metaProteica: '', suplementacao: '', reavaliacao: '', observacoes: '' },
-  tecnicoEnfermagem: {
-    sinaisVitais: { pa: '', fc: '', fr: '', sat: '', temp: '' },
-    glicemia: '', higiene: '', higieneOral: { realizada3x: false }, observacoesLeito: '', observacoes: ''
-  },
-  indicacoes: []
+  tecnicoEnfermagem: { retornoSNE: '', observacoes: '' },
+  metas: []
 });
 
-// Critérios fechados (baseados em evidência)
+// ------------------- CHECKLISTS FECHADOS -------------------
 const CRITERIOS_TVP = [
   { id: 'imobilidade', label: 'Imobilidade' },
   { id: 'vmMais48h', label: 'VM > 48h' },
@@ -96,7 +104,7 @@ const CRITERIOS_TRE = [
   { id: 'semSecrecoesExcessivas', label: 'Sem secreções excessivas' },
   { id: 'semInstabilidadeNeurologica', label: 'Sem instabilidade neurológica' }
 ];
-
+const TIPOS_INDICACAO = ['SVD', 'CVC', 'Dieta/SNG', 'Cultura', 'Raio-X', 'Profilaxia TVP', 'Profilaxia úlcera', 'Outro'];
 const CATEGORIAS = [
   { id: 'medicoRotina', label: 'Médico RT', cor: 'teal' },
   { id: 'medicoPlantonista', label: 'Médico Plantão', cor: 'blue' },
@@ -108,158 +116,294 @@ const CATEGORIAS = [
   { id: 'tecnicoEnfermagem', label: 'Téc. Enfermagem', cor: 'rose' }
 ];
 
-const TIPOS_INDICACAO = [
-  'SVD', 'CVC', 'Dieta/SNG', 'Cultura', 'Raio-X',
-  'Profilaxia TVP', 'Profilaxia úlcera', 'Outro'
-];
+// ------------------- HELPERS (sem dependência externa) -------------------
+const safeNum = (v) => {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = parseFloat(String(v).replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+};
+
+const temPerdaNoBH = (bh, nome) => {
+  if (!bh || !bh.losses) return false;
+  return Object.keys(bh.losses).some((h) => {
+    const val = String(bh.losses[h]?.[nome] || '').trim().toLowerCase();
+    const numVal = parseFloat(val);
+    return ['sim', 's'].includes(val) || val.includes('+') || (!isNaN(numVal) && numVal > 0);
+  });
+};
+
+const diasDesde = (dataStr) => {
+  if (!dataStr) return null;
+  const partes = String(dataStr).split('-');
+  let d;
+  if (partes.length === 3 && partes[0].length === 4) d = new Date(`${partes[0]}-${partes[1]}-${partes[2]}`);
+  else if (partes.length === 3) d = new Date(`${partes[2]}-${partes[1]}-${partes[0]}`);
+  else d = new Date(dataStr);
+  if (isNaN(d)) return null;
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const alvo = new Date(d); alvo.setHours(0, 0, 0, 0);
+  return Math.round((hoje - alvo) / 86400000);
+};
+
+// Replica EXATAMENTE a lógica da evolução médica (ModuloUTI)
+const gerarResumoSSVV = (patient, isFem) => {
+  const vitals = patient?.bh?.vitals || {};
+  let tempMax = 0, hasSpo2 = false;
+  let epFebre = 0, epHipotermia = 0, epTaquicardia = 0, epBradicardia = 0;
+  let epTaquipneia = 0, epBradipneia = 0, epHipotensao = 0, epHipertensao = 0;
+  let epSpo2Rasa = 0, epSpo2Baixa = 0;
+  Object.values(vitals).forEach((v) => {
+    if (!v) return;
+    const t = safeNum(v['Temp (ºC)']);
+    if (t > tempMax) tempMax = t;
+    if (t >= 37.8) epFebre++;
+    if (t > 0 && t < 35.0) epHipotermia++;
+    const s = safeNum(v['SpO2 (%)']);
+    if (s > 0) { hasSpo2 = true; if (s >= 89 && s <= 92) epSpo2Rasa++; if (s < 89) epSpo2Baixa++; }
+    const fc = safeNum(v['FC (bpm)']);
+    if (fc > 0) { if (fc > 100) epTaquicardia++; if (fc < 60) epBradicardia++; }
+    const pas = safeNum(v['PAS']);
+    if (pas > 0) { if (pas < 90) epHipotensao++; if (pas > 160) epHipertensao++; }
+    const fr = safeNum(v['FR (ipm)']) || safeNum(v['FR (irpm)']) || safeNum(v['FR']);
+    if (fr > 0) { if (fr > 20) epTaquipneia++; if (fr < 12) epBradipneia++; }
+  });
+  const build = (ep, singular, multi, normal) => (ep === 0 ? normal : ep === 1 ? `apresentou um episódio de ${singular}` : multi);
+
+  let tempStatus;
+  if (epFebre === 0 && epHipotermia === 0) tempStatus = 'afebril';
+  else {
+    const parts = [];
+    if (epFebre > 0) parts.push(build(epFebre, 'febre', 'febril', ''));
+    if (epHipotermia > 0) parts.push(build(epHipotermia, 'hipotermia', isFem ? 'hipotérmica' : 'hipotérmico', ''));
+    tempStatus = parts.join(' e ');
+  }
+
+  let spo2Status = 'sem registro de SpO2';
+  if (hasSpo2) {
+    if (epSpo2Rasa === 0 && epSpo2Baixa === 0) spo2Status = 'mantendo boa SpO2';
+    else {
+      const parts = [];
+      if (epSpo2Baixa > 0) parts.push(build(epSpo2Baixa, 'baixa SpO2', 'com baixa SpO2', ''));
+      if (epSpo2Rasa > 0) parts.push(build(epSpo2Rasa, 'SpO2 rasa', 'com SpO2 rasa', ''));
+      spo2Status = parts.join(' e ');
+    }
+  }
+
+  let fcStatus;
+  if (epTaquicardia === 0 && epBradicardia === 0) fcStatus = isFem ? 'eucárdica' : 'eucárdico';
+  else {
+    const parts = [];
+    if (epTaquicardia > 0) parts.push(build(epTaquicardia, 'taquicardia', isFem ? 'taquicárdica' : 'taquicárdico', ''));
+    if (epBradicardia > 0) parts.push(build(epBradicardia, 'bradicardia', isFem ? 'bradicárdica' : 'bradicárdico', ''));
+    fcStatus = parts.join(' e ');
+  }
+
+  let paStatus;
+  if (epHipotensao === 0 && epHipertensao === 0) paStatus = 'com bom controle pressórico';
+  else {
+    const parts = [];
+    if (epHipotensao > 0) parts.push(build(epHipotensao, 'hipotensão', isFem ? 'hipotensa' : 'hipotenso', ''));
+    if (epHipertensao > 0) parts.push(build(epHipertensao, 'hipertensão', isFem ? 'hipertensa' : 'hipertenso', ''));
+    paStatus = parts.join(' e ');
+  }
+
+  let frStatus = '';
+  if (epTaquipneia > 0 || epBradipneia > 0) {
+    const parts = [];
+    if (epTaquipneia > 0) parts.push(build(epTaquipneia, 'taquipneia', isFem ? 'taquipneica' : 'taquipneico', ''));
+    if (epBradipneia > 0) parts.push(build(epBradipneia, 'bradipneia', isFem ? 'bradipneica' : 'bradipneico', ''));
+    frStatus = parts.join(' e ');
+  }
+
+  return { tempStatus, spo2Status, fcStatus, paStatus, frStatus, epHipertensao };
+};
 
 // ============================================================
-const VisitaMultiTab = ({ currentPatient, save, updateNested }) => {
+// COMPONENTE PRINCIPAL
+// ============================================================
+const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   const hoje = new Date();
-  const dataISO = hoje.toISOString().slice(0, 10);
-  const dataBR = `${String(hoje.getDate()).padStart(2, '0')}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${hoje.getFullYear()}`;
+  const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+  const ontemISO = `${ontem.getFullYear()}-${String(ontem.getMonth() + 1).padStart(2, '0')}-${String(ontem.getDate()).padStart(2, '0')}`;
+  const fmtBR = (iso) => { const [a, m, d] = String(iso).split('-'); return `${d}-${m}-${a}`; };
+  const dataBR = fmtBR(dataISO);
+  const ontemBR = fmtBR(ontemISO);
 
-  const [categoriaAtiva, setCategoriaAtiva] = useState('medicoRotina');
-  const [modalCancelamento, setModalCancelamento] = useState(null);
-  const [novaIndicacao, setNovaIndicacao] = useState({ tipo: 'SVD', descricao: '' });
+  // começa no Técnico para facilitar o teste — troque para 'medicoRotina' se preferir
+  const [categoriaAtiva, setCategoriaAtiva] = useState('tecnicoEnfermagem');
+  const [modalCancelamento, setModalCancelamento] = useState(null); // { id, justificativa, acao: 'cancelar' | 'rejeitar' }
+  const [novaMeta, setNovaMeta] = useState({ tipo: 'SVD', descricao: '' });
+  const jaGeradasRef = useRef(false);
 
-  // Inicializa a visita de hoje (já existente OU vazia)
   const [visita, setVisita] = useState(() => {
     const existente = currentPatient?.visita?.[dataISO];
     const base = criarVisitaVazia();
-    return existente ? { ...base, ...existente } : base;
+    return existente ? { ...base, ...existente, metas: existente.metas || base.metas } : base;
   });
 
-  // ============================================================
-  // PERSISTÊNCIA: grava a visita no Firestore via save()
-  // ============================================================
+  // ---------- PERSISTÊNCIA ----------
   const salvarVisita = (novaVisita) => {
     if (!save || !currentPatient) return;
     const pacienteAtualizado = {
       ...currentPatient,
-      visita: {
-        ...(currentPatient.visita || {}),
-        [dataISO]: novaVisita
-      }
+      visita: { ...(currentPatient.visita || {}), [dataISO]: novaVisita }
     };
     save(pacienteAtualizado, `Visita Multi ${dataBR}`);
   };
 
-  // Atualiza um campo de uma categoria e salva
-  const updateCampo = (categoria, campo, valor) => {
+  // Atualizador genérico profundo: caminho = array de chaves (ex: ['profilaxias','tvp','farmaco'])
+  const updateDeep = (categoria, caminho, valor) => {
     setVisita(prev => {
-      const nova = {
-        ...prev,
-        [categoria]: { ...prev[categoria], [campo]: valor }
-      };
+      const cat = JSON.parse(JSON.stringify(prev[categoria] || {}));
+      let alvo = cat;
+      for (let i = 0; i < caminho.length - 1; i++) {
+        if (!alvo[caminho[i]] || typeof alvo[caminho[i]] !== 'object') alvo[caminho[i]] = {};
+        alvo = alvo[caminho[i]];
+      }
+      alvo[caminho[caminho.length - 1]] = valor;
+      const nova = { ...prev, [categoria]: cat };
       salvarVisita(nova);
       return nova;
     });
   };
 
-  // Atualiza um campo aninhado (ex: escalas.braden) e salva
-  const updateNestedCampo = (categoria, subCampo, campo, valor) => {
+  // ---------- ANÁLISE CLÍNICA (aba do Técnico) ----------
+  const bhAnterior = currentPatient?.bh_previous ||
+    (currentPatient?.historico_bh?.length ? currentPatient.historico_bh[currentPatient.historico_bh.length - 1] : null);
+
+  const calcularAnalise = () => {
+    const sexo = obterSexoPaciente(currentPatient);
+    const isFem = sexo === 'F' || sexo === 'FEM' || sexo === 'FEMININO';
+    const resumo = gerarResumoSSVV(currentPatient, isFem);
+
+    const diurese12h = typeof calculateDiurese12hMlKgH === 'function' ? calculateDiurese12hMlKgH(currentPatient) : '---';
+    const diureseNum = parseFloat(String(diurese12h).replace(',', '.'));
+    const diureseBaixa = !isNaN(diureseNum) && diureseNum < 0.5;
+
+    const totalDiurese24h = Object.values(bhAnterior?.losses || {}).reduce((acc, per) => acc + safeNum(per?.['Diurese']), 0);
+
+    const diarreiaHoje = temPerdaNoBH(currentPatient?.bh, 'Diarreia');
+    const diarreiaOntem = temPerdaNoBH(bhAnterior, 'Diarreia');
+    const diarreiaText = diarreiaHoje && diarreiaOntem ? 'Hoje e Ontem' : diarreiaHoje ? 'Hoje' : diarreiaOntem ? 'Ontem' : '';
+
+    const vomitoHoje = temPerdaNoBH(currentPatient?.bh, 'Vômitos') || temPerdaNoBH(currentPatient?.bh, 'Vômito');
+    const vomitoOntem = temPerdaNoBH(bhAnterior, 'Vômitos') || temPerdaNoBH(bhAnterior, 'Vômito');
+    const vomitoText = vomitoHoje && vomitoOntem ? 'Hoje e Ontem' : vomitoHoje ? 'Hoje' : vomitoOntem ? 'Ontem' : '';
+
+    const evacHojeBH = temPerdaNoBH(currentPatient?.bh, 'Evacuação') || temPerdaNoBH(currentPatient?.bh, 'Evacuacao') || temPerdaNoBH(currentPatient?.bh, 'Fezes');
+    const evacOntemBH = temPerdaNoBH(bhAnterior, 'Evacuação') || temPerdaNoBH(bhAnterior, 'Evacuacao') || temPerdaNoBH(bhAnterior, 'Fezes');
+    let evacResult = '';
+    let isConstipado = false;
+    if (evacHojeBH || diarreiaHoje) evacResult = 'Hoje';
+    else if (evacOntemBH || diarreiaOntem) evacResult = 'Ontem';
+    else {
+      const dias = diasDesde(currentPatient?.gastro?.dataUltimaEvacuacao);
+      if (dias === null) evacResult = 'Não registrado';
+      else if (dias <= 0) evacResult = 'Hoje';
+      else if (dias === 1) evacResult = 'Ontem';
+      else { evacResult = `Há ${dias} dias`; if (dias > 2) isConstipado = true; }
+    }
+
+    return { resumo, diurese12h, diureseNum, diureseBaixa, totalDiurese24h, diarreiaText, vomitoText, evacResult, isConstipado };
+  };
+
+  const analise = calcularAnalise();
+
+  // ---------- METAS COMPARTILHADAS ----------
+  const metas = visita.metas || [];
+  const metasAguardando = metas.filter(m => m.status === 'aguardando');
+  const metasAtivas = metas.filter(m => m.status === 'aguardando' || m.status === 'pendente');
+  const metasOntem = currentPatient?.visita?.[ontemISO]?.metas || [];
+  const cumpridasOntem = metasOntem.filter(m => m.status === 'realizado');
+  const naoCumpridasOntem = metasOntem.filter(m => m.status === 'pendente');
+  const canceladasOntem = metasOntem.filter(m => m.status === 'cancelado');
+
+  // updater funcional: encadeia corretamente várias mudanças no mesmo instante
+  const atualizarMetas = (updater) => {
     setVisita(prev => {
-      const nova = {
-        ...prev,
-        [categoria]: {
-          ...prev[categoria],
-          [subCampo]: { ...prev[categoria][subCampo], [campo]: valor }
-        }
-      };
+      const novasMetas = updater(prev.metas || []);
+      const nova = { ...prev, metas: novasMetas };
       salvarVisita(nova);
       return nova;
     });
   };
 
-  // Atualiza um item de checklist (fatoresRisco/contraindicacoes) e salva
-  const updateChecklist = (categoria, bloco, lista, id, valor) => {
-    setVisita(prev => {
-      const nova = {
-        ...prev,
-        [categoria]: {
-          ...prev[categoria],
-          [bloco]: {
-            ...prev[categoria][bloco],
-            [lista]: { ...prev[categoria][bloco][lista], [id]: valor }
-          }
-        }
-      };
-      salvarVisita(nova);
-      return nova;
+  const sugerirMeta = (descricao, origem) => {
+    atualizarMetas(lista => {
+      const ativa = lista.some(m =>
+        (m.descricao === descricao || m.origem === origem) &&
+        (m.status === 'aguardando' || m.status === 'pendente')
+      );
+      if (ativa) return lista;
+      return [...lista, {
+        id: `meta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        descricao, origem, status: 'aguardando', criadoEm: dataISO,
+        confirmadoPor: null, dataConfirmacao: null,
+        dataRealizado: null, marcadoPor: null, marcadoEm: null,
+        dataCancelamento: null, canceladoPor: null, justificativaCancelamento: null
+      }];
     });
   };
 
-  // ============================================================
-  // INDICAÇÕES (METAS DO DIA)
-  // ============================================================
-  const adicionarIndicacao = (tipo, descricao) => {
+  const adicionarMetaManual = (tipo, descricao) => {
     if (!descricao.trim()) return;
-    const novaInd = {
-      id: `ind_${Date.now()}`,
-      tipo, descricao,
-      quemIndicou: categoriaAtiva,
-      dataIndicacao: dataISO,
-      status: 'pendente',
+    atualizarMetas(lista => [...lista, {
+      id: `meta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      descricao: tipo && tipo !== 'Outro' ? `${tipo} — ${descricao}` : descricao,
+      origem: 'manual', status: 'pendente', criadoEm: dataISO, adicionadoPor: categoriaAtiva,
+      confirmadoPor: null, dataConfirmacao: null,
       dataRealizado: null, marcadoPor: null, marcadoEm: null,
-      justificativaCancelamento: null
-    };
-    setVisita(prev => {
-      const nova = { ...prev, indicacoes: [...(prev.indicacoes || []), novaInd] };
-      salvarVisita(nova);
-      return nova;
-    });
+      dataCancelamento: null, canceladoPor: null, justificativaCancelamento: null
+    }]);
+  };
+
+  const confirmarMeta = (id) => {
+    atualizarMetas(lista => lista.map(m =>
+      m.id === id ? { ...m, status: 'pendente', confirmadoPor: categoriaAtiva, dataConfirmacao: dataISO } : m
+    ));
+  };
+
+  const rejeitarMeta = (id, justificativa) => {
+    atualizarMetas(lista => lista.map(m =>
+      m.id === id ? {
+        ...m, status: 'cancelado', dataCancelamento: dataISO, canceladoPor: categoriaAtiva,
+        justificativaCancelamento: justificativa ? `Rejeitada: ${justificativa}` : 'Rejeitada pela equipe médica'
+      } : m
+    ));
   };
 
   const marcarRealizado = (id) => {
-    setVisita(prev => {
-      const nova = {
-        ...prev,
-        indicacoes: (prev.indicacoes || []).map(ind =>
-          ind.id === id
-            ? { ...ind, status: 'realizado', dataRealizado: dataISO, marcadoPor: categoriaAtiva, marcadoEm: new Date().toISOString(), justificativaCancelamento: null }
-            : ind
-        )
-      };
-      salvarVisita(nova);
-      return nova;
-    });
+    atualizarMetas(lista => lista.map(m =>
+      m.id === id ? { ...m, status: 'realizado', dataRealizado: dataISO, marcadoPor: categoriaAtiva, marcadoEm: new Date().toISOString() } : m
+    ));
   };
 
-  const confirmarCancelamento = (id, justificativa) => {
-    setVisita(prev => {
-      const nova = {
-        ...prev,
-        indicacoes: (prev.indicacoes || []).map(ind =>
-          ind.id === id
-            ? { ...ind, status: 'cancelado', dataRealizado: null, marcadoPor: categoriaAtiva, marcadoEm: new Date().toISOString(), justificativaCancelamento: justificativa }
-            : ind
-        )
-      };
-      salvarVisita(nova);
-      return nova;
-    });
-    setModalCancelamento(null);
+  const cancelarMeta = (id, justificativa) => {
+    atualizarMetas(lista => lista.map(m =>
+      m.id === id ? { ...m, status: 'cancelado', dataCancelamento: dataISO, canceladoPor: categoriaAtiva, justificativaCancelamento: justificativa || 'Cancelada sem justificativa' } : m
+    ));
   };
 
-  // Reúne todas as indicações pendentes de TODOS os dias (para o painel Metas do Dia)
-  const metasPendentes = useMemo(() => {
-    const todas = [];
-    const visitas = currentPatient?.visita || {};
-    Object.keys(visitas).forEach(d => {
-      (visitas[d].indicacoes || []).forEach(ind => {
-        if (ind.status === 'pendente') todas.push({ ...ind, dia: d });
-      });
-    });
-    return todas;
-  }, [currentPatient?.visita]);
+  // Gera as sugestões automáticas UMA vez ao montar (dedup por descrição/origem = idempotente)
+  useEffect(() => {
+    if (jaGeradasRef.current) return;
+    jaGeradasRef.current = true;
+    const a = calcularAnalise();
+    if (a.resumo.epHipertensao > 0) sugerirMeta('Controle pressório', 'auto_ssvv_hipertensao');
+    if (a.diureseBaixa) sugerirMeta('Estimular diurese', 'auto_diurese_baixa');
+    if (a.isConstipado) sugerirMeta('Medidas laxativas', 'auto_evacuacao_atrasada');
+    if (a.diarreiaText) sugerirMeta('Medidas constipantes', 'auto_diarreia');
+    if (a.vomitoText) sugerirMeta('Estimular esvaziamento gástrico', 'auto_vomitos');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ============================================================
-  // RENDER
+  const podeConfirmarMedico = categoriaAtiva === 'medicoRotina' || categoriaAtiva === 'medicoPlantonista';
+
   // ============================================================
   return (
     <div className="space-y-4">
-      {/* Cabeçalho da visita */}
+      {/* CABEÇALHO */}
       <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 flex items-center justify-between">
         <div>
           <h3 className="font-bold text-teal-800">Visita Multi — {currentPatient?.nome}</h3>
@@ -268,7 +412,7 @@ const VisitaMultiTab = ({ currentPatient, save, updateNested }) => {
         <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-teal-600 text-white">Salvando automaticamente</span>
       </div>
 
-      {/* Abas por categoria */}
+      {/* ABAS POR CATEGORIA */}
       <div className="flex flex-wrap gap-2">
         {CATEGORIAS.map(cat => (
           <button
@@ -283,223 +427,317 @@ const VisitaMultiTab = ({ currentPatient, save, updateNested }) => {
         ))}
       </div>
 
-      {/* Conteúdo da categoria ativa */}
+      {/* CONTEÚDO DA CATEGORIA ATIVA */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        {/* ============ MÉDICO RT ============ */}
         {categoriaAtiva === 'medicoRotina' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Médico da Rotina / RT</h4>
-            <CampoTexto label="Plano Terapêutico" valor={visita.medicoRotina.planoTerapeutico} onChange={v => updateCampo('medicoRotina', 'planoTerapeutico', v)} />
-            <CampoTexto label="Sedação / Analgesia" valor={visita.medicoRotina.sedacaoAnalgesia} onChange={v => updateCampo('medicoRotina', 'sedacaoAnalgesia', v)} />
-            <CampoTexto label="Antibiótico" valor={visita.medicoRotina.antibiotico} onChange={v => updateCampo('medicoRotina', 'antibiotico', v)} />
-            <CampoTexto label="Desmame Ventilatório" valor={visita.medicoRotina.desmameVentilatorio} onChange={v => updateCampo('medicoRotina', 'desmameVentilatorio', v)} />
-            <CampoTexto label="Diretivas" valor={visita.medicoRotina.diretivas} onChange={v => updateCampo('medicoRotina', 'diretivas', v)} />
+            {metasAguardando.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-sm font-semibold">
+                ⚠️ {metasAguardando.length} meta(s) automática(s) aguardando confirmação médica — role até o painel "Metas do Dia" abaixo.
+              </div>
+            )}
+            <CampoTexto label="Plano Terapêutico" valor={visita.medicoRotina.planoTerapeutico} onChange={v => updateDeep('medicoRotina', ['planoTerapeutico'], v)} />
+            <CampoTexto label="Sedação / Analgesia" valor={visita.medicoRotina.sedacaoAnalgesia} onChange={v => updateDeep('medicoRotina', ['sedacaoAnalgesia'], v)} />
+            <CampoTexto label="Antibiótico" valor={visita.medicoRotina.antibiotico} onChange={v => updateDeep('medicoRotina', ['antibiotico'], v)} />
+            <CampoTexto label="Desmame Ventilatório" valor={visita.medicoRotina.desmameVentilatorio} onChange={v => updateDeep('medicoRotina', ['desmameVentilatorio'], v)} />
+            <CampoTexto label="Diretivas" valor={visita.medicoRotina.diretivas} onChange={v => updateDeep('medicoRotina', ['diretivas'], v)} />
 
-            {/* Checklist Profilaxia TVP */}
-            <ChecklistCard
-              titulo="Profilaxia de TVP"
-              descricao="Indicada se ≥1 fator de risco E nenhuma contraindicação"
-              itens={CRITERIOS_TVP}
-              valores={visita.medicoRotina.profilaxias.tvp.fatoresRisco}
-              onToggle={(id, v) => updateChecklist('medicoRotina', 'profilaxias', 'fatoresRisco', id, v)}
-              cor="cyan"
-            />
-            <ChecklistCard
-              titulo="Contraindicações à profilaxia de TVP"
-              itens={CONTRA_TVP}
-              valores={visita.medicoRotina.profilaxias.tvp.contraindicacoes}
-              onToggle={(id, v) => updateChecklist('medicoRotina', 'profilaxias', 'contraindicacoes', id, v)}
-              cor="rose"
-            />
+            <ChecklistCard titulo="Profilaxia de TVP" descricao="Indicada se ≥1 fator de risco E nenhuma contraindicação" itens={CRITERIOS_TVP} valores={visita.medicoRotina.profilaxias.tvp.fatoresRisco} onToggle={(id, v) => updateDeep('medicoRotina', ['profilaxias', 'tvp', 'fatoresRisco', id], v)} cor="cyan" />
+            <ChecklistCard titulo="Contraindicações à profilaxia de TVP" itens={CONTRA_TVP} valores={visita.medicoRotina.profilaxias.tvp.contraindicacoes} onToggle={(id, v) => updateDeep('medicoRotina', ['profilaxias', 'tvp', 'contraindicacoes', id], v)} cor="rose" />
             <div className="grid grid-cols-2 gap-3">
-              <CampoTexto label="Tipo (farmacológica/mecânica)" valor={visita.medicoRotina.profilaxias.tvp.tipo} onChange={v => updateNestedCampo('medicoRotina', 'profilaxias', 'tipo', v)} />
-              <CampoTexto label="Fármaco (ex: Enoxaparina 40mg)" valor={visita.medicoRotina.profilaxias.tvp.farmaco} onChange={v => updateNestedCampo('medicoRotina', 'profilaxias', 'farmaco', v)} />
+              <CampoTexto label="Tipo (farmacológica/mecânica)" valor={visita.medicoRotina.profilaxias.tvp.tipo} onChange={v => updateDeep('medicoRotina', ['profilaxias', 'tvp', 'tipo'], v)} />
+              <CampoTexto label="Fármaco (ex: Enoxaparina 40mg)" valor={visita.medicoRotina.profilaxias.tvp.farmaco} onChange={v => updateDeep('medicoRotina', ['profilaxias', 'tvp', 'farmaco'], v)} />
             </div>
 
-            {/* Checklist Profilaxia Úlcera de Estresse */}
-            <ChecklistCard
-              titulo="Profilaxia de Úlcera de Estresse"
-              descricao="Indicada se ≥1 fator de risco"
-              itens={CRITERIOS_ULCERA}
-              valores={visita.medicoRotina.profilaxias.ulceraEstresse.fatoresRisco}
-              onToggle={(id, v) => updateChecklist('medicoRotina', 'profilaxias', 'fatoresRisco', id, v)}
-              cor="amber"
-            />
-            <CampoTexto label="Fármaco (ex: Omeprazol 40mg)" valor={visita.medicoRotina.profilaxias.ulceraEstresse.farmaco} onChange={v => updateNestedCampo('medicoRotina', 'profilaxias', 'farmaco', v)} />
+            <ChecklistCard titulo="Profilaxia de Úlcera de Estresse" descricao="Indicada se ≥1 fator de risco" itens={CRITERIOS_ULCERA} valores={visita.medicoRotina.profilaxias.ulceraEstresse.fatoresRisco} onToggle={(id, v) => updateDeep('medicoRotina', ['profilaxias', 'ulceraEstresse', 'fatoresRisco', id], v)} cor="amber" />
+            <CampoTexto label="Fármaco (ex: Omeprazol 40mg)" valor={visita.medicoRotina.profilaxias.ulceraEstresse.farmaco} onChange={v => updateDeep('medicoRotina', ['profilaxias', 'ulceraEstresse', 'farmaco'], v)} />
 
-            {/* Checklist TOT */}
-            <ChecklistCard
-              titulo="TOT — Critérios para Despertar (SAT)"
-              descricao="Se todos ok → sugere pausar sedação e testar despertar"
-              itens={CRITERIOS_DESPERTAR}
-              valores={visita.medicoRotina.tot.criteriosDespertar}
-              onToggle={(id, v) => updateChecklist('medicoRotina', 'tot', 'criteriosDespertar', id, v)}
-              cor="violet"
-            />
-            <CampoTexto label="SAT realizado? (motivo se não)" valor={visita.medicoRotina.tot.criteriosDespertar.motivoNao} onChange={v => updateNestedCampo('medicoRotina', 'tot', 'motivoNao', v)} />
-            <ChecklistCard
-              titulo="TOT — Critérios para TRE"
-              descricao="Se todos ok → sugere tentativa de TRE"
-              itens={CRITERIOS_TRE}
-              valores={visita.medicoRotina.tot.tre}
-              onToggle={(id, v) => updateChecklist('medicoRotina', 'tot', 'tre', id, v)}
-              cor="indigo"
-            />
-            <CampoTexto label="TRE realizado? (motivo se não)" valor={visita.medicoRotina.tot.tre.motivoNao} onChange={v => updateNestedCampo('medicoRotina', 'tot', 'motivoNao', v)} />
-            <CampoTexto label="Conduta do TOT" valor={visita.medicoRotina.tot.conduta} onChange={v => updateNestedCampo('medicoRotina', 'tot', 'conduta', v)} />
+            <ChecklistCard titulo="TOT — Critérios para Despertar (SAT)" descricao="Se todos ok → sugere pausar sedação e testar despertar" itens={CRITERIOS_DESPERTAR} valores={visita.medicoRotina.tot.criteriosDespertar} onToggle={(id, v) => updateDeep('medicoRotina', ['tot', 'criteriosDespertar', id], v)} cor="violet" />
+            <CampoTexto label="SAT realizado? (motivo se não)" valor={visita.medicoRotina.tot.criteriosDespertar.motivoNao} onChange={v => updateDeep('medicoRotina', ['tot', 'criteriosDespertar', 'motivoNao'], v)} />
+            <ChecklistCard titulo="TOT — Critérios para TRE" descricao="Se todos ok → sugere tentativa de TRE" itens={CRITERIOS_TRE} valores={visita.medicoRotina.tot.tre} onToggle={(id, v) => updateDeep('medicoRotina', ['tot', 'tre', id], v)} cor="indigo" />
+            <CampoTexto label="TRE realizado? (motivo se não)" valor={visita.medicoRotina.tot.tre.motivoNao} onChange={v => updateDeep('medicoRotina', ['tot', 'tre', 'motivoNao'], v)} />
+            <CampoTexto label="Conduta do TOT" valor={visita.medicoRotina.tot.conduta} onChange={v => updateDeep('medicoRotina', ['tot', 'conduta'], v)} />
 
-            <CampoTexto label="Observações" valor={visita.medicoRotina.observacoes} onChange={v => updateCampo('medicoRotina', 'observacoes', v)} />
+            <CampoTexto label="Observações" valor={visita.medicoRotina.observacoes} onChange={v => updateDeep('medicoRotina', ['observacoes'], v)} />
           </>
         )}
 
+        {/* ============ MÉDICO PLANTONISTA ============ */}
         {categoriaAtiva === 'medicoPlantonista' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Médico Plantonista</h4>
-            <CampoTexto label="Evolução do Plantão" valor={visita.medicoPlantonista.evolucaoPlantao} onChange={v => updateCampo('medicoPlantonista', 'evolucaoPlantao', v)} />
-            <CampoTexto label="Intercorrências 24h" valor={visita.medicoPlantonista.intercorrencias24h} onChange={v => updateCampo('medicoPlantonista', 'intercorrencias24h', v)} />
-            <CampoTexto label="Condutas do Plantão" valor={visita.medicoPlantonista.condutasPlantao} onChange={v => updateCampo('medicoPlantonista', 'condutasPlantao', v)} />
-            <CampoTexto label="Observações" valor={visita.medicoPlantonista.observacoes} onChange={v => updateCampo('medicoPlantonista', 'observacoes', v)} />
+            {metasAguardando.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-sm font-semibold">
+                ⚠️ {metasAguardando.length} meta(s) automática(s) aguardando confirmação médica — role até o painel "Metas do Dia" abaixo.
+              </div>
+            )}
+            <CampoTexto label="Evolução do Plantão" valor={visita.medicoPlantonista.evolucaoPlantao} onChange={v => updateDeep('medicoPlantonista', ['evolucaoPlantao'], v)} />
+            <CampoTexto label="Intercorrências 24h" valor={visita.medicoPlantonista.intercorrencias24h} onChange={v => updateDeep('medicoPlantonista', ['intercorrencias24h'], v)} />
+            <CampoTexto label="Condutas do Plantão" valor={visita.medicoPlantonista.condutasPlantao} onChange={v => updateDeep('medicoPlantonista', ['condutasPlantao'], v)} />
+            <CampoTexto label="Observações" valor={visita.medicoPlantonista.observacoes} onChange={v => updateDeep('medicoPlantonista', ['observacoes'], v)} />
           </>
         )}
 
+        {/* ============ ENFERMEIRO PLANTONISTA ============ */}
         {categoriaAtiva === 'enfermeiroPlantonista' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Enfermeiro Plantonista</h4>
             <div className="grid grid-cols-2 gap-3">
-              <CampoTexto label="Balanço Hídrico (ml)" valor={visita.enfermeiroPlantonista.balancoHidrico} onChange={v => updateCampo('enfermeiroPlantonista', 'balancoHidrico', v)} />
-              <CampoTexto label="Braden" valor={visita.enfermeiroPlantonista.escalas.braden} onChange={v => updateNestedCampo('enfermeiroPlantonista', 'escalas', 'braden', v)} />
-              <CampoTexto label="Morse" valor={visita.enfermeiroPlantonista.escalas.morse} onChange={v => updateNestedCampo('enfermeiroPlantonista', 'escalas', 'morse', v)} />
+              <CampoTexto label="Balanço Hídrico (ml)" valor={visita.enfermeiroPlantonista.balancoHidrico} onChange={v => updateDeep('enfermeiroPlantonista', ['balancoHidrico'], v)} />
+              <CampoTexto label="Braden" valor={visita.enfermeiroPlantonista.escalas.braden} onChange={v => updateDeep('enfermeiroPlantonista', ['escalas', 'braden'], v)} />
+              <CampoTexto label="Morse" valor={visita.enfermeiroPlantonista.escalas.morse} onChange={v => updateDeep('enfermeiroPlantonista', ['escalas', 'morse'], v)} />
             </div>
-            <ToggleRow label="Higiene oral realizada 3x/dia" valor={visita.enfermeiroPlantonista.higieneOral.realizada3x} onChange={v => updateNestedCampo('enfermeiroPlantonista', 'higieneOral', 'realizada3x', v)} />
-            <ToggleRow label="SVD presente / manter" valor={visita.enfermeiroPlantonista.dispositivos.svd.indicacaoManter} onChange={v => updateNestedCampo('enfermeiroPlantonista', 'dispositivos', 'indicacaoManter', v)} />
-            <CampoTexto label="Curativos" valor={visita.enfermeiroPlantonista.curativos} onChange={v => updateCampo('enfermeiroPlantonista', 'curativos', v)} />
-            <CampoTexto label="Observações" valor={visita.enfermeiroPlantonista.observacoes} onChange={v => updateCampo('enfermeiroPlantonista', 'observacoes', v)} />
+            <ToggleRow label="Higiene oral realizada 3x/dia" valor={visita.enfermeiroPlantonista.higieneOral.realizada3x} onChange={v => updateDeep('enfermeiroPlantonista', ['higieneOral', 'realizada3x'], v)} />
+            <ToggleRow label="SVD presente / manter" valor={visita.enfermeiroPlantonista.dispositivos.svd.indicacaoManter} onChange={v => updateDeep('enfermeiroPlantonista', ['dispositivos', 'svd', 'indicacaoManter'], v)} />
+            <CampoTexto label="Curativos" valor={visita.enfermeiroPlantonista.curativos} onChange={v => updateDeep('enfermeiroPlantonista', ['curativos'], v)} />
+            <CampoTexto label="Observações" valor={visita.enfermeiroPlantonista.observacoes} onChange={v => updateDeep('enfermeiroPlantonista', ['observacoes'], v)} />
           </>
         )}
 
+        {/* ============ GERENTE DE ENFERMAGEM ============ */}
         {categoriaAtiva === 'gerenteEnfermagem' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Gerente de Enfermagem</h4>
-            <CampoTexto label="Recursos" valor={visita.gerenteEnfermagem.recursos} onChange={v => updateCampo('gerenteEnfermagem', 'recursos', v)} />
-            <CampoTexto label="Padronizações" valor={visita.gerenteEnfermagem.padronizacoes} onChange={v => updateCampo('gerenteEnfermagem', 'padronizacoes', v)} />
-            <CampoTexto label="Observações" valor={visita.gerenteEnfermagem.observacoes} onChange={v => updateCampo('gerenteEnfermagem', 'observacoes', v)} />
+            <CampoTexto label="Recursos" valor={visita.gerenteEnfermagem.recursos} onChange={v => updateDeep('gerenteEnfermagem', ['recursos'], v)} />
+            <CampoTexto label="Padronizações" valor={visita.gerenteEnfermagem.padronizacoes} onChange={v => updateDeep('gerenteEnfermagem', ['padronizacoes'], v)} />
+            <CampoTexto label="Observações" valor={visita.gerenteEnfermagem.observacoes} onChange={v => updateDeep('gerenteEnfermagem', ['observacoes'], v)} />
           </>
         )}
 
+        {/* ============ FISIOTERAPEUTA PLANTONISTA ============ */}
         {categoriaAtiva === 'fisioterapeutaPlantonista' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Fisioterapeuta Plantonista</h4>
             <div className="grid grid-cols-3 gap-3">
-              <CampoTexto label="Modo VM" valor={visita.fisioterapeutaPlantonista.ventilacaoMecanica.modo} onChange={v => updateNestedCampo('fisioterapeutaPlantonista', 'ventilacaoMecanica', 'modo', v)} />
-              <CampoTexto label="FiO2 (%)" valor={visita.fisioterapeutaPlantonista.ventilacaoMecanica.fio2} onChange={v => updateNestedCampo('fisioterapeutaPlantonista', 'ventilacaoMecanica', 'fio2', v)} />
-              <CampoTexto label="PEEP" valor={visita.fisioterapeutaPlantonista.ventilacaoMecanica.peep} onChange={v => updateNestedCampo('fisioterapeutaPlantonista', 'ventilacaoMecanica', 'peep', v)} />
+              <CampoTexto label="Modo VM" valor={visita.fisioterapeutaPlantonista.ventilacaoMecanica.modo} onChange={v => updateDeep('fisioterapeutaPlantonista', ['ventilacaoMecanica', 'modo'], v)} />
+              <CampoTexto label="FiO2 (%)" valor={visita.fisioterapeutaPlantonista.ventilacaoMecanica.fio2} onChange={v => updateDeep('fisioterapeutaPlantonista', ['ventilacaoMecanica', 'fio2'], v)} />
+              <CampoTexto label="PEEP" valor={visita.fisioterapeutaPlantonista.ventilacaoMecanica.peep} onChange={v => updateDeep('fisioterapeutaPlantonista', ['ventilacaoMecanica', 'peep'], v)} />
             </div>
-            <CampoTexto label="Desmame" valor={visita.fisioterapeutaPlantonista.desmame} onChange={v => updateCampo('fisioterapeutaPlantonista', 'desmame', v)} />
-            <CampoTexto label="Mobilização Precoce" valor={visita.fisioterapeutaPlantonista.mobilizacaoPrecoce} onChange={v => updateCampo('fisioterapeutaPlantonista', 'mobilizacaoPrecoce', v)} />
-            <CampoTexto label="Observações" valor={visita.fisioterapeutaPlantonista.observacoes} onChange={v => updateCampo('fisioterapeutaPlantonista', 'observacoes', v)} />
+            <CampoTexto label="Desmame" valor={visita.fisioterapeutaPlantonista.desmame} onChange={v => updateDeep('fisioterapeutaPlantonista', ['desmame'], v)} />
+            <CampoTexto label="Mobilização Precoce" valor={visita.fisioterapeutaPlantonista.mobilizacaoPrecoce} onChange={v => updateDeep('fisioterapeutaPlantonista', ['mobilizacaoPrecoce'], v)} />
+            <CampoTexto label="Observações" valor={visita.fisioterapeutaPlantonista.observacoes} onChange={v => updateDeep('fisioterapeutaPlantonista', ['observacoes'], v)} />
           </>
         )}
 
+        {/* ============ COORDENADOR DA FISIOTERAPIA ============ */}
         {categoriaAtiva === 'coordenadorFisioterapia' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Coordenador da Fisioterapia</h4>
-            <CampoTexto label="Indicadores" valor={visita.coordenadorFisioterapia.indicadores} onChange={v => updateCampo('coordenadorFisioterapia', 'indicadores', v)} />
-            <CampoTexto label="Observações" valor={visita.coordenadorFisioterapia.observacoes} onChange={v => updateCampo('coordenadorFisioterapia', 'observacoes', v)} />
+            <CampoTexto label="Indicadores" valor={visita.coordenadorFisioterapia.indicadores} onChange={v => updateDeep('coordenadorFisioterapia', ['indicadores'], v)} />
+            <CampoTexto label="Observações" valor={visita.coordenadorFisioterapia.observacoes} onChange={v => updateDeep('coordenadorFisioterapia', ['observacoes'], v)} />
           </>
         )}
 
+        {/* ============ NUTRICIONISTA ============ */}
         {categoriaAtiva === 'nutricionista' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Nutricionista</h4>
             <div className="grid grid-cols-2 gap-3">
-              <CampoTexto label="Via de Acesso" valor={visita.nutricionista.viaAcesso} onChange={v => updateCampo('nutricionista', 'viaAcesso', v)} />
-              <CampoTexto label="Meta Calórica (kcal)" valor={visita.nutricionista.metaCalorica} onChange={v => updateCampo('nutricionista', 'metaCalorica', v)} />
-              <CampoTexto label="Meta Proteica (g)" valor={visita.nutricionista.metaProteica} onChange={v => updateCampo('nutricionista', 'metaProteica', v)} />
-              <CampoTexto label="Suplementação" valor={visita.nutricionista.suplementacao} onChange={v => updateCampo('nutricionista', 'suplementacao', v)} />
+              <CampoTexto label="Via de Acesso" valor={visita.nutricionista.viaAcesso} onChange={v => updateDeep('nutricionista', ['viaAcesso'], v)} />
+              <CampoTexto label="Meta Calórica (kcal)" valor={visita.nutricionista.metaCalorica} onChange={v => updateDeep('nutricionista', ['metaCalorica'], v)} />
+              <CampoTexto label="Meta Proteica (g)" valor={visita.nutricionista.metaProteica} onChange={v => updateDeep('nutricionista', ['metaProteica'], v)} />
+              <CampoTexto label="Suplementação" valor={visita.nutricionista.suplementacao} onChange={v => updateDeep('nutricionista', ['suplementacao'], v)} />
             </div>
-            <CampoTexto label="Dieta" valor={visita.nutricionista.dieta} onChange={v => updateCampo('nutricionista', 'dieta', v)} />
-            <CampoTexto label="Reavaliação" valor={visita.nutricionista.reavaliacao} onChange={v => updateCampo('nutricionista', 'reavaliacao', v)} />
-            <CampoTexto label="Observações" valor={visita.nutricionista.observacoes} onChange={v => updateCampo('nutricionista', 'observacoes', v)} />
+            <CampoTexto label="Dieta" valor={visita.nutricionista.dieta} onChange={v => updateDeep('nutricionista', ['dieta'], v)} />
+            <CampoTexto label="Reavaliação" valor={visita.nutricionista.reavaliacao} onChange={v => updateDeep('nutricionista', ['reavaliacao'], v)} />
+            <CampoTexto label="Observações" valor={visita.nutricionista.observacoes} onChange={v => updateDeep('nutricionista', ['observacoes'], v)} />
           </>
         )}
 
+        {/* ============ TÉCNICO EM ENFERMAGEM (NOVO) ============ */}
         {categoriaAtiva === 'tecnicoEnfermagem' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Técnico em Enfermagem</h4>
-            <div className="grid grid-cols-3 gap-3">
-              <CampoTexto label="PA" valor={visita.tecnicoEnfermagem.sinaisVitais.pa} onChange={v => updateNestedCampo('tecnicoEnfermagem', 'sinaisVitais', 'pa', v)} />
-              <CampoTexto label="FC" valor={visita.tecnicoEnfermagem.sinaisVitais.fc} onChange={v => updateNestedCampo('tecnicoEnfermagem', 'sinaisVitais', 'fc', v)} />
-              <CampoTexto label="FR" valor={visita.tecnicoEnfermagem.sinaisVitais.fr} onChange={v => updateNestedCampo('tecnicoEnfermagem', 'sinaisVitais', 'fr', v)} />
-              <CampoTexto label="SatO2" valor={visita.tecnicoEnfermagem.sinaisVitais.sat} onChange={v => updateNestedCampo('tecnicoEnfermagem', 'sinaisVitais', 'sat', v)} />
-              <CampoTexto label="Temp" valor={visita.tecnicoEnfermagem.sinaisVitais.temp} onChange={v => updateNestedCampo('tecnicoEnfermagem', 'sinaisVitais', 'temp', v)} />
-              <CampoTexto label="Glicemia" valor={visita.tecnicoEnfermagem.glicemia} onChange={v => updateCampo('tecnicoEnfermagem', 'glicemia', v)} />
+
+            {/* BLOCO A — SSVV do dia anterior */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+              <h5 className="font-bold text-sm text-slate-700 mb-3">🩺 SSVV do dia anterior</h5>
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                <LinhaInfo rotulo="Temperatura" valor={analise.resumo.tempStatus} />
+                <LinhaInfo rotulo="SpO2" valor={analise.resumo.spo2Status} />
+                <LinhaInfo rotulo="FC" valor={analise.resumo.fcStatus} />
+                <LinhaInfo rotulo="PA" valor={analise.resumo.paStatus} />
+                <LinhaInfo rotulo="FR" valor={analise.resumo.frStatus || '—'} />
+              </div>
+              {analise.resumo.epHipertensao > 0 && (
+                <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  🎯 Hipertensão detectada — meta sugerida: <b>Controle pressório</b> (aguardando confirmação médica)
+                </p>
+              )}
             </div>
-            <ToggleRow label="Higiene oral realizada 3x/dia" valor={visita.tecnicoEnfermagem.higieneOral.realizada3x} onChange={v => updateNestedCampo('tecnicoEnfermagem', 'higieneOral', 'realizada3x', v)} />
-            <CampoTexto label="Higiene" valor={visita.tecnicoEnfermagem.higiene} onChange={v => updateCampo('tecnicoEnfermagem', 'higiene', v)} />
-            <CampoTexto label="Observações do Leito" valor={visita.tecnicoEnfermagem.observacoesLeito} onChange={v => updateCampo('tecnicoEnfermagem', 'observacoesLeito', v)} />
-            <CampoTexto label="Observações" valor={visita.tecnicoEnfermagem.observacoes} onChange={v => updateCampo('tecnicoEnfermagem', 'observacoes', v)} />
+
+            {/* BLOCO B — Diurese */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+              <h5 className="font-bold text-sm text-slate-700 mb-3">💧 Diurese</h5>
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                <LinhaInfo rotulo="Total diurese 24h (dia anterior)" valor={`${analise.totalDiurese24h} ml`} />
+                <LinhaInfo rotulo="Diurese 12h" valor={`${analise.diurese12h} ml/kg/h`} destaque={analise.diureseBaixa} />
+              </div>
+              {analise.diureseBaixa && (
+                <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  🎯 Diurese &lt; 0,5 ml/kg/h — meta sugerida: <b>Estimular diurese</b> (aguardando confirmação médica)
+                </p>
+              )}
+            </div>
+
+            {/* BLOCO C — Eliminações */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+              <h5 className="font-bold text-sm text-slate-700 mb-3">🚻 Eliminações</h5>
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                <LinhaInfo rotulo="Últ. evacuação" valor={analise.evacResult} destaque={analise.isConstipado} />
+                <LinhaInfo rotulo="Diarreia" valor={analise.diarreiaText || 'Não registrada'} />
+                <LinhaInfo rotulo="Vômitos" valor={analise.vomitoText || 'Não registrados'} />
+              </div>
+              {analise.isConstipado && (
+                <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  🎯 Sem evacuar há mais de 2 dias — meta sugerida: <b>Medidas laxativas</b> (aguardando confirmação médica)
+                </p>
+              )}
+              {analise.diarreiaText && (
+                <p className="mt-2 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  🎯 Diarreia presente — meta sugerida: <b>Medidas constipantes</b> (aguardando confirmação médica)
+                </p>
+              )}
+              {analise.vomitoText && (
+                <p className="mt-2 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  🎯 Vômitos presentes — meta sugerida: <b>Estimular esvaziamento gástrico</b> (aguardando confirmação médica)
+                </p>
+              )}
+
+              {/* Retorno por SNE/SNG */}
+              <div className="mt-3 flex items-center gap-3">
+                <span className="text-sm font-bold text-slate-600">Retorno por SNE/SNG?</span>
+                <button
+                  onClick={() => { updateDeep('tecnicoEnfermagem', ['retornoSNE'], 'S'); sugerirMeta('Estimular esvaziamento gástrico', 'auto_retorno_sne'); }}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${visita.tecnicoEnfermagem.retornoSNE === 'S' ? 'bg-teal-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100'}`}
+                >Sim</button>
+                <button
+                  onClick={() => updateDeep('tecnicoEnfermagem', ['retornoSNE'], 'N')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${visita.tecnicoEnfermagem.retornoSNE === 'N' ? 'bg-slate-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100'}`}
+                >Não</button>
+              </div>
+              {visita.tecnicoEnfermagem.retornoSNE === 'S' && (
+                <p className="mt-2 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  🎯 Retorno por SNE/SNG presente — meta sugerida: <b>Estimular esvaziamento gástrico</b> (aguardando confirmação médica)
+                </p>
+              )}
+            </div>
+
+            {/* BLOCO D — Perguntas-lembrete */}
+            <div className="border border-dashed border-slate-300 rounded-xl p-4 bg-white">
+              <h5 className="font-bold text-sm text-slate-500 mb-2">💡 Lembretes do plantão</h5>
+              <ul className="space-y-1 text-sm text-slate-600">
+                <li>• Parou dieta enteral? <b>Qual o motivo?</b></li>
+                <li>• O paciente possui drenos? <b>Onde? Qual o débito?</b></li>
+                <li>• <b>Realizou HD ontem?</b></li>
+              </ul>
+            </div>
+
+            <CampoTexto label="Observações" valor={visita.tecnicoEnfermagem.observacoes} onChange={v => updateDeep('tecnicoEnfermagem', ['observacoes'], v)} />
           </>
         )}
       </div>
 
-      {/* Painel Metas do Dia */}
+      {/* ================================================================ */}
+      {/* PAINEL METAS DO DIA — VISÍVEL EM TODAS AS ABAS                  */}
+      {/* ================================================================ */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-teal-500" /> Metas do Dia ({metasPendentes.length} pendentes)
-        </h4>
-        {/* NOVA INDICAÇÃO */}
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">
+            🎯 Metas do Dia ({metasAtivas.length} em aberto)
+          </h4>
+        </div>
+
+        {/* METAS DE ONTEM (canceladas + não cumpridas) */}
+        {metasOntem.length > 0 && (
+          <div className="mb-4 bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Metas de Ontem ({ontemBR})</p>
+            {cumpridasOntem.length > 0 && <p className="text-xs text-green-700 font-semibold mb-1">✓ Cumpridas: {cumpridasOntem.length}</p>}
+            {naoCumpridasOntem.map(m => (
+              <div key={m.id} className="flex items-start gap-2 py-1">
+                <span className="text-red-600 font-bold text-sm">✗</span>
+                <div className="text-sm">
+                  <span className="font-semibold text-slate-700">{m.descricao}</span>
+                  <span className="text-red-600 font-bold text-xs ml-2">NÃO CUMPRIDA</span>
+                </div>
+              </div>
+            ))}
+            {canceladasOntem.map(m => (
+              <div key={m.id} className="py-1">
+                <div className="flex items-start gap-2">
+                  <span className="text-red-600 font-bold text-sm">✗</span>
+                  <div className="text-sm">
+                    <span className="font-semibold text-slate-700 line-through">{m.descricao}</span>
+                    <span className="text-red-600 font-bold text-xs ml-2">CANCELADA</span>
+                    <p className="text-xs text-slate-500 italic">Justificativa: {m.justificativaCancelamento}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ADICIONAR META (todos podem) */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lançar nova indicação</p>
-            <div className="flex flex-col sm:flex-row gap-2">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Adicionar meta</p>
+          <div className="flex flex-col sm:flex-row gap-2">
             <select
-                value={novaIndicacao.tipo}
-                onChange={e => setNovaIndicacao({ ...novaIndicacao, tipo: e.target.value })}
-                className="p-2.5 border border-slate-300 rounded-lg bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-teal-300 sm:w-40"
+              value={novaMeta.tipo}
+              onChange={e => setNovaMeta({ ...novaMeta, tipo: e.target.value })}
+              className="p-2.5 border border-slate-300 rounded-lg bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-teal-300 sm:w-44"
             >
-                {TIPOS_INDICACAO.map(t => <option key={t} value={t}>{t}</option>)}
+              {TIPOS_INDICACAO.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             <input
-                type="text"
-                value={novaIndicacao.descricao}
-                onChange={e => setNovaIndicacao({ ...novaIndicacao, descricao: e.target.value })}
-                placeholder="Descreva a indicação (ex: manter SVD, RX tórax controle...)"
-                className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-teal-300"
+              type="text"
+              value={novaMeta.descricao}
+              onChange={e => setNovaMeta({ ...novaMeta, descricao: e.target.value })}
+              placeholder="Descreva a meta (ex: manter SVD, RX tórax controle...)"
+              className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-teal-300"
             />
             <button
-                onClick={() => {
-                adicionarIndicacao(novaIndicacao.tipo, novaIndicacao.descricao);
-                setNovaIndicacao({ tipo: novaIndicacao.tipo, descricao: '' });
-                }}
-                disabled={!novaIndicacao.descricao.trim()}
-                className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm disabled:opacity-50 transition-colors"
+              onClick={() => { adicionarMetaManual(novaMeta.tipo, novaMeta.descricao); setNovaMeta({ tipo: novaMeta.tipo, descricao: '' }); }}
+              disabled={!novaMeta.descricao.trim()}
+              className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm disabled:opacity-50 transition-colors"
             >
-                + Adicionar
+              + Adicionar
             </button>
-            </div>
-        </div>        
-        {metasPendentes.length === 0 ? (
-          <p className="text-sm text-slate-400 italic">Nenhuma meta pendente.</p>
+          </div>
+        </div>
+
+        {/* LISTA DE METAS */}
+        {metas.length === 0 ? (
+          <p className="text-sm text-slate-400 italic">Nenhuma meta para hoje.</p>
         ) : (
           <div className="space-y-2">
-            {metasPendentes.map(meta => (
-              <div key={meta.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">pendente</span>
-                  <span className="text-sm font-semibold text-slate-700">{meta.tipo} — {meta.descricao}</span>
-                  <span className="text-xs text-slate-400">({meta.quemIndicou})</span>
+            {metas.map(m => (
+              <div key={m.id} className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <BadgeStatusMeta status={m.status} />
+                  <span className="text-sm font-semibold text-slate-700">{m.descricao}</span>
+                  {m.status === 'aguardando' && <span className="text-[10px] text-amber-600 italic">sugerida automaticamente</span>}
+                  {m.status === 'cancelado' && (
+                    <span className="text-xs text-slate-500 italic w-full">Justificativa: {m.justificativaCancelamento}</span>
+                  )}
+                  {m.status === 'realizado' && m.marcadoPor && (
+                    <span className="text-[10px] text-slate-400">por {m.marcadoPor}</span>
+                  )}
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => marcarRealizado(meta.id)}
-                    className="text-xs font-bold px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors"
-                  >
-                    ✓ Marcar realizado
-                  </button>
-                  <button
-                    onClick={() => setModalCancelamento({ id: meta.id, justificativa: '' })}
-                    className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors"
-                  >
-                    ✗ Cancelar
-                  </button>
+                  {m.status === 'aguardando' && podeConfirmarMedico && (
+                    <>
+                      <button onClick={() => confirmarMeta(m.id)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">✓ Confirmar</button>
+                      <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'rejeitar' })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Rejeitar</button>
+                    </>
+                  )}
+                  {m.status === 'pendente' && (
+                    <>
+                      <button onClick={() => marcarRealizado(m.id)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors">✓ Marcar realizado</button>
+                      <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'cancelar' })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Cancelar</button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -507,26 +745,32 @@ const VisitaMultiTab = ({ currentPatient, save, updateNested }) => {
         )}
       </div>
 
-      {/* Modal de cancelamento com justificativa */}
+      {/* MODAL DE CANCELAR / REJEITAR COM JUSTIFICATIVA */}
       {modalCancelamento && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="font-bold text-lg text-slate-800 mb-4">Cancelar Indicação</h3>
+            <h3 className="font-bold text-lg text-slate-800 mb-4">
+              {modalCancelamento.acao === 'rejeitar' ? 'Rejeitar Meta Sugerida' : 'Cancelar Meta'}
+            </h3>
             <textarea
               value={modalCancelamento.justificativa}
               onChange={e => setModalCancelamento({ ...modalCancelamento, justificativa: e.target.value })}
-              placeholder="Justificativa do cancelamento..."
+              placeholder={modalCancelamento.acao === 'rejeitar' ? 'Motivo da rejeição (obrigatório)...' : 'Justificativa do cancelamento (obrigatória)...'}
               className="w-full p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-300 mb-4"
               rows={3}
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => setModalCancelamento(null)} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold text-sm">Voltar</button>
               <button
-                onClick={() => confirmarCancelamento(modalCancelamento.id, modalCancelamento.justificativa)}
+                onClick={() => {
+                  if (modalCancelamento.acao === 'rejeitar') rejeitarMeta(modalCancelamento.id, modalCancelamento.justificativa);
+                  else cancelarMeta(modalCancelamento.id, modalCancelamento.justificativa);
+                  setModalCancelamento(null);
+                }}
                 disabled={!modalCancelamento.justificativa.trim()}
                 className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-sm disabled:opacity-50"
               >
-                Confirmar Cancelamento
+                {modalCancelamento.acao === 'rejeitar' ? 'Confirmar Rejeição' : 'Confirmar Cancelamento'}
               </button>
             </div>
           </div>
@@ -557,6 +801,29 @@ const ToggleRow = ({ label, valor, onChange }) => (
     <span className="text-sm font-semibold text-slate-700">{label}</span>
   </label>
 );
+
+const LinhaInfo = ({ rotulo, valor, destaque }) => (
+  <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1.5">
+    <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">{rotulo}</span>
+    <span className={`text-sm font-bold ${destaque ? 'text-red-600' : 'text-slate-700'}`}>{valor}</span>
+  </div>
+);
+
+const BadgeStatusMeta = ({ status }) => {
+  const cores = {
+    aguardando: 'bg-amber-100 text-amber-700',
+    pendente: 'bg-blue-100 text-blue-700',
+    realizado: 'bg-green-100 text-green-700',
+    cancelado: 'bg-red-100 text-red-700'
+  };
+  const labels = {
+    aguardando: 'Aguardando confirmação',
+    pendente: 'Pendente',
+    realizado: 'Realizado',
+    cancelado: 'Cancelado'
+  };
+  return <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${cores[status] || cores.pendente}`}>{labels[status] || status}</span>;
+};
 
 const ChecklistCard = ({ titulo, descricao, itens, valores, onToggle, cor }) => {
   const cores = {
