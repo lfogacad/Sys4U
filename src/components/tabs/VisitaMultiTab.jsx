@@ -146,8 +146,8 @@ const diasDesde = (dataStr) => {
 };
 
 // Replica EXATAMENTE a lógica da evolução médica (ModuloUTI)
-const gerarResumoSSVV = (patient, isFem) => {
-  const vitals = patient?.bh?.vitals || {};
+const gerarResumoSSVV = (patient, isFem, bhAlvo) => {
+  const vitals = bhAlvo?.vitals || patient?.bh?.vitals || {};
   let tempMax = 0, hasSpo2 = false;
   let epFebre = 0, epHipotermia = 0, epTaquicardia = 0, epBradicardia = 0;
   let epTaquipneia = 0, epBradipneia = 0, epHipotensao = 0, epHipertensao = 0;
@@ -275,7 +275,7 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   const calcularAnalise = () => {
     const sexo = obterSexoPaciente(currentPatient);
     const isFem = sexo === 'F' || sexo === 'FEM' || sexo === 'FEMININO';
-    const resumo = gerarResumoSSVV(currentPatient, isFem);
+    const resumo = gerarResumoSSVV(currentPatient, isFem, bhAnterior);
 
     const diurese12h = typeof calculateDiurese12hMlKgH === 'function' ? calculateDiurese12hMlKgH(currentPatient) : '---';
     const diureseNum = parseFloat(String(diurese12h).replace(',', '.'));
@@ -573,7 +573,7 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
               <h5 className="font-bold text-sm text-slate-700 mb-3">💧 Diurese</h5>
               <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
                 <LinhaInfo rotulo="Total diurese 24h (dia anterior)" valor={`${analise.totalDiurese24h} ml`} />
-                <LinhaInfo rotulo="Diurese 12h" valor={`${analise.diurese12h} ml/kg/h`} destaque={analise.diureseBaixa} />
+                <LinhaInfo rotulo="Diurese Últimas 12h" valor={`${analise.diurese12h} ml/kg/h`} destaque={analise.diureseBaixa} />
               </div>
               {analise.diureseBaixa && (
                 <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
