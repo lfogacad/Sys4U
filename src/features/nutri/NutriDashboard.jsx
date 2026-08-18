@@ -40,6 +40,32 @@ const NutriDashboard = ({
 
   const mediaSolida = countSolida > 0 ? Math.round(somaSolida / countSolida) : 0;
   const mediaLiquida = countLiquida > 0 ? Math.round(somaLiquida / countLiquida) : 0;
+  // ---------- CONSUMO ORAL DO DIA ANTERIOR (janela clínica 07h ontem → 06h hoje) ----------
+  const inicioJanela = new Date();
+  inicioJanela.setDate(inicioJanela.getDate() - 1);
+  inicioJanela.setHours(7, 0, 0, 0);
+  const fimJanela = new Date();
+  fimJanela.setHours(6, 0, 0, 0);
+
+  const historicoDietaOntem = historicoDieta.filter(reg => {
+    const dt = reg.dataHoraRegistro ? new Date(reg.dataHoraRegistro) : null;
+    return dt && !isNaN(dt.getTime()) && dt >= inicioJanela && dt < fimJanela;
+  });
+
+  let somaSolidaOntem = 0, countSolidaOntem = 0;
+  let somaLiquidaOntem = 0, countLiquidaOntem = 0;
+  historicoDietaOntem.forEach(reg => {
+    if (reg.tiposOferecidos?.solida && reg.consumo?.solida !== null && reg.consumo?.solida !== "") {
+      somaSolidaOntem += Number(reg.consumo.solida);
+      countSolidaOntem++;
+    }
+    if (reg.tiposOferecidos?.liquida && reg.consumo?.liquida !== null && reg.consumo?.liquida !== "") {
+      somaLiquidaOntem += Number(reg.consumo.liquida);
+      countLiquidaOntem++;
+    }
+  });
+  const mediaSolidaOntem = countSolidaOntem > 0 ? Math.round(somaSolidaOntem / countSolidaOntem) : 0;
+  const mediaLiquidaOntem = countLiquidaOntem > 0 ? Math.round(somaLiquidaOntem / countLiquidaOntem) : 0;
 
   // Função para agrupar o histórico por data para o Modal
   const getGroupedHistory = (tipo) => {
@@ -62,6 +88,79 @@ const NutriDashboard = ({
 
     return { groups, sortedDates };
   };
+
+  // Função para agrupar o histórico por data para o Modal (filtrado pela janela)
+  const getGroupedHistoryFiltrado = (tipo, dataMinima) => {
+    const filtered = historicoDieta.filter(h => h.tiposOferecidos?.[tipo] && h.dataHoraRegistro && new Date(h.dataHoraRegistro) >= dataMinima);
+    const groups = {};
+    
+    filtered.forEach(item => {
+      const dateStr = item.dataHoraRegistro ? new Date(item.dataHoraRegistro).toLocaleDateString('pt-BR') : 'Sem data';
+      if (!groups[dateStr]) groups[dateStr] = [];
+      groups[dateStr].push(item);
+    });
+
+    const sortedDates = Object.keys(groups).sort((a, b) => {
+      if(a === 'Sem data') return 1;
+      if(b === 'Sem data') return -1;
+      const [d1, m1, y1] = a.split('/');
+      const [d2, m2, y2] = b.split('/');
+      return new Date(`${y2}-${m2}-${d2}`) - new Date(`${y1}-${m1}-${d1}`);
+    });
+
+    return { groups, sortedDates };
+  };
+
+  // Card de consumo oral reutilizável (Total / Dia Anterior)
+  const renderConsumoCard = (titulo, mediaSolidaV, countSolidaV, mediaLiquidaV, countLiquidaV, abrirHistorico) => (
+    <div className="p-4 border rounded-xl bg-white shadow-sm">
+      <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+        <Activity size={16} className="text-lime-600" /> {titulo}
+      </h4>
+      <div className="space-y-5">
+        {/* ALIMENTOS */}
+        <div>
+          <div className="flex justify-between items-end mb-1">
+            <span className="text-xs font-bold text-gray-600 uppercase">Alimentos (Média)</span>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-black text-lime-700">{mediaSolidaV}%</span>
+              <button
+                onClick={(e) => { e.preventDefault(); abrirHistorico('solida'); }}
+                className="p-1.5 bg-lime-50 hover:bg-lime-100 text-lime-700 rounded-lg transition-colors border border-lime-200"
+                title="Ver Histórico"
+              >
+                <History size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
+            <div className="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${mediaSolidaV}%` }}></div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1 text-right">{countSolidaV} refeições registradas</p>
+        </div>
+        {/* SUPLEMENTOS */}
+        <div>
+          <div className="flex justify-between items-end mb-1">
+            <span className="text-xs font-bold text-gray-600 uppercase">Suplementos (Média)</span>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-black text-lime-700">{mediaLiquidaV}%</span>
+              <button
+                onClick={(e) => { e.preventDefault(); abrirHistorico('liquida'); }}
+                className="p-1.5 bg-lime-50 hover:bg-lime-100 text-lime-700 rounded-lg transition-colors border border-lime-200"
+                title="Ver Histórico"
+              >
+                <History size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
+            <div className="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${mediaLiquidaV}%` }}></div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1 text-right">{countLiquidaV} refeições registradas</p>
+        </div>
+      </div>
+    </div>
+  );
 
   if (!currentPatient?.nutri?.admitido) {
     return (
@@ -310,20 +409,13 @@ const NutriDashboard = ({
             )}
 
             {currentPatient.nutri?.via === "Parenteral" && (
-              <div className="grid grid-cols-2 gap-3 mt-2 animate-fadeIn">
+              <div className="mt-2 animate-fadeIn">
                 <input
-                  placeholder="Tipo/Fórmula"
-                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
-                  value={currentPatient.nutri?.tipoDieta || ""}
-                  onChange={(e) => updateNested("nutri", "tipoDieta", e.target.value)}
-                  onBlur={() => handleBlurSave("Nutrição: Editou Tipo/Fórmula da Dieta")}
-                />
-                <input
-                  placeholder="Vazão (ml/h)"
-                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
-                  value={currentPatient.nutri?.vazao || ""}
-                  onChange={(e) => updateNested("nutri", "vazao", e.target.value)}
-                  onBlur={() => handleBlurSave("Nutrição: Editou Vazão da Dieta")}
+                  placeholder="Vazão (ml/h) — Parenteral"
+                  className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                  value={currentPatient.nutri?.vazaoParenteral || ""}
+                  onChange={(e) => updateNested("nutri", "vazaoParenteral", e.target.value)}
+                  onBlur={() => handleBlurSave("Nutrição: Editou Vazão Parenteral")}
                 />
               </div>
             )}
@@ -392,73 +484,34 @@ const NutriDashboard = ({
             )}
           </div>
 
-          {/* CARD: MONITORAMENTO DO CONSUMO ORAL */}
-          <div className="p-4 border rounded-xl bg-white shadow-sm">
-            <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
-              <Activity size={16} className="text-lime-600" /> Monitoramento do Consumo Oral
-            </h4>
-            
-            <div className="space-y-5">
-              {/* ALIMENTOS */}
-              <div>
-                <div className="flex justify-between items-end mb-1">
-                  <span className="text-xs font-bold text-gray-600 uppercase">Alimentos (Média)</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-black text-lime-700">{mediaSolida}%</span>
-                    <button 
-                      onClick={(e) => { e.preventDefault(); setModalConsumo({ isOpen: true, tipo: 'solida' }); }}
-                      className="p-1.5 bg-lime-50 hover:bg-lime-100 text-lime-700 rounded-lg transition-colors border border-lime-200"
-                      title="Ver Histórico"
-                    >
-                      <History size={14} />
-                    </button>
-                  </div>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
-                  <div className="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${mediaSolida}%` }}></div>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1 text-right">{countSolida} refeições registradas</p>
-              </div>
+          {/* CARD: MONITORAMENTO DO CONSUMO ORAL — TOTAL */}
+          {renderConsumoCard(
+            'Monitoramento do Consumo Oral (Total)',
+            mediaSolida, countSolida, mediaLiquida, countLiquida,
+            (tipo) => setModalConsumo({ isOpen: true, tipo })
+          )}
 
-              {/* SUPLEMENTOS */}
-              <div>
-                <div className="flex justify-between items-end mb-1">
-                  <span className="text-xs font-bold text-gray-600 uppercase">Suplementos (Média)</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-black text-lime-700">{mediaLiquida}%</span>
-                    <button 
-                      onClick={(e) => { e.preventDefault(); setModalConsumo({ isOpen: true, tipo: 'liquida' }); }}
-                      className="p-1.5 bg-lime-50 hover:bg-lime-100 text-lime-700 rounded-lg transition-colors border border-lime-200"
-                      title="Ver Histórico"
-                    >
-                      <History size={14} />
-                    </button>
-                  </div>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
-                  <div className="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${mediaLiquida}%` }}></div>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1 text-right">{countLiquida} refeições registradas</p>
-              </div>
-            </div>
-          </div>
+          {/* CARD: MONITORAMENTO DO CONSUMO ORAL — DIA ANTERIOR (07h às 06h) */}
+          {renderConsumoCard(
+            'Monitoramento do Consumo Oral (Dia Anterior)',
+            mediaSolidaOntem, countSolidaOntem, mediaLiquidaOntem, countLiquidaOntem,
+            (tipo) => setModalConsumo({ isOpen: true, tipo, dataMinima: inicioJanela })
+          )}
         </div>
 
         {/* COLUNA DIREITA: Tolerância + Anotações */}
         <div className="flex flex-col gap-6 h-full">
           
-          {/* CARD: TOLERÂNCIA GASTROINTESTINAL */}
+          {/* CARD: ÚLTIMA EVACUAÇÃO */}
           <div className="p-4 border rounded-xl bg-white shadow-sm flex flex-col">
-            <h4 className="font-bold text-slate-700 mb-4">Tolerância Gastrointestinal</h4>
-            
+            <h4 className="font-bold text-slate-700 mb-4">Última Evacuação</h4>
             {(() => {
               const temRegistroPositivo = (valor) => {
                 if (!valor) return false;
                 const texto = String(valor).trim().toLowerCase();
                 if (texto === "" || texto === "0" || texto === "n" || texto === "nao" || texto === "não" || texto === "-") return false;
-                return true; 
+                return true;
               };
-
               let evacuouNoBH = false;
               if (currentPatient.bh?.losses) {
                 Object.values(currentPatient.bh.losses).forEach(hora => {
@@ -467,70 +520,32 @@ const NutriDashboard = ({
                   }
                 });
               }
-
               const dataSalva = currentPatient.gastro?.dataUltimaEvacuacao;
               const diasSemEvacuar = evacuouNoBH ? 0 : calculateEvacDays(dataSalva);
-
               return (
-                <>
-                  <div className="mb-4">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Aceitação da Dieta</label>
-                    <select
-                      className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
-                      value={currentPatient.nutri?.aceitacao || ""}
-                      onChange={(e) => updateNested("nutri", "aceitacao", e.target.value)}
-                    >
-                      <option value="">Selecione...</option>
-                      <option value="Boa tolerância / 100% aceitação">Boa tolerância / 100%</option>
-                      <option value="Aceitação parcial (> 50%)">Aceitação parcial (&gt; 50%)</option>
-                      <option value="Aceitação ruim (< 50%)">Aceitação ruim (&lt; 50%)</option>
-                      <option value="Recusa alimentar">Recusa alimentar</option>
-                      <option value="Pausa dietética / Jejum">Pausa dietética / Jejum</option>
-                    </select>
-                  </div>
-
-                  <div className="mb-4">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1.5">Sintomas TGI</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {["Náuseas", "Distensão"].map(sintoma => (
-                        <label key={sintoma} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            className="w-3.5 h-3.5 rounded text-amber-500" 
-                            checked={(currentPatient.nutri?.sintomasTGI || []).includes(sintoma)}
-                            onChange={() => toggleArrayItem("nutri", "sintomasTGI", sintoma)}
-                          /> {sintoma}
-                        </label>
-                      ))}
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Data da última evacuação</label>
+                  {evacuouNoBH ? (
+                    <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                      <span className="text-xs font-bold text-green-700 uppercase">Registrada hoje no BH</span>
                     </div>
-                  </div>
-
-                  <div className="mt-auto pt-3 border-t border-slate-100">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Última Evacuação</label>
-                    
-                    {evacuouNoBH ? (
-                      <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                        <span className="text-xs font-bold text-green-700 uppercase">Registrada hoje no BH</span>
-                      </div>
-                    ) : (
-                      <input
-                        type="date"
-                        className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
-                        value={dataSalva || ""}
-                        onChange={(e) => updateNested("gastro", "dataUltimaEvacuacao", e.target.value)}
-                      />
-                    )}
-
-                    {dataSalva || evacuouNoBH ? (
-                      <div className="mt-2 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-center">
-                        <span className="text-[10px] font-bold text-amber-800 uppercase">
-                          Tempo sem evacuar: <span className="text-xs font-black">{diasSemEvacuar} {diasSemEvacuar === 1 ? 'dia' : 'dias'}</span>
-                        </span>
-                      </div>
-                    ) : null}
-                  </div>
-                </>
+                  ) : (
+                    <input
+                      type="date"
+                      className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                      value={dataSalva || ""}
+                      onChange={(e) => updateNested("gastro", "dataUltimaEvacuacao", e.target.value)}
+                    />
+                  )}
+                  {dataSalva || evacuouNoBH ? (
+                    <div className="mt-2 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-center">
+                      <span className="text-[10px] font-bold text-amber-800 uppercase">
+                        Tempo sem evacuar: <span className="text-xs font-black">{diasSemEvacuar} {diasSemEvacuar === 1 ? 'dia' : 'dias'}</span>
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               );
             })()}
           </div>
@@ -553,7 +568,9 @@ const NutriDashboard = ({
       {/* MODAL: HISTÓRICO DE CONSUMO ORAL                                          */}
       {/* ========================================================================= */}
       {modalConsumo.isOpen && (() => {
-        const { groups, sortedDates } = getGroupedHistory(modalConsumo.tipo);
+        const { groups, sortedDates } = modalConsumo.dataMinima
+          ? getGroupedHistoryFiltrado(modalConsumo.tipo, modalConsumo.dataMinima)
+          : getGroupedHistory(modalConsumo.tipo);
         const titulo = modalConsumo.tipo === 'solida' ? 'Alimentos' : 'Suplementos';
 
         return (

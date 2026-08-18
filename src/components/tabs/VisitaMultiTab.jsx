@@ -393,7 +393,16 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   // ---------- NUTRI: GLICEMIA DO DIA ANTERIOR (HGT) ----------
   const hgtOntem = Object.entries(bhAnterior?.vitals || {})
     .map(([hora, v]) => ({ hora, valor: v?.['HGT (mg/dL)'] }))
-    .filter(x => x.valor && String(x.valor).trim() !== '');
+    .filter(x => x.valor && String(x.valor).trim() !== '')
+    .sort((a, b) => {
+      // Converte HH:MM em minutos desde as 07h (horários < 07h pertencem ao dia seguinte)
+      const minutosDesde7h = (h) => {
+        const [hh, mm] = h.split(':').map(Number);
+        const total = hh * 60 + mm;
+        return total < 420 ? total + 1440 : total; // 420 = 07:00
+      };
+      return minutosDesde7h(a.hora) - minutosDesde7h(b.hora);
+    });
 
   // ---------- NUTRI: METAS CALÓRICAS/PROTEICAS ----------
   const metaCalDiaria = currentPatient?.nutri?.metaCalDiaria;
@@ -455,7 +464,8 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   const metas = visita.metas || [];
   const metasAguardando = metas.filter(m => m.status === 'aguardando');
   const metasAtivas = metas.filter(m => m.status === 'aguardando' || m.status === 'pendente');
-  const metasOntem = currentPatient?.visita?.[ontemISO]?.metas || [];
+  const metasOntem = (currentPatient?.visita?.[ontemISO]?.metas || [])
+    .filter(m => m.status === 'realizado' || m.status === 'pendente' || m.status === 'cancelado');
   const cumpridasOntem = metasOntem.filter(m => m.status === 'realizado');
   const naoCumpridasOntem = metasOntem.filter(m => m.status === 'pendente');
   const canceladasOntem = metasOntem.filter(m => m.status === 'cancelado');
@@ -965,7 +975,6 @@ const podeConfirmarMeta = (meta) => {
                 <h5 className="font-bold text-sm text-lime-800 mb-3">💧 Vazão da Dieta</h5>
 
                 {currentPatient?.nutri?.via === 'Mista' ? (
-                  /* ---- DIETA MISTA: vazões separadas por via ---- */
                   <div className="grid sm:grid-cols-2 gap-4">
                     {(currentPatient?.nutri?.viasMistas || []).includes('Enteral') && (
                       <div>
@@ -1006,28 +1015,48 @@ const podeConfirmarMeta = (meta) => {
                       </div>
                     )}
                   </div>
-                ) : (
-                  /* ---- VIA ÚNICA (Enteral OU Parenteral): um campo ---- */
-                  <>
-                    <LinhaInfo rotulo="Vazão atual" valor={currentPatient?.nutri?.vazao ? `${currentPatient.nutri.vazao} ml/h` : '—'} />
+                ) : currentPatient?.nutri?.via === 'Enteral' ? (
+                  <div>
+                    <LinhaInfo rotulo="Vazão Enteral atual" valor={currentPatient?.nutri?.vazaoEnteral ? `${currentPatient.nutri.vazaoEnteral} ml/h` : '—'} />
                     <div className="mt-3 border-t border-lime-200 pt-3 flex items-end gap-3 flex-wrap">
                       <div className="flex-1 min-w-[160px]">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Programar nova vazão (ml/h)</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Programar nova vazão enteral (ml/h)</label>
                         <input
                           type="number"
-                          value={novaVazao}
-                          onChange={e => setNovaVazao(e.target.value)}
+                          value={novaVazaoEnteral}
+                          onChange={e => setNovaVazaoEnteral(e.target.value)}
                           placeholder="ex: 40"
                           className="w-full p-2 border border-lime-300 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-lime-300 bg-white"
                         />
                       </div>
                       <button
-                        onClick={() => { if (novaVazao) { sugerirMetaNutri(`Ajustar vazão da dieta para ${novaVazao} ml/h`, 'auto_ajustar_vazao'); setNovaVazao(''); } }}
-                        disabled={!novaVazao}
+                        onClick={() => { if (novaVazaoEnteral) { sugerirMetaNutri(`Ajustar vazão enteral para ${novaVazaoEnteral} ml/h`, 'auto_ajustar_vazao_enteral'); setNovaVazaoEnteral(''); } }}
+                        disabled={!novaVazaoEnteral}
                         className="px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
                       >Programar vazão</button>
                     </div>
-                  </>
+                  </div>
+                ) : (
+                  <div>
+                    <LinhaInfo rotulo="Vazão Parenteral atual" valor={currentPatient?.nutri?.vazaoParenteral ? `${currentPatient.nutri.vazaoParenteral} ml/h` : '—'} />
+                    <div className="mt-3 border-t border-lime-200 pt-3 flex items-end gap-3 flex-wrap">
+                      <div className="flex-1 min-w-[160px]">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Programar nova vazão parenteral (ml/h)</label>
+                        <input
+                          type="number"
+                          value={novaVazaoParenteral}
+                          onChange={e => setNovaVazaoParenteral(e.target.value)}
+                          placeholder="ex: 30"
+                          className="w-full p-2 border border-lime-300 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-lime-300 bg-white"
+                        />
+                      </div>
+                      <button
+                        onClick={() => { if (novaVazaoParenteral) { sugerirMetaNutri(`Ajustar vazão parenteral para ${novaVazaoParenteral} ml/h`, 'auto_ajustar_vazao_parenteral'); setNovaVazaoParenteral(''); } }}
+                        disabled={!novaVazaoParenteral}
+                        className="px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
+                      >Programar vazão</button>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -1255,13 +1284,13 @@ const podeConfirmarMeta = (meta) => {
                   {m.status === 'aguardando' && podeConfirmarMeta(m) && (
                     <>
                       <button onClick={() => confirmarMeta(m.id)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">✓ Confirmar</button>
-                      <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'rejeitar' })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Rejeitar</button>
+                      <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'rejeitar', exigeJustificativa: !(m.origem || '').startsWith('auto_') })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Rejeitar</button>
                     </>
                   )}
                   {m.status === 'pendente' && (
                     <>
                       <button onClick={() => marcarRealizado(m.id)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors">✓ Marcar realizado</button>
-                      <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'cancelar' })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Cancelar</button>
+                      <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'cancelar', exigeJustificativa: true })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Cancelar</button>
                     </>
                   )}
                 </div>
@@ -1293,7 +1322,7 @@ const podeConfirmarMeta = (meta) => {
                   else cancelarMeta(modalCancelamento.id, modalCancelamento.justificativa);
                   setModalCancelamento(null);
                 }}
-                disabled={!modalCancelamento.justificativa.trim()}
+                disabled={modalCancelamento.exigeJustificativa && !modalCancelamento.justificativa.trim()}
                 className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-sm disabled:opacity-50"
               >
                 {modalCancelamento.acao === 'rejeitar' ? 'Confirmar Rejeição' : 'Confirmar Cancelamento'}
