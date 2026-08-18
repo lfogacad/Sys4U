@@ -260,8 +260,114 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   const [modalCancelamento, setModalCancelamento] = useState(null); // { id, justificativa, acao: 'cancelar' | 'rejeitar' }
   const [novaMeta, setNovaMeta] = useState({ tipo: 'SVD', descricao: '' });
   const jaGeradasRef = useRef(false);
+  
 
   const [mobilizacaoSelecionada, setMobilizacaoSelecionada] = useState([]);
+
+  // Enfermeiro: checklists de retirada de dispositivos
+  const [checklistCVC, setChecklistCVC] = useState({});
+  const [checklistShiley, setChecklistShiley] = useState(false);
+  const [checklistSVD, setChecklistSVD] = useState({});
+  // Enfermeiro: curativo selecionado para lesão
+  const [curativoSelecionado, setCurativoSelecionado] = useState({});
+
+  // ---------- ENFERMEIRO: ESCALAS DO DIA ANTERIOR ----------
+  const escalaOntem = currentPatient?.enfermagem?.escalas_diarias?.[ontemISO] || null;
+  const bradenOntem = escalaOntem?.braden || null;
+  const morseOntem = escalaOntem?.morse || null;
+
+  // ---------- ENFERMEIRO: DISPOSITIVOS (CVC / SHILEY / SVD) ----------
+  const cvcAtivo = currentPatient?.enfermagem?.cvcData && !currentPatient?.enfermagem?.cvcRetiradaData;
+  const shileyAtivo = currentPatient?.enfermagem?.shileyData && !currentPatient?.enfermagem?.shileyRetiradaData;
+  const svdAtivo = currentPatient?.enfermagem?.svdData && !currentPatient?.enfermagem?.svdRetiradaData;
+
+  // ---------- ENFERMEIRO: LESÕES / CURATIVOS ----------
+  const lesoes = currentPatient?.enfermagem?.lesoes || [];
+
+  // ---------- ENFERMEIRO: BH DO DIA ANTERIOR (janela 07h ontem → 06h hoje) ----------
+  const bhPrev = currentPatient?.bh_previous || null;
+  const somarMapaBH = (obj) => Object.values(obj || {}).reduce((s, v) => {
+    if (v && typeof v === 'object') return s + Object.values(v).reduce((s2, x) => s2 + (Number(x) || 0), 0);
+    return s + (Number(v) || 0);
+  }, 0);
+  const totalGanhosBH = Math.round(somarMapaBH(bhPrev?.gains) + (bhPrev?.customGains || []).reduce((s, x) => s + (Number(x) || 0), 0));
+  const totalPerdasBaseBH = Math.round(somarMapaBH(bhPrev?.losses) + (bhPrev?.customLosses || []).reduce((s, x) => s + (Number(x) || 0), 0));
+  const piBH = (bhPrev?.insensibleLoss !== undefined && bhPrev?.insensibleLoss !== "" && bhPrev?.insensibleLoss !== 0)
+    ? Number(bhPrev.insensibleLoss)
+    : (Number(currentPatient?.nutri?.peso) > 0 ? Math.round(Number(currentPatient.nutri.peso) * 12) : 0);
+  const totalPerdasBH = Math.round(totalPerdasBaseBH + piBH);
+  const balanco24hBH = Math.round(totalGanhosBH - totalPerdasBH);
+  const totalAtualBH = Math.round((bhPrev?.accumulated || 0) + balanco24hBH);
+
+  // ---------- ENFERMEIRO: HIGIENE ORAL (dia calendário anterior) ----------
+  const inicioDiaCalendario = new Date();
+  inicioDiaCalendario.setDate(inicioDiaCalendario.getDate() - 1);
+  inicioDiaCalendario.setHours(0, 0, 0, 0);
+  const fimDiaCalendario = new Date();
+  fimDiaCalendario.setHours(0, 0, 0, 0);
+  const higieneOralOntem = (currentPatient?.enfermagem?.historico_higiene_oral || [])
+    .filter(h => {
+      const dt = h.dataHoraRegistro ? new Date(h.dataHoraRegistro) : null;
+      return dt && !isNaN(dt.getTime()) && dt >= inicioDiaCalendario && dt < fimDiaCalendario;
+    });
+  const qtdHigieneOral = higieneOralOntem.length;
+
+  const SIGNIFICADO_BRADEN = {
+    'Altíssimo': 'Risco altíssimo de desenvolver LPP (escore ≤ 9)',
+    'Alto': 'Alto risco de desenvolver LPP (escore 10-12)',
+    'Moderado': 'Risco moderado de desenvolver LPP (escore 13-14)',
+    'Baixo': 'Baixo risco de desenvolver LPP (escore 15-18)'
+  };
+  const SIGNIFICADO_MORSE = {
+    'Sem Risco': 'Sem risco de queda (escore 0-24)',
+    'Baixo': 'Baixo risco de queda (escore 25-44)',
+    'Médio': 'Risco médio de queda (escore 45-54)',
+    'Alto': 'Alto risco de queda (escore ≥ 55)'
+  };
+
+  // Checklist de retirada de CVC (baseado em diretrizes de manejo de acesso venoso central)
+  const CHECKLIST_CVC = {
+    necessarios: [
+      { id: 'cvc_sem_dvas', label: 'Sem DVAs' },
+      { id: 'cvc_sem_npt', label: 'Sem NPT' },
+      { id: 'cvc_sem_monitorizacao', label: 'Sem necessidade de monitorização hemodinâmica invasiva (PVC, SvO₂)' },
+      { id: 'cvc_avp_adequado', label: 'Possui AVP adequado' }
+    ],
+    suficientes: [
+      { id: 'cvc_sepse', label: 'Sepse relacionada ao cateter confirmada' },
+      { id: 'cvc_bacteremia', label: 'Bacteremia por S. aureus, Candida spp. ou fungemia' },
+      { id: 'cvc_tvp', label: 'TVP relacionada ao cateter' },
+      { id: 'cvc_extravasamento', label: 'Extravasamento, lesão tecidual ou oclusão' },
+      { id: 'cvc_infeccao_local', label: 'Sinais locais de infecção' }
+    ]
+  };
+
+  // Checklist de retirada de SVD (baseado em critérios de CAUTI e Trial Without Catheter)
+  const CHECKLIST_SVD = {
+    necessarios: [
+      { id: 'svd_sem_monitorizacao', label: 'Sem necessidade de monitorização do débito urinário (choque, IRA, balanço hídrico rigoroso)' },
+      { id: 'svd_sem_obstrucao', label: 'Não há obstrução do trato urinário (bexiga neurogênica, hiperplasia prostática com retenção, tumores)' },
+      { id: 'svd_sem_ferida', label: 'Ausência de ferida sacral/perineal' },
+      { id: 'svd_sem_irrigacao', label: 'Sem necessidade de irrigação contínua da bexiga' }
+    ],
+    suficientes: [
+      { id: 'svd_ituac', label: 'ITU-AC confirmada' },
+      { id: 'svd_obstrucao_recorrente', label: 'Obstrução recorrente ou vazamento' },
+      { id: 'svd_lesao_uretral', label: 'Lesão uretral' }
+    ]
+  };
+
+  const formatarDataBR = (dataStr) => {
+    if (!dataStr) return '—';
+    const partes = String(dataStr).split('-');
+    if (partes.length === 3) return `${partes[2]}-${partes[1]}-${partes[0]}`;
+    return dataStr;
+  };
+  const sugerirMetaEnfermeiro = (texto, origem) => {
+    sugerirMeta(texto, origem);
+    setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
+  };
+  const metaAtivaEnf = (origem) => metasSugeridas.includes(origem);
 
   // Sugere meta de nutri e marca o botão correspondente como ativo
   const sugerirMetaNutri = (texto, origem) => {
@@ -650,14 +756,270 @@ const podeConfirmarMeta = (meta) => {
         {categoriaAtiva === 'enfermeiroPlantonista' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Enfermeiro Plantonista</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <CampoTexto label="Balanço Hídrico (ml)" valor={visita.enfermeiroPlantonista.balancoHidrico} onChange={v => updateDeep('enfermeiroPlantonista', ['balancoHidrico'], v)} />
-              <CampoTexto label="Braden" valor={visita.enfermeiroPlantonista.escalas.braden} onChange={v => updateDeep('enfermeiroPlantonista', ['escalas', 'braden'], v)} />
-              <CampoTexto label="Morse" valor={visita.enfermeiroPlantonista.escalas.morse} onChange={v => updateDeep('enfermeiroPlantonista', ['escalas', 'morse'], v)} />
+
+            {/* 1. RISCO DE QUEDA E LPP (escalas do dia anterior — só o significado) */}
+            <div className="border border-sky-200 rounded-xl p-4 bg-sky-50">
+              <h5 className="font-bold text-sm text-sky-800 mb-3">🛡️ Risco de Queda e LPP</h5>
+              {escalaOntem && (
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                  Escalas preenchidas em {formatarDataBR(ontemISO)}
+                </p>
+              )}
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Escala de Braden (LPP)</p>
+                  {bradenOntem?.risco ? (
+                    <span className="inline-block text-xs font-bold px-3 py-1.5 rounded-lg bg-sky-600 text-white">
+                      {SIGNIFICADO_BRADEN[bradenOntem.risco] || bradenOntem.risco}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-slate-400 italic">Sem registro ontem</span>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Escala de Morse (Queda)</p>
+                  {morseOntem?.risco ? (
+                    <span className="inline-block text-xs font-bold px-3 py-1.5 rounded-lg bg-sky-600 text-white">
+                      {SIGNIFICADO_MORSE[morseOntem.risco] || morseOntem.risco}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-slate-400 italic">Sem registro ontem</span>
+                  )}
+                </div>
+              </div>
             </div>
-            <ToggleRow label="Higiene oral realizada 3x/dia" valor={visita.enfermeiroPlantonista.higieneOral.realizada3x} onChange={v => updateDeep('enfermeiroPlantonista', ['higieneOral', 'realizada3x'], v)} />
-            <ToggleRow label="SVD presente / manter" valor={visita.enfermeiroPlantonista.dispositivos.svd.indicacaoManter} onChange={v => updateDeep('enfermeiroPlantonista', ['dispositivos', 'svd', 'indicacaoManter'], v)} />
-            <CampoTexto label="Curativos" valor={visita.enfermeiroPlantonista.curativos} onChange={v => updateDeep('enfermeiroPlantonista', ['curativos'], v)} />
+
+            {/* 2. DISPOSITIVOS — CVC / SHILEY / SVD */}
+            <div className="border border-sky-200 rounded-xl p-4 bg-sky-50">
+              <h5 className="font-bold text-sm text-sky-800 mb-3">🩺 Dispositivos — Critérios de Retirada</h5>
+
+              {/* CVC */}
+              {cvcAtivo && (
+                <div className="mb-4 p-3 bg-white border border-sky-200 rounded-lg">
+                  <p className="text-xs font-bold text-slate-700 mb-2">
+                    CVC: {currentPatient?.enfermagem?.cvcLocal || 'Local não informado'} — inserido em {formatarDataBR(currentPatient?.enfermagem?.cvcData)}
+                  </p>
+
+                  {/* Critérios necessários (todos devem ser cumpridos) */}
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Critérios para a Retirada:</p>
+                  <div className="space-y-1.5">
+                    {CHECKLIST_CVC.necessarios.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={checklistCVC[item.id] || false}
+                          onChange={e => setChecklistCVC(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                          className="mt-0.5 w-4 h-4 accent-sky-600"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* Critérios suficientes (qualquer um justifica a retirada) */}
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-3 mb-2">Critérios suficientes (qualquer um justifica a retirada):</p>
+                  <div className="space-y-1.5">
+                    {CHECKLIST_CVC.suficientes.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={checklistCVC[item.id] || false}
+                          onChange={e => setChecklistCVC(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                          className="mt-0.5 w-4 h-4 accent-sky-600"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* Botão: todos os necessários OU qualquer suficiente */}
+                  {(() => {
+                    const todosNecessarios = CHECKLIST_CVC.necessarios.every(i => checklistCVC[i.id]);
+                    const algumSuficiente = CHECKLIST_CVC.suficientes.some(i => checklistCVC[i.id]);
+                    return (todosNecessarios || algumSuficiente) && (
+                      <button
+                        onClick={() => sugerirMetaEnfermeiro('Sacar CVC', 'auto_sacar_cvc')}
+                        className="mt-3 px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white transition-colors"
+                      >{metaAtivaEnf('auto_sacar_cvc') ? '✓ Meta: Sacar CVC' : '✓ Sacar CVC'}</button>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* SHILEY (cateter de HD) — critério único: sem necessidade de TRS */}
+              {shileyAtivo && (
+                <div className="mb-4 p-3 bg-white border border-sky-200 rounded-lg">
+                  <p className="text-xs font-bold text-slate-700 mb-2">
+                    Shiley (cateter de HD): {currentPatient?.enfermagem?.shileyLocal || 'Local não informado'} — inserido em {formatarDataBR(currentPatient?.enfermagem?.shileyData)}
+                  </p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Critérios para retirada:</p>
+                  <label className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={checklistShiley}
+                      onChange={e => setChecklistShiley(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-sky-600"
+                    />
+                    <span>Sem necessidade de TRS (Terapia Renal Substitutiva)</span>
+                  </label>
+                  {checklistShiley && (
+                    <button
+                      onClick={() => sugerirMetaEnfermeiro('Sacar Shiley (cateter de HD)', 'auto_sacar_shiley')}
+                      className="mt-3 px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white transition-colors"
+                    >{metaAtivaEnf('auto_sacar_shiley') ? '✓ Meta: Sacar Shiley' : '✓ Sacar Shiley'}</button>
+                  )}
+                </div>
+              )}
+
+              {/* SVD */}
+              {svdAtivo && (
+                <div className="p-3 bg-white border border-sky-200 rounded-lg">
+                  <p className="text-xs font-bold text-slate-700 mb-2">
+                    SVD — inserido em {formatarDataBR(currentPatient?.enfermagem?.svdData)}
+                  </p>
+
+                  {/* Critérios necessários (todos devem ser cumpridos) */}
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Critérios para a Retirada:</p>
+                  <div className="space-y-1.5">
+                    {CHECKLIST_SVD.necessarios.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={checklistSVD[item.id] || false}
+                          onChange={e => setChecklistSVD(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                          className="mt-0.5 w-4 h-4 accent-sky-600"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* Critérios suficientes (qualquer um justifica a retirada) */}
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-3 mb-2">Critérios suficientes (qualquer um justifica a retirada):</p>
+                  <div className="space-y-1.5">
+                    {CHECKLIST_SVD.suficientes.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={checklistSVD[item.id] || false}
+                          onChange={e => setChecklistSVD(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                          className="mt-0.5 w-4 h-4 accent-sky-600"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* Botão: todos os necessários OU qualquer suficiente */}
+                  {(() => {
+                    const todosNecessarios = CHECKLIST_SVD.necessarios.every(i => checklistSVD[i.id]);
+                    const algumSuficiente = CHECKLIST_SVD.suficientes.some(i => checklistSVD[i.id]);
+                    return (todosNecessarios || algumSuficiente) && (
+                      <button
+                        onClick={() => sugerirMetaEnfermeiro('Sacar SVD', 'auto_sacar_svd')}
+                        className="mt-3 px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white transition-colors"
+                      >{metaAtivaEnf('auto_sacar_svd') ? '✓ Meta: Sacar SVD' : '✓ Sacar SVD'}</button>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {!cvcAtivo && !shileyAtivo && !svdAtivo && (
+                <p className="text-sm text-slate-400 italic">Nenhum dispositivo ativo (sem data de retirada pendente).</p>
+              )}
+            </div>
+
+            {/* 3. LESÕES CUTÂNEAS / CURATIVOS */}
+            {lesoes.length > 0 && (
+              <div className="border border-sky-200 rounded-xl p-4 bg-sky-50">
+                <h5 className="font-bold text-sm text-sky-800 mb-3">🩹 Lesões Cutâneas / Curativos</h5>
+                <div className="space-y-3">
+                  {lesoes.map(lesao => {
+                    const localizacao = lesao.localizacao || 'não informada';
+                    return (
+                      <div key={lesao.id ?? JSON.stringify(lesao)} className="p-3 bg-white border border-sky-200 rounded-lg">
+                        <p className="text-xs font-bold text-slate-700 mb-2">
+                          {lesao.localizacao || 'Local não informado'}
+                          {lesao.estagio ? ` — ${lesao.estagio}` : ''}
+                          {lesao.curativo ? ` (curativo atual: ${lesao.curativo})` : ''}
+                        </p>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Selecionar curativo:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {['Carvão ativado', 'Alginato', 'Hidrocoloide', 'Filme transparente', 'Espuma', 'Gaze úmida', 'Colagenase', 'Papaina'].map(cur => {
+                            const ativo = curativoSelecionado[lesao.id] === cur;
+                            return (
+                              <button
+                                key={cur}
+                                onClick={() => {
+                                  setCurativoSelecionado(prev => ({ ...prev, [lesao.id]: cur }));
+                                  sugerirMetaEnfermeiro(`Curativo com ${cur} em lesão da região ${localizacao}`, `auto_curativo_${lesao.id}_${cur}`);
+                                }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${ativo ? 'bg-sky-600 text-white border border-sky-600' : 'bg-white border border-sky-300 text-sky-700 hover:bg-sky-100'}`}
+                              >{cur}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 4. BH DO DIA ANTERIOR (janela 07h de ontem → 06h de hoje) */}
+            <div className="border border-sky-200 rounded-xl p-4 bg-sky-50">
+              <h5 className="font-bold text-sm text-sky-800 mb-3">⚖️ Balanço Hídrico (Dia Anterior — 07h às 06h)</h5>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                <div className="p-2 bg-white border border-sky-200 rounded-lg">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Total Ganhos</p>
+                  <p className="text-lg font-black text-green-700">+{totalGanhosBH}</p>
+                </div>
+                <div className="p-2 bg-white border border-sky-200 rounded-lg">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Total Perdas (+PI {piBH})</p>
+                  <p className="text-lg font-black text-red-600">-{totalPerdasBH}</p>
+                </div>
+                <div className="p-2 bg-white border border-sky-200 rounded-lg">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Balanço 24h</p>
+                  <p className={`text-lg font-black ${balanco24hBH >= 0 ? 'text-sky-700' : 'text-amber-600'}`}>{balanco24hBH > 0 ? '+' : ''}{balanco24hBH}</p>
+                </div>
+                <div className="p-2 bg-white border border-sky-200 rounded-lg">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">BH ACUMULADO</p>
+                  <p className="text-lg font-black text-slate-700">{totalAtualBH > 0 ? '+' : ''}{totalAtualBH}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 5. HIGIENE ORAL (dia calendário anterior) */}
+            <div className="border border-sky-200 rounded-xl p-4 bg-sky-50">
+              <h5 className="font-bold text-sm text-sky-800 mb-3">🪥 Higiene Oral — Dia Anterior</h5>
+              <p className="text-sm text-slate-700">
+                Registros de higiene oral feitos pelos técnicos no dia anterior:{' '}
+                <span className="font-black text-sky-700">{qtdHigieneOral} {qtdHigieneOral === 1 ? 'registro' : 'registros'}</span>{' '}
+                (meta: 3x/dia)
+                {qtdHigieneOral >= 3 && (
+                  <span className="ml-2 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-1">✓ Meta atingida</span>
+                )}
+                {qtdHigieneOral > 0 && qtdHigieneOral < 3 && (
+                  <span className="ml-2 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">⚠ Abaixo da meta</span>
+                )}
+                {qtdHigieneOral === 0 && (
+                  <span className="ml-2 text-xs font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg px-2 py-1">Nenhum registro</span>
+                )}
+              </p>
+
+              {/* Meta automática: menos de 3 registros no dia anterior */}
+              {qtdHigieneOral < 3 && (
+                <div className="mt-3 p-3 bg-white border border-sky-200 rounded-lg">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Higiene oral abaixo da meta (3x/dia)</p>
+                  <button
+                    onClick={() => sugerirMetaEnfermeiro('Realizar Higiene Oral 3x/d', 'auto_higiene_oral')}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaEnf('auto_higiene_oral') ? 'bg-sky-600 text-white border border-sky-600' : 'bg-sky-600 hover:bg-sky-700 text-white'}`}
+                  >{metaAtivaEnf('auto_higiene_oral') ? '✓ Meta: Realizar Higiene Oral 3x/d' : '✓ Realizar Higiene Oral 3x/d'}</button>
+                </div>
+              )}
+            </div>
+
+            {/* 6. OBSERVAÇÕES */}
             <CampoTexto label="Observações" valor={visita.enfermeiroPlantonista.observacoes} onChange={v => updateDeep('enfermeiroPlantonista', ['observacoes'], v)} />
           </>
         )}
