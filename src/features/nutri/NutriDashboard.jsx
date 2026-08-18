@@ -212,11 +212,18 @@ const NutriDashboard = ({
               /> Meta Calórica Total Atingida
             </label>
             <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-slate-700">
-              <input 
+              <input
                 type="checkbox" className="w-5 h-5 accent-lime-600"
-                checked={currentPatient.nutri?.metaProtAtingida || false}
-                onChange={(e) => updateNested("nutri", "metaProtAtingida", e.target.checked)}
-              /> Meta Proteica Atingida
+                checked={currentPatient.nutri?.metaProtDiariaAtingida || false}
+                onChange={(e) => updateNested("nutri", "metaProtDiariaAtingida", e.target.checked)}
+              /> Meta Proteica Diária Atingida
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-slate-700">
+              <input
+                type="checkbox" className="w-5 h-5 accent-lime-600"
+                checked={currentPatient.nutri?.metaProtTotalAtingida || false}
+                onChange={(e) => updateNested("nutri", "metaProtTotalAtingida", e.target.checked)}
+              /> Meta Proteica Total Atingida
             </label>
           </div>
           <textarea
@@ -283,7 +290,26 @@ const NutriDashboard = ({
               </select>
             </div>
 
-            {(currentPatient.nutri?.via === "Enteral" || currentPatient.nutri?.via === "Parenteral") && (
+            {currentPatient.nutri?.via === "Enteral" && (
+              <div className="grid grid-cols-2 gap-3 mt-2 animate-fadeIn">
+                <input
+                  placeholder="Tipo/Fórmula (Enteral)"
+                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                  value={currentPatient.nutri?.tipoDietaEnteral || ""}
+                  onChange={(e) => updateNested("nutri", "tipoDietaEnteral", e.target.value)}
+                  onBlur={() => handleBlurSave("Nutrição: Editou Tipo/Fórmula da Dieta Enteral")}
+                />
+                <input
+                  placeholder="Vazão (ml/h) — Enteral"
+                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                  value={currentPatient.nutri?.vazaoEnteral || ""}
+                  onChange={(e) => updateNested("nutri", "vazaoEnteral", e.target.value)}
+                  onBlur={() => handleBlurSave("Nutrição: Editou Vazão Enteral")}
+                />
+              </div>
+            )}
+
+            {currentPatient.nutri?.via === "Parenteral" && (
               <div className="grid grid-cols-2 gap-3 mt-2 animate-fadeIn">
                 <input
                   placeholder="Tipo/Fórmula"

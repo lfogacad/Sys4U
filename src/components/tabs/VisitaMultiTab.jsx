@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getTempoVMText } from '../../utils/core';
+import { CONSISTENCIA_ALIMENTAR } from '../../constants/clinicalLists';
 
 /* ============================================================
    VisitaMultiTab — Visita Multidisciplinar (Sys4U / UTI)
@@ -130,6 +131,15 @@ const METAS_MOBILIZACAO = [
   'Alongamentos',
   'Condicionamento funcional'
 ];
+const VIAS_DIETA = ['Oral', 'Enteral', 'Parenteral', 'Zero', 'Mista'];
+const VIAS_ADICIONAR = ['Oral', 'Enteral', 'Parenteral'];
+const CARACTERISTICAS_DIETA = [
+  'Normocalórica', 'Hipercalórica', 'Hipocalórica',
+  'Normoproteica', 'Hiperproteica', 'Hipoproteica',
+  'Normoglicídica', 'Hiperglicídica', 'Hipoglicídica',
+  'Normossódica', 'Hipossódica',
+  'Normolipídica', 'Hiperlipídica'
+];
 
 // ------------------- HELPERS (sem dependência externa) -------------------
 const safeNum = (v) => {
@@ -253,6 +263,29 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
 
   const [mobilizacaoSelecionada, setMobilizacaoSelecionada] = useState([]);
 
+  // Sugere meta de nutri e marca o botão correspondente como ativo
+  const sugerirMetaNutri = (texto, origem) => {
+    sugerirMeta(texto, origem);
+    setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
+  };
+  const metaAtiva = (origem) => metasSugeridas.includes(origem);
+
+  const confirmarCaracteristicas = () => {
+    if (caracteristicasSelecionadas.length === 0) return;
+    const frase = `Mudar características da dieta para: ${caracteristicasSelecionadas.join(', ')}`;
+    sugerirMetaNutri(frase, 'auto_mudar_caracteristicas');
+    setCaracteristicasSelecionadas([]);
+  };
+
+  // Nutri: controla quais metas já foram sugeridas (para o botão mudar de cor)
+  const [metasSugeridas, setMetasSugeridas] = useState([]);
+  // Nutri: campo digitável da vazão
+  const [novaVazao, setNovaVazao] = useState('');
+  // Nutri: características selecionadas para montar uma única meta
+  const [caracteristicasSelecionadas, setCaracteristicasSelecionadas] = useState([]);
+  const [novaVazaoEnteral, setNovaVazaoEnteral] = useState('');
+  const [novaVazaoParenteral, setNovaVazaoParenteral] = useState('');
+
   const [visita, setVisita] = useState(() => {
     const existente = currentPatient?.visita?.[dataISO];
     const base = criarVisitaVazia();
@@ -337,6 +370,48 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   };
 
   const analise = calcularAnalise();
+
+  // ---------- NUTRI: CONSUMO ORAL (média) ----------
+  const historicoDietaVO = currentPatient?.enfermagem?.historico_dieta_vo || [];
+  const consumosSolida = historicoDietaVO.filter(r => r.tiposOferecidos?.solida);
+  const consumosLiquida = historicoDietaVO.filter(r => r.tiposOferecidos?.liquida);
+  const mediaSolida = consumosSolida.length ? Math.round(consumosSolida.reduce((a, r) => a + safeNum(r.consumo?.solida), 0) / consumosSolida.length) : 0;
+  const mediaLiquida = consumosLiquida.length ? Math.round(consumosLiquida.reduce((a, r) => a + safeNum(r.consumo?.liquida), 0) / consumosLiquida.length) : 0;
+
+  // ---------- NUTRI: INSULINAS ----------
+  const inicioJanela = new Date(ontem);
+  inicioJanela.setHours(7, 0, 0, 0);
+  const fimJanela = new Date();
+  fimJanela.setHours(6, 0, 0, 0);
+  const insulinasJanela = (currentPatient?.enfermagem?.historico_insulina || [])
+    .filter(ins => {
+      const dt = new Date(ins.dataHoraRegistro);
+      return !isNaN(dt.getTime()) && dt >= inicioJanela && dt < fimJanela;
+    })
+    .sort((a, b) => new Date(a.dataHoraRegistro) - new Date(b.dataHoraRegistro));
+
+  // ---------- NUTRI: GLICEMIA DO DIA ANTERIOR (HGT) ----------
+  const hgtOntem = Object.entries(bhAnterior?.vitals || {})
+    .map(([hora, v]) => ({ hora, valor: v?.['HGT (mg/dL)'] }))
+    .filter(x => x.valor && String(x.valor).trim() !== '');
+
+  // ---------- NUTRI: METAS CALÓRICAS/PROTEICAS ----------
+  const metaCalDiaria = currentPatient?.nutri?.metaCalDiaria;
+  const metaCalTotal = currentPatient?.nutri?.metaCalTotal;
+  const metaProtDiaria = currentPatient?.nutri?.metaProtDiaria;
+  const metaProtTotal = currentPatient?.nutri?.metaProtTotal;
+  const calDiariaNaoAtingida = metaCalDiaria && !currentPatient?.nutri?.metaCalDiariaAtingida;
+  const calTotalNaoAtingida = metaCalTotal && !currentPatient?.nutri?.metaCalTotalAtingida;
+  const protDiariaNaoAtingida = metaProtDiaria && !currentPatient?.nutri?.metaProtDiariaAtingida;
+  const protTotalNaoAtingida = metaProtTotal && !currentPatient?.nutri?.metaProtTotalAtingida;
+  const calNaoAtingida = calDiariaNaoAtingida || calTotalNaoAtingida;
+  const protNaoAtingida = protDiariaNaoAtingida || protTotalNaoAtingida;
+
+  useEffect(() => {
+    if (calNaoAtingida) sugerirMetaNutri('Aumentar aporte calórico', 'auto_aumentar_calorico');
+    if (protNaoAtingida) sugerirMetaNutri('Aumentar aporte proteico', 'auto_aumentar_proteico');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calNaoAtingida, protNaoAtingida]);
 
   // ---------- FISIO: GASOMETRIA DO DIA ANTERIOR (todas por horário) ----------
   const ontemGasoKey = `${String(ontem.getDate()).padStart(2, '0')}/${String(ontem.getMonth() + 1).padStart(2, '0')}/${ontem.getFullYear()}`;
@@ -464,7 +539,24 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const podeConfirmarMedico = categoriaAtiva === 'medicoRotina' || categoriaAtiva === 'medicoPlantonista';
+const ORIGENS_NUTRI = [
+  'auto_mudar_via',
+  'auto_adicionar_via',
+  'auto_mudar_consistencia',
+  'auto_mudar_caracteristica',
+  'auto_ajustar_vazao',
+  'auto_aumentar_calorico',
+  'auto_aumentar_proteico'
+];
+const podeConfirmarMeta = (meta) => {
+  // Médicos confirmam qualquer meta automática
+  if (categoriaAtiva === 'medicoRotina' || categoriaAtiva === 'medicoPlantonista') return true;
+  // Nutri confirma APENAS as metas geradas na própria aba
+  if (categoriaAtiva === 'nutricionista') {
+    return ORIGENS_NUTRI.some(prefixo => (meta.origem || '').startsWith(prefixo));
+  }
+  return false;
+};
 
   // ============================================================
   return (
@@ -725,14 +817,257 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
         {categoriaAtiva === 'nutricionista' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Nutricionista</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <CampoTexto label="Via de Acesso" valor={visita.nutricionista.viaAcesso} onChange={v => updateDeep('nutricionista', ['viaAcesso'], v)} />
-              <CampoTexto label="Meta Calórica (kcal)" valor={visita.nutricionista.metaCalorica} onChange={v => updateDeep('nutricionista', ['metaCalorica'], v)} />
-              <CampoTexto label="Meta Proteica (g)" valor={visita.nutricionista.metaProteica} onChange={v => updateDeep('nutricionista', ['metaProteica'], v)} />
-              <CampoTexto label="Suplementação" valor={visita.nutricionista.suplementacao} onChange={v => updateDeep('nutricionista', ['suplementacao'], v)} />
+
+            {/* BLOCO A — VIA DA DIETA */}
+            <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
+              <h5 className="font-bold text-sm text-lime-800 mb-3">🍽️ Via da Dieta</h5>
+              <LinhaInfo rotulo="Via atual" valor={currentPatient?.nutri?.via || 'Não informada'} />
+              <div className="mt-3 border-t border-lime-200 pt-3">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mudar para...</p>
+                <div className="flex flex-wrap gap-2">
+                  {VIAS_DIETA.filter(v => v !== currentPatient?.nutri?.via).map(v => {
+                    const origem = `auto_mudar_via_${v}`;
+                    return (
+                      <button key={v} onClick={() => sugerirMetaNutri(`Mudar via da dieta para ${v}`, origem)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${metaAtiva(origem) ? 'bg-lime-600 text-white border border-lime-600 shadow-sm' : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'}`}>
+                        {v}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-3 mb-2">Adicionar via de alimentação...</p>
+                <div className="flex flex-wrap gap-2">
+                  {VIAS_ADICIONAR.map(v => {
+                    const origem = `auto_adicionar_via_${v}`;
+                    return (
+                      <button key={v} onClick={() => sugerirMetaNutri(`Adicionar via ${v.toLowerCase()} de alimentação`, origem)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${metaAtiva(origem) ? 'bg-lime-600 text-white border border-lime-600 shadow-sm' : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'}`}>
+                        + {v}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-            <CampoTexto label="Dieta" valor={visita.nutricionista.dieta} onChange={v => updateDeep('nutricionista', ['dieta'], v)} />
-            <CampoTexto label="Reavaliação" valor={visita.nutricionista.reavaliacao} onChange={v => updateDeep('nutricionista', ['reavaliacao'], v)} />
+
+            {/* BLOCO B — CONSISTÊNCIA / CARACTERÍSTICAS / NOME */}
+            <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
+              <h5 className="font-bold text-sm text-lime-800 mb-3">🥣 Consistência / Características / Nome</h5>
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                <LinhaInfo rotulo="Consistência (Fono)" valor={currentPatient?.fono?.consistencia || '—'} />
+                <LinhaInfo rotulo="Nome (se enteral)" valor={currentPatient?.nutri?.tipoDietaEnteral || '—'} />
+              </div>
+              <p className="text-xs font-bold text-slate-500 mt-2 mb-1">Características atuais:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(currentPatient?.nutri?.caracteristicasDieta || []).length === 0
+                  ? <span className="text-sm text-slate-400 italic">Nenhuma</span>
+                  : (currentPatient?.nutri?.caracteristicasDieta || []).map(c => (
+                      <span key={c} className="text-xs font-bold bg-white border border-lime-300 text-lime-700 px-2 py-0.5 rounded-lg">{c}</span>
+                    ))}
+              </div>
+              <div className="mt-3 border-t border-lime-200 pt-3">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mudar consistência para...</p>
+                <div className="flex flex-wrap gap-2">
+                  {CONSISTENCIA_ALIMENTAR.filter(c => c !== currentPatient?.fono?.consistencia).map(c => {
+                    const origem = `auto_mudar_consistencia_${c}`;
+                    return (
+                      <button key={c} onClick={() => sugerirMetaNutri(`Mudar consistência da dieta para ${c}`, origem)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${metaAtiva(origem) ? 'bg-lime-600 text-white border border-lime-600 shadow-sm' : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'}`}>
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-3 mb-2">Mudar características para... (clique para selecionar)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {CARACTERISTICAS_DIETA.map(c => {
+                      const ativa = caracteristicasSelecionadas.includes(c);
+                      return (
+                        <button
+                          key={c}
+                          onClick={() => setCaracteristicasSelecionadas(prev =>
+                            prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
+                          )}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                            ativa
+                              ? 'bg-lime-600 text-white border border-lime-600 shadow-sm'
+                              : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'
+                          }`}
+                        >{c}</button>
+                      );
+                    })}
+                  </div>
+                  {caracteristicasSelecionadas.length > 0 && (
+                    <div className="mt-3 bg-white border border-lime-200 rounded-lg p-3">
+                      <p className="text-xs text-slate-500 font-semibold mb-1">Meta a ser criada:</p>
+                      <p className="text-sm font-bold text-lime-800">"{caracteristicasSelecionadas.join(', ')}"</p>
+                      <button
+                        onClick={confirmarCaracteristicas}
+                        className="mt-2 px-4 py-2 rounded-lg bg-lime-600 hover:bg-lime-700 text-white font-bold text-sm transition-colors"
+                      >✓ Confirmar meta</button>
+                    </div>
+                  )}
+              </div>
+            </div>
+
+            {/* BLOCO C — CONSUMO ORAL */}
+            <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
+              <h5 className="font-bold text-sm text-lime-800 mb-3">📊 Monitoramento do Consumo Oral</h5>
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between items-end mb-1">
+                    <span className="text-xs font-bold text-slate-600 uppercase">Alimentos (Média)</span>
+                    <span className="text-lg font-black text-lime-700">{mediaSolida}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                    <div className="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${mediaSolida}%` }}></div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 text-right">{consumosSolida.length} refeições registradas</p>
+                </div>
+                <div>
+                  <div className="flex justify-between items-end mb-1">
+                    <span className="text-xs font-bold text-slate-600 uppercase">Suplementos (Média)</span>
+                    <span className="text-lg font-black text-lime-700">{mediaLiquida}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                    <div className="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${mediaLiquida}%` }}></div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 text-right">{consumosLiquida.length} refeições registradas</p>
+                </div>
+              </div>
+            </div>
+
+            {/* BLOCO D — METAS CALÓRICAS E PROTEICAS */}
+            <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
+              <h5 className="font-bold text-sm text-lime-800 mb-3">🎯 Metas Calóricas e Proteicas</h5>
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                <LinhaInfo rotulo="Meta Cal. Diária" valor={currentPatient?.nutri?.metaCalDiaria ? `${currentPatient.nutri.metaCalDiaria} kcal` : '—'} destaque={calDiariaNaoAtingida} />
+                <LinhaInfo rotulo="Meta Prot. Diária" valor={currentPatient?.nutri?.metaProtDiaria ? `${currentPatient.nutri.metaProtDiaria} g` : '—'} destaque={protDiariaNaoAtingida} />
+                <LinhaInfo rotulo="Meta Cal. Total" valor={currentPatient?.nutri?.metaCalTotal ? `${currentPatient.nutri.metaCalTotal} kcal` : '—'} destaque={calTotalNaoAtingida} />
+                <LinhaInfo rotulo="Meta Prot. Total" valor={currentPatient?.nutri?.metaProtTotal ? `${currentPatient.nutri.metaProtTotal} g` : '—'} destaque={protTotalNaoAtingida} />
+              </div>
+              {calNaoAtingida && (
+                <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  🎯 Meta calórica não atingida — meta sugerida: <b>Aumentar aporte calórico</b> (aguardando confirmação)
+                </p>
+              )}
+              {protNaoAtingida && (
+                <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  🎯 Meta proteica não atingida — meta sugerida: <b>Aumentar aporte proteico</b> (aguardando confirmação)
+                </p>
+              )}
+            </div>
+
+            {/* BLOCO E — VAZÃO DA DIETA */}
+            {(currentPatient?.nutri?.via === 'Enteral' || currentPatient?.nutri?.via === 'Parenteral' || currentPatient?.nutri?.via === 'Mista') && (
+              <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
+                <h5 className="font-bold text-sm text-lime-800 mb-3">💧 Vazão da Dieta</h5>
+
+                {currentPatient?.nutri?.via === 'Mista' ? (
+                  /* ---- DIETA MISTA: vazões separadas por via ---- */
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {(currentPatient?.nutri?.viasMistas || []).includes('Enteral') && (
+                      <div>
+                        <LinhaInfo rotulo="Vazão Enteral atual" valor={currentPatient?.nutri?.vazaoEnteral ? `${currentPatient.nutri.vazaoEnteral} ml/h` : '—'} />
+                        <div className="mt-2 flex items-end gap-2 flex-wrap">
+                          <input
+                            type="number"
+                            value={novaVazaoEnteral}
+                            onChange={e => setNovaVazaoEnteral(e.target.value)}
+                            placeholder="ex: 40"
+                            className="flex-1 min-w-[120px] p-2 border border-lime-300 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-lime-300 bg-white"
+                          />
+                          <button
+                            onClick={() => { if (novaVazaoEnteral) { sugerirMetaNutri(`Ajustar vazão enteral para ${novaVazaoEnteral} ml/h`, 'auto_ajustar_vazao_enteral'); setNovaVazaoEnteral(''); } }}
+                            disabled={!novaVazaoEnteral}
+                            className="px-3 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
+                          >Programar</button>
+                        </div>
+                      </div>
+                    )}
+                    {(currentPatient?.nutri?.viasMistas || []).includes('Parenteral') && (
+                      <div>
+                        <LinhaInfo rotulo="Vazão Parenteral atual" valor={currentPatient?.nutri?.vazaoParenteral ? `${currentPatient.nutri.vazaoParenteral} ml/h` : '—'} />
+                        <div className="mt-2 flex items-end gap-2 flex-wrap">
+                          <input
+                            type="number"
+                            value={novaVazaoParenteral}
+                            onChange={e => setNovaVazaoParenteral(e.target.value)}
+                            placeholder="ex: 30"
+                            className="flex-1 min-w-[120px] p-2 border border-lime-300 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-lime-300 bg-white"
+                          />
+                          <button
+                            onClick={() => { if (novaVazaoParenteral) { sugerirMetaNutri(`Ajustar vazão parenteral para ${novaVazaoParenteral} ml/h`, 'auto_ajustar_vazao_parenteral'); setNovaVazaoParenteral(''); } }}
+                            disabled={!novaVazaoParenteral}
+                            className="px-3 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
+                          >Programar</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* ---- VIA ÚNICA (Enteral OU Parenteral): um campo ---- */
+                  <>
+                    <LinhaInfo rotulo="Vazão atual" valor={currentPatient?.nutri?.vazao ? `${currentPatient.nutri.vazao} ml/h` : '—'} />
+                    <div className="mt-3 border-t border-lime-200 pt-3 flex items-end gap-3 flex-wrap">
+                      <div className="flex-1 min-w-[160px]">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Programar nova vazão (ml/h)</label>
+                        <input
+                          type="number"
+                          value={novaVazao}
+                          onChange={e => setNovaVazao(e.target.value)}
+                          placeholder="ex: 40"
+                          className="w-full p-2 border border-lime-300 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-lime-300 bg-white"
+                        />
+                      </div>
+                      <button
+                        onClick={() => { if (novaVazao) { sugerirMetaNutri(`Ajustar vazão da dieta para ${novaVazao} ml/h`, 'auto_ajustar_vazao'); setNovaVazao(''); } }}
+                        disabled={!novaVazao}
+                        className="px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
+                      >Programar vazão</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* BLOCO F — GLICEMIA DO DIA ANTERIOR */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+              <h5 className="font-bold text-sm text-slate-700 mb-3">🩸 Glicemia do dia anterior ({ontemBR})</h5>
+              {hgtOntem.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">Nenhum registro de HGT no dia anterior.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {hgtOntem.map((g, i) => {
+                    const num = safeNum(g.valor);
+                    const anormal = num > 0 && (num < 70 || num > 180);
+                    return (
+                      <span key={i} className={`text-xs font-bold px-2 py-1 rounded-lg border ${anormal ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-slate-200 text-slate-700'}`}>
+                        {g.hora} — {g.valor} mg/dL {anormal && (num < 70 ? '⬇' : '⬆')}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* BLOCO G — INSULINAS (janela 07h ontem → 06h hoje) */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+              <h5 className="font-bold text-sm text-slate-700 mb-3">💉 Insulinas Aplicadas (07h ontem → 06h hoje)</h5>
+              {insulinasJanela.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">Nenhuma insulina registrada na janela.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {insulinasJanela.map((ins, i) => (
+                    <span key={i} className="text-xs font-bold bg-white border border-slate-200 text-slate-700 px-2 py-1 rounded-lg">
+                      {ins.horario} — {ins.tipo} {ins.dose} UI
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <CampoTexto label="Observações" valor={visita.nutricionista.observacoes} onChange={v => updateDeep('nutricionista', ['observacoes'], v)} />
           </>
         )}
@@ -917,7 +1252,7 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  {m.status === 'aguardando' && podeConfirmarMedico && (
+                  {m.status === 'aguardando' && podeConfirmarMeta(m) && (
                     <>
                       <button onClick={() => confirmarMeta(m.id)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">✓ Confirmar</button>
                       <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'rejeitar' })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Rejeitar</button>
