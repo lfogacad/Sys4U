@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getTempoVMText } from '../../utils/core';
+import { getTempoVMText, calculateCreatinineClearance } from '../../utils/core';
 import { CONSISTENCIA_ALIMENTAR } from '../../constants/clinicalLists';
 
 /* ============================================================
@@ -38,7 +38,6 @@ const criarVisitaVazia = () => ({
     higieneOral: { realizada3x: false }, lesoesPressao: { presente: false, estagio: null },
     curativos: '', observacoes: ''
   },
-  gerenteEnfermagem: { recursos: '', padronizacoes: '', observacoes: '' },
   fisioterapeutaPlantonista: {
     ventilacaoMecanica: { modo: '', fio2: '', peep: '' },
     desmame: '', mobilizacaoPrecoce: '', observacoes: '',
@@ -51,7 +50,6 @@ const criarVisitaVazia = () => ({
       motivoNao: ''
     }
   },
-  coordenadorFisioterapia: { indicadores: '', observacoes: '' },
   nutricionista: { viaAcesso: '', dieta: '', metaCalorica: '', metaProteica: '', suplementacao: '', reavaliacao: '', observacoes: '' },
   tecnicoEnfermagem: { retornoSNE: '', observacoes: '' },
   metas: []
@@ -116,9 +114,7 @@ const CATEGORIAS = [
   { id: 'medicoRotina', label: 'Médico RT', cor: 'teal' },
   { id: 'medicoPlantonista', label: 'Médico Plantão', cor: 'blue' },
   { id: 'enfermeiroPlantonista', label: 'Enfermagem', cor: 'emerald' },
-  { id: 'gerenteEnfermagem', label: 'Ger. Enfermagem', cor: 'green' },
   { id: 'fisioterapeutaPlantonista', label: 'Fisioterapia', cor: 'violet' },
-  { id: 'coordenadorFisioterapia', label: 'Coord. Fisio', cor: 'purple' },
   { id: 'nutricionista', label: 'Nutrição', cor: 'amber' },
   { id: 'tecnicoEnfermagem', label: 'Téc. Enfermagem', cor: 'rose' }
 ];
@@ -257,7 +253,7 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
 
   // começa no Técnico para facilitar o teste — troque para 'medicoRotina' se preferir
   const [categoriaAtiva, setCategoriaAtiva] = useState('tecnicoEnfermagem');
-  const [modalCancelamento, setModalCancelamento] = useState(null); // { id, justificativa, acao: 'cancelar' | 'rejeitar' }
+  const [modalCancelamento, setModalCancelamento] = useState(null);
   const [novaMeta, setNovaMeta] = useState({ tipo: 'SVD', descricao: '' });
   const jaGeradasRef = useRef(false);
   
@@ -270,6 +266,179 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   const [checklistSVD, setChecklistSVD] = useState({});
   // Enfermeiro: curativo selecionado para lesão
   const [curativoSelecionado, setCurativoSelecionado] = useState({});
+
+  // ================= MÉDICO RT — ESTADOS =================
+  const [checklistPadua, setChecklistPadua] = useState({});
+  const [checklistCaprini, setChecklistCaprini] = useState({});
+  const [checklistUlcera, setChecklistUlcera] = useState({});
+  const [checklistVOPrejudicada, setChecklistVOPrejudicada] = useState({});
+  const [planoAberto, setPlanoAberto] = useState(null); // qual grupo de opções está aberto
+  const [planoSelecao, setPlanoSelecao] = useState({}); // { grupo: [opções selecionadas] }
+
+  // ================= MÉDICO RT — HELPERS =================
+  const sugerirMetaRT = (texto, origem) => {
+    sugerirMeta(texto, origem);
+    setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
+  };
+  const metaAtivaRT = (origem) => metasSugeridas.includes(origem);
+
+  // ================= MÉDICO RT — PROFILAXIA DE TVP =================
+  const motivoAdmissao = String(currentPatient?.admissionData?.saps_motivo || '');
+  const ehCirurgico = /cirúrgic|cirurgic|cirúrgica|cirurgica/i.test(motivoAdmissao);
+  const usarCaprini = ehCirurgico; // Cirúrgica → Caprini; Clínica/Médica → Pádua
+
+  // Escala de Pádua (clínica)
+  const PADUA_ITENS = [
+    { id: 'pad_cancer', label: 'Câncer ativo', pontos: 3 },
+    { id: 'pad_tvp_prev', label: 'TVP/TEP prévia (exclui trombose superficial)', pontos: 3 },
+    { id: 'pad_mobilidade', label: 'Mobilidade reduzida (≥ 3 dias de repouso no leito)', pontos: 3 },
+    { id: 'pad_trombofilia', label: 'Trombofilia conhecida', pontos: 3 },
+    { id: 'pad_trauma_cirurgia', label: 'Trauma e/ou cirurgia recente (≤ 1 mês)', pontos: 2 },
+    { id: 'pad_idade', label: 'Idade ≥ 70 anos', pontos: 1 },
+    { id: 'pad_ic_ir', label: 'Insuficiência cardíaca e/ou respiratória', pontos: 1 },
+    { id: 'pad_iam_avc', label: 'IAM ou AVC isquêmico agudo', pontos: 1 },
+    { id: 'pad_infeccao', label: 'Infecção aguda e/ou doença reumática', pontos: 1 },
+    { id: 'pad_obesidade', label: 'Obesidade (IMC ≥ 30)', pontos: 1 },
+    { id: 'pad_hormonio', label: 'Tratamento hormonal em curso', pontos: 1 }
+  ];
+  const scorePadua = PADUA_ITENS.reduce((s, i) => s + (checklistPadua[i.id] ? i.pontos : 0), 0);
+  const riscoTVPAlto = usarCaprini ? false : scorePadua >= 4;
+
+  // Escala de Caprini (cirúrgica) — versão prática
+  const CAPRINI_ITENS = [
+    { id: 'cap_idade_41_60', label: 'Idade 41-60 anos', pontos: 1 },
+    { id: 'cap_idade_61_74', label: 'Idade 61-74 anos', pontos: 2 },
+    { id: 'cap_idade_75', label: 'Idade ≥ 75 anos', pontos: 3 },
+    { id: 'cap_cirurgia_menor', label: 'Cirurgia planejada menor', pontos: 1 },
+    { id: 'cap_cirurgia_grande', label: 'Cirurgia de grande porte (> 45 min)', pontos: 2 },
+    { id: 'cap_imc_25', label: 'IMC > 25', pontos: 1 },
+    { id: 'cap_edema', label: 'Edema de membros inferiores', pontos: 1 },
+    { id: 'cap_varizes', label: 'Veias varicosas', pontos: 1 },
+    { id: 'cap_hist_tvp', label: 'História de TVP/TEP', pontos: 3 },
+    { id: 'cap_familia_tvp', label: 'História familiar de TVP/TEP', pontos: 1 },
+    { id: 'cap_cancer', label: 'Câncer (atual ou prévio)', pontos: 2 },
+    { id: 'cap_sepse', label: 'Sepse (< 1 mês)', pontos: 1 },
+    { id: 'cap_pneumonia', label: 'Pneumonia', pontos: 1 },
+    { id: 'cap_imobilizacao', label: 'Imobilização (> 72h) ou gesso', pontos: 2 },
+    { id: 'cap_acesso_central', label: 'Acesso venoso central', pontos: 2 },
+    { id: 'cap_ic', label: 'Insuficiência cardíaca (< 1 mês)', pontos: 1 },
+    { id: 'cap_imobilidade', label: 'Mobilidade reduzida (≤ 1 dia pós-op)', pontos: 1 },
+    { id: 'cap_anticoag', label: 'Uso de anticoagulante (pré-op)', pontos: 1 }
+  ];
+  const scoreCaprini = CAPRINI_ITENS.reduce((s, i) => s + (checklistCaprini[i.id] ? i.pontos : 0), 0);
+  const riscoTVPAltoCirurgico = usarCaprini ? scoreCaprini >= 3 : false;
+  const riscoTVPAlto = riscoTVPAltoCirurgico || riscoTVPAlto;
+
+  // Contraindicação à profilaxia medicamentosa (sangramento)
+  const [contraTVPMedicamentosa, setContraTVPMedicamentosa] = useState(false);
+
+  // Clearance de creatinina (mesma calculadora do médico plantonista)
+  const clearanceRT = calculateCreatinineClearance(currentPatient);
+  const clearanceRTNum = clearanceRT !== '---' ? Number(clearanceRT) : null;
+  const medicamentoTVP = clearanceRTNum !== null && clearanceRTNum < 30
+    ? 'HNF 5000UI 12/12h'
+    : 'Clexane 40mg/d';
+
+  // ================= MÉDICO RT — ÚLCERA DE ESTRESSE =================
+  const ULCERA_CRITERIOS = [
+    { id: 'ulc_coagulopatia', label: 'Coagulopatia (plaquetas < 50.000, INR > 1,5, TTPa > 2x o normal, ou uso de anticoagulantes)' },
+    { id: 'ulc_vm', label: 'Ventilação mecânica > 48 horas' },
+    { id: 'ulc_hda', label: 'HDA nos últimos 12 meses' },
+    { id: 'ulc_trm_queimadura', label: 'TRM ou queimaduras extensas (> 35%)' },
+    { id: 'ulc_tce', label: 'TCE grave' },
+    { id: 'ulc_sepse', label: 'Sepse' },
+    { id: 'ulc_choque', label: 'Choque' },
+    { id: 'ulc_lra_trs', label: 'LRA/TRS' },
+    { id: 'ulc_corticoide', label: 'Corticoide alta dose (Hidrocortisona > 250mg/d)' }
+  ];
+  const ULCERA_VO_PREJUDICADA = [
+    { id: 'vo_sangramento', label: 'Sangramento GI ativo' },
+    { id: 'vo_sem_acesso', label: 'Paciente sem acesso enteral (jejum absoluto, íleo paralítico, obstrução, pós-operatório de cirurgia gastrointestinal com anastomose)' },
+    { id: 'vo_ma_absorcao', label: 'Má absorção significativa' },
+    { id: 'vo_degluticao', label: 'Incapacidade de deglutir / risco de aspiração' }
+  ];
+  const temCriterioUlcera = ULCERA_CRITERIOS.some(i => checklistUlcera[i.id]);
+  const temVOPrejudicada = ULCERA_VO_PREJUDICADA.some(i => checklistVOPrejudicada[i.id]);
+  const sangramentoGIA = checklistVOPrejudicada['vo_sangramento'] || false;
+
+  // ================= MÉDICO RT — PLANO TERAPÊUTICO (opções) =================
+  const PLANO_OPCOES = {
+    tc: { titulo: 'Solicitar TC de', opcoes: ['Tórax', 'Crânio', 'Abdome'] },
+    us: { titulo: 'Solicitar US de', opcoes: ['Abdome', 'Rins'] },
+    culturas: { titulo: 'Solicitar Culturas', opcoes: ['Hemocultura', 'Urocultura', 'Secreção Traqueal'] },
+    hemocomponente: { titulo: 'Transfusão de Hemocomponente', opcoes: ['Concentrado de Hemácias', 'Plaquetas', 'Plasma Fresco Congelado', 'Crioprecipitado'] }
+  };
+  const PLANO_ACAO_UNICA = [
+    { id: 'rx_torax', label: 'Solicitar Rx de Tórax', meta: 'Solicitar Rx de Tórax' },
+    { id: 'pocus', label: 'Realizar POCUS pulmonar/cardíaco', meta: 'Realizar POCUS pulmonar/cardíaco' },
+    { id: 'desmame_dobuta', label: 'Desmame de Dobuta', meta: 'Desmame de Dobutamina' },
+    { id: 'trocar_atb', label: 'Trocar ATB', meta: 'Trocar antibiótico' },
+    { id: 'suspender_atb', label: 'Suspender ATB', meta: 'Suspender antibiótico' },
+    { id: 'nefrologia', label: 'Avaliação da Nefrologia', meta: 'Avaliação da Nefrologia' },
+    { id: 'corrigir_nak', label: 'Corrigir Na/K', meta: 'Corrigir Na/K' },
+    { id: 'suspender_dieta', label: 'Suspender Dieta', meta: 'Suspender dieta' },
+    { id: 'suspender_anticoag', label: 'Suspender anticoag.', meta: 'Suspender anticoagulante' },
+    { id: 'trocar_svd', label: 'Trocar SVD', meta: 'Trocar SVD' },
+    { id: 'trocar_cvc', label: 'Trocar CVC', meta: 'Trocar CVC' }
+  ];
+
+  // ================= MÉDICO PLANTONISTA — ESTADOS =================
+const [checklistSedacao, setChecklistSedacao] = useState({});
+
+// ================= MÉDICO PLANTONISTA — CHECKLIST DESMAME DE SEDAÇÃO (ABCDEF / SAT) =================
+const CHECKLIST_SEDACAO = [
+  { id: 'sed_dor_controlada', label: 'Dor controlada (CPOT ≤ 2 ou BPS ≤ 5)' },
+  { id: 'sed_sem_sedacao_profunda', label: 'Sem necessidade de sedação profunda contínua (SDRA, HIC, mal epiléptico)' },
+  { id: 'sed_hemodinamica', label: 'Estabilidade hemodinâmica' },
+  { id: 'sed_oxigenacao', label: 'Oxigenação adequada (sem sedação profunda)' },
+  { id: 'sed_sem_agressividade', label: 'Sem agitação grave ou risco iminente de autoextubação' },
+  { id: 'sed_neurologico', label: 'Estado neurológico avaliável (sem HIC/convulsões em curso)' }
+];
+
+// ================= MÉDICO PLANTONISTA — HELPERS =================
+const formatarDataBR = (dataStr) => {
+  if (!dataStr) return '—';
+  const partes = String(dataStr).split('-');
+  if (partes.length === 3) return `${partes[2]}-${partes[1]}-${partes[0]}`;
+  return dataStr;
+};
+const sugerirMetaMedico = (texto, origem) => {
+  sugerirMeta(texto, origem);
+  setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
+};
+const metaAtivaMed = (origem) => metasSugeridas.includes(origem);
+
+// ================= MÉDICO PLANTONISTA — CÁLCULOS =================
+// Sedação
+const sedado = currentPatient?.neuro?.sedacao === true;
+const drogasSedacao = currentPatient?.neuro?.drogasSedacao || [];
+const rass = currentPatient?.neuro?.rass || '';
+
+// DVAs
+const emDVA = currentPatient?.cardio?.dva === true;
+const drogasDVA = currentPatient?.cardio?.drogasDVA || [];
+
+// Antibióticos (em uso = com nome preenchido)
+const antibioticosEmUso = (currentPatient?.antibiotics || [])
+  .filter(a => a && a.name && String(a.name).trim() !== '');
+
+// Exames do dia anterior (examHistory)
+const examesOntem = currentPatient?.examHistory?.[ontemISO] || {};
+const EXAMES_RELEVANTES = ['Hemoglobina', 'Leucócitos', 'Plaquetas', 'Ureia', 'Creatinina', 'Na (Sódio)', 'K (Potássio)', 'PCR'];
+const examesRelevantes = EXAMES_RELEVANTES
+  .map(nome => ({ nome, valor: examesOntem[nome] || '—' }))
+  .filter(e => e.valor !== '—');
+
+// Clearance de creatinina (função de core.js)
+const clearanceCreat = calculateCreatinineClearance(currentPatient);
+const clearanceBaixo = clearanceCreat !== '---' && Number(clearanceCreat) < 30;
+const valorK = examesOntem['K (Potássio)'];
+const kBaixo = valorK && String(valorK).trim() !== '' && Number(String(valorK).replace(',', '.')) < 3;
+
+// Metas de imagem do dia anterior (Rx/TC)
+const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
+  .filter(m => m.status === 'realizado' || m.status === 'pendente' || m.status === 'cancelado')
+  .filter(m => /rx|raio\s*x|tc|tomografia|radiografia/i.test(m.descricao || m.texto || ''));
 
   // ---------- ENFERMEIRO: ESCALAS DO DIA ANTERIOR ----------
   const escalaOntem = currentPatient?.enfermagem?.escalas_diarias?.[ontemISO] || null;
@@ -313,16 +482,16 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   const qtdHigieneOral = higieneOralOntem.length;
 
   const SIGNIFICADO_BRADEN = {
-    'Altíssimo': 'Risco altíssimo de desenvolver LPP (escore ≤ 9)',
-    'Alto': 'Alto risco de desenvolver LPP (escore 10-12)',
-    'Moderado': 'Risco moderado de desenvolver LPP (escore 13-14)',
-    'Baixo': 'Baixo risco de desenvolver LPP (escore 15-18)'
+    'Altíssimo': 'Risco altíssimo de desenvolver LPP',
+    'Alto': 'Alto risco de desenvolver LPP',
+    'Moderado': 'Risco moderado de desenvolver LPP',
+    'Baixo': 'Baixo risco de desenvolver LPP'
   };
   const SIGNIFICADO_MORSE = {
-    'Sem Risco': 'Sem risco de queda (escore 0-24)',
-    'Baixo': 'Baixo risco de queda (escore 25-44)',
-    'Médio': 'Risco médio de queda (escore 45-54)',
-    'Alto': 'Alto risco de queda (escore ≥ 55)'
+    'Sem Risco': 'Sem risco de queda',
+    'Baixo': 'Baixo risco de queda',
+    'Médio': 'Risco médio de queda',
+    'Alto': 'Alto risco de queda'
   };
 
   // Checklist de retirada de CVC (baseado em diretrizes de manejo de acesso venoso central)
@@ -357,12 +526,6 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
     ]
   };
 
-  const formatarDataBR = (dataStr) => {
-    if (!dataStr) return '—';
-    const partes = String(dataStr).split('-');
-    if (partes.length === 3) return `${partes[2]}-${partes[1]}-${partes[0]}`;
-    return dataStr;
-  };
   const sugerirMetaEnfermeiro = (texto, origem) => {
     sugerirMeta(texto, origem);
     setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
@@ -622,12 +785,21 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   };
 
   const rejeitarMeta = (id, justificativa) => {
-    atualizarMetas(lista => lista.map(m =>
-      m.id === id ? {
-        ...m, status: 'cancelado', dataCancelamento: dataISO, canceladoPor: categoriaAtiva,
-        justificativaCancelamento: justificativa ? `Rejeitada: ${justificativa}` : 'Rejeitada pela equipe médica'
-      } : m
-    ));
+    atualizarMetas(lista => lista.map(m => {
+      if (m.id !== id) return m;
+      const ehAutomatica = (m.origem || '').startsWith('auto_');
+      return {
+        ...m,
+        status: ehAutomatica ? 'rejeitada' : 'cancelado',
+        dataCancelamento: dataISO,
+        canceladoPor: categoriaAtiva,
+        justificativaCancelamento: justificativa
+          ? `Rejeitada: ${justificativa}`
+          : ehAutomatica
+            ? 'Rejeitada (meta automática)'
+            : 'Rejeitada pela equipe médica'
+      };
+    }));
   };
 
   const marcarRealizado = (id) => {
@@ -703,36 +875,169 @@ const podeConfirmarMeta = (meta) => {
 
       {/* CONTEÚDO DA CATEGORIA ATIVA */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-        {/* ============ MÉDICO RT ============ */}
-        {categoriaAtiva === 'medicoRotina' && (
-          <>
-            <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Médico da Rotina / RT</h4>
-            {metasAguardando.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-sm font-semibold">
-                ⚠️ {metasAguardando.length} meta(s) automática(s) aguardando confirmação médica — role até o painel "Metas do Dia" abaixo.
-              </div>
-            )}
-            <CampoTexto label="Plano Terapêutico" valor={visita.medicoRotina.planoTerapeutico} onChange={v => updateDeep('medicoRotina', ['planoTerapeutico'], v)} />
-            <CampoTexto label="Sedação / Analgesia" valor={visita.medicoRotina.sedacaoAnalgesia} onChange={v => updateDeep('medicoRotina', ['sedacaoAnalgesia'], v)} />
-            <CampoTexto label="Antibiótico" valor={visita.medicoRotina.antibiotico} onChange={v => updateDeep('medicoRotina', ['antibiotico'], v)} />
-            <CampoTexto label="Desmame Ventilatório" valor={visita.medicoRotina.desmameVentilatorio} onChange={v => updateDeep('medicoRotina', ['desmameVentilatorio'], v)} />
-            <CampoTexto label="Diretivas" valor={visita.medicoRotina.diretivas} onChange={v => updateDeep('medicoRotina', ['diretivas'], v)} />
 
-            <ChecklistCard titulo="Profilaxia de TVP" descricao="Indicada se ≥1 fator de risco E nenhuma contraindicação" itens={CRITERIOS_TVP} valores={visita.medicoRotina.profilaxias.tvp.fatoresRisco} onToggle={(id, v) => updateDeep('medicoRotina', ['profilaxias', 'tvp', 'fatoresRisco', id], v)} cor="cyan" />
-            <ChecklistCard titulo="Contraindicações à profilaxia de TVP" itens={CONTRA_TVP} valores={visita.medicoRotina.profilaxias.tvp.contraindicacoes} onToggle={(id, v) => updateDeep('medicoRotina', ['profilaxias', 'tvp', 'contraindicacoes', id], v)} cor="rose" />
-            <div className="grid grid-cols-2 gap-3">
-              <CampoTexto label="Tipo (farmacológica/mecânica)" valor={visita.medicoRotina.profilaxias.tvp.tipo} onChange={v => updateDeep('medicoRotina', ['profilaxias', 'tvp', 'tipo'], v)} />
-              <CampoTexto label="Fármaco (ex: Enoxaparina 40mg)" valor={visita.medicoRotina.profilaxias.tvp.farmaco} onChange={v => updateDeep('medicoRotina', ['profilaxias', 'tvp', 'farmaco'], v)} />
+        {/* ============ MÉDICO RT ============ */}
+        {categoriaAtiva === 'medicoRT' && (
+          <>
+            <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Médico RT</h4>
+
+            {/* 1. PROFILAXIA DE TVP */}
+            <div className="border border-violet-200 rounded-xl p-4 bg-violet-50">
+              <h5 className="font-bold text-sm text-violet-800 mb-1">🩸 Profilaxia de TVP</h5>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-3">
+                Escala: {usarCaprini ? 'Caprini (admissão cirúrgica)' : 'Pádua (admissão clínica)'} — motivo: {motivoAdmissao || 'não informado'}
+              </p>
+
+              {/* Escala conforme o motivo */}
+              <div className="space-y-1.5 mb-3">
+                {usarCaprini
+                  ? CAPRINI_ITENS.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                        <input type="checkbox" checked={checklistCaprini[item.id] || false} onChange={e => setChecklistCaprini(prev => ({ ...prev, [item.id]: e.target.checked }))} className="mt-0.5 w-4 h-4 accent-violet-600" />
+                        <span>{item.label} <span className="text-violet-500 font-bold">(+{item.pontos})</span></span>
+                      </label>
+                    ))
+                  : PADUA_ITENS.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                        <input type="checkbox" checked={checklistPadua[item.id] || false} onChange={e => setChecklistPadua(prev => ({ ...prev, [item.id]: e.target.checked }))} className="mt-0.5 w-4 h-4 accent-violet-600" />
+                        <span>{item.label} <span className="text-violet-500 font-bold">(+{item.pontos})</span></span>
+                      </label>
+                    ))}
+              </div>
+
+              {/* Score */}
+              <div className="p-2 bg-white border border-violet-200 rounded-lg mb-3">
+                <span className="text-xs font-bold text-slate-600">Score {usarCaprini ? 'Caprini' : 'Pádua'}: </span>
+                <span className={`text-base font-black ${riscoTVPAlto ? 'text-red-600' : 'text-slate-700'}`}>{usarCaprini ? scoreCaprini : scorePadua}</span>
+                <span className="text-xs text-slate-400 ml-2">({usarCaprini ? 'alto risco ≥ 3' : 'alto risco ≥ 4'})</span>
+              </div>
+
+              {/* Contraindicação à profilaxia medicamentosa */}
+              <label className="flex items-start gap-2 cursor-pointer text-xs text-slate-700 mb-3">
+                <input type="checkbox" checked={contraTVPMedicamentosa} onChange={e => setContraTVPMedicamentosa(e.target.checked)} className="mt-0.5 w-4 h-4 accent-violet-600" />
+                <span>Contraindicação à profilaxia medicamentosa (risco de sangramento)</span>
+              </label>
+
+              {/* Sugestão de meta */}
+              {riscoTVPAlto && (
+                <div className="p-3 bg-white border border-violet-200 rounded-lg">
+                  {contraTVPMedicamentosa ? (
+                    <>
+                      <p className="text-xs font-bold text-slate-600 mb-2">Contraindicação à profilaxia medicamentosa → profilaxia mecânica</p>
+                      <button onClick={() => sugerirMetaRT('Profilaxia mecânica para TVP', 'auto_tvp_mecanica')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaRT('auto_tvp_mecanica') ? 'bg-violet-600 text-white border border-violet-600' : 'bg-violet-600 hover:bg-violet-700 text-white'}`}>{metaAtivaRT('auto_tvp_mecanica') ? '✓ Meta: Profilaxia mecânica para TVP' : '✓ Profilaxia mecânica para TVP'}</button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-bold text-slate-600 mb-2">Profilaxia indicada: <span className="text-violet-700">{medicamentoTVP}</span> (Clearance de creatinina: {clearanceRT} mL/min)</p>
+                      <button onClick={() => sugerirMetaRT(`Profilaxia de TVP com ${medicamentoTVP}`, `auto_tvp_${medicamentoTVP.replace(/\s+/g, '_')}`)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaRT(`auto_tvp_${medicamentoTVP.replace(/\s+/g, '_')}`) ? 'bg-violet-600 text-white border border-violet-600' : 'bg-violet-600 hover:bg-violet-700 text-white'}`}>{metaAtivaRT(`auto_tvp_${medicamentoTVP.replace(/\s+/g, '_')}`) ? '✓ Meta: Profilaxia de TVP' : `✓ Profilaxia de TVP com ${medicamentoTVP}`}</button>
+                    </>
+                  )}
+                </div>
+              )}
+              {!riscoTVPAlto && (
+                <p className="text-xs text-slate-400 italic">Sem critério de profilaxia de TVP pelo score atual.</p>
+              )}
             </div>
 
-            <ChecklistCard titulo="Profilaxia de Úlcera de Estresse" descricao="Indicada se ≥1 fator de risco" itens={CRITERIOS_ULCERA} valores={visita.medicoRotina.profilaxias.ulceraEstresse.fatoresRisco} onToggle={(id, v) => updateDeep('medicoRotina', ['profilaxias', 'ulceraEstresse', 'fatoresRisco', id], v)} cor="amber" />
-            <CampoTexto label="Fármaco (ex: Omeprazol 40mg)" valor={visita.medicoRotina.profilaxias.ulceraEstresse.farmaco} onChange={v => updateDeep('medicoRotina', ['profilaxias', 'ulceraEstresse', 'farmaco'], v)} />
+            {/* 2. ÚLCERA DE ESTRESSE */}
+            <div className="border border-violet-200 rounded-xl p-4 bg-violet-50">
+              <h5 className="font-bold text-sm text-violet-800 mb-3">🛡️ Profilaxia de Úlcera de Estresse</h5>
 
-            <ChecklistCard titulo="TOT — Critérios para Despertar (SAT)" descricao="Se todos ok → sugere pausar sedação e testar despertar" itens={CRITERIOS_DESPERTAR} valores={visita.medicoRotina.tot.criteriosDespertar} onToggle={(id, v) => updateDeep('medicoRotina', ['tot', 'criteriosDespertar', id], v)} cor="violet" />
-            <CampoTexto label="SAT realizado? (motivo se não)" valor={visita.medicoRotina.tot.criteriosDespertar.motivoNao} onChange={v => updateDeep('medicoRotina', ['tot', 'criteriosDespertar', 'motivoNao'], v)} />
-            <CampoTexto label="Conduta do TOT" valor={visita.medicoRotina.tot.conduta} onChange={v => updateDeep('medicoRotina', ['tot', 'conduta'], v)} />
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Critérios de indicação:</p>
+              <div className="space-y-1.5 mb-3">
+                {ULCERA_CRITERIOS.map(item => (
+                  <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                    <input type="checkbox" checked={checklistUlcera[item.id] || false} onChange={e => setChecklistUlcera(prev => ({ ...prev, [item.id]: e.target.checked }))} className="mt-0.5 w-4 h-4 accent-violet-600" />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
 
-            <CampoTexto label="Observações" valor={visita.medicoRotina.observacoes} onChange={v => updateDeep('medicoRotina', ['observacoes'], v)} />
+              {temCriterioUlcera && (
+                <>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Impossibilidade de VO:</p>
+                  <div className="space-y-1.5 mb-3">
+                    {ULCERA_VO_PREJUDICADA.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                        <input type="checkbox" checked={checklistVOPrejudicada[item.id] || false} onChange={e => setChecklistVOPrejudicada(prev => ({ ...prev, [item.id]: e.target.checked }))} className="mt-0.5 w-4 h-4 accent-violet-600" />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* Sangramento GI ativo → IBP dose terapêutica */}
+                  {sangramentoGIA && (
+                    <div className="p-3 bg-white border border-red-200 rounded-lg mb-2">
+                      <button onClick={() => sugerirMetaRT('Iniciar IBP em dose terapêutica', 'auto_ibp_terapeutico')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaRT('auto_ibp_terapeutico') ? 'bg-red-600 text-white border border-red-600' : 'bg-red-600 hover:bg-red-700 text-white'}`}>{metaAtivaRT('auto_ibp_terapeutico') ? '✓ Meta: Iniciar IBP em dose terapêutica' : '✓ Iniciar IBP em dose terapêutica'}</button>
+                    </div>
+                  )}
+
+                  {/* Profilaxia EV ou VO */}
+                  <div className="p-3 bg-white border border-violet-200 rounded-lg">
+                    {temVOPrejudicada ? (
+                      <>
+                        <p className="text-xs font-bold text-slate-600 mb-2">VO prejudicada → profilaxia EV</p>
+                        <button onClick={() => sugerirMetaRT('Profilaxia de úlcera de estresse EV', 'auto_ulcera_ev')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaRT('auto_ulcera_ev') ? 'bg-violet-600 text-white border border-violet-600' : 'bg-violet-600 hover:bg-violet-700 text-white'}`}>{metaAtivaRT('auto_ulcera_ev') ? '✓ Meta: Profilaxia de úlcera de estresse EV' : '✓ Profilaxia de úlcera de estresse EV'}</button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-bold text-slate-600 mb-2">VO preservada → profilaxia VO</p>
+                        <button onClick={() => sugerirMetaRT('Profilaxia de úlcera de estresse VO', 'auto_ulcera_vo')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaRT('auto_ulcera_vo') ? 'bg-violet-600 text-white border border-violet-600' : 'bg-violet-600 hover:bg-violet-700 text-white'}`}>{metaAtivaRT('auto_ulcera_vo') ? '✓ Meta: Profilaxia de úlcera de estresse VO' : '✓ Profilaxia de úlcera de estresse VO'}</button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+              {!temCriterioUlcera && (
+                <p className="text-xs text-slate-400 italic">Sem critério de profilaxia de úlcera de estresse.</p>
+              )}
+            </div>
+
+            {/* 3. PLANO TERAPÊUTICO — AÇÕES RÁPIDAS */}
+            <div className="border border-violet-200 rounded-xl p-4 bg-violet-50">
+              <h5 className="font-bold text-sm text-violet-800 mb-3">📋 Plano Terapêutico</h5>
+
+              {/* Ações de seleção única */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {PLANO_ACAO_UNICA.map(acao => (
+                  <button key={acao.id} onClick={() => sugerirMetaRT(acao.meta, `auto_plano_${acao.id}`)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${metaAtivaRT(`auto_plano_${acao.id}`) ? 'bg-violet-600 text-white border border-violet-600' : 'bg-white border border-violet-300 text-violet-700 hover:bg-violet-100'}`}>{metaAtivaRT(`auto_plano_${acao.id}`) ? '✓ ' : ''}{acao.label}</button>
+                ))}
+              </div>
+
+              {/* Ações com múltiplas opções */}
+              <div className="space-y-3">
+                {Object.entries(PLANO_OPCOES).map(([grupo, cfg]) => (
+                  <div key={grupo} className="p-3 bg-white border border-violet-200 rounded-lg">
+                    <button onClick={() => setPlanoAberto(planoAberto === grupo ? null : grupo)} className="w-full text-left text-xs font-bold text-violet-700 flex justify-between items-center">
+                      <span>{cfg.titulo}</span>
+                      <span className="text-violet-400">{planoAberto === grupo ? '▲' : '▼'}</span>
+                    </button>
+                    {planoAberto === grupo && (
+                      <>
+                        <div className="mt-2 space-y-1.5">
+                          {cfg.opcoes.map(op => (
+                            <label key={op} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                              <input type="checkbox" checked={(planoSelecao[grupo] || []).includes(op)} onChange={e => setPlanoSelecao(prev => {
+                                const atuais = prev[grupo] || [];
+                                return { ...prev, [grupo]: e.target.checked ? [...atuais, op] : atuais.filter(x => x !== op) };
+                              })} className="mt-0.5 w-4 h-4 accent-violet-600" />
+                              <span>{op}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <button onClick={() => {
+                          (planoSelecao[grupo] || []).forEach(op => {
+                            const metaTexto = grupo === 'tc' ? `Solicitar TC de ${op}` : grupo === 'us' ? `Solicitar US de ${op}` : grupo === 'culturas' ? `Solicitar ${op}` : `Transfusão de ${op}`;
+                            sugerirMetaRT(metaTexto, `auto_plano_${grupo}_${op.replace(/\s+/g, '_')}`);
+                          });
+                          setPlanoAberto(null);
+                        }} disabled={(planoSelecao[grupo] || []).length === 0} className="mt-3 px-4 py-2 rounded-lg text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white transition-colors disabled:opacity-50">Criar meta(s)</button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
@@ -740,15 +1045,159 @@ const podeConfirmarMeta = (meta) => {
         {categoriaAtiva === 'medicoPlantonista' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Médico Plantonista</h4>
-            {metasAguardando.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-sm font-semibold">
-                ⚠️ {metasAguardando.length} meta(s) automática(s) aguardando confirmação médica — role até o painel "Metas do Dia" abaixo.
-              </div>
-            )}
-            <CampoTexto label="Evolução do Plantão" valor={visita.medicoPlantonista.evolucaoPlantao} onChange={v => updateDeep('medicoPlantonista', ['evolucaoPlantao'], v)} />
-            <CampoTexto label="Intercorrências 24h" valor={visita.medicoPlantonista.intercorrencias24h} onChange={v => updateDeep('medicoPlantonista', ['intercorrencias24h'], v)} />
-            <CampoTexto label="Condutas do Plantão" valor={visita.medicoPlantonista.condutasPlantao} onChange={v => updateDeep('medicoPlantonista', ['condutasPlantao'], v)} />
-            <CampoTexto label="Observações" valor={visita.medicoPlantonista.observacoes} onChange={v => updateDeep('medicoPlantonista', ['observacoes'], v)} />
+
+            {/* 1. SEDAÇÃO — DESMAME */}
+            <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50">
+              <h5 className="font-bold text-sm text-indigo-800 mb-3">💤 Sedação — Critérios de Desmame</h5>
+              {sedado ? (
+                <>
+                  <div className="mb-3 p-3 bg-white border border-indigo-200 rounded-lg">
+                    <p className="text-xs font-bold text-slate-700 mb-1">Paciente sedado</p>
+                    {drogasSedacao.length > 0 && (
+                      <p className="text-xs text-slate-600 mb-2">
+                        Drogas em uso: <span className="font-bold text-indigo-700">{drogasSedacao.join(', ')}</span>
+                      </p>
+                    )}
+                    <div className="p-1.5 bg-slate-50 rounded text-xs">
+                      <span className="font-bold text-slate-500">RASS:</span> <span className="font-bold text-indigo-700">{rass || '—'}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Critérios para desmame de sedação:</p>
+                  <div className="space-y-1.5">
+                    {CHECKLIST_SEDACAO.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={checklistSedacao[item.id] || false}
+                          onChange={e => setChecklistSedacao(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                          className="mt-0.5 w-4 h-4 accent-indigo-600"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {Object.values(checklistSedacao).filter(Boolean).length === CHECKLIST_SEDACAO.length && (
+                    <button
+                      onClick={() => sugerirMetaMedico('Desmame de sedação', 'auto_desmame_sedacao')}
+                      className="mt-3 px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+                    >{metaAtivaMed('auto_desmame_sedacao') ? '✓ Meta: Desmame de sedação' : '✓ Desmame de sedação'}</button>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-400 italic">Paciente não está sedado.</p>
+              )}
+            </div>
+
+            {/* 2. DVAs EM USO */}
+            <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50">
+              <h5 className="font-bold text-sm text-indigo-800 mb-3">💉 Drogas Vasoativas (DVAs)</h5>
+              {emDVA ? (
+                <>
+                  {drogasDVA.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {drogasDVA.map(d => (
+                        <span key={d} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white">{d}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">Em uso de DVA (verificar vazão na bomba no momento da visita).</p>
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-2 italic">Vazão: verificar na bomba de infusão no momento da visita.</p>
+                </>
+              ) : (
+                <p className="text-sm text-slate-400 italic">Sem DVA em uso.</p>
+              )}
+            </div>
+
+            {/* 3. ANTIBIÓTICOS EM USO */}
+            <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50">
+              <h5 className="font-bold text-sm text-indigo-800 mb-3">💊 Antibióticos em Uso</h5>
+              {antibioticosEmUso.length > 0 ? (
+                <div className="space-y-2">
+                  {antibioticosEmUso.map((atb, idx) => {
+                    const diasUso = atb.date ? Math.max(1, Math.round((new Date() - new Date(atb.date)) / 86400000) + 1) : null;
+                    return (
+                      <div key={idx} className="flex items-center justify-between p-2.5 bg-white border border-indigo-200 rounded-lg">
+                        <span className="text-sm font-bold text-slate-700">{atb.name}</span>
+                        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-100">
+                          {diasUso ? `${diasUso}º dia de uso (início ${formatarDataBR(atb.date)})` : 'Data de início não informada'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400 italic">Nenhum antibiótico em uso.</p>
+              )}
+            </div>
+
+            {/* 4. EXAMES DE RELEVÂNCIA (dia anterior) */}
+            <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50">
+              <h5 className="font-bold text-sm text-indigo-800 mb-3">🧪 Exames de Relevância (Dia Anterior)</h5>
+              {examesRelevantes.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {examesRelevantes.map(ex => (
+                      <div key={ex.nome} className="p-2 bg-white border border-indigo-200 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase">{ex.nome}</p>
+                        <p className="text-base font-black text-indigo-700">{ex.valor}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 p-2.5 bg-white border border-indigo-200 rounded-lg flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Clearance de Creatinina (Cockcroft-Gault)</span>
+                    <span className="text-base font-black text-indigo-700">{clearanceCreat} mL/min</span>
+                  </div>
+                  {/* Clearance < 30 → sugerir avaliação da Nefrologia */}
+                  {clearanceBaixo && (
+                    <div className="mt-3 p-3 bg-white border border-amber-300 rounded-lg">
+                      <p className="text-xs font-bold text-amber-800 mb-2">
+                        ⚠️ Clearance de creatinina &lt; 30 mL/min — considerar avaliação da Nefrologia
+                      </p>
+                      <button
+                        onClick={() => sugerirMetaMedico('Avaliação da Nefrologia', 'auto_nefrologia')}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaMed('auto_nefrologia') ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                      >{metaAtivaMed('auto_nefrologia') ? '✓ Meta: Avaliação da Nefrologia' : '✓ Avaliação da Nefrologia'}</button>
+                    </div>
+                  )}
+                  {/* K < 3 → sugerir reposição de potássio */}
+                  {kBaixo && (
+                    <div className="mt-3 p-3 bg-white border border-amber-300 rounded-lg">
+                      <p className="text-xs font-bold text-amber-800 mb-2">
+                        ⚠️ Potássio (K) &lt; 3 mEq/L — considerar reposição de potássio
+                      </p>
+                      <button
+                        onClick={() => sugerirMetaMedico('Repor K', 'auto_repor_k')}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaMed('auto_repor_k') ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                      >{metaAtivaMed('auto_repor_k') ? '✓ Meta: Repor K' : '✓ Repor K'}</button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-400 italic">Nenhum exame de relevância registrado no dia anterior.</p>
+              )}
+            </div>
+
+            {/* 5. EXAMES DE IMAGEM (meta do dia anterior) */}
+            <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50">
+              <h5 className="font-bold text-sm text-indigo-800 mb-3">🖥️ Exames de Imagem</h5>
+              {metasOntemImg.length > 0 ? (
+                <div className="space-y-2">
+                  {metasOntemImg.map(m => (
+                    <div key={m.id} className="p-2.5 bg-white border border-indigo-200 rounded-lg">
+                      <p className="text-xs font-bold text-slate-700">{m.descricao || m.texto || 'Exame de imagem'}</p>
+                      <button
+                        onClick={() => sugerirMetaMedico(`Descreva tal exame realizado ontem: ${m.descricao || m.texto || ''}`, `auto_descrever_exame_${m.id}`)}
+                        className="mt-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+                      >{metaAtivaMed(`auto_descrever_exame_${m.id}`) ? '✓ Meta: Descrever exame' : 'Descreva tal exame realizado ontem'}</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400 italic">Nenhuma meta de exame de imagem (Rx/TC) no dia anterior.</p>
+              )}
+            </div>
           </>
         )}
 
@@ -1024,16 +1473,6 @@ const podeConfirmarMeta = (meta) => {
           </>
         )}
 
-        {/* ============ GERENTE DE ENFERMAGEM ============ */}
-        {categoriaAtiva === 'gerenteEnfermagem' && (
-          <>
-            <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Gerente de Enfermagem</h4>
-            <CampoTexto label="Recursos" valor={visita.gerenteEnfermagem.recursos} onChange={v => updateDeep('gerenteEnfermagem', ['recursos'], v)} />
-            <CampoTexto label="Padronizações" valor={visita.gerenteEnfermagem.padronizacoes} onChange={v => updateDeep('gerenteEnfermagem', ['padronizacoes'], v)} />
-            <CampoTexto label="Observações" valor={visita.gerenteEnfermagem.observacoes} onChange={v => updateDeep('gerenteEnfermagem', ['observacoes'], v)} />
-          </>
-        )}
-
         {/* ============ FISIOTERAPEUTA PLANTONISTA ============ */}
         {categoriaAtiva === 'fisioterapeutaPlantonista' && (
           <>
@@ -1173,15 +1612,6 @@ const podeConfirmarMeta = (meta) => {
             </div>
 
             <CampoTexto label="Observações" valor={visita.fisioterapeutaPlantonista.observacoes} onChange={v => updateDeep('fisioterapeutaPlantonista', ['observacoes'], v)} />
-          </>
-        )}
-
-        {/* ============ COORDENADOR DA FISIOTERAPIA ============ */}
-        {categoriaAtiva === 'coordenadorFisioterapia' && (
-          <>
-            <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Coordenador da Fisioterapia</h4>
-            <CampoTexto label="Indicadores" valor={visita.coordenadorFisioterapia.indicadores} onChange={v => updateDeep('coordenadorFisioterapia', ['indicadores'], v)} />
-            <CampoTexto label="Observações" valor={visita.coordenadorFisioterapia.observacoes} onChange={v => updateDeep('coordenadorFisioterapia', ['observacoes'], v)} />
           </>
         )}
 
@@ -1646,7 +2076,13 @@ const podeConfirmarMeta = (meta) => {
                   {m.status === 'aguardando' && podeConfirmarMeta(m) && (
                     <>
                       <button onClick={() => confirmarMeta(m.id)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">✓ Confirmar</button>
-                      <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'rejeitar', exigeJustificativa: !(m.origem || '').startsWith('auto_') })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Rejeitar</button>
+                      <button onClick={() => {
+                        if ((m.origem || '').startsWith('auto_')) {
+                          rejeitarMeta(m.id, '');
+                        } else {
+                          setModalCancelamento({ id: m.id, justificativa: '', acao: 'rejeitar', exigeJustificativa: true });
+                        }
+                      }} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Rejeitar</button>
                     </>
                   )}
                   {m.status === 'pendente' && (
