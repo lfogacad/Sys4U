@@ -259,6 +259,7 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   
 
   const [mobilizacaoSelecionada, setMobilizacaoSelecionada] = useState([]);
+  const [metasSugeridas, setMetasSugeridas] = useState([]);
 
   // Enfermeiro: checklists de retirada de dispositivos
   const [checklistCVC, setChecklistCVC] = useState({});
@@ -284,8 +285,8 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
 
   // ================= MÉDICO RT — PROFILAXIA DE TVP =================
   const motivoAdmissao = String(currentPatient?.admissionData?.saps_motivo || '');
-  const ehCirurgico = /cirúrgic|cirurgic|cirúrgica|cirurgica/i.test(motivoAdmissao);
-  const usarCaprini = ehCirurgico; // Cirúrgica → Caprini; Clínica/Médica → Pádua
+  const ehCirurgico = /cirúrgic|cirurgic/i.test(motivoAdmissao);
+  const usarCaprini = ehCirurgico;
 
   // Escala de Pádua (clínica)
   const PADUA_ITENS = [
@@ -302,7 +303,6 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
     { id: 'pad_hormonio', label: 'Tratamento hormonal em curso', pontos: 1 }
   ];
   const scorePadua = PADUA_ITENS.reduce((s, i) => s + (checklistPadua[i.id] ? i.pontos : 0), 0);
-  const riscoTVPAlto = usarCaprini ? false : scorePadua >= 4;
 
   // Escala de Caprini (cirúrgica) — versão prática
   const CAPRINI_ITENS = [
@@ -326,8 +326,9 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
     { id: 'cap_anticoag', label: 'Uso de anticoagulante (pré-op)', pontos: 1 }
   ];
   const scoreCaprini = CAPRINI_ITENS.reduce((s, i) => s + (checklistCaprini[i.id] ? i.pontos : 0), 0);
+  const riscoTVPAltoClinico = !usarCaprini && scorePadua >= 4;
   const riscoTVPAltoCirurgico = usarCaprini ? scoreCaprini >= 3 : false;
-  const riscoTVPAlto = riscoTVPAltoCirurgico || riscoTVPAlto;
+  const riscoTVPAlto = riscoTVPAltoClinico || riscoTVPAltoCirurgico;
 
   // Contraindicação à profilaxia medicamentosa (sangramento)
   const [contraTVPMedicamentosa, setContraTVPMedicamentosa] = useState(false);
@@ -341,7 +342,7 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
 
   // ================= MÉDICO RT — ÚLCERA DE ESTRESSE =================
   const ULCERA_CRITERIOS = [
-    { id: 'ulc_coagulopatia', label: 'Coagulopatia (plaquetas < 50.000, INR > 1,5, TTPa > 2x o normal, ou uso de anticoagulantes)' },
+    { id: 'ulc_coagulopatia', label: 'Coagulopatia (plaquetas < 50.000, INR > 1,5, TTPa > 2x)' },
     { id: 'ulc_vm', label: 'Ventilação mecânica > 48 horas' },
     { id: 'ulc_hda', label: 'HDA nos últimos 12 meses' },
     { id: 'ulc_trm_queimadura', label: 'TRM ou queimaduras extensas (> 35%)' },
@@ -546,8 +547,6 @@ const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
     setCaracteristicasSelecionadas([]);
   };
 
-  // Nutri: controla quais metas já foram sugeridas (para o botão mudar de cor)
-  const [metasSugeridas, setMetasSugeridas] = useState([]);
   // Nutri: campo digitável da vazão
   const [novaVazao, setNovaVazao] = useState('');
   // Nutri: características selecionadas para montar uma única meta
@@ -673,6 +672,12 @@ const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
       return minutosDesde7h(a.hora) - minutosDesde7h(b.hora);
     });
 
+  // Flag: houve hipo (< 70) ou hiperglicemia (> 180) no dia anterior
+  const temAlteracaoGlicemica = hgtOntem.some(g => {
+    const num = safeNum(g.valor);
+    return num > 0 && (num < 70 || num > 180);
+  });
+
   // ---------- NUTRI: METAS CALÓRICAS/PROTEICAS ----------
   const metaCalDiaria = currentPatient?.nutri?.metaCalDiaria;
   const metaCalTotal = currentPatient?.nutri?.metaCalTotal;
@@ -743,11 +748,14 @@ const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
   const atualizarMetas = (updater) => {
     setVisita(prev => {
       const novasMetas = updater(prev.metas || []);
-      const nova = { ...prev, metas: novasMetas };
-      salvarVisita(nova);
-      return nova;
+      return { ...prev, metas: novasMetas };
     });
   };
+
+  // Persiste a visita sempre que ela mudar (efeito colateral fora do updater do setVisita)
+  useEffect(() => {
+    salvarVisita(visita);
+  }, [visita]);
 
   const sugerirMeta = (descricao, origem) => {
     atualizarMetas(lista => {
@@ -877,7 +885,7 @@ const podeConfirmarMeta = (meta) => {
       <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
 
         {/* ============ MÉDICO RT ============ */}
-        {categoriaAtiva === 'medicoRT' && (
+        {categoriaAtiva === 'medicoRotina' && (
           <>
             <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Médico RT</h4>
 
@@ -915,7 +923,7 @@ const podeConfirmarMeta = (meta) => {
               {/* Contraindicação à profilaxia medicamentosa */}
               <label className="flex items-start gap-2 cursor-pointer text-xs text-slate-700 mb-3">
                 <input type="checkbox" checked={contraTVPMedicamentosa} onChange={e => setContraTVPMedicamentosa(e.target.checked)} className="mt-0.5 w-4 h-4 accent-violet-600" />
-                <span>Contraindicação à profilaxia medicamentosa (risco de sangramento)</span>
+                <span>Contraindicação à profilaxia medicamentosa (Sangramento ativo; Plqt &lt; 30.000; INR &gt; 2; TTPa &gt; 2x)</span>
               </label>
 
               {/* Sugestão de meta */}
@@ -1869,6 +1877,18 @@ const podeConfirmarMeta = (meta) => {
                       </span>
                     );
                   })}
+                </div>
+              )}
+              {/* Alteração glicêmica → sugerir Controle glicêmico */}
+              {temAlteracaoGlicemica && (
+                <div className="mt-3 p-3 bg-white border border-amber-300 rounded-lg">
+                  <p className="text-xs font-bold text-amber-800 mb-2">
+                    ⚠️ Registro de hipo ou hiperglicemia no dia anterior — considerar controle glicêmico
+                  </p>
+                  <button
+                    onClick={() => sugerirMetaNutri('Controle glicêmico', 'auto_controle_glicemico')}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtiva('auto_controle_glicemico') ? 'bg-amber-600 text-white border border-amber-600' : 'bg-amber-600 hover:bg-amber-700 text-white'}`}
+                  >{metaAtiva('auto_controle_glicemico') ? '✓ Meta: Controle glicêmico' : '✓ Controle glicêmico'}</button>
                 </div>
               )}
             </div>

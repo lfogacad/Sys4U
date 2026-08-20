@@ -1,6 +1,6 @@
 import React from 'react';
 import { ClipboardSignature, X, CheckCircle, Scale, Utensils, Lock } from 'lucide-react';
-import { RISCO_NUTRICIONAL, CARACTERISTICAS_DIETA } from '../../constants/clinicalLists';
+import { RISCO_NUTRICIONAL, CARACTERISTICAS_DIETA, FORMULAS_ENTERAIS } from '../../constants/clinicalLists';
 
 const NutriAdmissionModal = ({
   showNutriModal,
@@ -122,6 +122,53 @@ const NutriAdmissionModal = ({
                 <option value="Mista">Mista</option>
               </select>
             </div>
+
+            {/* SUBOPÇÕES QUANDO VIA = ENTERAL */}
+            {nutriData.via === "Enteral" && (
+              <div className="grid grid-cols-2 gap-3 mt-4 animate-fadeIn">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Tipo/Fórmula (Enteral)</label>
+                  <select
+                    disabled={isReadOnly}
+                    className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500 bg-white"
+                    value={nutriData.tipoDietaEnteral || ""}
+                    onChange={(e) => setNutriData({ ...nutriData, tipoDietaEnteral: e.target.value })}
+                  >
+                    <option value="">Selecione a fórmula enteral...</option>
+                    {FORMULAS_ENTERAIS.map(f => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Vazão (ml/h) — Enteral</label>
+                  <input
+                    type="number"
+                    disabled={isReadOnly}
+                    className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500"
+                    value={nutriData.vazaoEnteral || ""}
+                    onChange={(e) => setNutriData({ ...nutriData, vazaoEnteral: e.target.value })}
+                    placeholder="Ex: 50"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* SUBOPÇÕES QUANDO VIA = PARENTERAL */}
+            {nutriData.via === "Parenteral" && (
+              <div className="mt-4 animate-fadeIn">
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Vazão (ml/h) — Parenteral</label>
+                <input
+                  type="number"
+                  disabled={isReadOnly}
+                  className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500"
+                  value={nutriData.vazaoParenteral || ""}
+                  onChange={(e) => setNutriData({ ...nutriData, vazaoParenteral: e.target.value })}
+                  placeholder="Ex: 40"
+                />
+              </div>
+            )}
+
             {/* SELEÇÃO MÚLTIPLA QUANDO VIA = MISTA */}
             {nutriData.via === "Mista" && (
               <div className="mt-4 p-4 bg-lime-50/50 border-2 border-lime-200 rounded-xl animate-fadeIn">
@@ -162,14 +209,17 @@ const NutriAdmissionModal = ({
                   <div className="grid grid-cols-2 gap-3 mb-3 animate-fadeIn">
                     <div>
                       <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Tipo/Fórmula (Enteral)</label>
-                      <input
-                        type="text"
+                      <select
                         disabled={isReadOnly}
-                        className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500"
+                        className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500 bg-white"
                         value={nutriData.tipoDietaEnteral || ""}
                         onChange={(e) => setNutriData({ ...nutriData, tipoDietaEnteral: e.target.value })}
-                        placeholder="Ex: HP Energy, Isosource, etc."
-                      />
+                      >
+                        <option value="">Selecione a fórmula enteral...</option>
+                        {FORMULAS_ENTERAIS.map(f => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Vazão (ml/h) — Enteral</label>
@@ -206,13 +256,16 @@ const NutriAdmissionModal = ({
                 )}
               </div>
             )}            
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {CARACTERISTICAS_DIETA.map((c) => (
-                <label key={c} className={`flex items-center gap-2 text-sm text-slate-700 bg-slate-50 p-2 rounded border ${isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
-                  <input type="checkbox" disabled={isReadOnly} checked={(nutriData.caracteristicasDieta || []).includes(c)} onChange={() => toggleCaracteristica(c)} /> {c}
-                </label>
-              ))}
-            </div>
+            {/* Características da dieta — quando via Oral ou Mista com Oral marcada */}
+            {(nutriData.via === "Oral" || (nutriData.via === "Mista" && (nutriData.viasMistas || []).includes('Oral'))) && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {CARACTERISTICAS_DIETA.map((c) => (
+                  <label key={c} className={`flex items-center gap-2 text-sm text-slate-700 bg-slate-50 p-2 rounded border ${isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
+                    <input type="checkbox" disabled={isReadOnly} checked={(nutriData.caracteristicasDieta || []).includes(c)} onChange={() => toggleCaracteristica(c)} /> {c}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

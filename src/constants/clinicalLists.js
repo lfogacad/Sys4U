@@ -229,6 +229,17 @@ export const EXAM_ROWS = [
     "Hipolipídica",
     "Constipante",
   ];
+  export const FORMULAS_ENTERAIS = [
+  'FRESUBIN HP ENERGY 1.5 (S/FIBRAS)',
+  'FRESUBIN ENERGY FB 1.5 (C/ FIBRAS)',
+  'SURVIMED OPD HN 1.33',
+  'SURVIMED OPD 1.0',
+  'FRESUBIN ORIGINAL 1.0',
+  'FRESUBIN 2KCAL',
+  'DIASON ENERGY HP 1.5',
+  'DIANUTRI 1.0',
+  'NUTRI RD 2.0'
+];
   export const UTENSILIOS_AGUA = [
     "Copo aberto",
     "Garrafa",

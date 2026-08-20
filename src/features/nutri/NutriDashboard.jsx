@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Scale, Utensils, Lock, ClipboardSignature, CheckSquare, Square, Activity, History, X, BarChart2 } from 'lucide-react';
-import { CARACTERISTICAS_DIETA, CONSISTENCIA_ALIMENTAR, RISCO_NUTRICIONAL } from '../../constants/clinicalLists';
+import { CARACTERISTICAS_DIETA, CONSISTENCIA_ALIMENTAR, FORMULAS_ENTERAIS, RISCO_NUTRICIONAL } from '../../constants/clinicalLists';
 import { calculateEvacDays } from '../../utils/core';
 
 const NutriDashboard = ({
@@ -391,13 +391,17 @@ const NutriDashboard = ({
 
             {currentPatient.nutri?.via === "Enteral" && (
               <div className="grid grid-cols-2 gap-3 mt-2 animate-fadeIn">
-                <input
-                  placeholder="Tipo/Fórmula (Enteral)"
-                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                <select
+                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200 bg-white"
                   value={currentPatient.nutri?.tipoDietaEnteral || ""}
                   onChange={(e) => updateNested("nutri", "tipoDietaEnteral", e.target.value)}
                   onBlur={() => handleBlurSave("Nutrição: Editou Tipo/Fórmula da Dieta Enteral")}
-                />
+                >
+                  <option value="">Selecione a fórmula enteral...</option>
+                  {FORMULAS_ENTERAIS.map(f => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
                 <input
                   placeholder="Vazão (ml/h) — Enteral"
                   className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
@@ -446,13 +450,17 @@ const NutriDashboard = ({
 
                 {(currentPatient.nutri?.viasMistas || []).includes('Enteral') && (
                   <div className="grid grid-cols-2 gap-3 mb-3 animate-fadeIn">
-                    <input
-                      placeholder="Tipo/Fórmula (Enteral)"
-                      className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                    <select
+                      className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200 bg-white"
                       value={currentPatient.nutri?.tipoDietaEnteral || ""}
                       onChange={(e) => updateNested("nutri", "tipoDietaEnteral", e.target.value)}
                       onBlur={() => handleBlurSave("Nutrição: Editou Tipo/Fórmula Enteral da Dieta Mista")}
-                    />
+                    >
+                      <option value="">Selecione a fórmula enteral...</option>
+                      {FORMULAS_ENTERAIS.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
                     <input
                       placeholder="Vazão (ml/h) — Enteral"
                       className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
