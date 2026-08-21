@@ -240,6 +240,24 @@ export const EXAM_ROWS = [
   'DIANUTRI 1.0',
   'NUTRI RD 2.0'
 ];
+  // Valores nutricionais por fórmula enteral (kcal/ml, g de PTN/ml, fração de água)
+  export const NUTRI_ENTERAL_INFO = {
+    'FRESUBIN HP ENERGY 1.5 (S/FIBRAS)': { kcal: 1.5, ptn: 0.075, agua: 0.79 },
+    'FRESUBIN ENERGY FB 1.5 (C/ FIBRAS)': { kcal: 1.5, ptn: 0.075, agua: 0.79 },
+    'SURVIMED OPD HN 1.33':              { kcal: 1.33, ptn: 0.067, agua: 0.80 },
+    'SURVIMED OPD 1.0':                  { kcal: 1.0,  ptn: 0.045, agua: 0.85 },
+    'FRESUBIN ORIGINAL 1.0':             { kcal: 1.0,  ptn: 0.038, agua: 0.84 },
+    'FRESUBIN 2KCAL':                    { kcal: 2.0,  ptn: 0.1,   agua: 0.70 },
+    'DIASON ENERGY HP 1.5':              { kcal: 1.5,  ptn: 0.077, agua: 0.78 },
+    'DIANUTRI 1.0':                      { kcal: 1.0,  ptn: 0.039, agua: 0.83 },
+    'NUTRI RD 2.0':                      { kcal: 2.0,  ptn: 0.075, agua: 0.81 }
+  };
+  // Valores nutricionais da dieta parenteral (única opção disponível)
+  export const NUTRI_PARENTERAL_INFO = {
+    kcal: 1600 / 1477,   // ≈ 1,083 kcal/ml
+    ptn: 0.051,          // 51 g/L
+    agua: 1.0            // 100% água livre
+  };
   export const UTENSILIOS_AGUA = [
     "Copo aberto",
     "Garrafa",

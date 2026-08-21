@@ -166,6 +166,94 @@ export const calculateGlasgowTotal = (p) => {
   return ao + rv + rm;
 };
 
+// ===== CÁLCULOS ANTROPOMÉTRICOS E NRS 2002 =====
+export const safeNum = (v) => {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = parseFloat(String(v).replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+};
+
+export const calcularIdade = (dataNasc) => {
+  if (!dataNasc) return null;
+  const [a, m, d] = String(dataNasc).split('-').map(Number);
+  if (!a || !m || !d) return null;
+  const nasc = new Date(a, m - 1, d);
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - nasc.getFullYear();
+  const mAtual = hoje.getMonth() - nasc.getMonth();
+  if (mAtual < 0 || (mAtual === 0 && hoje.getDate() < nasc.getDate())) idade--;
+  return idade >= 0 ? idade : null;
+};
+
+export const AMPUTACAO_PESO = { mao: 0.007, antebraco: 0.016, braco: 0.05, pe: 0.015, perna_abaixo_joelho: 0.059, perna_inteira: 0.16 };
+export const AMPUTACAO_ESTATURA = { mao: 0.01, antebraco: 0.03, braco: 0.06, pe: 0.018, perna_abaixo_joelho: 0.05, perna_inteira: 0.10 };
+
+export const NRS_INICIAL = [
+  { id: 'imc', label: 'IMC < 18,5?' },
+  { id: 'perda_peso', label: 'Perda de peso não intencional nos últimos 3 meses?' },
+  { id: 'ingesta', label: 'Redução da ingesta alimentar na última semana?' },
+  { id: 'doenca_grave', label: 'Paciente gravemente enfermo (ex.: UTI)?' }
+];
+export const NRS_ESTADO_NUTRICIONAL = [
+  { id: 'normal', label: 'Normal', pontos: 0 },
+  { id: 'leve', label: 'Leve (perda 5% em 3 meses, ingesta 50–75%)', pontos: 1 },
+  { id: 'moderado', label: 'Moderado (perda 5% em 2 meses, IMC 18,5–20,5, ingesta 25–50%)', pontos: 2 },
+  { id: 'grave', label: 'Grave (perda >5% em 1 mês, IMC <18,5, ingesta 0–25%)', pontos: 3 }
+];
+export const NRS_GRAVIDADE = [
+  { id: 'ausente', label: 'Ausente', pontos: 0 },
+  { id: 'leve', label: 'Leve (ex.: fratura, cirurgia eletiva)', pontos: 1 },
+  { id: 'moderada', label: 'Moderada (ex.: pneumonia, cirurgia abdominal)', pontos: 2 },
+  { id: 'grave', label: 'Grave (ex.: UTI, ventilação mecânica)', pontos: 3 }
+];
+
+// Calcula todos os valores derivados a partir dos dados de entrada + dados do paciente
+export const calcularNutricaoDerivada = (entrada, paciente) => {
+  const sexoPaciente = String(paciente?.sexo || '').toUpperCase();
+  const isFem = sexoPaciente === 'F' || sexoPaciente === 'FEM' || sexoPaciente === 'FEMININO';
+  const idadePaciente = calcularIdade(paciente?.dataNascimento);
+
+  // Estatura — Chumlea (1985)
+  const alturaJoelho = safeNum(entrada.alturaJoelho);
+  const estaturaEstimada = (alturaJoelho > 0 && idadePaciente !== null)
+    ? (isFem ? 84.88 - (0.24 * idadePaciente) + (1.83 * alturaJoelho)
+             : 64.19 - (0.04 * idadePaciente) + (2.02 * alturaJoelho))
+    : null;
+
+  // Peso — equação brasileira (Rev. Nutrição, 2006)
+  const circBraco = safeNum(entrada.circBraco);
+  const circAbdominal = safeNum(entrada.circAbdominal);
+  const circPanturrilha = safeNum(entrada.circPanturrilha);
+  const pesoEstimado = (circBraco > 0 && circAbdominal > 0 && circPanturrilha > 0)
+    ? (0.5759 * circBraco) + (0.5263 * circAbdominal) + (1.2452 * circPanturrilha) - (4.8689 * (isFem ? 2 : 1)) - 32.9241
+    : null;
+
+  // Correção por amputação
+  const amputacoes = entrada.amputacoes || [];
+  const fatorPeso = amputacoes.reduce((s, a) => s + (AMPUTACAO_PESO[a] || 0), 0);
+  const fatorEstatura = amputacoes.reduce((s, a) => s + (AMPUTACAO_ESTATURA[a] || 0), 0);
+  const pesoCorrigido = pesoEstimado !== null ? pesoEstimado * (1 - fatorPeso) : null;
+  const estaturaCorrigida = estaturaEstimada !== null ? estaturaEstimada / (1 - fatorEstatura) : null;
+
+  // NRS 2002
+  const nrsInicial = entrada.nrsInicial || [];
+  const nrsInicialSim = NRS_INICIAL.some(q => nrsInicial.includes(q.id));
+  const nrsEstadoPontos = NRS_ESTADO_NUTRICIONAL.find(e => e.id === entrada.nrsEstado)?.pontos || 0;
+  const nrsGravidadePontos = NRS_GRAVIDADE.find(g => g.id === entrada.nrsGravidade)?.pontos || 0;
+  const nrsIdadePontos = (idadePaciente !== null && idadePaciente >= 70) ? 1 : 0;
+  const nrsEscore = nrsInicialSim ? (nrsEstadoPontos + nrsGravidadePontos + nrsIdadePontos) : 0;
+  const nrsRisco = nrsEscore >= 3;
+  const nrsClassificacao = !nrsInicialSim
+    ? 'Sem risco aparente — reavaliar em 7 dias'
+    : (nrsRisco ? 'Risco nutricional — iniciar suporte nutricional' : 'Sem risco nutricional — reavaliar semanalmente');
+
+  return {
+    idadePaciente, isFem, estaturaEstimada, estaturaCorrigida,
+    pesoEstimado, pesoCorrigido, nrsEscore, nrsRisco, nrsClassificacao,
+    fatorPeso, fatorEstatura
+  };
+};
+
 export const limparHDMedica = (e) => {
   if (e) e.preventDefault();
   if (!window.confirm("ATENÇÃO: Deseja apagar toda a Prescrição Médica e a Evolução da Nefrologia?")) return;

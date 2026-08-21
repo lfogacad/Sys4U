@@ -1,11 +1,22 @@
 import React from 'react';
 import { ClipboardSignature, X, CheckCircle, Scale, Utensils, Lock } from 'lucide-react';
 import { RISCO_NUTRICIONAL, CARACTERISTICAS_DIETA, FORMULAS_ENTERAIS } from '../../constants/clinicalLists';
+import {
+  safeNum,
+  calcularIdade,
+  AMPUTACAO_PESO,
+  AMPUTACAO_ESTATURA,
+  NRS_INICIAL,
+  NRS_ESTADO_NUTRICIONAL,
+  NRS_GRAVIDADE,
+  calcularNutricaoDerivada
+} from '../../utils/core';
 
 const NutriAdmissionModal = ({
   showNutriModal,
   setShowNutriModal,
   activeTab,
+  currentPatient,
   nutriData,
   setNutriData,
   handleFinalizeNutriAdmission,
@@ -24,6 +35,60 @@ const NutriAdmissionModal = ({
       return { ...prev, caracteristicasDieta: arr };
     });
   };
+
+  // ===== ESTIMATIVAS ANTROPOMÉTRICAS E NRS 2002 (via core.js) =====
+  const deriv = calcularNutricaoDerivada(nutriData, currentPatient);
+  const {
+    idadePaciente,
+    isFem,
+    estaturaEstimada,
+    estaturaCorrigida,
+    pesoEstimado,
+    pesoCorrigido,
+    nrsEscore,
+    nrsRisco,
+    nrsClassificacao,
+    fatorPeso,
+    fatorEstatura
+  } = deriv;
+
+  // Opções de amputação (para a UI)
+  const AMPUTACOES_OPCOES = [
+    { id: 'mao', label: 'Mão' },
+    { id: 'antebraco', label: 'Antebraço' },
+    { id: 'braco', label: 'Braço inteiro' },
+    { id: 'pe', label: 'Pé' },
+    { id: 'perna_abaixo_joelho', label: 'Perna abaixo do joelho' },
+    { id: 'perna_inteira', label: 'Perna inteira' }
+  ];
+
+  const toggleAmputacao = (id) => {
+    if (isReadOnly) return;
+    setNutriData(prev => {
+      let arr = prev.amputacoes || [];
+      if (arr.includes(id)) arr = arr.filter(x => x !== id);
+      else arr = [...arr, id];
+      return { ...prev, amputacoes: arr };
+    });
+  };
+
+  const nrsInicial = nutriData.nrsInicial || [];
+  const nrsEstado = nutriData.nrsEstado || '';
+  const nrsGravidade = nutriData.nrsGravidade || '';
+  const nrsInicialSim = NRS_INICIAL.some(q => nrsInicial.includes(q.id));
+  const nrsEstadoPontos = NRS_ESTADO_NUTRICIONAL.find(e => e.id === nrsEstado)?.pontos || 0;
+  const nrsGravidadePontos = NRS_GRAVIDADE.find(g => g.id === nrsGravidade)?.pontos || 0;
+  const nrsIdadePontos = (idadePaciente !== null && idadePaciente >= 70) ? 1 : 0;
+  
+  const toggleNrsInicial = (id) => {
+    if (isReadOnly) return;
+    setNutriData(prev => {
+      let arr = prev.nrsInicial || [];
+      if (arr.includes(id)) arr = arr.filter(x => x !== id);
+      else arr = [...arr, id];
+      return { ...prev, nrsInicial: arr };
+    });
+  };  
 
   return (
     <div className="fixed inset-0 bg-slate-900/80 z-[80] flex items-center justify-center p-4 animate-fadeIn">
@@ -83,6 +148,148 @@ const NutriAdmissionModal = ({
                   {RISCO_NUTRICIONAL.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
+            </div>
+            {/* ESTIMATIVAS ANTROPOMÉTRICAS */}
+            <div className="mt-5 border-t border-lime-100 pt-4">
+              <h5 className="font-bold text-sm text-lime-800 mb-3 flex items-center gap-2">📏 Estimativas Antropométricas</h5>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Altura do Joelho (cm)</label>
+                  <input type="number" disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.alturaJoelho || ""} onChange={(e) => setNutriData({ ...nutriData, alturaJoelho: e.target.value })} placeholder="Ex: 50" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Circunferência do Braço (cm)</label>
+                  <input type="number" disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.circBraco || ""} onChange={(e) => setNutriData({ ...nutriData, circBraco: e.target.value })} placeholder="Ex: 30" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Circunferência Abdominal (cm)</label>
+                  <input type="number" disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.circAbdominal || ""} onChange={(e) => setNutriData({ ...nutriData, circAbdominal: e.target.value })} placeholder="Ex: 90" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Circunferência da Panturrilha (cm)</label>
+                  <input type="number" disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.circPanturrilha || ""} onChange={(e) => setNutriData({ ...nutriData, circPanturrilha: e.target.value })} placeholder="Ex: 32" />
+                </div>
+              </div>
+
+              {/* Dados do paciente (idade/sexo) */}
+              <div className="grid md:grid-cols-2 gap-4 mt-3">
+                <div className="p-2.5 bg-slate-50 rounded-lg">
+                  <p className="text-xs font-bold text-slate-500 uppercase mb-0.5">Sexo</p>
+                  <p className="text-sm font-bold text-slate-700">{isFem ? 'Feminino' : sexoPaciente ? 'Masculino' : '—'}</p>
+                </div>
+                <div className="p-2.5 bg-slate-50 rounded-lg">
+                  <p className="text-xs font-bold text-slate-500 uppercase mb-0.5">Idade</p>
+                  <p className="text-sm font-bold text-slate-700">{idadePaciente !== null ? `${idadePaciente} anos` : '—'}</p>
+                </div>
+              </div>
+
+              {/* Amputações */}
+              <div className="mt-3">
+                <p className="text-xs font-bold text-slate-500 uppercase mb-2">Amputações (se houver)</p>
+                <div className="flex flex-wrap gap-2">
+                  {AMPUTACOES_OPCOES.map(op => {
+                    const selecionada = (nutriData.amputacoes || []).includes(op.id);
+                    return (
+                      <button key={op.id} type="button" disabled={isReadOnly}
+                        onClick={() => toggleAmputacao(op.id)}
+                        className={`px-3 py-1.5 rounded-lg border-2 text-xs font-bold transition-all ${selecionada ? 'border-lime-600 bg-lime-100 text-lime-800' : 'border-slate-200 bg-white text-slate-500 hover:border-lime-300'} ${isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
+                        {selecionada ? '✓ ' : ''}{op.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Resultados */}
+              <div className="mt-4 grid md:grid-cols-2 gap-3">
+                <div className="p-3 bg-lime-50 border border-lime-200 rounded-lg">
+                  <p className="text-xs font-bold text-slate-500 uppercase mb-1">Estatura Estimada</p>
+                  {estaturaCorrigida !== null ? (
+                    <p className="text-lg font-black text-lime-700">{estaturaCorrigida.toFixed(1)} cm</p>
+                  ) : (
+                    <p className="text-sm text-slate-400 italic">Preencha altura do joelho</p>
+                  )}
+                  {estaturaEstimada !== null && fatorEstatura > 0 && (
+                    <p className="text-[10px] text-slate-400 font-bold">Corrigida p/ amputação (base {estaturaEstimada.toFixed(1)} cm)</p>
+                  )}
+                </div>
+                <div className="p-3 bg-lime-50 border border-lime-200 rounded-lg">
+                  <p className="text-xs font-bold text-slate-500 uppercase mb-1">Peso Estimado</p>
+                  {pesoCorrigido !== null ? (
+                    <p className="text-lg font-black text-lime-700">{pesoCorrigido.toFixed(1)} kg</p>
+                  ) : (
+                    <p className="text-sm text-slate-400 italic">Preencha as 3 circunferências</p>
+                  )}
+                  {pesoEstimado !== null && fatorPeso > 0 && (
+                    <p className="text-[10px] text-slate-400 font-bold">Corrigido p/ amputação (base {pesoEstimado.toFixed(1)} kg)</p>
+                  )}
+                  {/* Botão para usar o peso estimado no campo Peso Atual */}
+                  {pesoCorrigido !== null && !isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => setNutriData({ ...nutriData, peso: pesoCorrigido.toFixed(1) })}
+                      className="mt-2 w-full px-3 py-2 rounded-lg bg-lime-600 hover:bg-lime-700 text-white font-bold text-xs transition-colors"
+                    >✓ Usar peso estimado</button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* TRIAGEM NRS 2002 */}
+            <div className="mt-5 border-t border-lime-100 pt-4">
+              <h5 className="font-bold text-sm text-lime-800 mb-3 flex items-center gap-2">🩺 Triagem NRS 2002</h5>
+
+              {/* Etapa 1 — Triagem inicial */}
+              <p className="text-xs font-bold text-slate-500 uppercase mb-2">Triagem Inicial (marque os itens presentes)</p>
+              <div className="grid sm:grid-cols-2 gap-2 mb-3">
+                {NRS_INICIAL.map(q => {
+                  const marcada = nrsInicial.includes(q.id);
+                  return (
+                    <label key={q.id} className={`flex items-center gap-2 text-sm text-slate-700 bg-slate-50 p-2 rounded border ${isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
+                      <input type="checkbox" disabled={isReadOnly} checked={marcada} onChange={() => toggleNrsInicial(q.id)} /> {q.label}
+                    </label>
+                  );
+                })}
+              </div>
+
+              {!nrsInicialSim ? (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <p className="text-sm font-bold text-slate-600">Nenhum item da triagem inicial marcado — sem risco aparente.</p>
+                  <p className="text-xs text-slate-400 font-bold mt-1">Reavaliar em 7 dias. Escore: 0</p>
+                </div>
+              ) : (
+                <>
+                  {/* Etapa 2 — Triagem final */}
+                  <div className="grid md:grid-cols-2 gap-4 mt-2">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Estado Nutricional Comprometido</label>
+                      <select disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500 bg-white" value={nrsEstado} onChange={(e) => setNutriData({ ...nutriData, nrsEstado: e.target.value })}>
+                        <option value="">Selecione...</option>
+                        {NRS_ESTADO_NUTRICIONAL.map(o => <option key={o.id} value={o.id}>{o.label} ({o.pontos} pts)</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Gravidade da Doença</label>
+                      <select disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500 bg-white" value={nrsGravidade} onChange={(e) => setNutriData({ ...nutriData, nrsGravidade: e.target.value })}>
+                        <option value="">Selecione...</option>
+                        {NRS_GRAVIDADE.map(o => <option key={o.id} value={o.id}>{o.label} ({o.pontos} pts)</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Resultado do escore */}
+                  <div className={`mt-4 p-3 rounded-lg border ${nrsRisco ? 'bg-red-50 border-red-200' : 'bg-lime-50 border-lime-200'}`}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-slate-500 uppercase">Escore Total</p>
+                      <p className={`text-2xl font-black ${nrsRisco ? 'text-red-700' : 'text-lime-700'}`}>{nrsEscore} <span className="text-sm font-bold text-slate-400">pts</span></p>
+                    </div>
+                    <p className="text-sm font-bold mt-1">
+                      <span className="text-slate-600">Estado nutricional:</span> {nrsEstadoPontos} pts · <span className="text-slate-600">Gravidade:</span> {nrsGravidadePontos} pts · <span className="text-slate-600">Idade (≥70):</span> {nrsIdadePontos} pts
+                    </p>
+                    <p className={`text-sm font-black mt-1 ${nrsRisco ? 'text-red-700' : 'text-lime-700'}`}>{nrsClassificacao}</p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getTempoVMText, calculateCreatinineClearance } from '../../utils/core';
-import { CONSISTENCIA_ALIMENTAR } from '../../constants/clinicalLists';
+import { CONSISTENCIA_ALIMENTAR, FORMULAS_ENTERAIS, NUTRI_ENTERAL_INFO, NUTRI_PARENTERAL_INFO } from '../../constants/clinicalLists';
 
 /* ============================================================
    VisitaMultiTab — Visita Multidisciplinar (Sys4U / UTI)
@@ -551,6 +551,7 @@ const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
   const [novaVazao, setNovaVazao] = useState('');
   // Nutri: características selecionadas para montar uma única meta
   const [caracteristicasSelecionadas, setCaracteristicasSelecionadas] = useState([]);
+  const [enteralSelecionada, setEnteralSelecionada] = useState('');
   const [novaVazaoEnteral, setNovaVazaoEnteral] = useState('');
   const [novaVazaoParenteral, setNovaVazaoParenteral] = useState('');
 
@@ -645,6 +646,34 @@ const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
   const consumosLiquida = historicoDietaVO.filter(r => r.tiposOferecidos?.liquida);
   const mediaSolida = consumosSolida.length ? Math.round(consumosSolida.reduce((a, r) => a + safeNum(r.consumo?.solida), 0) / consumosSolida.length) : 0;
   const mediaLiquida = consumosLiquida.length ? Math.round(consumosLiquida.reduce((a, r) => a + safeNum(r.consumo?.liquida), 0) / consumosLiquida.length) : 0;
+
+  // ===== NUTRI — BLOCO A: aporte nutricional da dieta enteral (dia anterior) =====
+  const formulaEnteral = currentPatient?.nutri?.tipoDietaEnteral || '';
+  const infoFormula = NUTRI_ENTERAL_INFO[formulaEnteral] || null;
+  // Soma o volume de "Dieta SNE/GTT" registrado nos ganhos do BH do dia anterior
+  const volumeDietaEnteral = Object.values(bhPrev?.gains || {}).reduce((s, horario) => {
+    return s + safeNum(horario?.['Dieta SNE/GTT']);
+  }, 0);
+  const kcalEnteral = infoFormula ? Math.round(volumeDietaEnteral * infoFormula.kcal) : null;
+  const ptnEnteral  = infoFormula ? Math.round(volumeDietaEnteral * infoFormula.ptn)  : null;
+  const aguaEnteral = infoFormula ? Math.round(volumeDietaEnteral * infoFormula.agua) : null;
+
+  // ===== NUTRI — BLOCO B: via da dieta =====
+  const viaNutri = currentPatient?.nutri?.via || '';
+  const viasMistasNutri = currentPatient?.nutri?.viasMistas || [];
+  const temEnteral = viaNutri === 'Enteral' || (viaNutri === 'Mista' && viasMistasNutri.includes('Enteral'));
+  const temOral = viaNutri === 'Oral' || (viaNutri === 'Mista' && viasMistasNutri.includes('Oral'));
+  const parenteralIsolada = viaNutri === 'Parenteral';
+
+    // ===== NUTRI — BLOCO A2: aporte nutricional da dieta parenteral (dia anterior) =====
+  const temParenteral = viaNutri === 'Parenteral' || (viaNutri === 'Mista' && viasMistasNutri.includes('Parenteral'));
+  // Soma o volume de "NPT" registrado nos ganhos do BH do dia anterior
+  const volumeDietaParenteral = Object.values(bhPrev?.gains || {}).reduce((s, horario) => {
+    return s + safeNum(horario?.['NPT']);
+  }, 0);
+  const kcalParenteral = volumeDietaParenteral > 0 ? Math.round(volumeDietaParenteral * NUTRI_PARENTERAL_INFO.kcal) : null;
+  const ptnParenteral  = volumeDietaParenteral > 0 ? Math.round(volumeDietaParenteral * NUTRI_PARENTERAL_INFO.ptn)  : null;
+  const aguaParenteral = volumeDietaParenteral > 0 ? Math.round(volumeDietaParenteral * NUTRI_PARENTERAL_INFO.agua) : null;
 
   // ---------- NUTRI: INSULINAS ----------
   const inicioJanela = new Date(ontem);
@@ -1661,65 +1690,173 @@ const podeConfirmarMeta = (meta) => {
               </div>
             </div>
 
+            {/* BLOCO A — APORTE NUTRICIONAL DA DIETA ENTERAL (dia anterior) */}
+            {temEnteral && (
+              <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
+                <h5 className="font-bold text-sm text-lime-800 mb-3">🍼 Aporte da Dieta Enteral — {ontemBR}</h5>
+                {!infoFormula ? (
+                  <p className="text-sm text-slate-400 italic">Selecione a fórmula enteral para calcular o aporte.</p>
+                ) : volumeDietaEnteral <= 0 ? (
+                  <p className="text-sm text-slate-400 italic">Nenhum registro de dieta enteral no BH do dia anterior.</p>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold text-slate-500 mb-2">
+                      Fórmula: <span className="text-lime-800">{formulaEnteral}</span> · Volume: <span className="text-lime-800">{volumeDietaEnteral} ml</span>
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-2 bg-white border border-lime-200 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Calorias</p>
+                        <p className="text-lg font-black text-lime-700">{kcalEnteral} <span className="text-xs font-bold text-slate-400">kcal</span></p>
+                      </div>
+                      <div className="p-2 bg-white border border-lime-200 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Proteínas</p>
+                        <p className="text-lg font-black text-lime-700">{ptnEnteral} <span className="text-xs font-bold text-slate-400">g</span></p>
+                      </div>
+                      <div className="p-2 bg-white border border-lime-200 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Água</p>
+                        <p className="text-lg font-black text-lime-700">{aguaEnteral} <span className="text-xs font-bold text-slate-400">ml</span></p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* BLOCO A2 — APORTE DA DIETA PARENTERAL (dia anterior) */}
+            {temParenteral && (
+              <div className="border border-violet-200 rounded-xl p-4 bg-violet-50">
+                <h5 className="font-bold text-sm text-violet-800 mb-3">💉 Aporte da Dieta Parenteral — {ontemBR}</h5>
+                {volumeDietaParenteral <= 0 ? (
+                  <p className="text-sm text-slate-400 italic">Nenhum registro de dieta parenteral (NPT) no BH do dia anterior.</p>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold text-slate-500 mb-2">
+                      Volume: <span className="text-violet-800">{volumeDietaParenteral} ml</span>
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-2 bg-white border border-violet-200 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Calorias</p>
+                        <p className="text-lg font-black text-violet-700">{kcalParenteral} <span className="text-xs font-bold text-slate-400">kcal</span></p>
+                      </div>
+                      <div className="p-2 bg-white border border-violet-200 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Proteínas</p>
+                        <p className="text-lg font-black text-violet-700">{ptnParenteral} <span className="text-xs font-bold text-slate-400">g</span></p>
+                      </div>
+                      <div className="p-2 bg-white border border-violet-200 rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Água</p>
+                        <p className="text-lg font-black text-violet-700">{aguaParenteral} <span className="text-xs font-bold text-slate-400">ml</span></p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* BLOCO B — CONSISTÊNCIA / CARACTERÍSTICAS / NOME */}
-            <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
-              <h5 className="font-bold text-sm text-lime-800 mb-3">🥣 Consistência / Características / Nome</h5>
-              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-                <LinhaInfo rotulo="Consistência (Fono)" valor={currentPatient?.fono?.consistencia || '—'} />
-                <LinhaInfo rotulo="Nome (se enteral)" valor={currentPatient?.nutri?.tipoDietaEnteral || '—'} />
-              </div>
-              <p className="text-xs font-bold text-slate-500 mt-2 mb-1">Características atuais:</p>
-              <div className="flex flex-wrap gap-1.5">
-                {(currentPatient?.nutri?.caracteristicasDieta || []).length === 0
-                  ? <span className="text-sm text-slate-400 italic">Nenhuma</span>
-                  : (currentPatient?.nutri?.caracteristicasDieta || []).map(c => (
-                      <span key={c} className="text-xs font-bold bg-white border border-lime-300 text-lime-700 px-2 py-0.5 rounded-lg">{c}</span>
-                    ))}
-              </div>
-              <div className="mt-3 border-t border-lime-200 pt-3">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mudar consistência para...</p>
-                <div className="flex flex-wrap gap-2">
-                  {CONSISTENCIA_ALIMENTAR.filter(c => c !== currentPatient?.fono?.consistencia).map(c => {
-                    const origem = `auto_mudar_consistencia_${c}`;
-                    return (
-                      <button key={c} onClick={() => sugerirMetaNutri(`Mudar consistência da dieta para ${c}`, origem)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${metaAtiva(origem) ? 'bg-lime-600 text-white border border-lime-600 shadow-sm' : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'}`}>
-                        {c}
-                      </button>
-                    );
-                  })}
+            {!parenteralIsolada && (
+              <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
+                <h5 className="font-bold text-sm text-lime-800 mb-3">🥣 Consistência / Características / Nome</h5>
+
+                <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                  {temOral && <LinhaInfo rotulo="Consistência (Fono)" valor={currentPatient?.fono?.consistencia || '—'} />}
+                  {temEnteral && <LinhaInfo rotulo="Nome (dieta enteral)" valor={currentPatient?.nutri?.tipoDietaEnteral || '—'} />}
                 </div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-3 mb-2">Mudar características para... (clique para selecionar)</p>
-                  <div className="flex flex-wrap gap-2">
-                    {CARACTERISTICAS_DIETA.map(c => {
-                      const ativa = caracteristicasSelecionadas.includes(c);
-                      return (
-                        <button
-                          key={c}
-                          onClick={() => setCaracteristicasSelecionadas(prev =>
-                            prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
-                          )}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                            ativa
-                              ? 'bg-lime-600 text-white border border-lime-600 shadow-sm'
-                              : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'
-                          }`}
-                        >{c}</button>
-                      );
-                    })}
-                  </div>
-                  {caracteristicasSelecionadas.length > 0 && (
-                    <div className="mt-3 bg-white border border-lime-200 rounded-lg p-3">
-                      <p className="text-xs text-slate-500 font-semibold mb-1">Meta a ser criada:</p>
-                      <p className="text-sm font-bold text-lime-800">"{caracteristicasSelecionadas.join(', ')}"</p>
-                      <button
-                        onClick={confirmarCaracteristicas}
-                        className="mt-2 px-4 py-2 rounded-lg bg-lime-600 hover:bg-lime-700 text-white font-bold text-sm transition-colors"
-                      >✓ Confirmar meta</button>
+
+                {temOral && (
+                  <>
+                    <p className="text-xs font-bold text-slate-500 mt-2 mb-1">Características atuais:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(currentPatient?.nutri?.caracteristicasDieta || []).length === 0
+                        ? <span className="text-sm text-slate-400 italic">Nenhuma</span>
+                        : (currentPatient?.nutri?.caracteristicasDieta || []).map(c => (
+                            <span key={c} className="text-xs font-bold bg-white border border-lime-300 text-lime-700 px-2 py-0.5 rounded-lg">{c}</span>
+                          ))}
+                    </div>
+                  </>
+                )}
+
+                <div className="mt-3 border-t border-lime-200 pt-3">
+                  {/* DIETA ENTERAL → mudar fórmula */}
+                  {temEnteral && (
+                    <div className="mb-3">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mudar dieta enteral para...</p>
+                      <select
+                        className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 bg-white"
+                        value={enteralSelecionada}
+                        onChange={(e) => setEnteralSelecionada(e.target.value)}
+                      >
+                        <option value="">Selecione a fórmula enteral...</option>
+                        {FORMULAS_ENTERAIS.map(f => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </select>
+
+                      {/* Botão de confirmação — só aparece quando há uma fórmula selecionada */}
+                      {enteralSelecionada && (
+                        <div className="mt-3 bg-white border border-lime-200 rounded-lg p-3">
+                          <p className="text-xs text-slate-500 font-semibold mb-1">Meta a ser criada:</p>
+                          <p className="text-sm font-bold text-lime-800">"Mudar dieta enteral para {enteralSelecionada}"</p>
+                          <button
+                            onClick={() => {
+                              sugerirMetaNutri(`Mudar dieta enteral para ${enteralSelecionada}`, `auto_mudar_enteral_${enteralSelecionada}`);
+                              setEnteralSelecionada('');
+                            }}
+                            className="mt-2 px-4 py-2 rounded-lg bg-lime-600 hover:bg-lime-700 text-white font-bold text-sm transition-colors"
+                          >✓ Confirmar meta</button>
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {/* DIETA ORAL → consistência + características */}
+                  {temOral && (
+                    <>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mudar consistência para...</p>
+                      <div className="flex flex-wrap gap-2">
+                        {CONSISTENCIA_ALIMENTAR.filter(c => c !== currentPatient?.fono?.consistencia).map(c => {
+                          const origem = `auto_mudar_consistencia_${c}`;
+                          return (
+                            <button key={c} onClick={() => sugerirMetaNutri(`Mudar consistência da dieta para ${c}`, origem)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${metaAtiva(origem) ? 'bg-lime-600 text-white border border-lime-600 shadow-sm' : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'}`}>
+                              {c}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-3 mb-2">Mudar características para... (clique para selecionar)</p>
+                      <div className="flex flex-wrap gap-2">
+                        {CARACTERISTICAS_DIETA.map(c => {
+                          const ativa = caracteristicasSelecionadas.includes(c);
+                          return (
+                            <button
+                              key={c}
+                              onClick={() => setCaracteristicasSelecionadas(prev =>
+                                prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
+                              )}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                                ativa
+                                  ? 'bg-lime-600 text-white border border-lime-600 shadow-sm'
+                                  : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'
+                              }`}
+                            >{c}</button>
+                          );
+                        })}
+                      </div>
+                      {caracteristicasSelecionadas.length > 0 && (
+                        <div className="mt-3 bg-white border border-lime-200 rounded-lg p-3">
+                          <p className="text-xs text-slate-500 font-semibold mb-1">Meta a ser criada:</p>
+                          <p className="text-sm font-bold text-lime-800">"{caracteristicasSelecionadas.join(', ')}"</p>
+                          <button
+                            onClick={confirmarCaracteristicas}
+                            className="mt-2 px-4 py-2 rounded-lg bg-lime-600 hover:bg-lime-700 text-white font-bold text-sm transition-colors"
+                          >✓ Confirmar meta</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* BLOCO C — CONSUMO ORAL */}
             <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">

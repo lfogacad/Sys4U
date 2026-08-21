@@ -3119,35 +3119,42 @@ ${conduta}
 
   // --- 3. FINALIZAR ADMISSÃO DA NUTRIÇÃO (O Cofre Blindado) ---
   const handleFinalizeNutriAdmission = () => {
-    // A TRAVA DE SEGURANÇA (Hard Stop)
     if (!nutriAdmissionData.peso || String(nutriAdmissionData.peso).trim() === "") {
       return alert("⚠️ O Peso Atual é OBRIGATÓRIO.\nSem esta informação, é impossível traçar as metas calóricas e proteicas do paciente na UTI.");
     }
 
-    // O CLONE PROFUNDO DA MÉDICA (Rompe o vínculo de memória)
     const r = patients[activeTab] ? JSON.parse(JSON.stringify(patients[activeTab])) : {};
 
-    // 1. O COFRE DA NUTRIÇÃO (Congela a imagem inicial na raiz)
+    // ===== VALORES CALCULADOS (antropometria + NRS 2002) =====
+    const deriv = calcularNutricaoDerivada(nutriAdmissionData, r);
+    const calculados = {
+      estaturaEstimada: deriv.estaturaEstimada !== null ? +deriv.estaturaEstimada.toFixed(1) : null,
+      estaturaCorrigida: deriv.estaturaCorrigida !== null ? +deriv.estaturaCorrigida.toFixed(1) : null,
+      pesoEstimado: deriv.pesoEstimado !== null ? +deriv.pesoEstimado.toFixed(1) : null,
+      pesoCorrigido: deriv.pesoCorrigido !== null ? +deriv.pesoCorrigido.toFixed(1) : null,
+      nrsEscore: deriv.nrsEscore,
+      nrsClassificacao: deriv.nrsClassificacao
+    };
+
     if (!r.admissaoNutricao) {
       r.admissaoNutricao = {
         ...nutriAdmissionData,
+        ...calculados,
         dataRegistroAdmissao: new Date().toISOString()
       };
     }
 
-    // 2. A LOUSA DO DIA A DIA (Abastece o painel de evolução diária)
     r.nutri = {
       ...(r.nutri || {}),
       ...nutriAdmissionData,
-      admitido: true // 🔑 Libera o painel principal da nutrição
+      ...calculados,
+      admitido: true
     };
 
-    // ATUALIZAÇÃO IMEDIATA DA TELA
     const up = [...patients];
     up[activeTab] = r;
     setPatients(up);
-    
-    // O CARIMBADOR FIREBASE
+
     if (typeof save === "function") {
       save(r, `Nutrição: Admissão Finalizada (Peso: ${nutriAdmissionData.peso}kg | Risco: ${nutriAdmissionData.risco_nutricional || "N/A"})`);
     }
@@ -5961,6 +5968,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
         showNutriModal={showNutriAdmissionModal}
         setShowNutriModal={setShowNutriAdmissionModal}
         activeTab={activeTab}
+        currentPatient={currentPatient}
         nutriData={nutriAdmissionData}
         setNutriData={setNutriAdmissionData}
         handleFinalizeNutriAdmission={handleFinalizeNutriAdmission}
