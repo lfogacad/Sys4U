@@ -220,20 +220,23 @@ export const calcularNutricaoDerivada = (entrada, paciente) => {
              : 64.19 - (0.04 * idadePaciente) + (2.02 * alturaJoelho))
     : null;
 
-  // Peso — equação brasileira (Rev. Nutrição, 2006)
+  // Peso estimado — Chumlea (1988): AJ + CB
   const circBraco = safeNum(entrada.circBraco);
-  const circAbdominal = safeNum(entrada.circAbdominal);
-  const circPanturrilha = safeNum(entrada.circPanturrilha);
-  const pesoEstimado = (circBraco > 0 && circAbdominal > 0 && circPanturrilha > 0)
-    ? (0.5759 * circBraco) + (0.5263 * circAbdominal) + (1.2452 * circPanturrilha) - (4.8689 * (isFem ? 2 : 1)) - 32.9241
+  const pesoEstimado = (alturaJoelho > 0 && circBraco > 0)
+    ? (isFem
+        ? (1.86 * alturaJoelho) + (2.37 * circBraco) - 65.51
+        : (2.02 * alturaJoelho) + (2.68 * circBraco) - 78.56)
     : null;
 
   // Correção por amputação
+  const AMPUTACOES_MEMBRO_INFERIOR = ['pe', 'perna_abaixo_joelho', 'perna_inteira'];
   const amputacoes = entrada.amputacoes || [];
   const fatorPeso = amputacoes.reduce((s, a) => s + (AMPUTACAO_PESO[a] || 0), 0);
-  const fatorEstatura = amputacoes.reduce((s, a) => s + (AMPUTACAO_ESTATURA[a] || 0), 0);
+  const fatorEstatura = amputacoes
+    .filter(a => AMPUTACOES_MEMBRO_INFERIOR.includes(a))
+    .reduce((s, a) => s + (AMPUTACAO_ESTATURA[a] || 0), 0);
   const pesoCorrigido = pesoEstimado !== null ? pesoEstimado * (1 - fatorPeso) : null;
-  const estaturaCorrigida = estaturaEstimada !== null ? estaturaEstimada / (1 - fatorEstatura) : null;
+  const estaturaCorrigida = estaturaEstimada !== null ? estaturaEstimada * (1 - fatorEstatura) : null;
 
   // NRS 2002
   const nrsInicial = entrada.nrsInicial || [];
@@ -246,12 +249,115 @@ export const calcularNutricaoDerivada = (entrada, paciente) => {
   const nrsClassificacao = !nrsInicialSim
     ? 'Sem risco aparente — reavaliar em 7 dias'
     : (nrsRisco ? 'Risco nutricional — iniciar suporte nutricional' : 'Sem risco nutricional — reavaliar semanalmente');
+  
+  // ===== AVALIAÇÃO ANTROPOMÉTRICA DO BRAÇO (PCT + CMB + AMB) =====
+  const circBracoCm = safeNum(entrada.circBraco);
+  const pctMm = safeNum(entrada.pct);
+  const idx = indiceFaixaReferencia(idadePaciente);
+  const sexoRef = isFem ? 'M' : 'H';
+  const pctRef = PCT_REF[sexoRef][idx];
+  const cmbRef = CMB_REF[sexoRef][idx];
+  const ambRef = AMB_REF[sexoRef][idx];
+
+  const cmb = (circBracoCm > 0 && pctMm > 0) ? circBracoCm - (Math.PI * pctMm / 10) : null;
+  const amb = (cmb !== null) ? (cmb * cmb) / (4 * Math.PI) : null;
+
+  const adequacaoPCT = (pctMm > 0 && pctRef > 0) ? (pctMm / pctRef) * 100 : null;
+  const adequacaoCMB = (cmb !== null && cmbRef > 0) ? (cmb / cmbRef) * 100 : null;
+  const adequacaoAMB = (amb !== null && ambRef > 0) ? (amb / ambRef) * 100 : null;
+
+  const classificacaoPCT = classificarAdequacao(adequacaoPCT);
+  const classificacaoCMB = classificarAdequacao(adequacaoCMB);
+  const classificacaoAMB = classificarAdequacao(adequacaoAMB);
+
+  // IMC (prioriza a altura digitada no campo Altura; senão usa a estatura estimada/corrigida)
+  const pesoUsado = safeNum(entrada.peso) > 0 ? safeNum(entrada.peso) : (pesoCorrigido || null);
+  const alturaDigitada = safeNum(entrada.altura);
+  const estaturaUsada = alturaDigitada > 0 ? alturaDigitada : (estaturaCorrigida || estaturaEstimada);
+  const imc = (pesoUsado && estaturaUsada) ? pesoUsado / Math.pow(estaturaUsada / 100, 2) : null;
+  const classificacaoIMC = classificarIMC(imc, idadePaciente);
+
+  // ===== RASTREIO DE SARCOPENIA — EWGSOP2 (2019) =====
+  // CP < 31 cm = screening positivo (baixa massa muscular)
+  const circPanturrilha = safeNum(entrada.circPanturrilha);
+  const sarcopeniaRisco = circPanturrilha > 0 ? circPanturrilha < 31 : null;
+  const classificacaoSarcopenia = sarcopeniaRisco === null
+    ? null
+    : (sarcopeniaRisco
+        ? 'Risco de sarcopenia — CP < 31 cm'
+        : 'Sem risco aparente de sarcopenia — CP ≥ 31 cm');
 
   return {
     idadePaciente, isFem, estaturaEstimada, estaturaCorrigida,
     pesoEstimado, pesoCorrigido, nrsEscore, nrsRisco, nrsClassificacao,
-    fatorPeso, fatorEstatura
+    fatorPeso, fatorEstatura, pctMm, sarcopeniaRisco, classificacaoSarcopenia,
+    cmb, amb, adequacaoPCT, adequacaoCMB, adequacaoAMB,
+    classificacaoPCT, classificacaoCMB, classificacaoAMB,
+    imc, classificacaoIMC
   };
+};
+
+// ===== REFERÊNCIAS ANTROPOMÉTRICAS DO BRAÇO (Frisancho, 1981 — percentil 50) =====
+// Faixas: [18-24.9, 25-34.9, 35-44.9, 45-54.9, 55-64.9, 65-74.9]
+export const PCT_REF = { H: [12, 12, 12, 11, 11, 11], M: [16, 18, 20, 22, 23, 23] };
+export const CMB_REF = { H: [27.1, 28.4, 29.2, 28.9, 28.3, 27.3], M: [22.0, 22.7, 23.7, 24.7, 25.2, 25.2] };
+export const AMB_REF = { H: [58.4, 64.2, 67.8, 66.4, 63.7, 59.3], M: [38.5, 41.0, 44.7, 48.5, 50.5, 50.4] };
+
+// Índice da faixa etária de referência (0 a 5)
+export const indiceFaixaReferencia = (idade) => {
+  if (idade === null || idade === undefined) return 0;
+  if (idade < 25) return 0;
+  if (idade < 35) return 1;
+  if (idade < 45) return 2;
+  if (idade < 55) return 3;
+  if (idade < 65) return 4;
+  return 5;
+};
+
+// Classificação por adequação (Blackburn & Thornton, 1979)
+export const classificarAdequacao = (percent) => {
+  if (percent === null || percent === undefined) return null;
+  if (percent < 70) return 'Desnutrição grave';
+  if (percent < 80) return 'Desnutrição moderada';
+  if (percent < 90) return 'Desnutrição leve';
+  if (percent <= 110) return 'Eutrofia';
+  if (percent <= 120) return 'Sobrepeso';
+  return 'Obesidade';
+};
+
+// Classificação do IMC por idade (OMS adulto / Lipschitz idoso)
+export const classificarIMC = (imc, idade) => {
+  if (imc === null || imc === undefined) return null;
+  if (idade !== null && idade >= 60) {
+    if (imc < 22) return 'Baixo peso';
+    if (imc <= 27) return 'Eutrofia';
+    return 'Sobrepeso/Obesidade';
+  }
+  if (imc < 18.5) return 'Baixo peso';
+  if (imc < 25) return 'Eutrofia';
+  if (imc < 30) return 'Sobrepeso';
+  return 'Obesidade';
+};
+
+// ===== METAS NUTRICIONAIS AUTOMÁTICAS =====
+export const FATOR_CALORICO_POR_CLASSIFICACAO = {
+  'Baixo peso': 30,          // desnutrido
+  'Eutrofia': 25,            // não obeso
+  'Sobrepeso': 25,           // não obeso
+  'Obesidade': 20,           // obeso
+  'Sobrepeso/Obesidade': 20  // obeso (idoso, Lipschitz)
+};
+
+export const calcularMetasNutricionais = (peso, classificacaoIMC, aumentarPeso) => {
+  const pesoNum = safeNum(peso);
+  if (pesoNum <= 0 || !classificacaoIMC) {
+    return { metaProteicaTotal: null, metaCaloricaTotal: null, fatorCalorico: null };
+  }
+  const fatorCalorico = FATOR_CALORICO_POR_CLASSIFICACAO[classificacaoIMC] || 25;
+  const metaProteicaTotal = pesoNum * 0.8;
+  let metaCaloricaTotal = pesoNum * fatorCalorico;
+  if (aumentarPeso) metaCaloricaTotal *= 1.25;
+  return { metaProteicaTotal, metaCaloricaTotal, fatorCalorico };
 };
 
 export const limparHDMedica = (e) => {

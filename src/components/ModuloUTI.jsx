@@ -17,7 +17,7 @@ import {
 
 import {
   getManausDateStr, formatDateDDMM, getLast10Days, calculateTotals,
-  safeNumber, defaultPatient, ensureBHStructure, calculateAge,
+  safeNumber, defaultPatient, ensureBHStructure, calculateAge, calcularMetasNutricionais, calcularNutricaoDerivada,
   getDaysD0, getDaysD1, getTempoVMText, getTempoVMNumber,calculateEvacDays,
   calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, calculateNoraDose,
   calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf,
@@ -3127,13 +3127,33 @@ ${conduta}
 
     // ===== VALORES CALCULADOS (antropometria + NRS 2002) =====
     const deriv = calcularNutricaoDerivada(nutriAdmissionData, r);
+    const metas = calcularMetasNutricionais(nutriAdmissionData.peso, deriv.classificacaoIMC, nutriAdmissionData.aumentarPeso);
     const calculados = {
       estaturaEstimada: deriv.estaturaEstimada !== null ? +deriv.estaturaEstimada.toFixed(1) : null,
       estaturaCorrigida: deriv.estaturaCorrigida !== null ? +deriv.estaturaCorrigida.toFixed(1) : null,
       pesoEstimado: deriv.pesoEstimado !== null ? +deriv.pesoEstimado.toFixed(1) : null,
       pesoCorrigido: deriv.pesoCorrigido !== null ? +deriv.pesoCorrigido.toFixed(1) : null,
       nrsEscore: deriv.nrsEscore,
-      nrsClassificacao: deriv.nrsClassificacao
+      nrsClassificacao: deriv.nrsClassificacao,
+      // ===== AVALIAÇÃO ANTROPOMÉTRICA DO BRAÇO =====
+      cmb: deriv.cmb !== null ? +deriv.cmb.toFixed(1) : null,
+      amb: deriv.amb !== null ? +deriv.amb.toFixed(1) : null,
+      adequacaoPCT: deriv.adequacaoPCT !== null ? +deriv.adequacaoPCT.toFixed(1) : null,
+      adequacaoCMB: deriv.adequacaoCMB !== null ? +deriv.adequacaoCMB.toFixed(1) : null,
+      adequacaoAMB: deriv.adequacaoAMB !== null ? +deriv.adequacaoAMB.toFixed(1) : null,
+      classificacaoPCT: deriv.classificacaoPCT,
+      classificacaoCMB: deriv.classificacaoCMB,
+      classificacaoAMB: deriv.classificacaoAMB,
+      // ===== IMC =====
+      imc: deriv.imc !== null ? +deriv.imc.toFixed(1) : null,
+      classificacaoIMC: deriv.classificacaoIMC,
+      sarcopeniaRisco: deriv.sarcopeniaRisco,
+      classificacaoSarcopenia: deriv.classificacaoSarcopenia,
+      // ===== METAS NUTRICIONAIS AUTOMÁTICAS =====
+      metaCalTotal: metas.metaCaloricaTotal !== null ? Math.round(metas.metaCaloricaTotal) : null,
+      metaProtTotal: metas.metaProteicaTotal !== null ? Math.round(metas.metaProteicaTotal) : null,
+      fatorCalorico: metas.fatorCalorico,
+      aumentarPeso: !!nutriAdmissionData.aumentarPeso
     };
 
     if (!r.admissaoNutricao) {
@@ -3156,7 +3176,7 @@ ${conduta}
     setPatients(up);
 
     if (typeof save === "function") {
-      save(r, `Nutrição: Admissão Finalizada (Peso: ${nutriAdmissionData.peso}kg | Risco: ${nutriAdmissionData.risco_nutricional || "N/A"})`);
+      save(r, `Nutrição: Admissão Finalizada (Peso: ${nutriAdmissionData.peso}kg | Risco: ${deriv.nrsClassificacao || "N/A"})`);
     }
 
     setShowNutriAdmissionModal(false);

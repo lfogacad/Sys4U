@@ -1,15 +1,13 @@
 import React from 'react';
 import { ClipboardSignature, X, CheckCircle, Scale, Utensils, Lock } from 'lucide-react';
-import { RISCO_NUTRICIONAL, CARACTERISTICAS_DIETA, FORMULAS_ENTERAIS } from '../../constants/clinicalLists';
+import { CARACTERISTICAS_DIETA, FORMULAS_ENTERAIS } from '../../constants/clinicalLists';
 import {
   safeNum,
-  calcularIdade,
-  AMPUTACAO_PESO,
-  AMPUTACAO_ESTATURA,
   NRS_INICIAL,
   NRS_ESTADO_NUTRICIONAL,
   NRS_GRAVIDADE,
-  calcularNutricaoDerivada
+  calcularNutricaoDerivada,
+  calcularMetasNutricionais
 } from '../../utils/core';
 
 const NutriAdmissionModal = ({
@@ -18,9 +16,11 @@ const NutriAdmissionModal = ({
   activeTab,
   currentPatient,
   nutriData,
+  sarcopeniaRisco,        // 🆕
+  classificacaoSarcopenia,
   setNutriData,
   handleFinalizeNutriAdmission,
-  isReadOnly // 🔑 RECEBENDO A TRAVA AQUI
+  isReadOnly
 }) => {
   if (!showNutriModal) return null;
 
@@ -49,8 +49,23 @@ const NutriAdmissionModal = ({
     nrsRisco,
     nrsClassificacao,
     fatorPeso,
-    fatorEstatura
+    fatorEstatura,
+    cmb,
+    amb,
+    pctMm,
+    adequacaoPCT,
+    adequacaoCMB,
+    adequacaoAMB,
+    classificacaoPCT,
+    classificacaoCMB,
+    classificacaoAMB,
+    imc,
+    classificacaoIMC
   } = deriv;
+
+  // ===== METAS NUTRICIONAIS AUTOMÁTICAS =====
+  const metas = calcularMetasNutricionais(nutriData.peso, classificacaoIMC, nutriData.aumentarPeso);
+  const { metaProteicaTotal, metaCaloricaTotal, fatorCalorico } = metas;
 
   // Opções de amputação (para a UI)
   const AMPUTACOES_OPCOES = [
@@ -137,16 +152,28 @@ const NutriAdmissionModal = ({
                 </div>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Risco Nutricional (NRS 2002)</label>
-                <select
-                  disabled={isReadOnly}
-                  className="w-full p-2.5 border rounded-lg bg-white text-red-700 font-bold disabled:bg-slate-100 disabled:text-slate-500"
-                  value={nutriData.risco_nutricional || ""}
-                  onChange={(e) => setNutriData({ ...nutriData, risco_nutricional: e.target.value })}
-                >
-                  <option value="">Selecione...</option>
-                  {RISCO_NUTRICIONAL.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Altura (cm)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    disabled={isReadOnly}
+                    className="w-full p-2.5 border-2 border-lime-200 rounded-lg outline-none font-bold text-slate-700 focus:border-lime-500 focus:ring-2 focus:ring-lime-100 disabled:bg-slate-100 disabled:text-slate-500"
+                    value={nutriData.altura || ""}
+                    onChange={(e) => setNutriData({ ...nutriData, altura: e.target.value })}
+                    placeholder="Ex: 165"
+                  />
+                  <select
+                    disabled={isReadOnly}
+                    className="p-2.5 border-2 border-lime-200 rounded-lg text-sm bg-white font-bold outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                    value={nutriData.tipoMedicaoAltura || ""}
+                    onChange={(e) => setNutriData({ ...nutriData, tipoMedicaoAltura: e.target.value })}
+                  >
+                    <option value="">Tipo...</option>
+                    <option value="Aferido">Aferido</option>
+                    <option value="Referido">Referido</option>
+                    <option value="Estimado">Estimado</option>
+                  </select>
+                </div>
               </div>
             </div>
             {/* ESTIMATIVAS ANTROPOMÉTRICAS */}
@@ -162,12 +189,12 @@ const NutriAdmissionModal = ({
                   <input type="number" disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.circBraco || ""} onChange={(e) => setNutriData({ ...nutriData, circBraco: e.target.value })} placeholder="Ex: 30" />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Circunferência Abdominal (cm)</label>
-                  <input type="number" disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.circAbdominal || ""} onChange={(e) => setNutriData({ ...nutriData, circAbdominal: e.target.value })} placeholder="Ex: 90" />
-                </div>
-                <div>
                   <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Circunferência da Panturrilha (cm)</label>
                   <input type="number" disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.circPanturrilha || ""} onChange={(e) => setNutriData({ ...nutriData, circPanturrilha: e.target.value })} placeholder="Ex: 32" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Prega Cutânea do Tríceps (mm)</label>
+                  <input type="number" disabled={isReadOnly} className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-slate-700 outline-none focus:border-lime-500 disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.pct || ""} onChange={(e) => setNutriData({ ...nutriData, pct: e.target.value })} placeholder="Ex: 14" />
                 </div>
               </div>
 
@@ -212,13 +239,21 @@ const NutriAdmissionModal = ({
                   {estaturaEstimada !== null && fatorEstatura > 0 && (
                     <p className="text-[10px] text-slate-400 font-bold">Corrigida p/ amputação (base {estaturaEstimada.toFixed(1)} cm)</p>
                   )}
+                  {/* Botão para usar a altura estimada no campo Altura */}
+                  {estaturaCorrigida !== null && !isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => setNutriData({ ...nutriData, altura: estaturaCorrigida.toFixed(1), tipoMedicaoAltura: 'Estimado' })}
+                      className="mt-2 w-full px-3 py-2 rounded-lg bg-lime-600 hover:bg-lime-700 text-white font-bold text-xs transition-colors"
+                    >✓ Usar altura estimada</button>
+                  )}
                 </div>
                 <div className="p-3 bg-lime-50 border border-lime-200 rounded-lg">
                   <p className="text-xs font-bold text-slate-500 uppercase mb-1">Peso Estimado</p>
                   {pesoCorrigido !== null ? (
                     <p className="text-lg font-black text-lime-700">{pesoCorrigido.toFixed(1)} kg</p>
                   ) : (
-                    <p className="text-sm text-slate-400 italic">Preencha as 3 circunferências</p>
+                    <p className="text-sm text-slate-400 italic">Preencha altura do joelho e circunferência do braço</p>
                   )}
                   {pesoEstimado !== null && fatorPeso > 0 && (
                     <p className="text-[10px] text-slate-400 font-bold">Corrigido p/ amputação (base {pesoEstimado.toFixed(1)} kg)</p>
@@ -227,7 +262,7 @@ const NutriAdmissionModal = ({
                   {pesoCorrigido !== null && !isReadOnly && (
                     <button
                       type="button"
-                      onClick={() => setNutriData({ ...nutriData, peso: pesoCorrigido.toFixed(1) })}
+                      onClick={() => setNutriData({ ...nutriData, peso: pesoCorrigido.toFixed(1), tipoMedicaoPeso: 'Estimado' })}
                       className="mt-2 w-full px-3 py-2 rounded-lg bg-lime-600 hover:bg-lime-700 text-white font-bold text-xs transition-colors"
                     >✓ Usar peso estimado</button>
                   )}
@@ -291,29 +326,114 @@ const NutriAdmissionModal = ({
                 </>
               )}
             </div>
+
+            {/* AVALIAÇÃO DO ESTADO NUTRICIONAL */}
+            <div className="mt-5 border-t border-lime-100 pt-4">
+              <h5 className="font-bold text-sm text-lime-800 mb-3 flex items-center gap-2">⚖️ Avaliação do Estado Nutricional</h5>
+
+              {/* IMC */}
+              <div className={`p-3 rounded-lg border mb-3 ${imc !== null ? 'bg-lime-50 border-lime-200' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-slate-500 uppercase">IMC</p>
+                  {imc !== null && <p className="text-xl font-black text-lime-700">{imc.toFixed(1)} <span className="text-xs font-bold text-slate-400">kg/m²</span></p>}
+                </div>
+                {imc !== null ? (
+                  <p className="text-sm font-black mt-1 text-lime-700">{classificacaoIMC} <span className="text-xs font-bold text-slate-400">({idadePaciente !== null && idadePaciente >= 60 ? 'Lipschitz' : 'OMS'})</span></p>
+                ) : (
+                  <p className="text-sm text-slate-400 italic">Preencha peso e estatura para calcular o IMC</p>
+                )}
+              </div>
+      
+              {/* Rastreio de Sarcopenia (EWGSOP2) */}
+              <div className={`p-3 rounded-lg border mb-3 ${sarcopeniaRisco ? 'bg-red-50 border-red-200' : 'bg-lime-50 border-lime-200'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-slate-500 uppercase">Rastreio de Sarcopenia</p>
+                  {sarcopeniaRisco !== null && (
+                    <p className={`text-xl font-black ${sarcopeniaRisco ? 'text-red-700' : 'text-lime-700'}`}>
+                      {safeNum(nutriData.circPanturrilha).toFixed(1)} <span className="text-xs font-bold text-slate-400">cm</span>
+                    </p>
+                  )}
+                </div>
+                {sarcopeniaRisco !== null ? (
+                  <p className={`text-sm font-black mt-1 ${sarcopeniaRisco ? 'text-red-700' : 'text-lime-700'}`}>{classificacaoSarcopenia}</p>
+                ) : (
+                  <p className="text-sm text-slate-400 italic">Preencha a circunferência da panturrilha</p>
+                )}
+              </div>
+
+              {/* Tabela de antropometria do braço */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-lime-100 text-lime-900">
+                      <th className="p-2 text-left font-bold">Indicador</th>
+                      <th className="p-2 text-center font-bold">Valor</th>
+                      <th className="p-2 text-center font-bold">Adequação</th>
+                      <th className="p-2 text-center font-bold">Classificação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { label: 'PCT', valor: pctMm > 0 ? `${pctMm.toFixed(1)} mm` : '—', adeq: adequacaoPCT, cls: classificacaoPCT },
+                      { label: 'CMB', valor: cmb !== null ? `${cmb.toFixed(1)} cm` : '—', adeq: adequacaoCMB, cls: classificacaoCMB },
+                      { label: 'AMB', valor: amb !== null ? `${amb.toFixed(1)} cm²` : '—', adeq: adequacaoAMB, cls: classificacaoAMB }
+                    ].map(row => (
+                      <tr key={row.label} className="border-b border-lime-100">
+                        <td className="p-2 font-bold text-slate-700">{row.label}</td>
+                        <td className="p-2 text-center font-bold text-slate-700">{row.valor}</td>
+                        <td className="p-2 text-center text-slate-600">{row.adeq !== null ? `${row.adeq.toFixed(1)}%` : '—'}</td>
+                        <td className="p-2 text-center font-bold text-lime-700">{row.cls || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[10px] text-slate-400 font-bold mt-2">Referência: percentil 50 de Frisancho (1981) · Classificação por Blackburn & Thornton (1979)</p>
+            </div>
           </div>
 
           <div className="p-5 bg-white border border-lime-100 rounded-xl shadow-sm">
             <h4 className="font-bold text-lime-800 mb-4 flex items-center gap-2 border-b pb-2">Metas Nutricionais</h4>
-            {/* Ajustado para 4 colunas no desktop e 2 no tablet */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Calórica Total</label>
-                <input type="number" disabled={isReadOnly} className="w-full p-2.5 border rounded-lg font-bold disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.metaCalTotal || ""} onChange={(e) => setNutriData({ ...nutriData, metaCalTotal: e.target.value })} />
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Calórica Total (kcal)</label>
+                <input
+                  type="number"
+                  readOnly
+                  disabled={isReadOnly}
+                  className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-lime-700 bg-lime-50 outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                  value={metaCaloricaTotal !== null ? Math.round(metaCaloricaTotal) : ""}
+                  placeholder="Calculada automaticamente"
+                />
+                <p className="text-[10px] text-slate-400 font-bold mt-1">
+                  {fatorCalorico
+                    ? `${fatorCalorico} kcal/kg${nutriData.aumentarPeso ? ' × 1,25 (+25%)' : ''}`
+                    : 'Preencha peso e classificação do IMC'}
+                </p>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Calórica Diária</label>
-                <input type="number" disabled={isReadOnly} className="w-full p-2.5 border rounded-lg font-bold disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.metaCalDiaria || ""} onChange={(e) => setNutriData({ ...nutriData, metaCalDiaria: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Proteica Total</label>
-                <input type="number" disabled={isReadOnly} className="w-full p-2.5 border rounded-lg font-bold disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.metaProtTotal || ""} onChange={(e) => setNutriData({ ...nutriData, metaProtTotal: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Proteica Diária</label>
-                <input type="number" disabled={isReadOnly} className="w-full p-2.5 border rounded-lg font-bold disabled:bg-slate-100 disabled:text-slate-500" value={nutriData.metaProtDiaria || ""} onChange={(e) => setNutriData({ ...nutriData, metaProtDiaria: e.target.value })} />
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Meta Proteica Total (g)</label>
+                <input
+                  type="number"
+                  readOnly
+                  disabled={isReadOnly}
+                  className="w-full p-2.5 border-2 border-lime-200 rounded-lg font-bold text-lime-700 bg-lime-50 outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                  value={metaProteicaTotal !== null ? Math.round(metaProteicaTotal) : ""}
+                  placeholder="Calculada automaticamente"
+                />
+                <p className="text-[10px] text-slate-400 font-bold mt-1">0,8 g/kg de peso atual</p>
               </div>
             </div>
+            <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                disabled={isReadOnly}
+                checked={!!nutriData.aumentarPeso}
+                onChange={(e) => setNutriData({ ...nutriData, aumentarPeso: e.target.checked })}
+                className="w-4 h-4 accent-lime-600"
+              />
+              <span className="text-sm font-bold text-slate-700">Aumentar peso — meta calórica +25%</span>
+            </label>
           </div>
 
           <div className="p-5 bg-white border border-lime-100 rounded-xl shadow-sm">
