@@ -26,6 +26,20 @@ export const getManausDateStr = () => {
   return `${y}-${m}-${d}`;
 };
 
+// ===== CHAVE CONTÍNUA DE HORÁRIO REAL (NORA — horário corrido) =====
+// Converte (data do plantão, hora da grade 07h–06h) → chave real contínua "YYYY-MM-DDTHH:00".
+// Madrugada (00h–06h) pertence ao dia real seguinte: grade 26/08 às 04h = "2026-08-27T04:00".
+export const getHoraRealKey = (dataPlantao, hora) => {
+  if (!dataPlantao || !hora) return null;
+  const horaNum = parseInt(hora.split(":")[0], 10);
+  const d = new Date(`${dataPlantao}T12:00:00`); // meio-dia local evita bug de fuso
+  if (horaNum < 7) d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}T${hora}`;
+};
+
 export const parseLocalDate = (s) => {
   if (!s) return null;
   const [y, m, d] = s.split("-").map(Number);

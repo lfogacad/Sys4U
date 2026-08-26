@@ -4,7 +4,7 @@ import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X
          ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
          FileText, Copy, Syringe, Scissors, Snowflake, TestTube, ChevronDown, ChevronRight } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
-import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber } from '../../utils/core';
+import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber, getHoraRealKey, } from '../../utils/core';
 import { doc, updateDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import CVCInsercaoModal from './CVCInsercaoModal';
@@ -1270,7 +1270,19 @@ const salvarFralda = () => {
                   
                   // Pega a data do plantão atual para ler o histórico correto
                   const bhDate = displayedBH?.date || getManausDateStr(); 
-                  const noraHistory = currentPatient.sofa_data_technical?.noraDoseHistory?.[bhDate] || {};
+                  // Histórico contínuo — aceita o formato novo "2026-08-27T04:00" e o antigo {data:{hora}}
+                  const histNora = currentPatient.sofa_data_technical?.noraDoseHistory || {};
+                  const noraHistoryContinuo = {};
+                  Object.entries(histNora).forEach(([k, v]) => {
+                    if (k.includes("T")) {
+                      noraHistoryContinuo[k] = v; // formato novo
+                    } else {
+                      Object.entries(v || {}).forEach(([h, val]) => {
+                        const keyReal = getHoraRealKey(k, h);
+                        if (keyReal) noraHistoryContinuo[keyReal] = val; // formato antigo
+                      });
+                    }
+                  });
 
                   BH_HOURS.forEach((h) => (rowTotal += safeNumber(displayedBH.gains[h]?.[item])));
                   return (
@@ -1304,8 +1316,11 @@ const salvarFralda = () => {
                       {BH_HOURS.map((h, colIndex) => {
                         
                         // 🔥 NOVO: Se houver um registro de mudança de dose NESTA hora, atualiza a cor daqui pra frente!
-                        if (isNoraRow && noraHistory[h] !== undefined) {
-                          currentNoraState = noraHistory[h];
+                        if (isNoraRow) {
+                          const keyReal = getHoraRealKey(bhDate, h);
+                          if (keyReal && noraHistoryContinuo[keyReal] !== undefined) {
+                            currentNoraState = noraHistoryContinuo[keyReal];
+                          }
                         }
 
                         // Só pinta de vermelho se for Nora, se o estado atual for dobrado, e se a célula não estiver vazia
@@ -1326,14 +1341,14 @@ const salvarFralda = () => {
                                 const val = e.target.value;
                                 const newVal = parseFloat(val.replace(',', '.')) || 0;
                                 const isNora = item.toLowerCase().includes("nora");
-                                const todayStr = getManausDateStr();
-                                const modalAlreadyShownToday = currentPatient.sofa_data_technical?.noraModalShown_date === todayStr;
+                                const ultimaVezModal = currentPatient.sofa_data_technical?.noraModalShown_at || 0;
+                                const modalJaMostrado = (Date.now() - ultimaVezModal) < 30 * 60 * 1000; // janela de 30 min (ajustável)
                                 const hourIndex = BH_HOURS.indexOf(h);
                                 const prevHour = hourIndex > 0 ? BH_HOURS[hourIndex - 1] : null;
                                 const prevRate = prevHour ? parseFloat((displayedBH.gains[prevHour]?.[item] || "0").replace(',', '.')) : 0;
-                                const isFirstTime = !modalAlreadyShownToday && val && val !== "0";
+                                const isFirstTime = !modalJaMostrado && val && val !== "0";
                                 const isSignificantDrop = prevRate > 0 && newVal > 0 && newVal <= (prevRate * 0.5);
-                                const isSignificantIncrease = prevRate > 0 && newVal > 0 && newVal >= (prevRate * 1.3);
+                                const isSignificantIncrease = prevRate > 0 && newVal > 0 && newVal >= (prevRate * 2);
                                 if (isNora && !viewingPreviousBH && (isFirstTime || isSignificantDrop || isSignificantIncrease)) {
                                   setCurrentNoraHour(h);
                                   setCurrentNoraRate(val);

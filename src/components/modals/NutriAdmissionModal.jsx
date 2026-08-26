@@ -16,12 +16,23 @@ const NutriAdmissionModal = ({
   activeTab,
   currentPatient,
   nutriData,
-  sarcopeniaRisco,        // 🆕
+  sarcopeniaRisco,
   classificacaoSarcopenia,
   setNutriData,
   handleFinalizeNutriAdmission,
   isReadOnly
 }) => {
+
+  // ===== PREFILL: PESO REFERIDO PELA ADMISSÃO MÉDICA =====
+  React.useEffect(() => {
+    if (showNutriModal && currentPatient?.medical?.pesoReferido) {
+      setNutriData(prev => {
+        if (prev.peso) return prev; // nutri já definiu o próprio peso — não sobrescreve
+        return { ...prev, peso: currentPatient.medical.pesoReferido, tipoMedicaoPeso: prev.tipoMedicaoPeso || "Referido" };
+      });
+    }
+  }, [showNutriModal]);
+
   if (!showNutriModal) return null;
 
   // Bloqueia a alteração das características da dieta se estiver no modo leitura

@@ -20,7 +20,7 @@ import {
   safeNumber, defaultPatient, ensureBHStructure, calculateAge, calcularMetasNutricionais, calcularNutricaoDerivada,
   getDaysD0, getDaysD1, getTempoVMText, getTempoVMNumber,calculateEvacDays,
   calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, calculateNoraDose,
-  calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf,
+  calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf, getHoraRealKey,
   analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, formatExamName
 } from '../utils/core';
 import {
@@ -105,16 +105,20 @@ const mergePatientData = (base, incoming) => {
   };
 };
 
-  // --- MOTOR DE TEMPO DA UTI ---
-  
-  // 1. O "Hoje" da UTI vai das 07:00 de um dia até as 06:59 do dia seguinte.
-  const getLogicalDate = () => {
-    const now = new Date();
-    if (now.getHours() < 7) {
-      now.setDate(now.getDate() - 1); // Ex: Se for 05:00 do dia 05/05, ainda pertence ao plantão do dia 04/05
-    }
-    return now.toISOString().split('T')[0]; // Retorna 'YYYY-MM-DD'
-  };
+// --- MOTOR DE TEMPO DA UTI ---
+
+// 1. O "Hoje" da UTI vai das 07:00 de um dia até as 06:59 do dia seguinte.
+const getLogicalDate = () => {
+  const now = new Date();
+  if (now.getHours() < 7) {
+    now.setDate(now.getDate() - 1); // Ex: Se for 05:00 do dia 05/05, ainda pertence ao plantão do dia 04/05
+  }
+  // CORREÇÃO: formata os componentes da data LOCAL (sem passar por UTC)
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
 
   // 2. Trava de Segurança das 08:00
   // Adicionamos o 'unlockedDates' como parâmetro para verificar se o dia foi liberado na sessão
@@ -1957,6 +1961,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
     r.medical = {
       ...(r.medical || {}),
+      pesoReferido: admissionData.pesoReferido || "",
       exameGeral: admissionData.exameGeral || "",
       exameAR: admissionData.exameAR || "",
       exameACV: admissionData.exameACV || "",
@@ -4895,21 +4900,19 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     const handleNoraModalResponse = (isDoubleDose) => {
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
-    const today = getManausDateStr();
+    // Chave contínua: (data do plantão + hora da grade) → horário real
+    const horaRealKey = getHoraRealKey(currentPatient.bh?.date, currentNoraHour);
 
     if (!p.sofa_data_technical) p.sofa_data_technical = {};
     if (!p.hd_monitoramento) p.hd_monitoramento = {};
     if (!p.hd_monitoramento[currentNoraHour]) p.hd_monitoramento[currentNoraHour] = {};
 
     p.sofa_data_technical.noraDoubleDoseToday = isDoubleDose;
-    p.sofa_data_technical.noraModalShown_date = today;
+    p.sofa_data_technical.noraModalShown_at = Date.now(); // timestamp — janela contínua, não data
 
-    // 🔥 NOVO: Cria um histórico de mudanças de dose por dia e hora
+    // Histórico contínuo de mudanças de dose (horário corrido — mesma régua da diurese 12h)
     if (!p.sofa_data_technical.noraDoseHistory) p.sofa_data_technical.noraDoseHistory = {};
-    if (!p.sofa_data_technical.noraDoseHistory[today]) p.sofa_data_technical.noraDoseHistory[today] = {};
-    
-    // Grava a resposta exata (true ou false) na hora em que o modal abriu
-    p.sofa_data_technical.noraDoseHistory[today][currentNoraHour] = isDoubleDose;
+    if (horaRealKey) p.sofa_data_technical.noraDoseHistory[horaRealKey] = isDoubleDose;
 
     p.hd_monitoramento[currentNoraHour].noraRate = currentNoraRate;
 

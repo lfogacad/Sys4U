@@ -33,17 +33,17 @@ const MedicalAdmissionModal = ({
         {/* CORPO DO MODAL */}
         <div className={`p-6 space-y-6 ${isReadOnly ? 'opacity-90 pointer-events-none' : ''}`}>
           
+          {/* LINHA 1: IDENTIFICAÇÃO (Vêm do Cadastro — Bloqueados) */}
           <div className="grid md:grid-cols-12 gap-4">
-            {/* CAMPOS PERMANENTEMENTE BLOQUEADOS (Vêm do Cadastro) */}
-            <div className="md:col-span-5">
+            <div className="md:col-span-6">
               <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Nome Completo</label>
               <input type="text" disabled className="w-full p-3 border border-slate-200 bg-slate-100 rounded-lg outline-none font-bold text-slate-500 cursor-not-allowed" placeholder="Nome do paciente..." value={admissionData.nome || ""} />
             </div>
-            <div className="md:col-span-2">
+            <div className="md:col-span-3">
               <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Data Nasc.</label>
               <input type="date" disabled className="w-full p-3 border border-slate-200 bg-slate-100 rounded-lg outline-none font-bold text-slate-500 cursor-not-allowed" value={admissionData.dataNascimento || ""} />
             </div>
-            <div className="md:col-span-2">
+            <div className="md:col-span-3">
               <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Sexo</label>
               <select disabled className="w-full p-3 border border-slate-200 bg-slate-100 rounded-lg outline-none font-bold text-slate-500 cursor-not-allowed" value={admissionData.sexo || ""}>
                 <option value="">-</option>
@@ -51,7 +51,22 @@ const MedicalAdmissionModal = ({
                 <option value="F">F</option>
               </select>
             </div>
-            
+          </div>
+
+          {/* LINHA 2: PESO REFERIDO + ORIGEM DA ADMISSÃO */}
+          <div className="grid md:grid-cols-12 gap-4">
+            <div className="md:col-span-4">
+              <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Peso Referido (kg)</label>
+              <input
+                type="number"
+                disabled={isReadOnly}
+                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-100 text-slate-700 bg-white transition-all"
+                value={admissionData.pesoReferido || ""}
+                onChange={(e) => setAdmissionData({ ...admissionData, pesoReferido: e.target.value })}
+                placeholder="Ex: 72"
+              />
+            </div>
+
             {/* CAMPO ORIGEM DA ADMISSÃO (COM LISTA E CAMPO MANUAL) */}
             {(() => {
               // Lista exata em ordem alfabética
@@ -66,7 +81,7 @@ const MedicalAdmissionModal = ({
               const isOutro = admissionData.origem && !origensLista.includes(admissionData.origem);
 
               return (
-                <div className="md:col-span-3">
+                <div className="md:col-span-8">
                   <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Origem da Admissão</label>
                   <div className="flex gap-2">
                     <select 
@@ -230,6 +245,41 @@ const MedicalAdmissionModal = ({
                   />
                 </div>
 
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-bold text-indigo-500 mb-1 block">PUPILAS</label>
+                  <input 
+                    disabled={isReadOnly} 
+                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none" 
+                    placeholder="Fotorreagentes, isocóricas..." 
+                    value={admissionData.pupilas || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, pupilas: e.target.value })} 
+                  />
+                </div>
+
+                <div className="sm:col-span-1">
+                  <label className="text-[11px] font-bold text-indigo-500 mb-1 block">RASS</label>
+                  <select 
+                    disabled={isReadOnly} 
+                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" 
+                    value={admissionData.rass || ""} 
+                    onChange={(e) => setAdmissionData({ ...admissionData, rass: e.target.value, ecg_ao: "", ecg_rv: "", ecg_rm: "" })}
+                  >
+                    <option value="">Se sedado...</option>
+                    {RASS_OPTS.map((r) => <option key={r}>{r}</option>)}
+                  </select>
+                  
+                  {admissionData.rass && (
+                    <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded-lg shadow-sm animate-fadeIn">
+                      <label className="text-[9px] font-bold text-purple-700 mb-1 block uppercase">Glasgow Pré-Sedação (SAPS 3)</label>
+                      <div className="grid grid-cols-3 gap-1">
+                        <select disabled={isReadOnly} className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center" value={admissionData.ecg_basal_ao || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_ao: e.target.value })}><option value="">AO</option>{GLASGOW_AO.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}</select>
+                        <select disabled={isReadOnly} className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center" value={admissionData.ecg_basal_rv || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_rv: e.target.value })}><option value="">RV</option>{GLASGOW_RV.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}</select>
+                        <select disabled={isReadOnly} className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center" value={admissionData.ecg_basal_rm || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_rm: e.target.value })}><option value="">RM</option>{GLASGOW_RM.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}</select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
                 {/* GLASGOW - AO */}
                 <div>
                   <label className="text-[11px] font-bold text-indigo-500 mb-1 block">Glasgow AO</label>
@@ -272,42 +322,7 @@ const MedicalAdmissionModal = ({
                   </select>
                 </div>
 
-                <div className="sm:col-span-1">
-                  <label className="text-[11px] font-bold text-indigo-500 mb-1 block">RASS</label>
-                  <select 
-                    disabled={isReadOnly} 
-                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none text-xs" 
-                    value={admissionData.rass || ""} 
-                    onChange={(e) => setAdmissionData({ ...admissionData, rass: e.target.value, ecg_ao: "", ecg_rv: "", ecg_rm: "" })}
-                  >
-                    <option value="">Se sedado...</option>
-                    {RASS_OPTS.map((r) => <option key={r}>{r}</option>)}
-                  </select>
-                  
-                  {admissionData.rass && (
-                    <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded-lg shadow-sm animate-fadeIn">
-                      <label className="text-[9px] font-bold text-purple-700 mb-1 block uppercase">Glasgow Pré-Sedação (SAPS 3)</label>
-                      <div className="grid grid-cols-3 gap-1">
-                        <select disabled={isReadOnly} className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center" value={admissionData.ecg_basal_ao || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_ao: e.target.value })}><option value="">AO</option>{GLASGOW_AO.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}</select>
-                        <select disabled={isReadOnly} className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center" value={admissionData.ecg_basal_rv || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_rv: e.target.value })}><option value="">RV</option>{GLASGOW_RV.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}</select>
-                        <select disabled={isReadOnly} className="w-full p-1 border rounded bg-white outline-none text-[10px] text-center" value={admissionData.ecg_basal_rm || ""} onChange={(e) => setAdmissionData({ ...admissionData, ecg_basal_rm: e.target.value })}><option value="">RM</option>{GLASGOW_RM.map((o) => <option key={o}>{o.split(" - ")[0]}</option>)}</select>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="sm:col-span-2">
-                  <label className="text-[11px] font-bold text-indigo-500 mb-1 block">PUPILAS</label>
-                  <input 
-                    disabled={isReadOnly} 
-                    className="w-full p-2 border rounded bg-indigo-50/30 outline-none" 
-                    placeholder="Fotorreagentes, isocóricas..." 
-                    value={admissionData.pupilas || ""} 
-                    onChange={(e) => setAdmissionData({ ...admissionData, pupilas: e.target.value })} 
-                  />
-                </div>
-
-              </div>
+            </div>
             </div>
           </div>
 
