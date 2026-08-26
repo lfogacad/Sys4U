@@ -121,55 +121,73 @@ const NutriDashboard = ({
   };
 
   // Card de consumo oral reutilizável (Total / Dia Anterior)
-  const renderConsumoCard = (titulo, mediaSolidaV, countSolidaV, mediaLiquidaV, countLiquidaV, abrirHistorico) => (
-    <div className="p-4 border rounded-xl bg-white shadow-sm">
-      <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
-        <Activity size={16} className="text-lime-600" /> {titulo}
-      </h4>
-      <div className="space-y-5">
-        {/* ALIMENTOS */}
-        <div>
-          <div className="flex justify-between items-end mb-1">
-            <span className="text-xs font-bold text-gray-600 uppercase">Alimentos (Média)</span>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-black text-lime-700">{mediaSolidaV}%</span>
-              <button
-                onClick={(e) => { e.preventDefault(); abrirHistorico('solida'); }}
-                className="p-1.5 bg-lime-50 hover:bg-lime-100 text-lime-700 rounded-lg transition-colors border border-lime-200"
-                title="Ver Histórico"
-              >
-                <History size={14} />
-              </button>
+  const renderConsumoCard = (titulo, mediaSolidaV, countSolidaV, mediaLiquidaV, countLiquidaV, abrirHistorico, variant = 'total') => {
+    const paleta = variant === 'diario' ? {
+      icone: 'text-sky-600',
+      valor: 'text-sky-700',
+      botao: 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200',
+      barra: 'bg-sky-500',
+      badge: 'bg-sky-100 text-sky-700'
+    } : {
+      icone: 'text-lime-600',
+      valor: 'text-lime-700',
+      botao: 'bg-lime-50 hover:bg-lime-100 text-lime-700 border-lime-200',
+      barra: 'bg-lime-500',
+      badge: 'bg-lime-100 text-lime-700'
+    };
+    const rotuloVariant = variant === 'diario' ? 'Dia Anterior' : 'Total';
+    return (
+      <div className="p-4 border rounded-xl bg-white shadow-sm">
+        <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+          <Activity size={16} className={paleta.icone} />
+          Monitoramento do Consumo Oral
+          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${paleta.badge}`}>{rotuloVariant}</span>
+        </h4>
+        <div className="space-y-5">
+          {/* ALIMENTOS */}
+          <div>
+            <div className="flex justify-between items-end mb-1">
+              <span className="text-xs font-bold text-gray-600 uppercase">Alimentos (Média)</span>
+              <div className="flex items-center gap-2">
+                <span className={`text-lg font-black ${paleta.valor}`}>{mediaSolidaV}%</span>
+                <button
+                  onClick={(e) => { e.preventDefault(); abrirHistorico('solida'); }}
+                  className={`p-1.5 ${paleta.botao} rounded-lg transition-colors border`}
+                  title="Ver Histórico"
+                >
+                  <History size={14} />
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
-            <div className="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${mediaSolidaV}%` }}></div>
-          </div>
-          <p className="text-[10px] text-slate-400 mt-1 text-right">{countSolidaV} refeições registradas</p>
-        </div>
-        {/* SUPLEMENTOS */}
-        <div>
-          <div className="flex justify-between items-end mb-1">
-            <span className="text-xs font-bold text-gray-600 uppercase">Suplementos (Média)</span>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-black text-lime-700">{mediaLiquidaV}%</span>
-              <button
-                onClick={(e) => { e.preventDefault(); abrirHistorico('liquida'); }}
-                className="p-1.5 bg-lime-50 hover:bg-lime-100 text-lime-700 rounded-lg transition-colors border border-lime-200"
-                title="Ver Histórico"
-              >
-                <History size={14} />
-              </button>
+            <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
+              <div className={`${paleta.barra} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${mediaSolidaV}%` }}></div>
             </div>
+            <p className="text-[10px] text-slate-400 mt-1 text-right">{countSolidaV} refeições registradas</p>
           </div>
-          <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
-            <div className="bg-lime-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${mediaLiquidaV}%` }}></div>
+          {/* SUPLEMENTOS */}
+          <div>
+            <div className="flex justify-between items-end mb-1">
+              <span className="text-xs font-bold text-gray-600 uppercase">Suplementos (Média)</span>
+              <div className="flex items-center gap-2">
+                <span className={`text-lg font-black ${paleta.valor}`}>{mediaLiquidaV}%</span>
+                <button
+                  onClick={(e) => { e.preventDefault(); abrirHistorico('liquida'); }}
+                  className={`p-1.5 ${paleta.botao} rounded-lg transition-colors border`}
+                  title="Ver Histórico"
+                >
+                  <History size={14} />
+                </button>
+              </div>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
+              <div className={`${paleta.barra} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${mediaLiquidaV}%` }}></div>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1 text-right">{countLiquidaV} refeições registradas</p>
           </div>
-          <p className="text-[10px] text-slate-400 mt-1 text-right">{countLiquidaV} refeições registradas</p>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   if (!currentPatient?.nutri?.admitido) {
     return (
@@ -257,6 +275,9 @@ const NutriDashboard = ({
                 <option value="Estimado">Estimado</option>
               </select>
             </div>
+            {derivVivo.pesoCorrigido !== null && (
+              <p className="text-[10px] text-slate-400 font-bold mt-1">Estimado: {derivVivo.pesoCorrigido.toFixed(1)} kg</p>
+            )}            
           </div>
 
           {/* Altura (editável, prioriza a da admissão) */}
@@ -281,8 +302,8 @@ const NutriDashboard = ({
                 <option value="Estimado">Estimado</option>
               </select>
             </div>
-            {(!currentPatient.nutri?.altura && currentPatient.nutri?.estaturaCorrigida) && (
-              <p className="text-[10px] text-lime-600 font-bold mt-1">Estimada (Chumlea): {currentPatient.nutri.estaturaCorrigida} cm</p>
+            {derivVivo.estaturaCorrigida !== null && (
+              <p className="text-[10px] text-slate-400 font-bold mt-1">Estimada: {derivVivo.estaturaCorrigida.toFixed(1)} cm</p>
             )}
           </div>
 
@@ -669,24 +690,6 @@ const NutriDashboard = ({
             )}
           </div>
 
-          {/* CARD: MONITORAMENTO DO CONSUMO ORAL — TOTAL */}
-          {renderConsumoCard(
-            'Monitoramento do Consumo Oral (Total)',
-            mediaSolida, countSolida, mediaLiquida, countLiquida,
-            (tipo) => setModalConsumo({ isOpen: true, tipo })
-          )}
-
-          {/* CARD: MONITORAMENTO DO CONSUMO ORAL — DIA ANTERIOR (07h às 06h) */}
-          {renderConsumoCard(
-            'Monitoramento do Consumo Oral (Dia Anterior)',
-            mediaSolidaOntem, countSolidaOntem, mediaLiquidaOntem, countLiquidaOntem,
-            (tipo) => setModalConsumo({ isOpen: true, tipo, dataMinima: inicioJanela })
-          )}
-        </div>
-
-        {/* COLUNA DIREITA: Tolerância + Anotações */}
-        <div className="flex flex-col gap-6 h-full">
-          
           {/* CARD: ÚLTIMA EVACUAÇÃO */}
           <div className="p-4 border rounded-xl bg-white shadow-sm flex flex-col">
             <h4 className="font-bold text-slate-700 mb-4">Última Evacuação</h4>
@@ -735,11 +738,32 @@ const NutriDashboard = ({
             })()}
           </div>
 
+        </div>
+
+        {/* COLUNA DIREITA: Tolerância + Anotações */}
+        <div className="flex flex-col gap-6">
+          
+          {/* CARD: MONITORAMENTO DO CONSUMO ORAL — TOTAL */}
+          {renderConsumoCard(
+            'Monitoramento do Consumo Oral (Total)',
+            mediaSolida, countSolida, mediaLiquida, countLiquida, 
+            (tipo) => setModalConsumo({ isOpen: true, tipo }),
+            'total'
+          )}
+
+          {/* CARD: MONITORAMENTO DO CONSUMO ORAL — DIA ANTERIOR (07h às 06h) */}
+          {renderConsumoCard(
+            'Monitoramento do Consumo Oral (Dia Anterior)',
+            mediaSolidaOntem, countSolidaOntem, mediaLiquidaOntem, countLiquidaOntem,
+            (tipo) => setModalConsumo({ isOpen: true, tipo, dataMinima: inicioJanela }),
+            'diario'
+          )}
+
           {/* CARD: ANOTAÇÕES (Expande para preencher o espaço) */}
-          <div className="p-4 bg-white border rounded-xl shadow-sm flex-1 flex flex-col">
+          <div className="p-4 bg-white border rounded-xl shadow-sm">
             <h4 className="font-bold text-slate-700 mb-2">Anotações Nutricionais</h4>
             <textarea
-              className="w-full p-3 border rounded-lg flex-1 min-h-[120px] text-sm outline-none focus:ring-2 focus:ring-lime-200 resize-none"
+              className="w-full p-2.5 border rounded-lg h-24 resize-y text-sm outline-none focus:ring-2 focus:ring-lime-200"
               value={currentPatient.nutri?.anotacoes || ""}
               onChange={(e) => updateNested("nutri", "anotacoes", e.target.value)}
               onBlur={() => handleBlurSave("Nutrição: Editou Anotações")}
