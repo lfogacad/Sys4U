@@ -481,6 +481,12 @@ const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
       return dt && !isNaN(dt.getTime()) && dt >= inicioDiaCalendario && dt < fimDiaCalendario;
     });
   const qtdHigieneOral = higieneOralOntem.length;
+  const higieneIntimaOntem = (currentPatient?.enfermagem?.historico_higiene_intima || [])
+    .filter(h => {
+      const dt = h.dataHoraRegistro ? new Date(h.dataHoraRegistro) : null;
+      return dt && !isNaN(dt.getTime()) && dt >= inicioDiaCalendario && dt < fimDiaCalendario;
+    });
+  const qtdHigieneIntima = higieneIntimaOntem.length;  
 
   const SIGNIFICADO_BRADEN = {
     'Altíssimo': 'Risco altíssimo de desenvolver LPP',
@@ -1505,7 +1511,37 @@ const podeConfirmarMeta = (meta) => {
               )}
             </div>
 
-            {/* 6. OBSERVAÇÕES */}
+            {/* 6. HIGIENE ÍNTIMA (dia calendário anterior) */}
+            <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50">
+              <h5 className="font-bold text-sm text-indigo-800 mb-3">🚿 Higiene Íntima — Dia Anterior</h5>
+              <p className="text-sm text-slate-700">
+                Registros de higiene íntima feitos pelos técnicos no dia anterior:{' '}
+                <span className="font-black text-indigo-700">{qtdHigieneIntima} {qtdHigieneIntima === 1 ? 'registro' : 'registros'}</span>{' '}
+                (meta: 3x/dia)
+                {qtdHigieneIntima >= 3 && (
+                  <span className="ml-2 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-1">✓ Meta atingida</span>
+                )}
+                {qtdHigieneIntima > 0 && qtdHigieneIntima < 3 && (
+                  <span className="ml-2 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">⚠ Abaixo da meta</span>
+                )}
+                {qtdHigieneIntima === 0 && (
+                  <span className="ml-2 text-xs font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg px-2 py-1">Nenhum registro</span>
+                )}
+              </p>
+
+              {/* Meta automática: menos de 3 registros no dia anterior */}
+              {qtdHigieneIntima < 3 && (
+                <div className="mt-3 p-3 bg-white border border-indigo-200 rounded-lg">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Higiene íntima abaixo da meta (3x/dia)</p>
+                  <button
+                    onClick={() => sugerirMetaEnfermeiro('Realizar Higiene Íntima 3x/d', 'auto_higiene_intima')}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaEnf('auto_higiene_intima') ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                  >{metaAtivaEnf('auto_higiene_intima') ? '✓ Meta: Realizar Higiene Íntima 3x/d' : '✓ Realizar Higiene Íntima 3x/d'}</button>
+                </div>
+              )}
+            </div>
+
+            {/* 7. OBSERVAÇÕES */}
             <CampoTexto label="Observações" valor={visita.enfermeiroPlantonista.observacoes} onChange={v => updateDeep('enfermeiroPlantonista', ['observacoes'], v)} />
           </>
         )}
