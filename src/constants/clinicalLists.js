@@ -231,7 +231,8 @@ export const EXAM_ROWS = [
   ];
   export const FORMULAS_ENTERAIS = [
   'FRESUBIN HP ENERGY 1.5 (S/FIBRAS)',
-  'FRESUBIN ENERGY FB 1.5 (C/ FIBRAS)',
+  'FRESUBIN ENERGY 1.5 (C/ FIBRAS)',
+  'FRESUBIN HP 1.2 (C/FIBRAS)',
   'SURVIMED OPD HN 1.33',
   'SURVIMED OPD 1.0',
   'FRESUBIN ORIGINAL 1.0',
@@ -243,7 +244,8 @@ export const EXAM_ROWS = [
   // Valores nutricionais por fórmula enteral (kcal/ml, g de PTN/ml, fração de água)
   export const NUTRI_ENTERAL_INFO = {
     'FRESUBIN HP ENERGY 1.5 (S/FIBRAS)': { kcal: 1.5, ptn: 0.075, agua: 0.79 },
-    'FRESUBIN ENERGY FB 1.5 (C/ FIBRAS)': { kcal: 1.5, ptn: 0.075, agua: 0.79 },
+    'FRESUBIN ENERGY 1.5 (C/ FIBRAS)':   { kcal: 1.5, ptn: 0.075, agua: 0.79 },
+    'FRESUBIN HP 1.2 (C/FIBRAS)':        { kcal: 1.2, ptn: 0.06, agua: 0.80 },
     'SURVIMED OPD HN 1.33':              { kcal: 1.33, ptn: 0.067, agua: 0.80 },
     'SURVIMED OPD 1.0':                  { kcal: 1.0,  ptn: 0.045, agua: 0.85 },
     'FRESUBIN ORIGINAL 1.0':             { kcal: 1.0,  ptn: 0.038, agua: 0.84 },
