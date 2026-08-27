@@ -242,7 +242,7 @@ const gerarResumoSSVV = (patient, isFem, bhAlvo) => {
 // ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
-const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
+const VisitaMultiTab = ({ currentPatient, save, userProfile, calculateDiurese12hMlKgH }) => {
   const hoje = new Date();
   const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
   const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
@@ -251,8 +251,22 @@ const VisitaMultiTab = ({ currentPatient, save, calculateDiurese12hMlKgH }) => {
   const dataBR = fmtBR(dataISO);
   const ontemBR = fmtBR(ontemISO);
 
-  // começa no Técnico para facilitar o teste — troque para 'medicoRotina' se preferir
-  const [categoriaAtiva, setCategoriaAtiva] = useState('tecnicoEnfermagem');
+  // ===== MAPEIA O CARGO DO PROFISSIONAL PARA A SUB-ABA INICIAL =====
+  const cargoParaCategoria = (cargo) => {
+    const mapa = {
+      'Médico': 'medicoPlantonista',
+      'RT Médico': 'medicoRotina',
+      'Desenvolvedor': 'medicoRotina',
+      'Enfermeiro': 'enfermeiroPlantonista',
+      'Gerente de Enfermagem': 'enfermeiroPlantonista',
+      'Téc. em Enf.': 'tecnicoEnfermagem',
+      'Nutricionista': 'nutricionista',
+      'Fisioterapeuta': 'fisioterapeutaPlantonista',
+      'RT da Fisioterapia': 'fisioterapeutaPlantonista'
+    };
+    return mapa[cargo] || 'medicoRotina'; // qualquer outro cai no Médico RT
+  };
+  const [categoriaAtiva, setCategoriaAtiva] = useState(() => cargoParaCategoria(userProfile?.cargoLocal));
   const [modalCancelamento, setModalCancelamento] = useState(null);
   const [novaMeta, setNovaMeta] = useState({ tipo: 'SVD', descricao: '' });
   const jaGeradasRef = useRef(false);
@@ -436,10 +450,29 @@ const clearanceBaixo = clearanceCreat !== '---' && Number(clearanceCreat) < 30;
 const valorK = examesOntem['K (Potássio)'];
 const kBaixo = valorK && String(valorK).trim() !== '' && Number(String(valorK).replace(',', '.')) < 3;
 
-// Metas de imagem do dia anterior (Rx/TC)
-const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
+// Metas de imagem do dia anterior (Rx/TC) — solicitações registradas ontem
+const metasSolicitacaoImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
   .filter(m => m.status === 'realizado' || m.status === 'pendente' || m.status === 'cancelado')
   .filter(m => /rx|raio\s*x|tc|tomografia|radiografia/i.test(m.descricao || m.texto || ''));
+
+// NOVO GATILHO: registros de Raio-X feitos pelo técnico no dia anterior (botão do TechDashboard → enfermagem.historico_raio_x)
+// REGRA DE DEDUPE: só usa o registro do técnico quando NÃO existe nenhuma meta de imagem já gerada para o dia
+const raioXOntem = metasSolicitacaoImg.length === 0
+  ? (currentPatient?.enfermagem?.historico_raio_x || [])
+      .filter(h => {
+        const dt = h.dataHoraRegistro ? new Date(h.dataHoraRegistro) : null;
+        return dt && !isNaN(dt.getTime()) && dt >= inicioDiaCalendario && dt < fimDiaCalendario;
+      })
+      .map((h, idx) => ({
+        id: `raio_x_${h.dataHoraRegistro || idx}`,
+        descricao: h.horario ? `Raio-X realizado às ${h.horario}` : 'Raio-X realizado',
+        texto: h.horario ? `Raio-X realizado às ${h.horario}` : 'Raio-X realizado',
+        status: 'pendente',
+        origem: 'auto_raio_x_tecnico'
+      }))
+  : [];
+
+const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
 
   // ---------- ENFERMEIRO: ESCALAS DO DIA ANTERIOR ----------
   const escalaOntem = currentPatient?.enfermagem?.escalas_diarias?.[ontemISO] || null;
@@ -823,7 +856,12 @@ const metasOntemImg = (currentPatient?.visita?.[ontemISO]?.metas || [])
 
   const confirmarMeta = (id) => {
     atualizarMetas(lista => lista.map(m =>
-      m.id === id ? { ...m, status: 'pendente', confirmadoPor: categoriaAtiva, dataConfirmacao: dataISO } : m
+      m.id === id ? {
+        ...m,
+        status: 'pendente',
+        confirmadoPor: userProfile?.nome || categoriaAtiva,  // nome real, com fallback para a aba
+        dataConfirmacao: dataISO
+      } : m
     ));
   };
 
@@ -880,10 +918,11 @@ const ORIGENS_NUTRI = [
   'auto_aumentar_proteico'
 ];
 const podeConfirmarMeta = (meta) => {
-  // Médicos confirmam qualquer meta automática
-  if (categoriaAtiva === 'medicoRotina' || categoriaAtiva === 'medicoPlantonista') return true;
+  const cargo = userProfile?.cargoLocal;
+  // Médicos (RT, plantonista, nefro) confirmam qualquer meta automática
+  if (cargo === 'RT Médico' || cargo === 'Médico') return true;
   // Nutri confirma APENAS as metas geradas na própria aba
-  if (categoriaAtiva === 'nutricionista') {
+  if (cargo === 'Nutricionista') {
     return ORIGENS_NUTRI.some(prefixo => (meta.origem || '').startsWith(prefixo));
   }
   return false;

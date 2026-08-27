@@ -466,7 +466,7 @@ const NursingDashboard = ({
         campos: 'Campos Estéreis Grandes',
         assepsia: 'Assepsia com Clorexidina Alcoólica 0,5%',
         tecnicaAssptica: 'Técnica Asséptica',
-        curativo24h: 'Curativo com Gaze e Micropore a cada 24h'
+        curativo24h: 'Curativo com Gaze e Micropore/Filme transparente'
       }[key] || key,
       cumprida: value
     }));
@@ -2312,7 +2312,7 @@ return (
                     { key: 'campos', label: 'Campos Estéreis Grandes' },
                     { key: 'assepsia', label: 'Assepsia com Clorexidina Alcoólica 0,5%' },
                     { key: 'tecnicaAssptica', label: 'Técnica Asséptica' },
-                    { key: 'curativo24h', label: 'Curativo com Gaze e Micropore a cada 24h' }
+                    { key: 'curativo24h', label: 'Curativo com Gaze e Micropore/Filme Transparente' }
                   ].map(item => (
                     <button 
                       key={item.key} 
