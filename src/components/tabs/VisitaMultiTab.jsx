@@ -109,7 +109,6 @@ const CRITERIOS_TRE = [
   { id: 'semSecrecoesExcessivas', label: 'Sem secreções excessivas' },
   { id: 'semInstabilidadeNeurologica', label: 'Sem instabilidade neurológica' }
 ];
-const TIPOS_INDICACAO = ['SVD', 'CVC', 'Dieta/SNG', 'Cultura', 'Raio-X', 'Profilaxia TVP', 'Profilaxia úlcera', 'Outro'];
 const CATEGORIAS = [
   { id: 'medicoRotina', label: 'Médico RT', cor: 'teal' },
   { id: 'medicoPlantonista', label: 'Médico Plantão', cor: 'blue' },
@@ -2262,13 +2261,6 @@ const podeConfirmarMeta = (meta) => {
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Adicionar meta</p>
           <div className="flex flex-col sm:flex-row gap-2">
-            <select
-              value={novaMeta.tipo}
-              onChange={e => setNovaMeta({ ...novaMeta, tipo: e.target.value })}
-              className="p-2.5 border border-slate-300 rounded-lg bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-teal-300 sm:w-44"
-            >
-              {TIPOS_INDICACAO.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
             <input
               type="text"
               value={novaMeta.descricao}
@@ -2277,7 +2269,7 @@ const podeConfirmarMeta = (meta) => {
               className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-teal-300"
             />
             <button
-              onClick={() => { adicionarMetaManual(novaMeta.tipo, novaMeta.descricao); setNovaMeta({ tipo: novaMeta.tipo, descricao: '' }); }}
+              onClick={() => { adicionarMetaManual('', novaMeta.descricao); setNovaMeta({ ...novaMeta, descricao: '' }); }}
               disabled={!novaMeta.descricao.trim()}
               className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm disabled:opacity-50 transition-colors"
             >
