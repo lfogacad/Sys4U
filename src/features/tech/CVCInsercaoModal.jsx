@@ -14,7 +14,7 @@ const BARREIRAS_LIST = [
   { key: 'campos', label: 'Campos Estéreis Grandes' },
   { key: 'assepsia', label: 'Assepsia com Clorexidina Alcoólica 0,5%' },
   { key: 'tecnicaAssptica', label: 'Técnica Asséptica' },
-  { key: 'curativo24h', label: 'Curativo com Gaze e Micropore a cada 24h' },
+  { key: 'curativo24h', label: 'Curativo com Gaze e Micropore/Filme transparente' },
 ];
 
 const HORAS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));

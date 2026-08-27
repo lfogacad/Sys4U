@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, HeartPulse,
+import { Bone, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, HeartPulse,
          Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar, Coffee, ArrowRight, CheckCircle2,
          ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
          FileText, Copy, Syringe, Scissors, Snowflake, TestTube, ChevronDown, ChevronRight } from 'lucide-react';
@@ -170,10 +170,11 @@ const TechDashboard = ({
   };
 
   // =========================================================================
-  // ESTADOS E FUNÇÕES DOS MODAIS DE HIGIENE (ORAL E ÍNTIMA)
+  // ESTADOS E FUNÇÕES DOS MODAIS DE HIGIENE (ORAL E ÍNTIMA) E RAIO-X
   // =========================================================================
   const [modalHigieneOral, setModalHigieneOral] = useState({ isOpen: false, horario: "" });
   const [modalHigieneIntima, setModalHigieneIntima] = useState({ isOpen: false, horario: "" });
+  const [modalRaioX, setModalRaioX] = useState({ isOpen: false, horario: "" });
 
   const salvarHigieneOral = () => {
     const up = [...patients];
@@ -191,6 +192,24 @@ const TechDashboard = ({
     setPatients(up);
     save(up[activeTab], "Enfermagem: Registrou Higiene Oral");
     setModalHigieneOral({ isOpen: false, horario: "" });
+  };
+
+  const salvarRaioX = () => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historico_raio_x) p.enfermagem.historico_raio_x = [];
+
+    p.enfermagem.historico_raio_x.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalRaioX.horario
+    });
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], "Enfermagem: Registrou Raio-X");
+    setModalRaioX({ isOpen: false, horario: "" });
   };
 
   const salvarHigieneIntima = () => {
@@ -556,9 +575,27 @@ const salvarFralda = () => {
       return txt;
     });
     addEvent(enf.historico_acesso, (i) => `Acesso Periférico: ${i.calibre} em ${i.local}.`);
+    addEvent(enf.historico_raio_x, () => `Raio-X realizado.`);
     addEvent(enf.historico_tricotomia, (i) => `Tricotomia: ${i.local}.`);
     addEvent(enf.historico_crioterapia, () => `Crioterapia realizada.`);
     addEvent(enf.historico_insulina, (i) => `Insulina: ${i.tipo} - ${i.dose} UI.`);
+    // CVC (registro usa 'data' e 'horario', não 'dataHoraRegistro')
+    if (Array.isArray(enf.historicoCVC)) {
+      enf.historicoCVC.forEach(item => {
+        if (item.data && item.data === dataHoje && item.horario) {
+          const localCVC = item.localInserção || item.localInsercao || 'local não informado';
+          eventos.push({ horario: item.horario, texto: `Inserção de CVC em ${localCVC}.` });
+        }
+      });
+    }
+    // SVD (registro usa 'data' e 'horario', não 'dataHoraRegistro')
+    if (Array.isArray(enf.historicoSVD)) {
+      enf.historicoSVD.forEach(item => {
+        if (item.data && item.data === dataHoje && item.horario) {
+          eventos.push({ horario: item.horario, texto: `Sondagem vesical de demora realizada${item.indicacao ? ` (${item.indicacao})` : ''}.` });
+        }
+      });
+    }    
     if (Array.isArray(enf.historico_rcp_pcr)) {
       enf.historico_rcp_pcr.forEach(item => {
         if (item.horarioPCR && item.dataHoraRegistro && item.dataHoraRegistro.startsWith(dataHoje)) {
@@ -1120,6 +1157,18 @@ const salvarFralda = () => {
             >
               <Syringe size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
               <span className="text-[10px] font-bold uppercase text-center">Acesso Periférico</span>
+            </button>
+
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                const horaAtual = getHoraAtualArredondada();
+                setModalRaioX({ isOpen: true, horario: horaAtual });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-300 rounded-xl transition-all text-slate-600 hover:text-violet-700 hover:shadow-sm group"
+            >
+              <Bone size={22} className="text-slate-400 group-hover:text-violet-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Raio-X</span>
             </button>
 
             <button 
@@ -2109,6 +2158,62 @@ const salvarFralda = () => {
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setModalHigieneOral({ ...modalHigieneOral, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
                 <button disabled={!modalHigieneOral.horario} onClick={salvarHigieneOral} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REGISTRO DE RAIO-X                                                 */}
+      {/* ========================================================================= */}
+      {modalRaioX.isOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-violet-500/20">
+            <div className="bg-violet-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Bone size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Raio-X</h2>
+              </div>
+              <button onClick={() => setModalRaioX({ ...modalRaioX, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-6">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário do Raio-X</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  
+                  {/* SELECT DE HORAS (00 a 23) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-violet-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalRaioX.horario ? modalRaioX.horario.split(':')[0] : "00"}
+                    onChange={(e) => setModalRaioX({ ...modalRaioX, horario: `${e.target.value}:${modalRaioX.horario ? modalRaioX.horario.split(':')[1] : '00'}` })}
+                  >
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                  
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  
+                  {/* SELECT DE MINUTOS (Restrito a 4 opções) */}
+                  <select 
+                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-violet-300 font-black text-center text-2xl cursor-pointer"
+                    value={modalRaioX.horario ? modalRaioX.horario.split(':')[1] : "00"}
+                    onChange={(e) => setModalRaioX({ ...modalRaioX, horario: `${modalRaioX.horario ? modalRaioX.horario.split(':')[0] : '00'}:${e.target.value}` })}
+                  >
+                    <option value="00">00</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                  </select>
+
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setModalRaioX({ ...modalRaioX, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalRaioX.horario} onClick={salvarRaioX} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>
           </div>
