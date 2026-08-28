@@ -67,10 +67,15 @@ const ChecklistEvoModal = ({
       setErroValidacao("Por favor, responda se houve coleta de cultura e imagem pulmonar.");
       return;
     }
+    const rassNum = parseInt(neuro.rass) || 0;
+    if (rassNum <= -3 && !neuro.justificativaRASS) {
+      setErroValidacao("RASS ≤ -3: informe a justificativa para salvar a evolução.");
+      return;
+    }    
     if (imagemPulmonar === 'sim' && novoInfiltrado === null) {
       setErroValidacao("Por favor, informe se há um novo infiltrado na imagem pulmonar.");
       return;
-    }
+    }    
 
     // ====================================================================
     // 🚨 A MÁGICA ACONTECE AQUI: GRAVANDO NO BANCO PARA O ROBÔ DA PAV LER
@@ -109,7 +114,7 @@ const ChecklistEvoModal = ({
         <div className="p-4 bg-slate-800 text-white flex justify-between items-center shrink-0">
           <h3 className="font-bold flex items-center gap-2">
             <ShieldAlert size={18} className="text-amber-400" />
-            {fase === 1 ? "Timeout Clínico: Sincronização de Dados" : "Checklist Obrigatório: CCIH e Risco"}
+            {fase === 1 ? "EVOLUÇÃO MÉDICA" : "Checklist Obrigatório: CCIH e Risco"}
           </h3>
           <button onClick={() => setShowChecklistEvo(false)} className="text-slate-400 hover:text-white transition-colors">
             <X size={20} />
@@ -173,13 +178,41 @@ const ChecklistEvoModal = ({
                           <select 
                             className="w-full p-1.5 border rounded text-sm bg-white outline-none focus:ring-2 focus:ring-slate-300"
                             value={neuro.rass || ""} 
-                            onChange={(e) => updateNested("neuro", "rass", e.target.value)}
+                            onChange={(e) => {
+                              updateNested("neuro", "rass", e.target.value);
+                              const novoRass = parseInt(e.target.value) || 0;
+                              if (novoRass > -3) updateNested("neuro", "justificativaRASS", "");
+                            }}
                           >
                             <option value="">Selecione...</option>
                             {RASS_OPTS.map(r => (
                               <option key={r} value={r}>{r}</option>
                             ))}
                           </select>
+                          {/* JUSTIFICATIVA — obrigatória se RASS ≤ -3 */}
+                          {(() => {
+                            const rassNum = parseInt(neuro.rass) || 0;
+                            if (rassNum <= -3) {
+                              return (
+                                <div className="mt-3 border-l-2 border-red-200 pl-3 animate-fadeIn">
+                                  <label className="block text-[10px] font-bold text-red-600 uppercase mb-1">
+                                    Justificativa <span className="text-red-500">*</span>
+                                  </label>
+                                  <select
+                                    className="w-full p-1.5 border rounded text-sm bg-white outline-none focus:ring-2 focus:ring-red-300 border-red-200"
+                                    value={neuro.justificativaRASS || ""}
+                                    onChange={(e) => updateNested("neuro", "justificativaRASS", e.target.value)}
+                                  >
+                                    <option value="">Selecione a justificativa...</option>
+                                    {["SDRA moderada/grave", "Assincronia refratária", "HIC", "Mal epiléptico", "Instabilidade hemod. ao agitar", "Agitação extrema"].map(opt => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       </div>
                     ) : (

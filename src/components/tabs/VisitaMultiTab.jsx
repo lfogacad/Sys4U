@@ -402,7 +402,7 @@ const [checklistSedacao, setChecklistSedacao] = useState({});
 // ================= MÉDICO PLANTONISTA — CHECKLIST DESMAME DE SEDAÇÃO (ABCDEF / SAT) =================
 const CHECKLIST_SEDACAO = [
   { id: 'sed_dor_controlada', label: 'Dor controlada (CPOT ≤ 2 ou BPS ≤ 5)' },
-  { id: 'sed_sem_sedacao_profunda', label: 'Sem necessidade de sedação profunda contínua (SDRA, HIC, mal epiléptico)' },
+  { id: 'sed_sem_sedacao_profunda', label: 'Sem necessidade de sedação profunda contínua (SDRA, HIC, Mal epiléptico, Assincronia grave)' },
   { id: 'sed_hemodinamica', label: 'Estabilidade hemodinâmica' },
   { id: 'sed_oxigenacao', label: 'Oxigenação adequada (sem sedação profunda)' },
   { id: 'sed_sem_agressividade', label: 'Sem agitação grave ou risco iminente de autoextubação' },

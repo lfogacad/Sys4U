@@ -476,7 +476,7 @@ const IOT_ITENS_LABELS = {
   mascara: 'Uso de Máscara por todos os envolvidos?',
   avental: 'Uso de Avental?',
   luvaEsteril: 'Uso de Luva Estéril?',
-  xylocaina: 'Uso de Xylocaína Spray?',
+  xylocaina: 'Uso de Xylocaína?',
   inducao: 'Realizou indução medicamentosa?',
   oportunidadeUnica: 'Inserção em oportunidade única?',
   aspiradoVAS: 'Aspirado VAS antes do procedimento?',
@@ -495,7 +495,7 @@ const salvarIOT = async () => {
   const naoConformes = valores.filter(v => v === 'Não').length;
   const depoisLembrado = valores.filter(v => v === 'Sim, depois de lembrado').length;
 
-  const textoProcedimento = `Checklist de IOT (${modalIOT.localInserção}) - Tentativa: ${modalIOT.tentativa}. Condição: ${modalIOT.condicao}. Tubo nº ${modalIOT.numeroTubo || '-'} (Rima ${modalIOT.rima || '-'}). Conformidade: ${conformes} itens conformes, ${naoConformes} não conformes, ${depoisLembrado} depois de lembrado. Reintubação <48h: ${modalIOT.reintubacao48h ? 'Sim' : 'Não'}.`;
+  const textoProcedimento = `Checklist de IOT (${modalIOT.localInserção}) - Tentativa: ${modalIOT.tentativa}. Condição: ${modalIOT.condicao}. Tubo nº ${modalIOT.numeroTubo || '-'} (Rima ${modalIOT.rima || '-'}). Conformidade: ${conformes} itens conformes, ${naoConformes} não conformes, ${depoisLembrado} depois de lembrado. Reintubação <48h: ${modalIOT.reintubacao48h ? 'Sim' : 'Não'}. Uso de VNI realizado ou considerado: ${modalIOT.vni ? 'Sim' : 'Não'}.`;
 
   const hoje = new Date();
   const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
@@ -528,6 +528,7 @@ const salvarIOT = async () => {
     },    
     informacoesAdicionais: modalIOT.informacoesAdicionais || '',
     reintubacao48h: modalIOT.reintubacao48h || false,
+    vni: modalIOT.vni || false,
     textoFormatado: textoProcedimento
   };
 
@@ -2259,7 +2260,28 @@ const TRE_CHECKLIST = [
                     {modalIOT.reintubacao48h ? '✓ Sim' : 'Não'}
                   </button>
                 </div>
-              </div>              
+              </div>
+
+              {/* USO DE VNI */}
+              <div className="bg-violet-50 border-2 border-violet-200 rounded-xl p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-violet-700 uppercase tracking-wider block">Foi realizado ou considerado o uso de VNI?</label>
+                    <p className="text-[10px] text-violet-600/80 mt-0.5">Ventilação Não Invasiva durante ou após o procedimento</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalIOT({ ...modalIOT, vni: !modalIOT.vni })}
+                    className={`px-4 py-2.5 rounded-xl border-2 font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shrink-0 ${
+                      modalIOT.vni
+                        ? 'border-violet-500 bg-violet-500 text-white shadow-md scale-[1.02]'
+                        : 'border-violet-300 bg-white text-violet-600 hover:border-violet-400'
+                    }`}
+                  >
+                    {modalIOT.vni ? '✓ Sim' : 'Não'}
+                  </button>
+                </div>
+              </div>
 
               {/* CHECKLIST DE CONFORMIDADE */}
               <div>
@@ -2275,7 +2297,7 @@ const TRE_CHECKLIST = [
                     { key: 'mascara', label: 'Uso de Máscara por todos os envolvidos?' },
                     { key: 'avental', label: 'Uso de Avental?' },
                     { key: 'luvaEsteril', label: 'Uso de Luva Estéril?' },
-                    { key: 'xylocaina', label: 'Uso de Xylocaína Spray?' },
+                    { key: 'xylocaina', label: 'Uso de Xylocaína?' },
                     { key: 'inducao', label: 'Realizou indução medicamentosa?' },
                     { key: 'oportunidadeUnica', label: 'Inserção em oportunidade única?' },
                     { key: 'aspiradoVAS', label: 'Aspirado VAS antes do procedimento?' },

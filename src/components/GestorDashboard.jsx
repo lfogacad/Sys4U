@@ -1323,6 +1323,7 @@ const GestorDashboard = ({ userProfile }) => {
     const cobertura = acessosMes > 0 ? Math.round((totalChecklists / acessosMes) * 100) : 0;
     const conformidadeGeral = totalItens > 0 ? Math.round((totalCumpridos / totalItens) * 100) : 0;
     const totalReintubacoes48h = checklists.filter(c => c.reintubacao48h).length;
+    const totalVNI = checklists.filter(c => c.vni).length;
 
     // Monta as linhas da tabela de itens de conformidade
     const linhasItens = itensOrdenados.map(b => `
@@ -1344,6 +1345,7 @@ const GestorDashboard = ({ userProfile }) => {
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.tentativa || '-'}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.medico}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${c.todasCumpridas ? '#047857' : '#b91c1c'};">${c.cumpridas}/${c.total}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${c.vni ? '#6d28d9' : '#64748b'};">${c.vni ? 'Sim' : 'Não'}</td>
       </tr>
     `).join('');
 
@@ -1420,6 +1422,7 @@ const GestorDashboard = ({ userProfile }) => {
       <tr><td>Checklists com 100% de conformidade</td><td>${total100Porcento} (${totalChecklists > 0 ? Math.round((total100Porcento / totalChecklists) * 100) : 0}%)</td></tr>
       <tr><td>Conformidade geral (itens)</td><td>${conformidadeGeral}% (${totalCumpridos}/${totalItens} itens)</td></tr>
       <tr><td>Reintubações &lt;48h</td><td>${totalReintubacoes48h}</td></tr>
+      <tr><td>VNI realizado/considerado</td><td>${totalVNI}</td></tr>
     </table>
 
     <h2>2. Análise de Conformidade</h2>
@@ -1451,6 +1454,7 @@ const GestorDashboard = ({ userProfile }) => {
           <th>Tentativa</th>
           <th>Médico</th>
           <th class="center">Conformidade</th>
+          <th class="center">VNI</th>
         </tr>
       </thead>
       <tbody>
@@ -2954,6 +2958,7 @@ const GestorDashboard = ({ userProfile }) => {
               auditor: checklist.auditor || '',
               informacoesAdicionais: checklist.informacoesAdicionais || '',
               reintubacao48h: checklist.reintubacao48h || false,
+              vni: checklist.vni || false,
             });
           }
         });
@@ -3006,6 +3011,7 @@ const GestorDashboard = ({ userProfile }) => {
                 auditor: checklist.auditor || '',
                 informacoesAdicionais: checklist.informacoesAdicionais || '',
                 reintubacao48h: checklist.reintubacao48h || false,
+                vni: checklist.vni || false,
               });
             }
           });
@@ -8577,6 +8583,7 @@ const imprimirRelatorioGeladeira = () => {
                         <th className="text-left p-2 font-bold text-slate-600">Médico</th>
                         <th className="text-center p-2 font-bold text-slate-600">Barreiras</th>
                         <th className="text-center p-2 font-bold text-slate-600">100%</th>
+                        <th className="text-center p-2 font-bold text-slate-600">VNI</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -9816,6 +9823,13 @@ const imprimirRelatorioGeladeira = () => {
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Não</span>
                             )}
                           </td>
+                          <td className="p-2 text-center">
+                            {c.vni ? (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Sim</span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Não</span>
+                            )}
+                          </td>                          
                         </tr>
                       ))}
                     </tbody>
@@ -9875,6 +9889,12 @@ const imprimirRelatorioGeladeira = () => {
                           {checklistIOTSelecionado.reintubacao48h ? 'Sim' : 'Não'}
                         </span>
                       </div>
+                      <div>
+                        <span className="font-bold text-slate-500 block">VNI realizado/considerado</span>
+                        <span className={checklistIOTSelecionado.vni ? 'text-violet-600 font-bold' : 'text-slate-800'}>
+                          {checklistIOTSelecionado.vni ? 'Sim' : 'Não'}
+                        </span>
+                      </div>                      
                       {checklistIOTSelecionado.auditor && (
                         <div className="col-span-2">
                           <span className="font-bold text-slate-500 block">Auditor do Checklist</span>

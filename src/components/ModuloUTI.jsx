@@ -2918,11 +2918,17 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
             }
 
             const neuro = currentPatient.neuro || {};
-
             // Glasgow/RASS
             let glasgowRassLine = "";
             if (neuro?.sedacao) {
-              if (neuro.rass) glasgowRassLine = `RASS: ${neuro.rass}`;
+              if (neuro.rass) {
+                const rassNum = parseInt(neuro.rass) || 0;
+                glasgowRassLine = `RASS: ${neuro.rass}`;
+                // Justificativa obrigatória quando RASS ≤ -3
+                if (rassNum <= -3 && neuro.justificativaRASS) {
+                  glasgowRassLine += ` (Justificativa: ${neuro.justificativaRASS})`;
+                }
+              }
             } else {
               const ao = parseInt(neuro?.glasgowAO) || 0;
               const rm = parseInt(neuro?.glasgowRM) || 0;

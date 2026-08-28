@@ -44,6 +44,7 @@ const RelatorioChecklistIOT = ({ checklists, mesAno, metricas, acessosMes }) => 
   const cobertura = acessosMes > 0 ? Math.round((totalChecklists / acessosMes) * 100) : 0;
   const conformidadeGeral = totalItens > 0 ? Math.round((totalCumpridos / totalItens) * 100) : 0;
   const totalReintubacoes48h = checklists.filter(c => c.reintubacao48h).length;
+  const totalVNI = checklists.filter(c => c.vni).length;
 
   return (
     <div className="text-slate-800" style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -83,7 +84,11 @@ const RelatorioChecklistIOT = ({ checklists, mesAno, metricas, acessosMes }) => 
             <tr className="border-b border-slate-200">
               <td className="py-1.5 font-semibold w-64">Reintubações &lt;48h</td>
               <td className="py-1.5">{totalReintubacoes48h}</td>
-            </tr>            
+            </tr>
+            <tr className="border-b border-slate-200">
+              <td className="py-1.5 font-semibold">VNI realizado/considerado</td>
+              <td className="py-1.5">{totalVNI}</td>
+            </tr>                        
           </tbody>
         </table>
       </div>
@@ -139,6 +144,7 @@ const RelatorioChecklistIOT = ({ checklists, mesAno, metricas, acessosMes }) => 
                 <th className="text-left p-2 font-bold">Tentativa</th>
                 <th className="text-left p-2 font-bold">Médico</th>
                 <th className="text-center p-2 font-bold">Conformidade</th>
+                <th className="text-center p-2 font-bold">VNI</th>
               </tr>
             </thead>
             <tbody>
@@ -154,6 +160,7 @@ const RelatorioChecklistIOT = ({ checklists, mesAno, metricas, acessosMes }) => 
                       {c.cumpridas}/{c.total}
                     </span>
                   </td>
+                  <td className="p-2 text-center">{c.vni ? 'Sim' : 'Não'}</td>
                 </tr>
               ))}
             </tbody>
