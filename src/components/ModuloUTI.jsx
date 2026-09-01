@@ -8,7 +8,7 @@ import {
   Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
   Droplets, Syringe, Pill, Thermometer, Scale, Gauge, Move,
   Activity, ClipboardCheck, FileText, FileCheck, Target, ShieldAlert,
-  Printer, Bot, BrainCircuit, Sparkles, Mic, Table, UploadCloud,
+  Printer, Bot, BrainCircuit, Sparkles, Mic, Table, UploadCloud, ListChecks,
   FolderInput, List, Copy, User, Search, ArrowLeft, X, PlusCircle,
   Edit3, Trash2, Check, CheckCircle, AlertCircle, AlertTriangle, Wrench,
   Loader2, ChevronRight, ChevronDown, Clock, RotateCcw, Filter, CheckCircle2,
@@ -175,7 +175,13 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [patients, setPatients] = useState(Array(11).fill(null).map((_, i) => defaultPatient(i)));
 
   const [modalGasometria, setModalGasometria] = useState({ isOpen: false, cartuchos: 0, cartuchosLactato: 0, selecionados: [] });
-  
+
+  const [modalPainelMetas, setModalPainelMetas] = useState({ isOpen: false });
+  const [cancelandoMeta, setCancelandoMeta] = useState(null); // { idx, id }
+  const [justificativaCancelamento, setJustificativaCancelamento] = useState("");
+
+  const [dropdownAberto, setDropdownAberto] = useState(false);
+
   const leitosDisponiveis = useMemo(() => {
     return ['1','2','3','4','5','6','7','8','9','10'];
   }, []);
@@ -380,6 +386,13 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     setUnlockedBHDates([]);
   }, [selectedBHDate, activeTab]);
 
+  useEffect(() => {
+    if (!dropdownAberto) return;
+    const fechar = () => setDropdownAberto(false);
+    window.addEventListener('click', fechar);
+    return () => window.removeEventListener('click', fechar);
+  }, [dropdownAberto]);
+    
  const handleSyncGasometriaAdmissao = (dadosAtualizados) => {
     // 1. Verifica se há algum valor clínico de gasometria digitado
     const chavesGaso = ["gaso_pH", "gaso_pCO2", "gaso_PaO2", "gaso_BE", "gaso_HCO3", "gaso_SatO2", "gaso_FiO2", "gaso_PF"];
@@ -446,6 +459,9 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       }, 300);
     }
   };
+
+  const hoje = new Date();
+  const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
   const handleBulkUpload = async (e) => {
     const files = Array.from(e.target.files);
@@ -1110,6 +1126,59 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       console.error("Erro fatal ao salvar no Firebase:", err);
       alert("Aviso: Ocorreu um erro ao gravar na nuvem. Verifique o console.");
     }
+  };
+
+  // Atualiza as metas do dia de um paciente específico (por índice) e persiste via save
+  const atualizarMetasPaciente = (idx, updater) => {
+    setPatients(prev => {
+      const copia = prev.map(p => ({ ...p }));
+      const paciente = copia[idx];
+      if (!paciente) return prev;
+      if (!paciente.visita) paciente.visita = {};
+      if (!paciente.visita[dataISO]) paciente.visita[dataISO] = {};
+      const metas = paciente.visita[dataISO].metas || [];
+      paciente.visita[dataISO].metas = updater(metas);
+      save(paciente, "Atualização de Metas (Painel de Metas)");
+      return copia;
+    });
+  };
+
+  // CONFIRMAR meta de um paciente (mesma lógica da Visita Multi)
+  const confirmarMetaPaciente = (idx, id) => {
+    atualizarMetasPaciente(idx, metas => metas.map(m =>
+      m.id === id ? {
+        ...m,
+        status: 'pendente',
+        confirmadoPor: userProfile?.nome || 'Equipe',
+        dataConfirmacao: dataISO
+      } : m
+    ));
+  };
+
+  // CANCELAR meta de um paciente (mesma lógica da Visita Multi)
+  const cancelarMetaPaciente = (idx, id, justificativa) => {
+    atualizarMetasPaciente(idx, metas => metas.map(m =>
+      m.id === id ? {
+        ...m,
+        status: 'cancelado',
+        dataCancelamento: dataISO,
+        canceladoPor: userProfile?.nome || 'Equipe',
+        justificativaCancelamento: justificativa || 'Cancelada no Painel de Metas'
+      } : m
+    ));
+  };
+
+  // MARCAR REALIZADO de um paciente (mesma lógica da Visita Multi)
+  const marcarRealizadoPaciente = (idx, id) => {
+    atualizarMetasPaciente(idx, metas => metas.map(m =>
+      m.id === id ? {
+        ...m,
+        status: 'realizado',
+        dataRealizado: dataISO,
+        marcadoPor: userProfile?.nome || 'Equipe',
+        marcadoEm: new Date().toISOString()
+      } : m
+    ));
   };
 
   const updateNested = (categoria, campo, valor) => {
@@ -5188,21 +5257,60 @@ const userRole = userProfile?.role || userProfile?.perfil;
             </div>
           </div>
 
-          {/* LADO DIREITO DO CABEÇALHO: Upload de Lote e Cápsula de Usuário */}
+          {/* LADO DIREITO DO CABEÇALHO: Cápsula de Usuário e Botão de Ferramentas */}
           <div className="flex items-center gap-4 relative z-[9999]">
-            {/* BOTÃO DE FERRAMENTAS COM DROPDOWN (Upload Lote + Gasometria) */}
-            <div className="relative group">
-              {/* ÍCONE PRINCIPAL: FERRAMENTA */}
+            {/* CÁPSULA DE USUÁRIO (Design Main + Dados V2) — agora à ESQUERDA */}
+            <div className="flex items-center bg-white rounded-full p-1.5 pr-2 shadow-lg gap-3">
+              <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center text-white shadow-inner">
+                <User size={20} />
+              </div>
+              <div className="flex flex-col text-right hidden md:flex min-w-[120px]">
+                <span className="text-sm font-bold text-slate-800 leading-tight">
+                  {userProfile?.nome || user?.email || "Usuário"}
+                </span>
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-tight">
+                  {userProfile?.perfil || "Médico"} {userProfile?.conselho ? `- ${userProfile.conselho} ${userProfile.numeroConselho || ''}` : ''}
+                </span>
+              </div>
+              {/* BOTÃO DE SAIR (Design Main - Redondo e Verde/Teal) */}
               <button
+                onClick={handleLogout} 
+                className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 flex items-center justify-center text-white transition-colors shadow-sm ml-2"
+                title="Sair do Sistema"
+              >
+                 <LogOut size={18} />
+              </button>
+            </div>
+
+            {/* BOTÃO DE FERRAMENTAS — SÓ O GATILHO (o menu é renderizado FORA do cabeçalho) */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDropdownAberto(prev => !prev);
+                }}
+                onMouseEnter={() => setDropdownAberto(true)}
                 className="bg-white/10 hover:bg-white/20 p-2.5 rounded-full text-white transition-all border border-white/30 cursor-pointer shadow-sm backdrop-blur-sm"
                 title="Ferramentas"
               >
                 <Wrench size={20} />
               </button>
+            </div>
+          </div>
 
-              {/* DROPDOWN QUE ABRE PARA BAIXO AO PASSAR O MOUSE */}
-              <div className="absolute right-0 top-full pt-2 hidden group-hover:block z-[9999]">
-                <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-slate-200 p-2 animate-fadeIn">
+        </div>
+      </div>
+
+            {/* DROPDOWN DE FERRAMENTAS — FORA do cabeçalho, z-[9999] REAL */}
+            {dropdownAberto && (
+              <div
+                className="fixed z-[9999] top-16 right-4 md:right-8"
+                onMouseEnter={() => setDropdownAberto(true)}
+                onMouseLeave={() => {
+                  setTimeout(() => setDropdownAberto(false), 150);
+                }}
+              >
+                <div className="bg-white rounded-xl shadow-2xl border border-slate-200 p-2 animate-fadeIn min-w-[200px]">
                   {/* ÍCONE 1: UPLOAD DE EXAMES */}
                   <label
                     className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors text-slate-700"
@@ -5219,51 +5327,39 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     />
                   </label>
 
-                  {/* ÍCONE 2: GASOMETRIA (função a definir) */}
+                  {/* ÍCONE 2: GASOMETRIA */}
                   <button
-                    onClick={() => setModalGasometria({
-                      isOpen: true,
-                      cartuchos: pacientesInternados.length,
-                      cartuchosLactato: 0,
-                      selecionados: pacientesInternados.map(p => p.id)
-                    })}
+                    onClick={() => {
+                      setDropdownAberto(false);
+                      setModalGasometria({
+                        isOpen: true,
+                        cartuchos: pacientesInternados.length,
+                        cartuchosLactato: 0,
+                        selecionados: pacientesInternados.map(p => p.id)
+                      });
+                    }}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors text-slate-700 w-full text-left"
                     title="Gasometria"
                   >
                     <Droplets size={18} className="text-cyan-600" />
                     <span className="text-xs font-bold whitespace-nowrap">Gasometria</span>
                   </button>
+
+                  {/* ÍCONE 3: PAINEL DE METAS */}
+                  <button
+                    onClick={() => {
+                      setDropdownAberto(false);
+                      setModalPainelMetas({ isOpen: true });
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors text-slate-700 w-full text-left"
+                    title="Painel de Metas"
+                  >
+                    <ListChecks size={18} className="text-amber-600" />
+                    <span className="text-xs font-bold whitespace-nowrap">Painel de Metas</span>
+                  </button>
                 </div>
               </div>
-            </div>
-
-            {/* CÁPSULA DE USUÁRIO (Design Main + Dados V2) */}
-            <div className="flex items-center bg-white rounded-full p-1.5 pr-2 shadow-lg gap-3">
-              <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center text-white shadow-inner">
-                <User size={20} />
-              </div>
-              
-              <div className="flex flex-col text-right hidden md:flex min-w-[120px]">
-                <span className="text-sm font-bold text-slate-800 leading-tight">
-                  {userProfile?.nome || user?.email || "Usuário"}
-                </span>
-                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-tight">
-                  {userProfile?.perfil || "Médico"} {userProfile?.conselho ? `- ${userProfile.conselho} ${userProfile.numeroConselho || ''}` : ''}
-                </span>
-              </div>
-
-              {/* BOTÃO DE SAIR (Design Main - Redondo e Verde/Teal) */}
-              <button
-                onClick={handleLogout} 
-                className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 flex items-center justify-center text-white transition-colors shadow-sm ml-2"
-                title="Sair do Sistema"
-              >
-                 <LogOut size={18} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+            )}
 
       {/* ========================================== */}
       {/* CORPO PRINCIPAL (LEITOS + ABAS LATERAIS) */}
@@ -6188,6 +6284,185 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 className="px-5 py-2.5 rounded-xl bg-[#008f8f] hover:bg-[#007a7a] text-white font-bold text-sm flex items-center gap-2 transition-colors shadow-sm"
               >
                 <Printer size={16} /> Imprimir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PAINEL DE METAS */}
+      {modalPainelMetas.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* CABEÇALHO */}
+            <div className="bg-[#008f8f] text-white px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-lg flex items-center gap-2">
+                  <ListChecks size={20} /> Painel de Metas Diárias
+                </h2>
+                <p className="text-xs text-white/80 mt-0.5">
+                  Metas confirmadas de {(() => {
+                    const [a, m, d] = dataISO.split('-');
+                    return `${d}-${m}-${a}`;
+                  })()} — marque como realizada ou cancele com justificativa
+                </p>
+              </div>
+              <button
+                onClick={() => setModalPainelMetas({ isOpen: false })}
+                className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors"
+                title="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* CORPO */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              {pacientesInternados.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">Nenhum paciente internado.</p>
+              ) : (
+                pacientesInternados.map((p, idx) => {
+                  // Metas do dia como HISTÓRICO — todas, exceto as rejeitadas
+                  const metasHoje = (p.visita?.[dataISO]?.metas || [])
+                    .filter(m => m.status !== 'rejeitada');
+                  const pendentes = metasHoje.filter(m => m.status === 'pendente' || m.status === 'aguardando');
+                  const realizadas = metasHoje.filter(m => m.status === 'realizado');
+                  const canceladas = metasHoje.filter(m => m.status === 'cancelado' || m.status === 'rejeitada');
+
+                  return (
+                    <div key={p.id || idx} className="border border-slate-200 rounded-xl overflow-hidden">
+                      {/* Cabeçalho do paciente */}
+                      <div className="bg-slate-50 px-4 py-3 flex items-center justify-between border-b border-slate-200">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                            {p.leito}
+                          </div>
+                          <span className="text-sm font-bold text-slate-700">{p.nome}</span>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          {metasHoje.length} meta(s) · {pendentes.length} pendente(s)
+                        </span>
+                      </div>
+
+                      {/* Lista de metas confirmadas */}
+                      <div className="divide-y divide-slate-100">
+                        {metasHoje.length === 0 && (
+                          <p className="px-4 py-3 text-xs text-slate-400 italic">
+                            Nenhuma meta confirmada para hoje.
+                          </p>
+                        )}
+
+                        {metasHoje.map(meta => {
+                          const cancelandoEsta = cancelandoMeta?.idx === idx && cancelandoMeta?.id === meta.id;
+                          return (
+                            <div key={meta.id} className="px-4 py-2.5">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-slate-700 font-medium truncate">{meta.descricao}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                      meta.status === 'realizado' ? 'bg-green-100 text-green-700'
+                                      : meta.status === 'cancelado' || meta.status === 'rejeitada' ? 'bg-red-100 text-red-600'
+                                      : meta.status === 'aguardando' ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {meta.status}
+                                    </span>
+                                    <span className="text-[9px] text-slate-400 uppercase">
+                                      {meta.origem === 'manual' ? 'Manual' : meta.origem}
+                                    </span>
+                                    {meta.confirmadoPor && (
+                                      <span className="text-[9px] text-slate-400">· confirmada por {meta.confirmadoPor}</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* AÇÕES: só MARCAR REALIZADO e CANCELAR */}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {(meta.status === 'pendente' || meta.status === 'aguardando') && (
+                                    <button
+                                      onClick={() => marcarRealizadoPaciente(idx, meta.id)}
+                                      className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors"
+                                      title="Marcar como realizada"
+                                    >
+                                      Realizada
+                                    </button>
+                                  )}
+                                  {(meta.status === 'pendente' || meta.status === 'aguardando') && (
+                                    <button
+                                      onClick={() => {
+                                        setCancelandoMeta({ idx, id: meta.id });
+                                        setJustificativaCancelamento("");
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-colors"
+                                      title="Cancelar com justificativa"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  )}
+                                  {meta.status === 'realizado' && (
+                                    <span className="text-[10px] font-bold text-green-600">✓ Realizada</span>
+                                  )}
+                                  {(meta.status === 'cancelado' || meta.status === 'rejeitada') && (
+                                    <span className="text-[10px] font-bold text-red-500">✕ Cancelada</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* CAMPO DE JUSTIFICATIVA PARA CANCELAMENTO */}
+                              {cancelandoEsta && (
+                                <div className="mt-2 border-l-2 border-red-200 pl-3 animate-fadeIn">
+                                  <label className="block text-[10px] font-bold text-red-600 uppercase mb-1">
+                                    Justificativa para cancelar <span className="text-red-500">*</span>
+                                  </label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={justificativaCancelamento}
+                                      onChange={(e) => setJustificativaCancelamento(e.target.value)}
+                                      placeholder="Digite o motivo do cancelamento..."
+                                      className="flex-1 p-2 border rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-red-300 border-red-200"
+                                    />
+                                    <button
+                                      onClick={() => {
+                                        if (!justificativaCancelamento.trim()) {
+                                          alert("Informe a justificativa para cancelar a meta.");
+                                          return;
+                                        }
+                                        cancelarMetaPaciente(idx, meta.id, justificativaCancelamento.trim());
+                                        setCancelandoMeta(null);
+                                        setJustificativaCancelamento("");
+                                      }}
+                                      className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors"
+                                    >
+                                      Confirmar
+                                    </button>
+                                    <button
+                                      onClick={() => setCancelandoMeta(null)}
+                                      className="px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-100 transition-colors"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* RODAPÉ */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setModalPainelMetas({ isOpen: false })}
+                className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-bold text-sm hover:bg-slate-100 transition-colors"
+              >
+                Fechar
               </button>
             </div>
           </div>

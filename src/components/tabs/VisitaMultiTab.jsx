@@ -291,7 +291,7 @@ const VisitaMultiTab = ({ currentPatient, save, userProfile, calculateDiurese12h
 
   // ================= MÉDICO RT — HELPERS =================
   const sugerirMetaRT = (texto, origem) => {
-    sugerirMeta(texto, origem);
+    sugerirMeta(texto, origem, 'pendente');
     setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
   };
   const metaAtivaRT = (origem) => metasSugeridas.includes(origem);
@@ -824,7 +824,7 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     salvarVisita(visita);
   }, [visita]);
 
-  const sugerirMeta = (descricao, origem) => {
+  const sugerirMeta = (descricao, origem, statusInicial = 'aguardando') => {
     atualizarMetas(lista => {
       const ativa = lista.some(m =>
         (m.descricao === descricao || m.origem === origem) &&
@@ -833,7 +833,7 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
       if (ativa) return lista;
       return [...lista, {
         id: `meta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        descricao, origem, status: 'aguardando', criadoEm: dataISO,
+        descricao, origem, status: statusInicial, criadoEm: dataISO,
         confirmadoPor: null, dataConfirmacao: null,
         dataRealizado: null, marcadoPor: null, marcadoEm: null,
         dataCancelamento: null, canceladoPor: null, justificativaCancelamento: null
