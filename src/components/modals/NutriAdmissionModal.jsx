@@ -52,6 +52,7 @@ const NutriAdmissionModal = ({
   const {
     idadePaciente,
     isFem,
+    sexoPaciente,
     estaturaEstimada,
     estaturaCorrigida,
     pesoEstimado,
