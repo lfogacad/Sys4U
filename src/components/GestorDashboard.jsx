@@ -14,7 +14,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ReferenceLine, Label  
 } from 'recharts';
-import { collection, onSnapshot, getDocs, getDoc, doc, setDoc, orderBy, limit, updateDoc, query, where } from "firebase/firestore";
+import { collection, onSnapshot, getDocs, getDoc, doc, deleteDoc, setDoc, orderBy, limit, updateDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
 
 import ModuloAdmin from './ModuloAdmin';
@@ -39,7 +39,10 @@ const GestorDashboard = ({ userProfile }) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [plantaoEditado, setPlantaoEditado] = useState(null);
   const [novoPlantonista, setNovoPlantonista] = useState("");
-  const [tipoTrocaPlantao, setTipoTrocaPlantao] = useState('Total'); // Pode ser 'Total', 'Dia' ou 'Noite'
+  const [tipoTrocaPlantao, setTipoTrocaPlantao] = useState('Total');
+  // Seletor INDEPENDENTE da exclusão (não usa o tipoTrocaPlantao da troca)
+  const [tipoExclusaoPlantao, setTipoExclusaoPlantao] = useState('Total');
+  const [mostrarSeletorExclusao, setMostrarSeletorExclusao] = useState(false);  
   const [indicadorTendencia, setIndicadorTendencia] = useState('mortalidade');
   
   // Controles de Dados do Firebase
@@ -3595,9 +3598,10 @@ const imprimirRelatorioGeladeira = () => {
           const isFalta = nomeFinal.includes('[FALTOU]') || alteracao === 'Falta';
           const isAtestado = nomeFinal.includes('[ATESTADO]') || alteracao === 'Atestado';
           const isExtra = tipoPlantao === 'plantao_extra' || nomeFinal.includes('[EXTRA]') || alteracao === 'Extra';
-          const isTroca = alteracao === 'Normal'; 
+          const isTroca = alteracao === 'Normal';
+          const isExcluido = alteracao === 'Excluído' || nomeFinal.includes('[EXCLUÍDO]');
 
-          if (isFalta || isExtra || isAtestado || isTroca) {
+          if (isFalta || isExtra || isAtestado || isTroca || isExcluido) {
              mudancas.push({ id: doc.id, ...plantao });
           }
         }
@@ -4465,6 +4469,14 @@ const imprimirRelatorioGeladeira = () => {
 
         querySnapshot.forEach((doc) => {
           const dados = { id: doc.id, ...doc.data() };
+          // 🚫 PULA apenas EXCLUSÃO TOTAL da escala ativa (nome sem desmembramento Dia/Noite)
+          //    Exclusão PARCIAL (ex.: "NOME [EXCLUÍDO] (D) / NOME (N)") continua aparecendo,
+          //    para o usuário ver que o dia foi excluído mas a noite segue (igual ao atestado parcial)
+          const nomeEscala = dados.nome || "";
+          const ehExclusaoTotal =
+            (nomeEscala.includes('[EXCLUÍDO]') || dados.statusAlteracao === 'Excluído') &&
+            !nomeEscala.includes(' / ');
+          if (ehExclusaoTotal) return;
           resultados.push(dados);
           
           if (!agrupadoGeral[dados.categoria]) agrupadoGeral[dados.categoria] = [];
@@ -4526,7 +4538,7 @@ const imprimirRelatorioGeladeira = () => {
                   let nomeExt = match[1].trim();
                   let siglaExt = match[2];
                   // Só atribui se o médico daquele turno NÃO faltou
-                  if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]')) {
+                  if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]') && !nomeExt.includes('[EXCLUÍDO]')) {
                     atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
                   }
                 }
@@ -4539,6 +4551,10 @@ const imprimirRelatorioGeladeira = () => {
               if (match) {
                 atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
               }
+            }
+            // 3.5 O plantonista foi EXCLUÍDO da escala? (buraco vazio, só fica no relatório)
+            else if (strNome.includes('[EXCLUÍDO]')) {
+               // Ninguém recebe o plantão, o buraco fica vazio na escala do mês!
             } 
             // 4. O médico faltou ou deu atestado e NINGUÉM cobriu?
             else if (strNome.includes('[FALTOU]') || strNome.includes('[ATESTADO]')) {
@@ -4597,11 +4613,12 @@ const imprimirRelatorioGeladeira = () => {
     buscarPlantoesMes();
   }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
 
-  const abrirModalTroca = (plantaoId, turnoEHorario, nomeAtual) => {
+  const abrirModalTroca = (plantaoId, turnoEHorario, nomeAtual, sigla) => {
     setPlantaoEditado({ 
       id: plantaoId, 
       turno: turnoEHorario, 
-      nomeAtual: nomeAtual 
+      nomeAtual: nomeAtual,
+      sigla: sigla
     });
     
     setNovoPlantonista("");
@@ -4720,6 +4737,68 @@ const imprimirRelatorioGeladeira = () => {
     setIsExtraModalOpen(false);
     setExtraNome("");
     setExtraTurno("DN");
+  };
+
+  const excluirPlantonista = async () => {
+    console.log("RAIO-X EXCLUSÃO:", { id: plantaoEditado?.id, sigla: plantaoEditado?.sigla, turno: plantaoEditado?.turno, tipoExclusao: tipoExclusaoPlantao });
+    if (!plantaoEditado?.id) return;
+
+    // Limpa o nome atual (remove tags e desmembramentos anteriores)
+    let nomeLimpo = plantaoEditado.nomeAtual
+      .replace(/\[FALTOU\]/g, '')
+      .replace(/\[ATESTADO\]/g, '')
+      .replace(/\[EXCLUÍDO\]/g, '')
+      .replace(/\(D\)/g, '')
+      .replace(/\(N\)/g, '')
+      .split('/')[0]
+      .trim();
+
+    // Monta o nome final conforme o período escolhido no seletor INDEPENDENTE de exclusão
+    const ehDN = plantaoEditado.sigla === 'DN';
+    let nomeFinal;
+    if (ehDN && tipoExclusaoPlantao === 'Dia') {
+      nomeFinal = `${nomeLimpo} [EXCLUÍDO] (D) / ${nomeLimpo} (N)`;
+    } else if (ehDN && tipoExclusaoPlantao === 'Noite') {
+      nomeFinal = `${nomeLimpo} (D) / ${nomeLimpo} [EXCLUÍDO] (N)`;
+    } else {
+      nomeFinal = `${nomeLimpo} [EXCLUÍDO]`; // Total
+    }
+
+    const confirmar = window.confirm(
+      `Excluir ${plantaoEditado.nomeAtual} da escala de ${plantaoEditado.turno}?\n\nO plantonista será removido da escala e a exclusão registrada no relatório de auditoria.`
+    );
+    if (!confirmar) return;
+
+    try {
+      const escalaRef = doc(db, "escalas", plantaoEditado.id);
+      await updateDoc(escalaRef, {
+        nome: nomeFinal,
+        nomeOriginal: plantaoEditado.nomeAtual,
+        statusAlteracao: 'Excluído',
+        modificadoEm: new Date().toISOString()
+      });
+      // Exclusão TOTAL: remove o card da escala do dia
+      // Exclusão PARCIAL: atualiza o nome e MANTÉM o card (mostra D excluído, N ativo)
+      if (ehDN && tipoExclusaoPlantao !== 'Total') {
+        setPlantoesDoDia(listaAnterior =>
+          listaAnterior.map(plantao =>
+            plantao.id === plantaoEditado.id ? { ...plantao, nome: nomeFinal } : plantao
+          )
+        );
+      } else {
+        setPlantoesDoDia(listaAnterior =>
+          listaAnterior.filter(plantao => plantao.id !== plantaoEditado.id)
+        );
+      }
+      console.log("✅ Plantonista excluído da escala com registro de auditoria!");
+    } catch (error) {
+      console.error("❌ Erro ao excluir plantonista da escala:", error);
+      alert("Erro ao excluir o plantonista. Verifique o console.");
+      return;
+    }
+
+    setMostrarSeletorExclusao(false);
+    setIsEditModalOpen(false);
   };
 
   const salvarInvestigacaoEvento = async () => {
@@ -11257,7 +11336,7 @@ const imprimirRelatorioGeladeira = () => {
                 <ArrowLeft size={20} className="text-slate-700" />
               </button>
               <div>
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><CalendarDays className="text-blue-600" /> Radar de Plantão</h2>
+                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><CalendarDays className="text-blue-600" /> Escalas de Plantão</h2>
                 <p className="text-slate-500 text-sm">Controle diário e mensal das equipes da UTI.</p>
               </div>
             </div>
@@ -11409,7 +11488,7 @@ const imprimirRelatorioGeladeira = () => {
                         <div key={plantao.id} className={`p-4 ${corBg} border ${corBorder} rounded-xl relative group`}>
                           <span className={`text-[10px] font-bold ${corText} uppercase`}>{plantao.turno} ({plantao.horario})</span>
                           <div className="text-lg font-black text-slate-800 mt-1">{plantao.nome}</div>
-                          <button onClick={() => abrirModalTroca(plantao.id, `${plantao.turno} (${plantao.horario})`, plantao.nome)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Gerenciar Plantonista">
+                          <button onClick={() => abrirModalTroca(plantao.id, `${plantao.turno} (${plantao.horario})`, plantao.nome, plantao.sigla)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Gerenciar Plantonista">
                             <Settings size={16} />
                           </button>
                         </div>
@@ -11526,7 +11605,10 @@ const imprimirRelatorioGeladeira = () => {
                 
                 <div className="p-6 space-y-4">
                   <div><div className="text-xs font-bold text-slate-400 uppercase">Turno / Plantonista Atual</div><div className="font-bold text-slate-700">{plantaoEditado.turno} - {plantaoEditado.nomeAtual}</div></div>
-                  
+
+                  {/* OCULTA AS OCORRÊNCIAS E O SELETOR DE PROFISSIONAL QUANDO O SELETOR DE EXCLUSÃO ESTÁ ABERTO */}
+                  {!mostrarSeletorExclusao && (
+                    <>                 
                   {/* BOTÕES DE OCORRÊNCIA MÉDICA */}
                   <div className="pt-2 border-t border-slate-100">
                     <label className="block text-sm font-bold text-blue-600 mb-2">O que ocorreu?</label>
@@ -11572,11 +11654,60 @@ const imprimirRelatorioGeladeira = () => {
                       </select>
                     </div>
                   )}
+                    </>
+                  )}                  
+                  {/* SELETOR INDEPENDENTE DE EXCLUSÃO (abre ao clicar em "Excluir da Escala") */}
+                  {mostrarSeletorExclusao && (
+                    <div className="pt-2 border-t border-slate-100 animate-fadeIn bg-red-50/50 rounded-xl p-3">
+                      <label className="block text-sm font-bold text-red-600 mb-2">
+                        Excluir qual período?
+                      </label>
+                      <div className="flex flex-col gap-2">
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-white p-1 rounded transition-colors">
+                          <input type="radio" value="Total" checked={tipoExclusaoPlantao === 'Total'} onChange={(e) => setTipoExclusaoPlantao(e.target.value)} className="w-4 h-4 text-red-600 focus:ring-red-500" />
+                          Plantão Completo
+                        </label>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-white p-1 rounded transition-colors">
+                          <input type="radio" value="Dia" checked={tipoExclusaoPlantao === 'Dia'} onChange={(e) => setTipoExclusaoPlantao(e.target.value)} className="w-4 h-4 text-red-600 focus:ring-red-500" />
+                          Somente Dia (D)
+                        </label>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer hover:bg-white p-1 rounded transition-colors">
+                          <input type="radio" value="Noite" checked={tipoExclusaoPlantao === 'Noite'} onChange={(e) => setTipoExclusaoPlantao(e.target.value)} className="w-4 h-4 text-red-600 focus:ring-red-500" />
+                          Somente Noite (N)
+                        </label>
+                      </div>
+                      <div className="flex justify-end gap-2 mt-3">
+                        <button
+                          onClick={() => setMostrarSeletorExclusao(false)}
+                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={excluirPlantonista}
+                          className="px-4 py-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-sm"
+                        >
+                          Confirmar Exclusão
+                        </button>
+                      </div>
+                    </div>
+                  )}                  
                 </div>
 
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
-                  <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
-                  <button onClick={salvarTrocaPlantao} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">Confirmar Alteração</button>
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => {
+                      setTipoExclusaoPlantao('Total'); // reseta para Total ao abrir
+                      setMostrarSeletorExclusao(true);
+                    }}
+                    className="px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-red-200"
+                  >
+                    Excluir da Escala
+                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
+                    <button onClick={salvarTrocaPlantao} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">Confirmar Alteração</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -11904,6 +12035,20 @@ const imprimirRelatorioGeladeira = () => {
                     const nomeFinal = item.nome || "";
                     const alteracao = item.statusAlteracao || "";
                     const tipoPlantao = item.tipo || ""; // 🚨 LÊ O TIPO PARA O VISUAL TAMBÉM
+                    // Nome limpo (remove tags e desmembramentos) — mostra UMA vez
+                    const nomeLimpoRel = item.nome
+                      .replace(/\[FALTOU\]/g, '')
+                      .replace(/\[ATESTADO\]/g, '')
+                      .replace(/\[EXCLUÍDO\]/g, '')
+                      .replace(/\[EXTRA\]/g, '')
+                      .replace(/\(D\)/g, '')
+                      .replace(/\(N\)/g, '')
+                      .split('/')[0]
+                      .trim();
+                    // Detecta qual período foi excluído (exclusão parcial)
+                    const periodoExcluido = item.nome.includes('[EXCLUÍDO] (D)') ? 'Dia (D)'
+                      : item.nome.includes('[EXCLUÍDO] (N)') ? 'Noite (N)'
+                      : null;
 
                     if (alteracao === 'Falta' || nomeFinal.includes('[FALTOU]')) {
                       corBorda = "border-red-200 bg-red-50"; corTexto = "text-red-700"; tag = "Falta Não Justificada";
@@ -11911,6 +12056,8 @@ const imprimirRelatorioGeladeira = () => {
                       corBorda = "border-amber-200 bg-amber-50"; corTexto = "text-amber-700"; tag = "Atestado Médico";
                     } else if (tipoPlantao === 'plantao_extra' || alteracao === 'Extra' || nomeFinal.includes('[EXTRA]')) { // 🚨 ATUALIZADO AQUI
                       corBorda = "border-emerald-200 bg-emerald-50"; corTexto = "text-emerald-700"; tag = "Plantão Extra";
+                    } else if (alteracao === 'Excluído' || nomeFinal.includes('[EXCLUÍDO]')) {
+                      corBorda = "border-rose-300 bg-rose-50"; corTexto = "text-rose-700"; tag = "Excluído da Escala";
                     } else {
                       corBorda = "border-blue-200 bg-blue-50"; corTexto = "text-blue-700"; tag = "Troca de Plantão";
                     }
@@ -11924,8 +12071,12 @@ const imprimirRelatorioGeladeira = () => {
                             </span>
                             <span className="text-xs font-bold text-slate-500">{item.data.split('-').reverse().join('/')} - {item.turno}</span>
                           </div>
-                          <p className="font-bold text-slate-800 uppercase">{item.nome.replace('[FALTOU]', '').replace('[EXTRA]', '')}</p>
-                          
+                          <p className="font-bold text-slate-800 uppercase">{nomeLimpoRel}</p>
+                          {periodoExcluido && (
+                            <p className="text-[10px] font-bold text-rose-600/80 mt-0.5 flex items-center gap-1">
+                              ⮑ Período excluído: {periodoExcluido}
+                            </p>
+                          )}                          
                           {item.statusAlteracao === 'Normal' && item.nomeOriginal && item.nomeOriginal !== item.nome && (
                             <p className="text-[10px] font-bold text-blue-600/80 mt-0.5 flex items-center gap-1">
                               ⮑ Substituiu: {item.nomeOriginal.replace(/\[FALTOU\]/g, '').replace(/\[ATESTADO\]/g, '')}
