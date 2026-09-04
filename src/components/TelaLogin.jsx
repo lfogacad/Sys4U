@@ -177,7 +177,7 @@ const TelaLogin = ({
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="dr.luciano@sys4u.com"
+                  placeholder="seu@email.com"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-3 py-3 text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all duration-200 outline-none"
                 />
               </div>
@@ -305,7 +305,7 @@ const TelaLogin = ({
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="dr.luciano@sys4u.com"
+                    placeholder="seu@email.com"
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-3 py-2.5 text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all duration-200 outline-none"
                   />
                 </div>
