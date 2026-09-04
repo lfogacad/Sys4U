@@ -214,7 +214,7 @@ const NutriAdmissionModal = ({
               <div className="grid md:grid-cols-2 gap-4 mt-3">
                 <div className="p-2.5 bg-slate-50 rounded-lg">
                   <p className="text-xs font-bold text-slate-500 uppercase mb-0.5">Sexo</p>
-                  <p className="text-sm font-bold text-slate-700">{isFem ? 'Feminino' : sexoPaciente ? 'Masculino' : '—'}</p>
+                  <p className="text-sm font-bold text-slate-700">{isFem ? 'Feminino' : 'Masculino'}</p>
                 </div>
                 <div className="p-2.5 bg-slate-50 rounded-lg">
                   <p className="text-xs font-bold text-slate-500 uppercase mb-0.5">Idade</p>
