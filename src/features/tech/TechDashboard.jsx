@@ -476,7 +476,9 @@ const salvarFralda = () => {
       if (!p.bh.vitals) p.bh.vitals = {};
       if (!p.bh.vitals[horaBH]) p.bh.vitals[horaBH] = {};
 
-      const sufixo = modalInsulina.tipo === 'NPH' ? 'N' : 'R';
+      // Mapeia o tipo para o código usado no BH: NPH→N, Regular→R, Ultrarrápida→U, Prolongada→P
+      const sufixos = { NPH: 'N', Regular: 'R', Ultrarrápida: 'U', Prolongada: 'P' };
+      const sufixo = sufixos[modalInsulina.tipo] || 'R';
       const novoRegistro = `${modalInsulina.dose}${sufixo}`;
 
       const registroAtual = p.bh.vitals[horaBH]["Insulina"] || "";
@@ -2849,8 +2851,16 @@ const salvarFralda = () => {
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Insulina</label>
                 <div className="grid grid-cols-2 gap-3">
-                  {['NPH', 'Regular'].map(tipo => (
-                    <button key={tipo} onClick={() => setModalInsulina({ ...modalInsulina, tipo })} className={`p-4 rounded-2xl border-2 font-black uppercase tracking-wide transition-all ${modalInsulina.tipo === tipo ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{tipo}</button>
+                  {[
+                    { valor: 'NPH', desc: 'Intermediária' },
+                    { valor: 'Regular', desc: 'Rápida' },
+                    { valor: 'Ultrarrápida', desc: 'Asparte/Lispro/Glulisina' },
+                    { valor: 'Prolongada', desc: 'Glargina/Detemir/Degludeca' }
+                  ].map(t => (
+                    <button key={t.valor} onClick={() => setModalInsulina({ ...modalInsulina, tipo: t.valor })} className={`p-3 rounded-2xl border-2 font-black uppercase tracking-wide transition-all flex flex-col items-center ${modalInsulina.tipo === t.valor ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>
+                      <span className="text-sm">{t.valor}</span>
+                      <span className="text-[9px] font-semibold normal-case tracking-normal opacity-70 mt-0.5 text-center">{t.desc}</span>
+                    </button>
                   ))}
                 </div>
               </div>
