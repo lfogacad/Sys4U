@@ -6217,10 +6217,14 @@ const userRole = userProfile?.role || userProfile?.perfil;
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4">
                   <label className="text-xs font-bold text-cyan-800 uppercase tracking-wider block mb-2">Cartuchos de Gasometria</label>
-                  <div className="w-full p-2.5 border border-cyan-300 rounded-lg bg-white text-sm font-bold text-cyan-700">
-                    {modalGasometria.cartuchos}
-                  </div>
-                  <p className="text-[10px] text-cyan-600 mt-1.5">Atualizado automaticamente conforme a seleção de pacientes.</p>
+                  <input
+                    type="number"
+                    min="0"
+                    value={modalGasometria.cartuchos ?? 0}
+                    onChange={(e) => setModalGasometria({ ...modalGasometria, cartuchos: Math.max(0, Number(e.target.value)) })}
+                    className="w-full p-2.5 border border-cyan-300 rounded-lg bg-white text-sm font-bold text-cyan-700 outline-none focus:ring-2 focus:ring-cyan-300"
+                  />
+                  <p className="text-[10px] text-cyan-600 mt-1.5">Total de cartuchos a solicitar. Ao marcar/desmarcar pacientes, o campo é preenchido com a quantidade de selecionados — você pode ajustá-lo manualmente a qualquer momento.</p>
                 </div>
                 <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
                   <label className="text-xs font-bold text-rose-800 uppercase tracking-wider block mb-2">Cartuchos com Lactato</label>

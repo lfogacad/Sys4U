@@ -1280,12 +1280,18 @@ const podeConfirmarMeta = (meta) => {
               {antibioticosEmUso.length > 0 ? (
                 <div className="space-y-2">
                   {antibioticosEmUso.map((atb, idx) => {
-                    const diasUso = atb.date ? Math.max(1, Math.round((new Date() - new Date(atb.date)) / 86400000) + 1) : null;
+                    const diasUso = atb.date ? (() => {
+                      const hoje = new Date();
+                      const h0 = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+                      const [ano, mes, dia] = atb.date.split('-').map(Number);
+                      const i0 = new Date(ano, mes - 1, dia);
+                      return Math.max(0, Math.round((h0 - i0) / 86400000));
+                    })() : null;
                     return (
                       <div key={idx} className="flex items-center justify-between p-2.5 bg-white border border-indigo-200 rounded-lg">
                         <span className="text-sm font-bold text-slate-700">{atb.name}</span>
                         <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-100">
-                          {diasUso ? `${diasUso}º dia de uso (início ${formatarDataBR(atb.date)})` : 'Data de início não informada'}
+                          {diasUso !== null ? `D${diasUso} — início ${formatarDataBR(atb.date)}` : 'Data de início não informada'}
                         </span>
                       </div>
                     );
