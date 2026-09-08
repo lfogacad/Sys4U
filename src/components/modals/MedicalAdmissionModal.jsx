@@ -72,6 +72,7 @@ const MedicalAdmissionModal = ({
               // Lista exata em ordem alfabética
               const origensLista = [
                 "Alto Paraíso", "Ariquemes-CDP", "Ariquemes-HMA", "Ariquemes-HMI", "Ariquemes-UPA",
+                "Ariquemes-HMS", "Ariquemes-HSF", "Ariquemes-HBJ",
                 "Buritis", "Cacaulândia", "Cacoal", "Campo Novo de Rondônia", "Cujubim", 
                 "Jaru", "Ji-Paraná", "Machadinho D´Oeste", "Monte Negro", "Ouro Preto D´Oeste", 
                 "Porto Velho", "Rio Crespo", "Vale do Anari", "Vilhena"

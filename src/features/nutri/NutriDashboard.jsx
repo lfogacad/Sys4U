@@ -17,29 +17,50 @@ const NutriDashboard = ({
 }) => {
 
   // Estado para controlar o modal de histórico de consumo
-  const [modalConsumo, setModalConsumo] = useState({ isOpen: false, tipo: null }); // 'solida' ou 'liquida'
+  const [modalConsumo, setModalConsumo] = useState({ isOpen: false, tipo: null }); // 'alimentos' ou 'suplementos'
 
   // =========================================================================
   // CÁLCULO DAS MÉDIAS DE CONSUMO ORAL
   // =========================================================================
   const historicoDieta = currentPatient?.enfermagem?.historico_dieta_vo || [];
-  
-  let somaSolida = 0, countSolida = 0;
-  let somaLiquida = 0, countLiquida = 0;
 
-  historicoDieta.forEach(reg => {
+  // =========================================================================
+  // SEPARAÇÃO ALIMENTOS × SUPLEMENTOS
+  // Regra: registro é SUPLEMENTO quando o 'Tipo de Refeição' == 'Suplemento'.
+  // ALIMENTOS = todo registro que NÃO é suplemento (sólida OU líquida = amostras).
+  // Cada prato/copo conta como amostra independente.
+  // =========================================================================
+  const ehSuplemento = (reg) => (reg.tipoRefeicao || reg.refeicao || '') === 'Suplemento';
+
+  // Acumula % de consumo, contando cada amostra (prato/copo) independente
+  const acumularConsumo = (reg, soma, count) => {
     if (reg.tiposOferecidos?.solida && reg.consumo?.solida !== null && reg.consumo?.solida !== "") {
-      somaSolida += Number(reg.consumo.solida);
-      countSolida++;
+      soma += Number(reg.consumo.solida);
+      count++;
     }
     if (reg.tiposOferecidos?.liquida && reg.consumo?.liquida !== null && reg.consumo?.liquida !== "") {
-      somaLiquida += Number(reg.consumo.liquida);
-      countLiquida++;
+      soma += Number(reg.consumo.liquida);
+      count++;
+    }
+    return { soma, count };
+  };
+
+  let somaAlimentos = 0, countAlimentos = 0;
+  let somaSuplementos = 0, countSuplementos = 0;
+
+  historicoDieta.forEach(reg => {
+    if (ehSuplemento(reg)) {
+      const r = acumularConsumo(reg, somaSuplementos, countSuplementos);
+      somaSuplementos = r.soma; countSuplementos = r.count;
+    } else {
+      const r = acumularConsumo(reg, somaAlimentos, countAlimentos);
+      somaAlimentos = r.soma; countAlimentos = r.count;
     }
   });
 
-  const mediaSolida = countSolida > 0 ? Math.round(somaSolida / countSolida) : 0;
-  const mediaLiquida = countLiquida > 0 ? Math.round(somaLiquida / countLiquida) : 0;
+  const mediaAlimentos = countAlimentos > 0 ? Math.round(somaAlimentos / countAlimentos) : 0;
+  const mediaSuplementos = countSuplementos > 0 ? Math.round(somaSuplementos / countSuplementos) : 0;
+
   // ---------- CONSUMO ORAL DO DIA ANTERIOR (janela clínica 07h ontem → 06h hoje) ----------
   const inicioJanela = new Date();
   inicioJanela.setDate(inicioJanela.getDate() - 1);
@@ -52,24 +73,26 @@ const NutriDashboard = ({
     return dt && !isNaN(dt.getTime()) && dt >= inicioJanela && dt < fimJanela;
   });
 
-  let somaSolidaOntem = 0, countSolidaOntem = 0;
-  let somaLiquidaOntem = 0, countLiquidaOntem = 0;
+  let somaAlimentosOntem = 0, countAlimentosOntem = 0;
+  let somaSuplementosOntem = 0, countSuplementosOntem = 0;
   historicoDietaOntem.forEach(reg => {
-    if (reg.tiposOferecidos?.solida && reg.consumo?.solida !== null && reg.consumo?.solida !== "") {
-      somaSolidaOntem += Number(reg.consumo.solida);
-      countSolidaOntem++;
-    }
-    if (reg.tiposOferecidos?.liquida && reg.consumo?.liquida !== null && reg.consumo?.liquida !== "") {
-      somaLiquidaOntem += Number(reg.consumo.liquida);
-      countLiquidaOntem++;
+    if (ehSuplemento(reg)) {
+      const r = acumularConsumo(reg, somaSuplementosOntem, countSuplementosOntem);
+      somaSuplementosOntem = r.soma; countSuplementosOntem = r.count;
+    } else {
+      const r = acumularConsumo(reg, somaAlimentosOntem, countAlimentosOntem);
+      somaAlimentosOntem = r.soma; countAlimentosOntem = r.count;
     }
   });
-  const mediaSolidaOntem = countSolidaOntem > 0 ? Math.round(somaSolidaOntem / countSolidaOntem) : 0;
-  const mediaLiquidaOntem = countLiquidaOntem > 0 ? Math.round(somaLiquidaOntem / countLiquidaOntem) : 0;
+  const mediaAlimentosOntem = countAlimentosOntem > 0 ? Math.round(somaAlimentosOntem / countAlimentosOntem) : 0;
+  const mediaSuplementosOntem = countSuplementosOntem > 0 ? Math.round(somaSuplementosOntem / countSuplementosOntem) : 0;
 
   // Função para agrupar o histórico por data para o Modal
   const getGroupedHistory = (tipo) => {
-    const filtered = historicoDieta.filter(h => h.tiposOferecidos?.[tipo]);
+    // 'tipo' agora é a CATEGORIA: 'alimentos' ou 'suplementos'
+    const filtered = historicoDieta.filter(h =>
+      tipo === 'suplementos' ? ehSuplemento(h) : !ehSuplemento(h)
+    );
     const groups = {};
     
     filtered.forEach(item => {
@@ -100,7 +123,11 @@ const NutriDashboard = ({
 
   // Função para agrupar o histórico por data para o Modal (filtrado pela janela)
   const getGroupedHistoryFiltrado = (tipo, dataMinima) => {
-    const filtered = historicoDieta.filter(h => h.tiposOferecidos?.[tipo] && h.dataHoraRegistro && new Date(h.dataHoraRegistro) >= dataMinima);
+    // 'tipo' agora é a CATEGORIA: 'alimentos' ou 'suplementos' (mesma regra da getGroupedHistory)
+    const filtered = historicoDieta.filter(h =>
+      (tipo === 'suplementos' ? ehSuplemento(h) : !ehSuplemento(h)) &&
+      h.dataHoraRegistro && new Date(h.dataHoraRegistro) >= dataMinima
+    );
     const groups = {};
     
     filtered.forEach(item => {
@@ -121,7 +148,7 @@ const NutriDashboard = ({
   };
 
   // Card de consumo oral reutilizável (Total / Dia Anterior)
-  const renderConsumoCard = (titulo, mediaSolidaV, countSolidaV, mediaLiquidaV, countLiquidaV, abrirHistorico, variant = 'total') => {
+  const renderConsumoCard = (titulo, mediaAlimentosV, countAlimentosV, mediaSuplementosV, countSuplementosV, abrirHistorico, variant = 'total') => {
     const paleta = variant === 'diario' ? {
       icone: 'text-sky-600',
       valor: 'text-sky-700',
@@ -149,9 +176,9 @@ const NutriDashboard = ({
             <div className="flex justify-between items-end mb-1">
               <span className="text-xs font-bold text-gray-600 uppercase">Alimentos (Média)</span>
               <div className="flex items-center gap-2">
-                <span className={`text-lg font-black ${paleta.valor}`}>{mediaSolidaV}%</span>
+                <span className={`text-lg font-black ${paleta.valor}`}>{mediaAlimentosV}%</span>
                 <button
-                  onClick={(e) => { e.preventDefault(); abrirHistorico('solida'); }}
+                  onClick={(e) => { e.preventDefault(); abrirHistorico('alimentos'); }}
                   className={`p-1.5 ${paleta.botao} rounded-lg transition-colors border`}
                   title="Ver Histórico"
                 >
@@ -160,18 +187,18 @@ const NutriDashboard = ({
               </div>
             </div>
             <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
-              <div className={`${paleta.barra} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${mediaSolidaV}%` }}></div>
+              <div className={`${paleta.barra} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${mediaAlimentosV}%` }}></div>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 text-right">{countSolidaV} refeições registradas</p>
+            <p className="text-[10px] text-slate-400 mt-1 text-right">{countAlimentosV} refeições registradas</p>
           </div>
           {/* SUPLEMENTOS */}
           <div>
             <div className="flex justify-between items-end mb-1">
               <span className="text-xs font-bold text-gray-600 uppercase">Suplementos (Média)</span>
               <div className="flex items-center gap-2">
-                <span className={`text-lg font-black ${paleta.valor}`}>{mediaLiquidaV}%</span>
+                <span className={`text-lg font-black ${paleta.valor}`}>{mediaSuplementosV}%</span>
                 <button
-                  onClick={(e) => { e.preventDefault(); abrirHistorico('liquida'); }}
+                  onClick={(e) => { e.preventDefault(); abrirHistorico('suplementos'); }}
                   className={`p-1.5 ${paleta.botao} rounded-lg transition-colors border`}
                   title="Ver Histórico"
                 >
@@ -180,9 +207,9 @@ const NutriDashboard = ({
               </div>
             </div>
             <div className="w-full bg-slate-100 rounded-full h-2.5 shadow-inner overflow-hidden">
-              <div className={`${paleta.barra} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${mediaLiquidaV}%` }}></div>
+              <div className={`${paleta.barra} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${mediaSuplementosV}%` }}></div>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 text-right">{countLiquidaV} refeições registradas</p>
+            <p className="text-[10px] text-slate-400 mt-1 text-right">{countSuplementosV} refeições registradas</p>
           </div>
         </div>
       </div>
@@ -460,8 +487,8 @@ const NutriDashboard = ({
             <input
               type="number"
               className="w-full p-2 border-2 border-lime-100 rounded bg-white font-black"
-              value={metasVivo.metaProteicaTotal !== null ? Math.round(metasVivo.metaProteicaTotal) : ""}
-              onChange={(e) => updateNested("nutri", "metaProtTotal", e.target.value)}
+              value={currentPatient?.nutri?.metaProtTotal ?? (metasVivo.metaProteicaTotal !== null ? Math.round(metasVivo.metaProteicaTotal) : "")}
+              onChange={(e) => updateNested("nutri", "metaProtTotal", e.target.value === "" ? null : Number(e.target.value))}
               onBlur={() => handleBlurSave("Nutrição: Editou Meta Proteica Total")}
             />
             <p className="text-[10px] text-lime-600 font-bold mt-1">0,8 g/kg de peso</p>
@@ -746,7 +773,7 @@ const NutriDashboard = ({
           {/* CARD: MONITORAMENTO DO CONSUMO ORAL — TOTAL */}
           {renderConsumoCard(
             'Monitoramento do Consumo Oral (Total)',
-            mediaSolida, countSolida, mediaLiquida, countLiquida, 
+            mediaAlimentos, countAlimentos, mediaSuplementos, countSuplementos,
             (tipo) => setModalConsumo({ isOpen: true, tipo }),
             'total'
           )}
@@ -754,7 +781,7 @@ const NutriDashboard = ({
           {/* CARD: MONITORAMENTO DO CONSUMO ORAL — DIA ANTERIOR (07h às 06h) */}
           {renderConsumoCard(
             'Monitoramento do Consumo Oral (Dia Anterior)',
-            mediaSolidaOntem, countSolidaOntem, mediaLiquidaOntem, countLiquidaOntem,
+            mediaAlimentosOntem, countAlimentosOntem, mediaSuplementosOntem, countSuplementosOntem,
             (tipo) => setModalConsumo({ isOpen: true, tipo, dataMinima: inicioJanela }),
             'diario'
           )}
@@ -780,7 +807,7 @@ const NutriDashboard = ({
         const { groups, sortedDates } = modalConsumo.dataMinima
           ? getGroupedHistoryFiltrado(modalConsumo.tipo, modalConsumo.dataMinima)
           : getGroupedHistory(modalConsumo.tipo);
-        const titulo = modalConsumo.tipo === 'solida' ? 'Alimentos' : 'Suplementos';
+        const titulo = modalConsumo.tipo === 'suplementos' ? 'Suplementos' : 'Alimentos';
 
         return (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
@@ -825,9 +852,17 @@ const NutriDashboard = ({
                                 </span>
                                 <span className="text-sm font-bold text-slate-700">{nomeRefeicao}</span>
                               </div>
-                              <span className="text-lg font-black text-lime-600">
-                                {item.consumo?.[modalConsumo.tipo] || 0}%
-                              </span>
+                              <div className="text-right">
+                                {item.tiposOferecidos?.solida && (
+                                  <span className="block text-lg font-black text-orange-600">{item.consumo?.solida ?? 0}%</span>
+                                )}
+                                {item.tiposOferecidos?.liquida && (
+                                  <span className="block text-lg font-black text-blue-600">{item.consumo?.liquida ?? 0}%</span>
+                                )}
+                                {!item.tiposOferecidos?.solida && !item.tiposOferecidos?.liquida && (
+                                  <span className="block text-lg font-black text-lime-600">—</span>
+                                )}
+                              </div>
                             </div>
                           );
                         })}

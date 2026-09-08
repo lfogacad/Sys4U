@@ -678,13 +678,49 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
 
   const analise = calcularAnalise();
 
-  // ---------- NUTRI: CONSUMO ORAL (média) ----------
+  // ---------- NUTRI: CONSUMO ORAL (média) — DIA ANTERIOR (janela 07h→06h) + ALIMENTOS × SUPLEMENTOS ----------
   const historicoDietaVO = currentPatient?.enfermagem?.historico_dieta_vo || [];
-  const consumosSolida = historicoDietaVO.filter(r => r.tiposOferecidos?.solida);
-  const consumosLiquida = historicoDietaVO.filter(r => r.tiposOferecidos?.liquida);
-  const mediaSolida = consumosSolida.length ? Math.round(consumosSolida.reduce((a, r) => a + safeNum(r.consumo?.solida), 0) / consumosSolida.length) : 0;
-  const mediaLiquida = consumosLiquida.length ? Math.round(consumosLiquida.reduce((a, r) => a + safeNum(r.consumo?.liquida), 0) / consumosLiquida.length) : 0;
 
+  // Janela clínica do dia anterior: 07h de ontem até 06h de hoje
+  const inicioJanelaVisita = new Date();
+  inicioJanelaVisita.setDate(inicioJanelaVisita.getDate() - 1);
+  inicioJanelaVisita.setHours(7, 0, 0, 0);
+  const fimJanelaVisita = new Date();
+  fimJanelaVisita.setHours(6, 0, 0, 0);
+
+  const historicoDietaVOOntem = historicoDietaVO.filter(r => {
+    const dt = r.dataHoraRegistro ? new Date(r.dataHoraRegistro) : null;
+    return dt && !isNaN(dt.getTime()) && dt >= inicioJanelaVisita && dt < fimJanelaVisita;
+  });
+
+  // Regra: registro é SUPLEMENTO quando o 'Tipo de Refeição' == 'Suplemento'.
+  // ALIMENTOS = todo registro que NÃO é suplemento (sólida OU líquida = amostras).
+  // Cada prato/copo conta como amostra independente (mesma regra do NutriDashboard).
+  const ehSuplementoVO = (r) => (r.tipoRefeicao || r.refeicao || '') === 'Suplemento';
+
+  const coletarAmostras = (r, arr) => {
+    if (r.tiposOferecidos?.solida && r.consumo?.solida !== null && r.consumo?.solida !== "") {
+      arr.push(safeNum(r.consumo.solida));
+    }
+    if (r.tiposOferecidos?.liquida && r.consumo?.liquida !== null && r.consumo?.liquida !== "") {
+      arr.push(safeNum(r.consumo.liquida));
+    }
+    return arr;
+  };
+
+  const amostrasAlimentos = [];
+  const amostrasSuplementos = [];
+  historicoDietaVOOntem.forEach(r => {
+    if (ehSuplementoVO(r)) coletarAmostras(r, amostrasSuplementos);
+    else coletarAmostras(r, amostrasAlimentos);
+  });
+
+  // Mantém os nomes usados pelo BLOCO C (JSX inalterado)
+  const consumosSolida = amostrasAlimentos;
+  const mediaSolida = amostrasAlimentos.length ? Math.round(amostrasAlimentos.reduce((a, v) => a + v, 0) / amostrasAlimentos.length) : 0;
+  const consumosLiquida = amostrasSuplementos;
+  const mediaLiquida = amostrasSuplementos.length ? Math.round(amostrasSuplementos.reduce((a, v) => a + v, 0) / amostrasSuplementos.length) : 0;
+  
   // ===== NUTRI — BLOCO A: aporte nutricional da dieta enteral (dia anterior) =====
   const formulaEnteral = currentPatient?.nutri?.tipoDietaEnteral || '';
   const infoFormula = NUTRI_ENTERAL_INFO[formulaEnteral] || null;
