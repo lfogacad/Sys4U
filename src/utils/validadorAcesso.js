@@ -11,6 +11,7 @@ const PERFIS_EXCECAO = [
   "CCIH Geral",
   "Diretor Administrativo",
   "Desenvolvedor",
+  "Nutricionista",
 ];
 
 // Helper: Calcula a janela de acesso (-1h antes, +1h depois) com base na sigla
