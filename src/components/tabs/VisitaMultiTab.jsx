@@ -566,7 +566,8 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   };
 
   const sugerirMetaEnfermeiro = (texto, origem) => {
-    sugerirMeta(texto, origem);
+    // Higiene oral/íntima: meta criada JÁ como 'pendente' (confirmada), não 'aguardando'
+    sugerirMeta(texto, origem, 'pendente');
     setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
   };
   const metaAtivaEnf = (origem) => metasSugeridas.includes(origem);
@@ -576,7 +577,12 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     sugerirMeta(texto, origem);
     setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
   };
-  const metaAtiva = (origem) => metasSugeridas.includes(origem);
+  const metaAtiva = (origem) => {
+    // Meta automática só conta como ATIVA após confirmação (status 'pendente' ou 'realizado').
+    // Enquanto estiver 'aguardando' (não confirmada), não é considerada efetiva.
+    const meta = metas.find(m => m.origem === origem);
+    return !!meta && (meta.status === 'pendente' || meta.status === 'realizado');
+  };
 
   const confirmarCaracteristicas = () => {
     if (caracteristicasSelecionadas.length === 0) return;
@@ -826,6 +832,8 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   const protTotalNaoAtingida = metaProtTotal && !currentPatient?.nutri?.metaProtTotalAtingida;
   const calNaoAtingida = calDiariaNaoAtingida || calTotalNaoAtingida;
   const protNaoAtingida = protDiariaNaoAtingida || protTotalNaoAtingida;
+  // Cargos autorizados a confirmar metas automáticas de aporte (Nutri ou médico)
+  const categoriaPodeConfirmar = ['nutricionista', 'medicoPlantonista', 'medicoRotina'].includes(categoriaAtiva);
 
   useEffect(() => {
     if (calNaoAtingida) sugerirMetaNutri('Aumentar aporte calórico', 'auto_aumentar_calorico');
@@ -874,12 +882,17 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   // ---------- METAS COMPARTILHADAS ----------
   const metas = visita.metas || [];
   const metasAguardando = metas.filter(m => m.status === 'aguardando');
-  const metasAtivas = metas.filter(m => m.status === 'aguardando' || m.status === 'pendente');
+  const metasAtivas = metas.filter(m => m.status === 'pendente');
   const metasOntem = (currentPatient?.visita?.[ontemISO]?.metas || [])
     .filter(m => m.status === 'realizado' || m.status === 'pendente' || m.status === 'cancelado');
   const cumpridasOntem = metasOntem.filter(m => m.status === 'realizado');
   const naoCumpridasOntem = metasOntem.filter(m => m.status === 'pendente');
   const canceladasOntem = metasOntem.filter(m => m.status === 'cancelado');
+  // Localiza as metas automáticas de aporte na lista real (para ler status e id)
+  const metaAutoCalorica = metas.find(m => m.origem === 'auto_aumentar_calorico');
+  const metaAutoProteica = metas.find(m => m.origem === 'auto_aumentar_proteico');
+  const metaConfirmada = (m) => !!m && (m.status === 'pendente' || m.status === 'realizado');  
+
 
   // updater funcional: encadeia corretamente várias mudanças no mesmo instante
   const atualizarMetas = (updater) => {
@@ -2039,14 +2052,36 @@ const podeConfirmarMeta = (meta) => {
                 <LinhaInfo rotulo="Meta Prot. Total" valor={currentPatient?.nutri?.metaProtTotal ? `${currentPatient.nutri.metaProtTotal} g` : '—'} destaque={protTotalNaoAtingida} />
               </div>
               {calNaoAtingida && (
-                <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  🎯 Meta calórica não atingida — meta sugerida: <b>Aumentar aporte calórico</b> (aguardando confirmação)
-                </p>
+                <div className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <p>
+                    🎯 Meta calórica não atingida — meta sugerida: <b>Aumentar aporte calórico</b>{' '}
+                    {metaConfirmada(metaAutoCalorica)
+                      ? <span className="text-lime-700">(meta confirmada ✓)</span>
+                      : <span>(aguardando confirmação)</span>}
+                  </p>
+                  {categoriaPodeConfirmar && metaAutoCalorica?.status === 'aguardando' && (
+                    <button
+                      onClick={() => confirmarMeta(metaAutoCalorica.id)}
+                      className="mt-2 px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white"
+                    >✓ Confirmar meta</button>
+                  )}
+                </div>
               )}
               {protNaoAtingida && (
-                <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  🎯 Meta proteica não atingida — meta sugerida: <b>Aumentar aporte proteico</b> (aguardando confirmação)
-                </p>
+                <div className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <p>
+                    🎯 Meta proteica não atingida — meta sugerida: <b>Aumentar aporte proteico</b>{' '}
+                    {metaConfirmada(metaAutoProteica)
+                      ? <span className="text-lime-700">(meta confirmada ✓)</span>
+                      : <span>(aguardando confirmação)</span>}
+                  </p>
+                  {categoriaPodeConfirmar && metaAutoProteica?.status === 'aguardando' && (
+                    <button
+                      onClick={() => confirmarMeta(metaAutoProteica.id)}
+                      className="mt-2 px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white"
+                    >✓ Confirmar meta</button>
+                  )}
+                </div>
               )}
             </div>
 
