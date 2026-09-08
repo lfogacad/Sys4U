@@ -65,8 +65,17 @@ const PhysioEvoModal = ({
   }, [showPhysioEvoModal, currentPatient]);
 
   if (!showPhysioEvoModal) return null;
+  // Validação: MRC e IMS são obrigatórios para finalizar a evolução
+  const mrcNaoAvaliavel = !!evolucaoData.mrcNaoAvaliavel;
+  const mrcPreenchido = mrcNaoAvaliavel || (evolucaoData.mrcScore !== "" && evolucaoData.mrcScore !== null && evolucaoData.mrcScore !== undefined);
+  const imsPreenchido = evolucaoData.ims !== "" && evolucaoData.ims !== null && evolucaoData.ims !== undefined;
+  const podeFinalizar = mrcPreenchido && imsPreenchido;
 
   const handleFinalize = () => {
+    if (!podeFinalizar) {
+      alert("Para finalizar a evolução, preencha o Escore MRC e a ICU Mobility Scale (IMS).");
+      return;
+    }
     setIsSaving(true);
     
     // 1. Salva os campos normais
@@ -413,11 +422,25 @@ const PhysioEvoModal = ({
                 </label>
                 <input
                   type="number" min="0" max="60"
-                  className="w-full p-2 border border-purple-200 rounded-lg bg-white text-xs text-center font-bold text-purple-900 outline-none focus:ring-2 focus:ring-purple-200"
+                  className="w-full p-2 border border-purple-200 rounded-lg bg-white text-xs text-center font-bold text-purple-900 outline-none focus:ring-2 focus:ring-purple-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                   placeholder="Soma MRC..."
                   value={evolucaoData.mrcScore || ""}
+                  disabled={!!evolucaoData.mrcNaoAvaliavel}
                   onChange={(e) => updateField('mrcScore', e.target.value)}
                 />
+                <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!evolucaoData.mrcNaoAvaliavel}
+                    onChange={(e) => {
+                      const marcado = e.target.checked;
+                      updateField('mrcNaoAvaliavel', marcado);
+                      if (marcado) updateField('mrcScore', '');
+                    }}
+                    className="w-4 h-4 accent-purple-600"
+                  />
+                  <span className="text-xs font-semibold text-purple-700">Não avaliável (sedação, não colaboração etc.)</span>
+                </label>
               </div>
               <div>
                 <label className="block text-xs font-bold text-purple-700 mb-1">
@@ -496,10 +519,15 @@ const PhysioEvoModal = ({
             Fechar
           </button>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+            {!podeFinalizar && (
+              <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-center">
+                Preencha o Escore MRC e a ICU Mobility Scale (IMS) para finalizar a evolução.
+              </p>
+            )}
             <button
               onClick={handleFinalize}
-              disabled={isSaving}
-              className={`px-8 py-3 rounded-xl font-bold text-white shadow-lg transition-colors flex items-center justify-center gap-2 w-full sm:w-auto ${isSaving ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600'}`}
+              disabled={isSaving || !podeFinalizar}
+              className={`px-8 py-3 rounded-xl font-bold text-white shadow-lg transition-colors flex items-center justify-center gap-2 w-full sm:w-auto ${(isSaving || !podeFinalizar) ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600'}`}
             >
               <FileText size={18} /> {isSaving ? "Salvando..." : "Finalizar e Gerar Evolução"}
             </button>
