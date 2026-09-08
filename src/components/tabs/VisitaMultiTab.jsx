@@ -720,7 +720,7 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   const mediaSolida = amostrasAlimentos.length ? Math.round(amostrasAlimentos.reduce((a, v) => a + v, 0) / amostrasAlimentos.length) : 0;
   const consumosLiquida = amostrasSuplementos;
   const mediaLiquida = amostrasSuplementos.length ? Math.round(amostrasSuplementos.reduce((a, v) => a + v, 0) / amostrasSuplementos.length) : 0;
-  
+
   // ===== NUTRI — BLOCO A: aporte nutricional da dieta enteral (dia anterior) =====
   const formulaEnteral = currentPatient?.nutri?.tipoDietaEnteral || '';
   const infoFormula = NUTRI_ENTERAL_INFO[formulaEnteral] || null;
@@ -749,9 +749,9 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   const ptnParenteral  = volumeDietaParenteral > 0 ? Math.round(volumeDietaParenteral * NUTRI_PARENTERAL_INFO.ptn)  : null;
   const aguaParenteral = volumeDietaParenteral > 0 ? Math.round(volumeDietaParenteral * NUTRI_PARENTERAL_INFO.agua) : null;
 
-  // ---------- NUTRI: INSULINAS ----------
+  // ---------- NUTRI: INSULINAS (janela 06h ontem → 06h hoje) ----------
   const inicioJanela = new Date(ontem);
-  inicioJanela.setHours(7, 0, 0, 0);
+  inicioJanela.setHours(6, 0, 0, 0);
   const fimJanela = new Date();
   fimJanela.setHours(6, 0, 0, 0);
   const insulinasJanela = (currentPatient?.enfermagem?.historico_insulina || [])
@@ -759,21 +759,55 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
       const dt = new Date(ins.dataHoraRegistro);
       return !isNaN(dt.getTime()) && dt >= inicioJanela && dt < fimJanela;
     })
-    .sort((a, b) => new Date(a.dataHoraRegistro) - new Date(b.dataHoraRegistro));
-
-  // ---------- NUTRI: GLICEMIA DO DIA ANTERIOR (HGT) ----------
-  const hgtOntem = Object.entries(bhAnterior?.vitals || {})
-    .map(([hora, v]) => ({ hora, valor: v?.['HGT (mg/dL)'] }))
-    .filter(x => x.valor && String(x.valor).trim() !== '')
     .sort((a, b) => {
-      // Converte HH:MM em minutos desde as 07h (horários < 07h pertencem ao dia seguinte)
-      const minutosDesde7h = (h) => {
-        const [hh, mm] = h.split(':').map(Number);
-        const total = hh * 60 + mm;
-        return total < 420 ? total + 1440 : total; // 420 = 07:00
+      const tsClinico = (reg) => {
+        const dt = new Date(reg.dataHoraRegistro);
+        const [hh, mm] = (reg.horario || '00:00').split(':').map(Number);
+        const d = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), hh, mm, 0, 0);
+        if (hh < 6) d.setDate(d.getDate() - 1); // madrugada fecha o turno do dia anterior
+        return d.getTime();
       };
-      return minutosDesde7h(a.hora) - minutosDesde7h(b.hora);
+      return tsClinico(a) - tsClinico(b);
     });
+
+  // ---------- NUTRI: GLICEMIA DO DIA ANTERIOR (HGT) — janela 06h ontem → 06h hoje ----------
+  // Regra do turno clínico: em um boletim com date "AAAA-MM-DD",
+  //   • chaves 07:00–23:59 → dia = date
+  //   • chaves 00:00–06:59 → dia = date + 1 (madrugada/06h do dia seguinte)
+  // Ex.: usando em 08/09 → janela 06h de 07/09 até 06h de 08/09.
+  // O 06h de 07/09 está no doc datado 06/09 (anterior ao bh_previous), por isso
+  // a fonte passa a ser o historico_bh (que contém os dois docs).
+  const hojeVisita = new Date();
+  hojeVisita.setHours(0, 0, 0, 0);
+  const ontemVisita = new Date(hojeVisita);
+  ontemVisita.setDate(ontemVisita.getDate() - 1);
+
+  const horaBHparaData = (dateStr, hora) => {
+    const [hh, mm] = hora.split(':').map(Number);
+    const base = new Date(`${dateStr}T12:00:00`); // meio-dia local evita virada de fuso
+    const d = hh >= 7 ? base : new Date(base.getTime() + 86400000);
+    d.setHours(hh, mm, 0, 0);
+    return d;
+  };
+
+  const inicioJanelaGlic = new Date(ontemVisita);
+  inicioJanelaGlic.setHours(6, 0, 0, 0); // 06h de ontem (07/09)
+  const fimJanelaGlic = new Date(hojeVisita);
+  fimJanelaGlic.setHours(6, 0, 0, 0);    // 06h de hoje (08/09) — inclusivo
+
+  const hgtOntem = [];
+  (currentPatient?.historico_bh || []).forEach(bhDoc => {
+    if (!bhDoc?.date || !bhDoc.vitals) return;
+    Object.entries(bhDoc.vitals).forEach(([hora, v]) => {
+      const valor = v?.['HGT (mg/dL)'];
+      if (!valor || String(valor).trim() === '') return;
+      const dt = horaBHparaData(bhDoc.date, hora);
+      if (dt >= inicioJanelaGlic && dt <= fimJanelaGlic) {
+        hgtOntem.push({ hora, valor, dt });
+      }
+    });
+  });
+  hgtOntem.sort((a, b) => a.dt - b.dt);
 
   // Flag: houve hipo (< 70) ou hiperglicemia (> 180) no dia anterior
   const temAlteracaoGlicemica = hgtOntem.some(g => {
@@ -1970,7 +2004,7 @@ const podeConfirmarMeta = (meta) => {
 
             {/* BLOCO C — CONSUMO ORAL */}
             <div className="border border-lime-200 rounded-xl p-4 bg-lime-50">
-              <h5 className="font-bold text-sm text-lime-800 mb-3">📊 Monitoramento do Consumo Oral</h5>
+              <h5 className="font-bold text-sm text-lime-800 mb-3">📊 Monitoramento do Consumo Oral (Dia Anterior)</h5>
               <div className="space-y-3">
                 <div>
                   <div className="flex justify-between items-end mb-1">
@@ -2110,7 +2144,7 @@ const podeConfirmarMeta = (meta) => {
 
             {/* BLOCO F — GLICEMIA DO DIA ANTERIOR */}
             <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
-              <h5 className="font-bold text-sm text-slate-700 mb-3">🩸 Glicemia do dia anterior ({ontemBR})</h5>
+              <h5 className="font-bold text-sm text-slate-700 mb-3">🩸 Glicemias (06h ontem → 06h hoje)</h5>
               {hgtOntem.length === 0 ? (
                 <p className="text-sm text-slate-400 italic">Nenhum registro de HGT no dia anterior.</p>
               ) : (
@@ -2120,7 +2154,7 @@ const podeConfirmarMeta = (meta) => {
                     const anormal = num > 0 && (num < 70 || num > 180);
                     return (
                       <span key={i} className={`text-xs font-bold px-2 py-1 rounded-lg border ${anormal ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-slate-200 text-slate-700'}`}>
-                        {g.hora} — {g.valor} mg/dL {anormal && (num < 70 ? '⬇' : '⬆')}
+                        {g.dt >= hojeVisita ? `${String(g.dt.getDate()).padStart(2, '0')}-${String(g.dt.getMonth() + 1).padStart(2, '0')} ` : ''}{g.hora} — {g.valor} mg/dL {anormal && (num < 70 ? '⬇' : '⬆')}
                       </span>
                     );
                   })}
@@ -2142,7 +2176,7 @@ const podeConfirmarMeta = (meta) => {
 
             {/* BLOCO G — INSULINAS (janela 07h ontem → 06h hoje) */}
             <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
-              <h5 className="font-bold text-sm text-slate-700 mb-3">💉 Insulinas Aplicadas (07h ontem → 06h hoje)</h5>
+              <h5 className="font-bold text-sm text-slate-700 mb-3">💉 Insulinas Aplicadas (06h ontem → 06h hoje)</h5>
               {insulinasJanela.length === 0 ? (
                 <p className="text-sm text-slate-400 italic">Nenhuma insulina registrada na janela.</p>
               ) : (
