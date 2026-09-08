@@ -119,6 +119,7 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
           if (riscoMDR) drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: getDoseManutencao("VANCOMICINA"), infusao: "Lenta" });
         } else {
           drugs.push({ nome: "CEFEPIME", ataque: "2g IV", manutencao: getDoseManutencao("CEFEPIME"), infusao: "Estendida 3 a 4h" });
+          if (riscoMDR) drugs.push({ nome: "VANCOMICINA", ataque: peso ? `${Math.round(peso * 20)}mg IV` : "20-25 mg/kg IV", manutencao: getDoseManutencao("VANCOMICINA"), infusao: "Lenta" });
         }
       }
     } 
@@ -255,7 +256,7 @@ const ModalSugestaoATB = ({ isOpen, onClose, currentPatient, onApply }) => {
           {sugestao && (
             <div className="animate-fade-in">
               <h3 className="text-sm font-bold text-slate-500 uppercase mb-2 flex items-center gap-2">
-                <CheckCircle size={16} className="text-emerald-500" /> Esquema Recomendado (Protocolo Ariquemes)
+                <CheckCircle size={16} className="text-emerald-500" /> Esquema Recomendado (Protocolo UTI Municipal de Ariquemes)
               </h3>
               
               <div className="bg-white border-2 border-emerald-400 rounded-xl overflow-hidden shadow-lg">
