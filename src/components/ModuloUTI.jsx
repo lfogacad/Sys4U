@@ -2420,7 +2420,13 @@ const handleFinalizePhysioAdmission = () => {
 
     // 4. SISTEMA MUSCULOESQUELÉTICO E TEMPO VM
     const mrcScoreInt = parseInt(physioData.mrcScore);
-    const forcaMuscularText = (!isNaN(mrcScoreInt) && mrcScoreInt < 48) ? "Força muscular reduzida" : "Força muscular preservada";
+    let forcaMuscularText;
+    if (physioData.mrcNaoAvaliavel) {
+      forcaMuscularText = "Força muscular não avaliada";
+    } else {
+      forcaMuscularText = (!isNaN(mrcScoreInt) && mrcScoreInt < 48) ? "Força muscular reduzida" : "Força muscular preservada";
+    }
+    const mrcDisplayText = physioData.mrcNaoAvaliavel ? "(MRC: não avaliável)" : `(MRC: ${physioData.mrcScore || "não testado"})`;
 
     let tempoVMText = "";
     if (physioData.suporte === "VM" && physioData.dataIntubacao) {
@@ -2485,7 +2491,7 @@ SISTEMA NERVOSO:
 Paciente ${nivelConsciencia}, ${sedadoText}${drogasSedText}, ${rassGcs}. Pupilas: ${pupilasText}.
  
 SISTEMA MUSCULOESQUELÉTICO:
-${forcaMuscularText} (MRC: ${physioData.mrcScore || "não testado"}). Tônus muscular ${physioData.tonusMuscular?.toLowerCase() || "não avaliado"}. ${physioData.retracoesMusculares ? "Com" : "Sem"} sinais de retrações musculares.
+${forcaMuscularText} ${mrcDisplayText}. Tônus muscular ${physioData.tonusMuscular?.toLowerCase() || "não avaliado"}. ${physioData.retracoesMusculares ? "Com" : "Sem"} sinais de retrações musculares.
 Amplitude de movimento ${physioData.amplitudeMovimento?.toLowerCase() || "não avaliada"} ${physioData.amplitudeMovimento === 'Reduzida' && physioData.amplitudeDescricao ? `em ${physioData.amplitudeDescricao}` : ""}.
 Mobilidade no leito (IMS): ${physioData.ims || "Não avaliada"}.
  

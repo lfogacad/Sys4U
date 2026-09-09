@@ -246,12 +246,25 @@ const PhysioAdmissionModal = ({
                 </label>
                 <input
                   type="number" min="0" max="60"
-                  className="w-full p-2 border border-purple-200 rounded-lg bg-white text-xs text-center font-bold text-purple-900 outline-none focus:ring-2 focus:ring-purple-200"
+                  className="w-full p-2 border border-purple-200 rounded-lg bg-white text-xs text-center font-bold text-purple-900 outline-none focus:ring-2 focus:ring-purple-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                   placeholder="Soma MRC..."
                   value={physioData.mrcScore || ""}
                   onChange={(e) => setPhysioData({ ...physioData, mrcScore: e.target.value })}
-                  disabled={isReadOnly}
+                  disabled={isReadOnly || !!physioData.mrcNaoAvaliavel}
                 />
+                <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!physioData.mrcNaoAvaliavel}
+                    disabled={isReadOnly}
+                    onChange={(e) => {
+                      const marcado = e.target.checked;
+                      setPhysioData({ ...physioData, mrcNaoAvaliavel: marcado, mrcScore: marcado ? "" : physioData.mrcScore });
+                    }}
+                    className="w-4 h-4 accent-purple-600"
+                  />
+                  <span className="text-xs font-semibold text-purple-700">Não avaliável (sedação, não colaboração etc.)</span>
+                </label>
               </div>
               <div>
                 <label className="block text-xs font-bold text-purple-700 mb-1">
@@ -511,7 +524,7 @@ const PhysioAdmissionModal = ({
           {/* BOTÃO DE SALVAR (Inteligente e com trava de segurança) */}
           {!isReadOnly && (() => {
             // Verifica se os campos vitais estão preenchidos
-            const hasMrc = physioData.mrcScore !== "" && physioData.mrcScore !== undefined;
+            const hasMrc = !!physioData.mrcNaoAvaliavel || (physioData.mrcScore !== "" && physioData.mrcScore !== undefined && physioData.mrcScore !== null);
             const hasIms = physioData.ims !== "" && physioData.ims !== undefined;
             const hasSuporte = physioData.suporte !== "" && physioData.suporte !== undefined;
             
