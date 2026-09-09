@@ -573,8 +573,8 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   const metaAtivaEnf = (origem) => metasSugeridas.includes(origem);
 
   // Sugere meta de nutri e marca o botão correspondente como ativo
-  const sugerirMetaNutri = (texto, origem) => {
-    sugerirMeta(texto, origem);
+  const sugerirMetaNutri = (texto, origem, statusInicial = 'aguardando') => {
+    sugerirMeta(texto, origem, statusInicial);
     setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
   };
   const metaAtiva = (origem) => {
@@ -832,8 +832,6 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   const protTotalNaoAtingida = metaProtTotal && !currentPatient?.nutri?.metaProtTotalAtingida;
   const calNaoAtingida = calDiariaNaoAtingida || calTotalNaoAtingida;
   const protNaoAtingida = protDiariaNaoAtingida || protTotalNaoAtingida;
-  // Cargos autorizados a confirmar metas automáticas de aporte (Nutri ou médico)
-  const categoriaPodeConfirmar = ['nutricionista', 'medicoPlantonista', 'medicoRotina'].includes(categoriaAtiva);
 
   useEffect(() => {
     if (calNaoAtingida) sugerirMetaNutri('Aumentar aporte calórico', 'auto_aumentar_calorico');
@@ -1000,11 +998,15 @@ const ORIGENS_NUTRI = [
   'auto_aumentar_proteico'
 ];
 const podeConfirmarMeta = (meta) => {
-  const cargo = userProfile?.cargoLocal;
-  // Médicos (RT, plantonista, nefro) confirmam qualquer meta automática
-  if (cargo === 'RT Médico' || cargo === 'Médico') return true;
+  // Normaliza o cargo: minúsculas e sem acentos, para comparação robusta
+  const normalizar = (v) => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  // Usa o cargo do usuário logado; se não estiver disponível, cai para a aba ativa
+  const cargo = normalizar(userProfile?.cargoLocal) || normalizar(categoriaAtiva);
+
+  // Médicos (RT, plantonista, nefro, rotina) e desenvolvedor confirmam qualquer meta automática
+  if (cargo.includes('medico') || cargo.includes('rt') || cargo.includes('plantonista') || cargo.includes('nefro') || cargo.includes('desenvolvedor')) return true;
   // Nutri confirma APENAS as metas geradas na própria aba
-  if (cargo === 'Nutricionista') {
+  if (cargo.includes('nutri')) {
     return ORIGENS_NUTRI.some(prefixo => (meta.origem || '').startsWith(prefixo));
   }
   return false;
@@ -1830,7 +1832,7 @@ const podeConfirmarMeta = (meta) => {
                   {VIAS_DIETA.filter(v => v !== currentPatient?.nutri?.via).map(v => {
                     const origem = `auto_mudar_via_${v}`;
                     return (
-                      <button key={v} onClick={() => sugerirMetaNutri(`Mudar via da dieta para ${v}`, origem)}
+                      <button key={v} onClick={() => sugerirMetaNutri(`Mudar via da dieta para ${v}`, origem, 'pendente')}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${metaAtiva(origem) ? 'bg-lime-600 text-white border border-lime-600 shadow-sm' : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'}`}>
                         {v}
                       </button>
@@ -1843,7 +1845,7 @@ const podeConfirmarMeta = (meta) => {
                   {VIAS_ADICIONAR.map(v => {
                     const origem = `auto_adicionar_via_${v}`;
                     return (
-                      <button key={v} onClick={() => sugerirMetaNutri(`Adicionar via ${v.toLowerCase()} de alimentação`, origem)}
+                      <button key={v} onClick={() => sugerirMetaNutri(`Adicionar via ${v.toLowerCase()} de alimentação`, origem, 'pendente')}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${metaAtiva(origem) ? 'bg-lime-600 text-white border border-lime-600 shadow-sm' : 'bg-white border border-lime-300 text-lime-700 hover:bg-lime-100'}`}>
                         + {v}
                       </button>
@@ -1961,7 +1963,7 @@ const podeConfirmarMeta = (meta) => {
                           <p className="text-sm font-bold text-lime-800">"Mudar dieta enteral para {enteralSelecionada}"</p>
                           <button
                             onClick={() => {
-                              sugerirMetaNutri(`Mudar dieta enteral para ${enteralSelecionada}`, `auto_mudar_enteral_${enteralSelecionada}`);
+                              sugerirMetaNutri(`Mudar dieta enteral para ${enteralSelecionada}`, `auto_mudar_enteral_${enteralSelecionada}`, 'pendente');
                               setEnteralSelecionada('');
                             }}
                             className="mt-2 px-4 py-2 rounded-lg bg-lime-600 hover:bg-lime-700 text-white font-bold text-sm transition-colors"
@@ -2063,13 +2065,21 @@ const podeConfirmarMeta = (meta) => {
                     🎯 Meta calórica não atingida — meta sugerida: <b>Aumentar aporte calórico</b>{' '}
                     {metaConfirmada(metaAutoCalorica)
                       ? <span className="text-lime-700">(meta confirmada ✓)</span>
-                      : <span>(aguardando confirmação)</span>}
+                      : metaAutoCalorica?.status === 'rejeitada'
+                        ? <span className="text-red-600">(meta rejeitada ✗)</span>
+                        : <span>(aguardando confirmação)</span>}
                   </p>
-                  {categoriaPodeConfirmar && metaAutoCalorica?.status === 'aguardando' && (
-                    <button
-                      onClick={() => confirmarMeta(metaAutoCalorica.id)}
-                      className="mt-2 px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white"
-                    >✓ Confirmar meta</button>
+                  {podeConfirmarMeta(metaAutoCalorica) && metaAutoCalorica?.status === 'aguardando' && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => confirmarMeta(metaAutoCalorica.id)}
+                        className="px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white"
+                      >✓ Confirmar meta</button>
+                      <button
+                        onClick={() => rejeitarMeta(metaAutoCalorica.id, '')}
+                        className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500 hover:bg-red-600 text-white"
+                      >✗ Rejeitar</button>
+                    </div>
                   )}
                 </div>
               )}
@@ -2079,13 +2089,21 @@ const podeConfirmarMeta = (meta) => {
                     🎯 Meta proteica não atingida — meta sugerida: <b>Aumentar aporte proteico</b>{' '}
                     {metaConfirmada(metaAutoProteica)
                       ? <span className="text-lime-700">(meta confirmada ✓)</span>
-                      : <span>(aguardando confirmação)</span>}
+                      : metaAutoProteica?.status === 'rejeitada'
+                        ? <span className="text-red-600">(meta rejeitada ✗)</span>
+                        : <span>(aguardando confirmação)</span>}
                   </p>
-                  {categoriaPodeConfirmar && metaAutoProteica?.status === 'aguardando' && (
-                    <button
-                      onClick={() => confirmarMeta(metaAutoProteica.id)}
-                      className="mt-2 px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white"
-                    >✓ Confirmar meta</button>
+                  {podeConfirmarMeta(metaAutoProteica) && metaAutoProteica?.status === 'aguardando' && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => confirmarMeta(metaAutoProteica.id)}
+                        className="px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white"
+                      >✓ Confirmar meta</button>
+                      <button
+                        onClick={() => rejeitarMeta(metaAutoProteica.id, '')}
+                        className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500 hover:bg-red-600 text-white"
+                      >✗ Rejeitar</button>
+                    </div>
                   )}
                 </div>
               )}
@@ -2110,7 +2128,7 @@ const podeConfirmarMeta = (meta) => {
                             className="flex-1 min-w-[120px] p-2 border border-lime-300 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-lime-300 bg-white"
                           />
                           <button
-                            onClick={() => { if (novaVazaoEnteral) { sugerirMetaNutri(`Ajustar vazão enteral para ${novaVazaoEnteral} ml/h`, 'auto_ajustar_vazao_enteral'); setNovaVazaoEnteral(''); } }}
+                            onClick={() => { if (novaVazaoEnteral) { sugerirMetaNutri(`Ajustar vazão enteral para ${novaVazaoEnteral} ml/h`, 'auto_ajustar_vazao_enteral', 'pendente'); setNovaVazaoEnteral(''); } }}
                             disabled={!novaVazaoEnteral}
                             className="px-3 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
                           >Programar</button>
@@ -2129,7 +2147,7 @@ const podeConfirmarMeta = (meta) => {
                             className="flex-1 min-w-[120px] p-2 border border-lime-300 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-lime-300 bg-white"
                           />
                           <button
-                            onClick={() => { if (novaVazaoParenteral) { sugerirMetaNutri(`Ajustar vazão parenteral para ${novaVazaoParenteral} ml/h`, 'auto_ajustar_vazao_parenteral'); setNovaVazaoParenteral(''); } }}
+                            onClick={() => { if (novaVazaoParenteral) { sugerirMetaNutri(`Ajustar vazão parenteral para ${novaVazaoParenteral} ml/h`, 'auto_ajustar_vazao_parenteral', 'pendente'); setNovaVazaoParenteral(''); } }}
                             disabled={!novaVazaoParenteral}
                             className="px-3 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
                           >Programar</button>
@@ -2152,7 +2170,7 @@ const podeConfirmarMeta = (meta) => {
                         />
                       </div>
                       <button
-                        onClick={() => { if (novaVazaoEnteral) { sugerirMetaNutri(`Ajustar vazão enteral para ${novaVazaoEnteral} ml/h`, 'auto_ajustar_vazao_enteral'); setNovaVazaoEnteral(''); } }}
+                        onClick={() => { if (novaVazaoEnteral) { sugerirMetaNutri(`Ajustar vazão enteral para ${novaVazaoEnteral} ml/h`, 'auto_ajustar_vazao_enteral', 'pendente'); setNovaVazaoEnteral(''); } }}
                         disabled={!novaVazaoEnteral}
                         className="px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
                       >Programar vazão</button>
@@ -2173,7 +2191,7 @@ const podeConfirmarMeta = (meta) => {
                         />
                       </div>
                       <button
-                        onClick={() => { if (novaVazaoParenteral) { sugerirMetaNutri(`Ajustar vazão parenteral para ${novaVazaoParenteral} ml/h`, 'auto_ajustar_vazao_parenteral'); setNovaVazaoParenteral(''); } }}
+                        onClick={() => { if (novaVazaoParenteral) { sugerirMetaNutri(`Ajustar vazão parenteral para ${novaVazaoParenteral} ml/h`, 'auto_ajustar_vazao_parenteral', 'pendente'); setNovaVazaoParenteral(''); } }}
                         disabled={!novaVazaoParenteral}
                         className="px-4 py-2 rounded-lg text-xs font-bold bg-lime-600 hover:bg-lime-700 text-white disabled:opacity-40 transition-colors"
                       >Programar vazão</button>
@@ -2208,9 +2226,9 @@ const podeConfirmarMeta = (meta) => {
                     ⚠️ Registro de hipo ou hiperglicemia no dia anterior — considerar controle glicêmico
                   </p>
                   <button
-                    onClick={() => sugerirMetaNutri('Controle glicêmico', 'auto_controle_glicemico')}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtiva('auto_controle_glicemico') ? 'bg-amber-600 text-white border border-amber-600' : 'bg-amber-600 hover:bg-amber-700 text-white'}`}
-                  >{metaAtiva('auto_controle_glicemico') ? '✓ Meta: Controle glicêmico' : '✓ Controle glicêmico'}</button>
+                    onClick={() => sugerirMetaNutri('Controle glicêmico', 'auto_controle_glicemico', 'pendente')}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtiva('auto_controle_glicemico') ? 'bg-white text-amber-800 border-2 border-amber-600 shadow-sm' : 'bg-amber-600 hover:bg-amber-700 text-white'}`}
+                  >{metaAtiva('auto_controle_glicemico') ? '✓ Meta: Controle glicêmico (ativa)' : '✓ Controle glicêmico'}</button>
                 </div>
               )}
             </div>
@@ -2502,13 +2520,15 @@ const BadgeStatusMeta = ({ status }) => {
     aguardando: 'bg-amber-100 text-amber-700',
     pendente: 'bg-blue-100 text-blue-700',
     realizado: 'bg-green-100 text-green-700',
-    cancelado: 'bg-red-100 text-red-700'
+    cancelado: 'bg-red-100 text-red-700',
+    rejeitada: 'bg-red-100 text-red-700'
   };
   const labels = {
     aguardando: 'Aguardando confirmação',
     pendente: 'Pendente',
     realizado: 'Realizado',
-    cancelado: 'Cancelado'
+    cancelado: 'Cancelado',
+    rejeitada: 'Rejeitada'
   };
   return <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${cores[status] || cores.pendente}`}>{labels[status] || status}</span>;
 };

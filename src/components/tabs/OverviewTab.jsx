@@ -461,6 +461,7 @@ const OverviewTab = ({
       ) : (
         <VisitaMultiTab
           currentPatient={currentPatient}
+          key={currentPatient?.id}
           userProfile={userProfile}
           save={save}
           calculateDiurese12hMlKgH={calculateDiurese12hMlKgH}
