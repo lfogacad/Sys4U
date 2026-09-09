@@ -3993,10 +3993,18 @@ const generateNursingAI_Evolution = async () => {
     // ==============================================================
     const mrcPlano = phy.mrcScore_plano || (typeof phy.mrcScore === 'object' ? (phy.mrcScore[hoje] || "") : phy.mrcScore || "");
     const imsPlano = phy.ims || (typeof phy.icuMobilityScale === 'object' ? (phy.icuMobilityScale[hoje] || "") : phy.icuMobilityScale || "");
-    
+    const mrcNaoAvaliavel = !!phy.mrcNaoAvaliavel;
     const mrcVal = parseInt(mrcPlano);
-    const forcaMuscular = (!isNaN(mrcVal) && mrcVal < 48) ? "Força muscular reduzida" : "Força muscular preservada";
-    const mrcDisplay = mrcPlano ? ` (MRC: ${mrcPlano})` : "";
+    let forcaMuscular;
+    let mrcDisplay;
+    if (mrcNaoAvaliavel) {
+      // MRC não avaliável: não classificar força como preservada/reduzida
+      forcaMuscular = "Força muscular não avaliada";
+      mrcDisplay = " (MRC: não avaliável)";
+    } else {
+      forcaMuscular = (!isNaN(mrcVal) && mrcVal < 48) ? "Força muscular reduzida" : "Força muscular preservada";
+      mrcDisplay = mrcPlano ? ` (MRC: ${mrcPlano})` : "";
+    }
 
     const imsVal = parseInt(imsPlano) || 0;
     let funcText = "Funcionalidade não avaliada.";
