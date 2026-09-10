@@ -416,11 +416,14 @@ const formatarDataBR = (dataStr) => {
   if (partes.length === 3) return `${partes[2]}-${partes[1]}-${partes[0]}`;
   return dataStr;
 };
-const sugerirMetaMedico = (texto, origem) => {
-  sugerirMeta(texto, origem);
+const sugerirMetaMedico = (texto, origem, statusInicial = 'aguardando') => {
+  sugerirMeta(texto, origem, statusInicial);
   setMetasSugeridas(prev => prev.includes(origem) ? prev : [...prev, origem]);
 };
-const metaAtivaMed = (origem) => metasSugeridas.includes(origem);
+const metaAtivaMed = (origem) => {
+  const meta = metas.find(m => m.origem === origem);
+  return !!meta && (meta.status === 'pendente' || meta.status === 'realizado');
+};
 
 // ================= MÉDICO PLANTONISTA — CÁLCULOS =================
 // Sedação
@@ -839,6 +842,14 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calNaoAtingida, protNaoAtingida]);
 
+  // Sugere "Corrigir Assincronias" (aguardando confirmação) quando o fisio registra sincronismo Ruim
+  useEffect(() => {
+    if (visita.fisioterapeutaPlantonista?.sincronismo === 'Ruim') {
+      sugerirMeta('Corrigir Assincronias', 'auto_corrigir_assincronias');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visita.fisioterapeutaPlantonista?.sincronismo]);
+
   // ---------- FISIO: GASOMETRIA DO DIA ANTERIOR (todas por horário) ----------
   const ontemGasoKey = `${String(ontem.getDate()).padStart(2, '0')}/${String(ontem.getMonth() + 1).padStart(2, '0')}/${ontem.getFullYear()}`;
   const gasometriasOntem = Object.entries(currentPatient?.gasometriaHistory || {})
@@ -865,8 +876,12 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   // ---------- FISIO: GERA META DE TRE SE TODOS OS CRITÉRIOS OK ----------
   const treCriterios = visita.fisioterapeutaPlantonista?.tre || {};
   const treTodosOk = CRITERIOS_TRE.every(c => treCriterios[c.id] === true);
+
+  // Sugere "Tentativa de TRE" (aguardando confirmação) quando todos os critérios estão presentes
   useEffect(() => {
-    if (treTodosOk) sugerirMeta('Tentativa de TRE', 'auto_tre_criterios');
+    if (treTodosOk) {
+      sugerirMeta('Tentativa de TRE', 'auto_tre');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treTodosOk]);
 
@@ -889,6 +904,11 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   // Localiza as metas automáticas de aporte na lista real (para ler status e id)
   const metaAutoCalorica = metas.find(m => m.origem === 'auto_aumentar_calorico');
   const metaAutoProteica = metas.find(m => m.origem === 'auto_aumentar_proteico');
+  const metaAutoAssincronia = metas.find(m => m.origem === 'auto_corrigir_assincronias');
+  const metaAutoTre = metas.find(m => m.origem === 'auto_tre');
+  const metaJaMantidaHoje = (m) => metas.some(x =>
+    x.descricao === m.descricao && (x.status === 'pendente' || x.status === 'aguardando')
+  );  
   const metaConfirmada = (m) => !!m && (m.status === 'pendente' || m.status === 'realizado');  
 
 
@@ -934,6 +954,14 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     }]);
   };
 
+  const manterMetaOntem = (m) => {
+    const jaExisteHoje = metas.some(x =>
+      x.descricao === m.descricao && (x.status === 'pendente' || x.status === 'aguardando')
+    );
+    if (jaExisteHoje) return;
+    adicionarMetaManual('', m.descricao);
+  };
+
   const confirmarMeta = (id) => {
     atualizarMetas(lista => lista.map(m =>
       m.id === id ? {
@@ -975,6 +1003,22 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     ));
   };
 
+  const cancelarMetaOntem = (id, justificativa) => {
+    if (!save || !currentPatient) return;
+    const metasDeOntem = currentPatient?.visita?.[ontemISO]?.metas || [];
+    const novasMetasOntem = metasDeOntem.map(m =>
+      m.id === id ? { ...m, status: 'cancelado', dataCancelamento: dataISO, canceladoPor: categoriaAtiva, justificativaCancelamento: justificativa || 'Cancelada sem justificativa' } : m
+    );
+    const pacienteAtualizado = {
+      ...currentPatient,
+      visita: {
+        ...(currentPatient.visita || {}),
+        [ontemISO]: { ...(currentPatient.visita?.[ontemISO] || {}), metas: novasMetasOntem }
+      }
+    };
+    save(pacienteAtualizado, `Visita Multi ${ontemBR}`);
+  };
+
   // Gera as sugestões automáticas UMA vez ao montar (dedup por descrição/origem = idempotente)
   useEffect(() => {
     if (jaGeradasRef.current) return;
@@ -997,20 +1041,56 @@ const ORIGENS_NUTRI = [
   'auto_aumentar_calorico',
   'auto_aumentar_proteico'
 ];
+
+// Origens de metas sugeridas pela Fisioterapia (para permissão de confirmação)
+const ORIGENS_FISIO = [
+  'auto_corrigir_assincronias',
+  'auto_tre'
+];
+
+// Origens das metas sugeridas pela Enfermagem (manipuláveis só por enfermeiro/médico/desenvolvedor)
+const ORIGENS_ENFERMAGEM = [
+  'auto_sacar_cvc',
+  'auto_sacar_shiley',
+  'auto_sacar_svd',
+  'auto_curativo',
+  'auto_higiene_oral',
+  'auto_higiene_intima'
+];
+
+  const cargo = (
+    (typeof cargoLocal !== 'undefined' && cargoLocal ? cargoLocal : '') + ' ' + (categoriaAtiva || '')
+  ).toLowerCase();
+
 const podeConfirmarMeta = (meta) => {
   // Normaliza o cargo: minúsculas e sem acentos, para comparação robusta
   const normalizar = (v) => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  // Usa o cargo do usuário logado; se não estiver disponível, cai para a aba ativa
-  const cargo = normalizar(userProfile?.cargoLocal) || normalizar(categoriaAtiva);
-
   // Médicos (RT, plantonista, nefro, rotina) e desenvolvedor confirmam qualquer meta automática
   if (cargo.includes('medico') || cargo.includes('rt') || cargo.includes('plantonista') || cargo.includes('nefro') || cargo.includes('desenvolvedor')) return true;
   // Nutri confirma APENAS as metas geradas na própria aba
   if (cargo.includes('nutri')) {
     return ORIGENS_NUTRI.some(prefixo => (meta.origem || '').startsWith(prefixo));
   }
+  // Fisio confirma APENAS as metas geradas na própria aba
+  if (cargo.includes('fisio')) {
+    return ORIGENS_FISIO.some(prefixo => (meta.origem || '').startsWith(prefixo));
+  }
   return false;
 };
+
+  const podeManipularMeta = (meta) => {
+    const origem = meta.origem || '';
+    if (origem === 'manual') return true;
+    if (cargo.includes('medic') || cargo.includes('rt') || cargo.includes('desenvolvedor') || cargo.includes('dev')) return true;
+    if (ORIGENS_ENFERMAGEM.some(p => origem.startsWith(p))) {
+      return cargo.includes('enferm');
+    }
+    return true;
+  };
+
+  const podeManipularEnfermagem = () =>
+    cargo.includes('enferm') || cargo.includes('medic') || cargo.includes('rt') ||
+    cargo.includes('desenvolvedor') || cargo.includes('dev');
 
   // ============================================================
   return (
@@ -1245,7 +1325,7 @@ const podeConfirmarMeta = (meta) => {
                   </div>
                   {Object.values(checklistSedacao).filter(Boolean).length === CHECKLIST_SEDACAO.length && (
                     <button
-                      onClick={() => sugerirMetaMedico('Desmame de sedação', 'auto_desmame_sedacao')}
+                      onClick={() => sugerirMetaMedico('Desmame de sedação', 'auto_desmame_sedacao', 'pendente')}
                       className="mt-3 px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
                     >{metaAtivaMed('auto_desmame_sedacao') ? '✓ Meta: Desmame de sedação' : '✓ Desmame de sedação'}</button>
                   )}
@@ -1457,7 +1537,7 @@ const podeConfirmarMeta = (meta) => {
                   {(() => {
                     const todosNecessarios = CHECKLIST_CVC.necessarios.every(i => checklistCVC[i.id]);
                     const algumSuficiente = CHECKLIST_CVC.suficientes.some(i => checklistCVC[i.id]);
-                    return (todosNecessarios || algumSuficiente) && (
+                    return (todosNecessarios || algumSuficiente) && podeManipularEnfermagem() && (
                       <button
                         onClick={() => sugerirMetaEnfermeiro('Sacar CVC', 'auto_sacar_cvc')}
                         className="mt-3 px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white transition-colors"
@@ -1483,7 +1563,7 @@ const podeConfirmarMeta = (meta) => {
                     />
                     <span>Sem necessidade de TRS (Terapia Renal Substitutiva)</span>
                   </label>
-                  {checklistShiley && (
+                  {checklistShiley && podeManipularEnfermagem() && (
                     <button
                       onClick={() => sugerirMetaEnfermeiro('Sacar Shiley (cateter de HD)', 'auto_sacar_shiley')}
                       className="mt-3 px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white transition-colors"
@@ -1568,7 +1648,7 @@ const podeConfirmarMeta = (meta) => {
                         <div className="flex flex-wrap gap-2">
                           {['Carvão ativado', 'Alginato', 'Hidrocoloide', 'Filme transparente', 'Espuma', 'Gaze úmida', 'Colagenase', 'Papaina'].map(cur => {
                             const ativo = curativoSelecionado[lesao.id] === cur;
-                            return (
+                                     return podeManipularEnfermagem() && (
                               <button
                                 key={cur}
                                 onClick={() => {
@@ -1632,11 +1712,12 @@ const podeConfirmarMeta = (meta) => {
               {qtdHigieneOral < 3 && (
                 <div className="mt-3 p-3 bg-white border border-sky-200 rounded-lg">
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Higiene oral abaixo da meta (3x/dia)</p>
+                  {podeManipularEnfermagem() && (
                   <button
                     onClick={() => sugerirMetaEnfermeiro('Realizar Higiene Oral 3x/d', 'auto_higiene_oral')}
                     className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaEnf('auto_higiene_oral') ? 'bg-sky-600 text-white border border-sky-600' : 'bg-sky-600 hover:bg-sky-700 text-white'}`}
                   >{metaAtivaEnf('auto_higiene_oral') ? '✓ Meta: Realizar Higiene Oral 3x/d' : '✓ Realizar Higiene Oral 3x/d'}</button>
-                </div>
+                  )}</div>
               )}
             </div>
 
@@ -1662,10 +1743,12 @@ const podeConfirmarMeta = (meta) => {
               {qtdHigieneIntima < 3 && (
                 <div className="mt-3 p-3 bg-white border border-indigo-200 rounded-lg">
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Higiene íntima abaixo da meta (3x/dia)</p>
-                  <button
-                    onClick={() => sugerirMetaEnfermeiro('Realizar Higiene Íntima 3x/d', 'auto_higiene_intima')}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaEnf('auto_higiene_intima') ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
-                  >{metaAtivaEnf('auto_higiene_intima') ? '✓ Meta: Realizar Higiene Íntima 3x/d' : '✓ Realizar Higiene Íntima 3x/d'}</button>
+                  {podeManipularEnfermagem() && (
+                    <button
+                      onClick={() => sugerirMetaEnfermeiro('Realizar Higiene Íntima 3x/d', 'auto_higiene_intima')}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtivaEnf('auto_higiene_intima') ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                    >{metaAtivaEnf('auto_higiene_intima') ? '✓ Meta: Realizar Higiene Íntima 3x/d' : '✓ Realizar Higiene Íntima 3x/d'}</button>
+                  )}
                 </div>
               )}
             </div>
@@ -1710,8 +1793,34 @@ const podeConfirmarMeta = (meta) => {
                         : 'bg-white border border-slate-300 text-slate-600 hover:bg-cyan-100'
                     }`}
                   >{op}</button>
-                ))}
+              ))}
+            </div>
+
+            {/* Meta sugerida: Corrigir Assincronias */}
+            {visita.fisioterapeutaPlantonista?.sincronismo === 'Ruim' && (
+              <div className="w-full mt-3 text-xs font-bold text-cyan-800 bg-cyan-100 border border-cyan-300 rounded-lg px-3 py-2">
+                <p>
+                  ⚠️ Sincronismo ruim detectado — meta sugerida: <b>Corrigir Assincronias</b>{' '}
+                  {metaConfirmada(metaAutoAssincronia)
+                    ? <span className="text-cyan-700">(meta confirmada ✓)</span>
+                    : metaAutoAssincronia?.status === 'rejeitada'
+                      ? <span className="text-red-600">(meta rejeitada ✗)</span>
+                      : <span>(aguardando confirmação)</span>}
+                </p>
+                {podeConfirmarMeta(metaAutoAssincronia) && metaAutoAssincronia?.status === 'aguardando' && (
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => confirmarMeta(metaAutoAssincronia.id)}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-cyan-600 hover:bg-cyan-700 text-white"
+                    >✓ Confirmar meta</button>
+                    <button
+                      onClick={() => rejeitarMeta(metaAutoAssincronia.id, '')}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500 hover:bg-red-600 text-white"
+                    >✗ Rejeitar</button>
+                  </div>
+                )}
               </div>
+            )}
             </div>
 
             {/* BLOCO B — CRITÉRIOS PARA TRE (movido do Médico RT) */}
@@ -1724,9 +1833,28 @@ const podeConfirmarMeta = (meta) => {
               cor="indigo"
             />
             {treTodosOk && (
-              <p className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                🎯 Todos os critérios de TRE presentes — meta sugerida: <b>Tentativa de TRE</b> (aguardando confirmação médica)
-              </p>
+              <div className="mt-3 text-xs font-bold text-indigo-800 bg-indigo-100 border border-indigo-300 rounded-lg px-3 py-2">
+                <p>
+                  🎯 Todos os critérios de TRE presentes — meta sugerida: <b>Tentativa de TRE</b>{' '}
+                  {metaConfirmada(metaAutoTre)
+                    ? <span className="text-indigo-700">(meta confirmada ✓)</span>
+                    : metaAutoTre?.status === 'rejeitada'
+                      ? <span className="text-red-600">(meta rejeitada ✗)</span>
+                      : <span>(aguardando confirmação)</span>}
+                </p>
+                {podeConfirmarMeta(metaAutoTre) && metaAutoTre?.status === 'aguardando' && (
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => confirmarMeta(metaAutoTre.id)}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+                    >✓ Confirmar meta</button>
+                    <button
+                      onClick={() => rejeitarMeta(metaAutoTre.id, '')}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500 hover:bg-red-600 text-white"
+                    >✗ Rejeitar</button>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* BLOCO C — SECREÇÃO E TOSSE (auto de physio, sem meta) */}
@@ -2227,7 +2355,7 @@ const podeConfirmarMeta = (meta) => {
                   </p>
                   <button
                     onClick={() => sugerirMetaNutri('Controle glicêmico', 'auto_controle_glicemico', 'pendente')}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtiva('auto_controle_glicemico') ? 'bg-white text-amber-800 border-2 border-amber-600 shadow-sm' : 'bg-amber-600 hover:bg-amber-700 text-white'}`}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${metaAtiva('auto_controle_glicemico') ? 'bg-slate-700 text-white border-2 border-slate-700 shadow' : 'bg-white text-slate-600 border-2 border-slate-300 hover:bg-slate-100'}`}
                   >{metaAtiva('auto_controle_glicemico') ? '✓ Meta: Controle glicêmico (ativa)' : '✓ Controle glicêmico'}</button>
                 </div>
               )}
@@ -2353,7 +2481,7 @@ const podeConfirmarMeta = (meta) => {
       <div className="bg-white border border-slate-200 rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wider">
-            🎯 Metas do Dia ({metasAtivas.length} em aberto)
+            🎯 Metas do Dia
           </h4>
         </div>
 
@@ -2363,11 +2491,28 @@ const podeConfirmarMeta = (meta) => {
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Metas de Ontem ({ontemBR})</p>
             {cumpridasOntem.length > 0 && <p className="text-xs text-green-700 font-semibold mb-1">✓ Cumpridas: {cumpridasOntem.length}</p>}
             {naoCumpridasOntem.map(m => (
-              <div key={m.id} className="flex items-start gap-2 py-1">
-                <span className="text-red-600 font-bold text-sm">✗</span>
-                <div className="text-sm">
-                  <span className="font-semibold text-slate-700">{m.descricao}</span>
-                  <span className="text-red-600 font-bold text-xs ml-2">NÃO CUMPRIDA</span>
+              <div key={m.id} className="flex items-center justify-between gap-2 py-1 flex-wrap">
+                <div className="flex items-start gap-2">
+                  <span className="text-red-600 font-bold text-sm">✗</span>
+                  <div className="text-sm">
+                    <span className="font-semibold text-slate-700">{m.descricao}</span>
+                    <span className="text-red-600 font-bold text-xs ml-2">NÃO CUMPRIDA</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => manterMetaOntem(m)}
+                    disabled={metaJaMantidaHoje(m)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+                      metaJaMantidaHoje(m)
+                        ? 'bg-green-100 text-green-700 border border-green-300 cursor-default'
+                        : 'bg-green-600 hover:bg-green-700 text-white'
+                    }`}
+                  >{metaJaMantidaHoje(m) ? '✓ Mantida hoje' : '✓ Manter'}</button>
+                  <button
+                    onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'cancelar_ontem', exigeJustificativa: true })}
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors"
+                  >✗ Cancelar</button>
                 </div>
               </div>
             ))}
@@ -2438,7 +2583,7 @@ const podeConfirmarMeta = (meta) => {
                       }} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Rejeitar</button>
                     </>
                   )}
-                  {m.status === 'pendente' && (
+                  {m.status === 'pendente' && podeManipularMeta(m) && (
                     <>
                       <button onClick={() => marcarRealizado(m.id)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors">✓ Marcar realizado</button>
                       <button onClick={() => setModalCancelamento({ id: m.id, justificativa: '', acao: 'cancelar', exigeJustificativa: true })} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">✗ Cancelar</button>
@@ -2470,6 +2615,7 @@ const podeConfirmarMeta = (meta) => {
               <button
                 onClick={() => {
                   if (modalCancelamento.acao === 'rejeitar') rejeitarMeta(modalCancelamento.id, modalCancelamento.justificativa);
+                  else if (modalCancelamento.acao === 'cancelar_ontem') cancelarMetaOntem(modalCancelamento.id, modalCancelamento.justificativa);
                   else cancelarMeta(modalCancelamento.id, modalCancelamento.justificativa);
                   setModalCancelamento(null);
                 }}

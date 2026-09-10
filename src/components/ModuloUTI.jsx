@@ -89,6 +89,24 @@ function NurseCap(props) {
   );
 }
 
+// Origens das metas sugeridas por Nutrição e Fisioterapia (mesma lógica da VisitaMultiTab)
+const ORIGENS_NUTRI = [
+  'auto_aumentar_calorico',
+  'auto_aumentar_proteico'
+];
+const ORIGENS_FISIO = [
+  'auto_corrigir_assincronias',
+  'auto_tre'
+];
+const ORIGENS_ENFERMAGEM = [
+  'auto_sacar_cvc',
+  'auto_sacar_shiley',
+  'auto_sacar_svd',
+  'auto_curativo',
+  'auto_higiene_oral',
+  'auto_higiene_intima'
+];
+
 // Esta função garante que, se o banco de dados não tiver algum campo (ex: exames novos), 
 // o sistema use o valor padrão e não trave a tela.
 const mergePatientData = (base, incoming) => {
@@ -1179,6 +1197,22 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         marcadoEm: new Date().toISOString()
       } : m
     ));
+  };
+
+  const podeConfirmarMeta = (meta) => {
+    if ((meta.origem || '') === 'manual') return true;
+    const perfil = (userProfile?.perfil || '').toLowerCase();
+    if (/\bmedic/.test(perfil) || /\brt\b/.test(perfil) || /\bdesenvolvedor/.test(perfil) || /\bdev\b/.test(perfil)) return true;
+    if (/\benferm/.test(perfil)) {
+      return ORIGENS_ENFERMAGEM.some(prefixo => (meta.origem || '').startsWith(prefixo));
+    }
+    if (/\bnutri/.test(perfil)) {
+      return ORIGENS_NUTRI.some(prefixo => (meta.origem || '').startsWith(prefixo));
+    }
+    if (/\bfisio/.test(perfil)) {
+      return ORIGENS_FISIO.some(prefixo => (meta.origem || '').startsWith(prefixo));
+    }
+    return false;
   };
 
   const updateNested = (categoria, campo, valor) => {
@@ -6340,10 +6374,9 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 <p className="text-sm text-slate-400 italic">Nenhum paciente internado.</p>
               ) : (
                 pacientesInternados.map((p, idx) => {
-                  // Metas do dia como HISTÓRICO — todas, exceto as rejeitadas
                   const metasHoje = (p.visita?.[dataISO]?.metas || [])
-                    .filter(m => m.status !== 'rejeitada');
-                  const pendentes = metasHoje.filter(m => m.status === 'pendente' || m.status === 'aguardando');
+                    .filter(m => m.status === 'pendente' || m.status === 'realizado' || m.status === 'cancelado');
+                  const pendentes = metasHoje.filter(m => m.status === 'pendente');
                   const realizadas = metasHoje.filter(m => m.status === 'realizado');
                   const canceladas = metasHoje.filter(m => m.status === 'cancelado' || m.status === 'rejeitada');
 
@@ -6380,8 +6413,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                                   <div className="flex items-center gap-2 mt-0.5">
                                     <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                                       meta.status === 'realizado' ? 'bg-green-100 text-green-700'
-                                      : meta.status === 'cancelado' || meta.status === 'rejeitada' ? 'bg-red-100 text-red-600'
-                                      : meta.status === 'aguardando' ? 'bg-blue-100 text-blue-700'
+                                      : meta.status === 'cancelado' ? 'bg-red-100 text-red-600'
                                       : 'bg-amber-100 text-amber-700'
                                     }`}>
                                       {meta.status}
@@ -6397,7 +6429,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
 
                                 {/* AÇÕES: só MARCAR REALIZADO e CANCELAR */}
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  {(meta.status === 'pendente' || meta.status === 'aguardando') && (
+                                  {meta.status === 'pendente' && podeConfirmarMeta(meta) && (
                                     <button
                                       onClick={() => marcarRealizadoPaciente(idx, meta.id)}
                                       className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors"
@@ -6406,7 +6438,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                                       Realizada
                                     </button>
                                   )}
-                                  {(meta.status === 'pendente' || meta.status === 'aguardando') && (
+                                  {meta.status === 'pendente' && podeConfirmarMeta(meta) && (
                                     <button
                                       onClick={() => {
                                         setCancelandoMeta({ idx, id: meta.id });
