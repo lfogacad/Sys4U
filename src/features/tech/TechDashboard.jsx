@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Bone, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, HeartPulse,
          Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar, Coffee, ArrowRight, CheckCircle2,
          ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
@@ -43,6 +43,11 @@ const TechDashboard = ({
   const [showCVCModal, setShowCVCModal] = useState(false);
   const [showSVDModal, setShowSVDModal] = useState(false);
   const [listaProfissionais, setListaProfissionais] = useState([]);
+  // Modal de HGT < 80 — correção com GH50%
+  const [modalHGT, setModalHGT] = useState(null);        // { hora, valor, dataISO, dataBR }
+  const [correcaoGH50, setCorrecaoGH50] = useState(null); // 'S' | 'N'
+  const [salvandoHGT, setSalvandoHGT] = useState(false);
+  const ultimoHGTChecked = useRef(''); // evita reabrir o modal para a mesma célula no mesmo valor
 
   const canAccessRegistros = ['Téc. em Enf.', 'Desenvolvedor'].includes(userRole);
   
@@ -712,6 +717,64 @@ const salvarFralda = () => {
         updateBH(hour, category, item, ""); 
         handleBlurSave(`Segurança BH: O sistema bloqueou um valor irreal (${val}) no campo ${item} às ${hour}h`);
       }
+    }
+  };
+
+  // ── HGT < 80: abre o modal de correção com GH50% ──────────────────────────
+  const abrirModalHGTBaixo = (hora, valor) => {
+    const dataEvento = displayedBH?.date || selectedDate || getManausDateStr();
+    const chave = `${dataEvento}_${hora}_${valor}`;
+    if (ultimoHGTChecked.current === chave) return; // já perguntou para esta célula/valor
+    ultimoHGTChecked.current = chave;
+    setModalHGT({
+      hora,
+      valor: safeNumber(valor),
+      data: dataEvento,                    // data do evento (formato do app)
+      dataBR: formatDateDDMM(dataEvento)   // exibição DD-MM-AAAA
+    });
+    setCorrecaoGH50(null);
+  };
+
+  // ── Grava o evento em enfermagem.historico_hgt ────────────────────────────
+  const confirmarRegistroHGT = async () => {
+    if (!correcaoGH50 || !modalHGT) return;
+    setSalvandoHGT(true);
+    try {
+      const novoRegistro = {
+        id: `hgt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        tipo: 'hgt_baixo',
+        valor: modalHGT.valor,
+        hora: modalHGT.hora,
+        data: modalHGT.data,                        // data do evento
+        dataBR: modalHGT.dataBR,                    // DD-MM-AAAA
+        corrigidoGH50: correcaoGH50,                // 'S' | 'N'
+        registradoPor: userRole || 'Não identificado',
+        criadoEm: new Date().toISOString()
+      };
+
+      const pacienteAtualizado = {
+        ...currentPatient,
+        enfermagem: {
+          ...(currentPatient.enfermagem || {}),
+          historico_hgt: [
+            ...(currentPatient.enfermagem?.historico_hgt || []),
+            novoRegistro
+          ]
+        }
+      };
+
+      await save(pacienteAtualizado, `HGT < 80 (${modalHGT.valor} mg/dL) em ${modalHGT.dataBR}`);
+
+      setPatients(prev => {
+        const copia = [...prev];
+        if (copia[activeTab]) copia[activeTab] = pacienteAtualizado;
+        return copia;
+      });
+    } catch (err) {
+      console.error('Erro ao registrar HGT < 80:', err);
+    } finally {
+      setSalvandoHGT(false);
+      setModalHGT(null);
     }
   };
 
@@ -1623,7 +1686,7 @@ const salvarFralda = () => {
                       if (param === "FC (bpm)" && (numVal > 100 || numVal < 60)) isRed = true;
                       if (param === "PAM" && numVal < 65) isRed = true;
                       if (param === "SpO2 (%)" && numVal < 90) isRed = true;
-                      if (param === "HGT (mg/dL)" && (numVal > 180 || numVal < 70)) isRed = true;
+                      if (param === "HGT (mg/dL)" && (numVal > 180 || numVal < 80)) isRed = true;
                     }
                     return (
                       <td key={h} className="p-0 border-r border-slate-100 print:border-black print:overflow-visible">
@@ -1634,7 +1697,13 @@ const salvarFralda = () => {
                           value={val} 
                           onKeyDown={(e) => handleGridKeyDown(e, "vitals", rowIndex, colIndex, currentVitals.length - 1, numCols)}
                           onChange={(e) => handleValidatedChange(h, "vitals", param, e)} 
-                          onBlur={(e) => checkMinLimitOnBlur(h, "vitals", param, e)} 
+                          onBlur={(e) => {
+                            checkMinLimitOnBlur(h, "vitals", param, e);
+                            if (param === "HGT (mg/dL)" && e.target.value !== "") {
+                              const v = safeNumber(e.target.value);
+                              if (v > 0 && v < 80) abrirModalHGTBaixo(h, e.target.value);
+                            }
+                          }}
                         />
                         <span className={`hidden print:block text-center text-[8px] w-full align-middle print:text-black ${isRed ? "font-bold" : ""}`}>
                           {val}
@@ -2988,6 +3057,66 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL HGT < 80 — CORREÇÃO COM GH50% */}
+      {modalHGT && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><TestTube size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">HGT &lt; 80</h2>
+              </div>
+              <button onClick={() => setModalHGT(null)} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-6">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Glicemia Registrada</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <span className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-red-600 font-black text-center text-2xl">{modalHGT.valor}</span>
+                  <span className="text-xl font-bold text-slate-400">mg/dL</span>
+                </div>
+                <p className="text-center text-xs text-slate-500 mt-2 font-medium">
+                  Horário: <b className="text-slate-700">{modalHGT.hora}</b> · Data: <b className="text-slate-700">{modalHGT.dataBR}</b>
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Corrigida com GH50%?</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setCorrecaoGH50('S')}
+                    className={`p-4 rounded-2xl border-2 font-black uppercase tracking-wide transition-all flex flex-col items-center ${correcaoGH50 === 'S' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}
+                  >
+                    <span className="text-sm">S</span>
+                    <span className="text-[9px] font-semibold normal-case tracking-normal opacity-70 mt-0.5">Sim</span>
+                  </button>
+                  <button
+                    onClick={() => setCorrecaoGH50('N')}
+                    className={`p-4 rounded-2xl border-2 font-black uppercase tracking-wide transition-all flex flex-col items-center ${correcaoGH50 === 'N' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}
+                  >
+                    <span className="text-sm">N</span>
+                    <span className="text-[9px] font-semibold normal-case tracking-normal opacity-70 mt-0.5">Não</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalHGT(null)} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button
+                  disabled={!correcaoGH50 || salvandoHGT}
+                  onClick={confirmarRegistroHGT}
+                  className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                >
+                  <CheckCircle2 size={18} /> {salvandoHGT ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
       )}
 
       <CVCInsercaoModal

@@ -824,6 +824,19 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     return num > 0 && (num < 70 || num > 180);
   });
 
+  // Registros de hipoglicemia corrigidos (gravados no techdashboard em enfermagem.historico_hgt)
+  const historicoHGTCorrigidos = currentPatient?.enfermagem?.historico_hgt || [];
+
+  // True quando a glicemia (hora + data clínica do evento) foi corrigida com GH50% ('S')
+  const hgtCorrigidoComGH50 = (g) => {
+    return historicoHGTCorrigidos.some(r => {
+      if (r.tipo !== 'hgt_baixo' || r.corrigidoGH50 !== 'S') return false;
+      // Normaliza o registro para o MESMO Date clínico do g.dt (regra do turno 07h/00h)
+      const dtReg = horaBHparaData(String(r.data || ''), String(r.hora || ''));
+      return dtReg.getTime() === g.dt.getTime();
+    });
+  };
+
   // ---------- NUTRI: METAS CALÓRICAS/PROTEICAS ----------
   const metaCalDiaria = currentPatient?.nutri?.metaCalDiaria;
   const metaCalTotal = currentPatient?.nutri?.metaCalTotal;
@@ -2356,6 +2369,9 @@ const ORIGENS_ENFERMAGEM = [
                     return (
                       <span key={i} className={`text-xs font-bold px-2 py-1 rounded-lg border ${anormal ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-slate-200 text-slate-700'}`}>
                         {g.dt >= hojeVisita ? `${String(g.dt.getDate()).padStart(2, '0')}-${String(g.dt.getMonth() + 1).padStart(2, '0')} ` : ''}{g.hora} — {g.valor} mg/dL {anormal && (num < 70 ? '⬇' : '⬆')}
+                        {num > 0 && num < 80 && hgtCorrigidoComGH50(g) && (
+                          <span className="text-red-600 font-bold"> (Corrigido c/ GH50%)</span>
+                        )}
                       </span>
                     );
                   })}
