@@ -1058,39 +1058,53 @@ const ORIGENS_ENFERMAGEM = [
   'auto_higiene_intima'
 ];
 
+  // Permissão baseada SOMENTE no cargo real atribuído no moduloadmin.
   const cargo = (
-    (typeof cargoLocal !== 'undefined' && cargoLocal ? cargoLocal : '') + ' ' + (categoriaAtiva || '')
+    (userProfile?.cargoLocal || userProfile?.perfil || '') + ''
   ).toLowerCase();
 
-const podeConfirmarMeta = (meta) => {
-  // Normaliza o cargo: minúsculas e sem acentos, para comparação robusta
-  const normalizar = (v) => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  // Médicos (RT, plantonista, nefro, rotina) e desenvolvedor confirmam qualquer meta automática
-  if (cargo.includes('medico') || cargo.includes('rt') || cargo.includes('plantonista') || cargo.includes('nefro') || cargo.includes('desenvolvedor')) return true;
-  // Nutri confirma APENAS as metas geradas na própria aba
-  if (cargo.includes('nutri')) {
-    return ORIGENS_NUTRI.some(prefixo => (meta.origem || '').startsWith(prefixo));
-  }
-  // Fisio confirma APENAS as metas geradas na própria aba
-  if (cargo.includes('fisio')) {
-    return ORIGENS_FISIO.some(prefixo => (meta.origem || '').startsWith(prefixo));
-  }
-  return false;
-};
+  const podeConfirmarMeta = (meta) => {
+    if (!meta) return false; // meta ainda não existe (sugestão não criada) → sem permissão
+    const origem = meta.origem || '';
+    // Metas manuais: qualquer profissional pode confirmar/rejeitar
+    if (origem === 'manual') return true;
+    // Enfermagem: Enfermeiro e Gerente de Enfermagem (NÃO Téc. em Enf.)
+    if (/\b(enfermeir|enfermagem)/.test(cargo)) {
+      return ORIGENS_ENFERMAGEM.some(prefixo => origem.startsWith(prefixo));
+    }
+    // Nutrição
+    if (/\bnutric/.test(cargo)) {
+      return ORIGENS_NUTRI.some(prefixo => origem.startsWith(prefixo));
+    }
+    // Fisioterapia (inclui RT da Fisioterapia — cai aqui ANTES do super-admin)
+    if (/\bfisiot/.test(cargo)) {
+      return ORIGENS_FISIO.some(prefixo => origem.startsWith(prefixo));
+    }
+    // Médico / RT Médico / Nefrologista / Desenvolvedor: todas as metas
+    if (cargo.includes('medic') || cargo.includes('nefrologist') || cargo.includes('desenvolvedor') || cargo.includes('dev')) return true;
+    return false;
+  };
 
   const podeManipularMeta = (meta) => {
+    if (!meta) return false;
     const origem = meta.origem || '';
     if (origem === 'manual') return true;
-    if (cargo.includes('medic') || cargo.includes('rt') || cargo.includes('desenvolvedor') || cargo.includes('dev')) return true;
-    if (ORIGENS_ENFERMAGEM.some(p => origem.startsWith(p))) {
-      return cargo.includes('enferm');
+    if (/\b(enfermeir|enfermagem)/.test(cargo)) {
+      return ORIGENS_ENFERMAGEM.some(prefixo => origem.startsWith(prefixo));
     }
-    return true;
+    if (/\bnutric/.test(cargo)) {
+      return ORIGENS_NUTRI.some(prefixo => origem.startsWith(prefixo));
+    }
+    if (/\bfisiot/.test(cargo)) {
+      return ORIGENS_FISIO.some(prefixo => origem.startsWith(prefixo));
+    }
+    if (cargo.includes('medic') || cargo.includes('nefrologist') || cargo.includes('desenvolvedor') || cargo.includes('dev')) return true;
+    return false;
   };
 
   const podeManipularEnfermagem = () =>
-    cargo.includes('enferm') || cargo.includes('medic') || cargo.includes('rt') ||
-    cargo.includes('desenvolvedor') || cargo.includes('dev');
+    /\b(enfermeir|enfermagem)/.test(cargo) || cargo.includes('medic') ||
+    cargo.includes('nefrologist') || cargo.includes('desenvolvedor') || cargo.includes('dev');
 
   // ============================================================
   return (

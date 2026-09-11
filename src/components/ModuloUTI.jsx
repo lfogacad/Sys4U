@@ -1200,18 +1200,20 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   };
 
   const podeConfirmarMeta = (meta) => {
-    if ((meta.origem || '') === 'manual') return true;
+    if (!meta) return false;
+    const origem = meta.origem || '';
+    if (origem === 'manual') return true;
     const perfil = (userProfile?.perfil || '').toLowerCase();
-    if (/\bmedic/.test(perfil) || /\brt\b/.test(perfil) || /\bdesenvolvedor/.test(perfil) || /\bdev\b/.test(perfil)) return true;
-    if (/\benferm/.test(perfil)) {
-      return ORIGENS_ENFERMAGEM.some(prefixo => (meta.origem || '').startsWith(prefixo));
+    if (/\b(enfermeir|enfermagem)/.test(perfil)) {
+      return ORIGENS_ENFERMAGEM.some(prefixo => origem.startsWith(prefixo));
     }
-    if (/\bnutri/.test(perfil)) {
-      return ORIGENS_NUTRI.some(prefixo => (meta.origem || '').startsWith(prefixo));
+    if (/\bnutric/.test(perfil)) {
+      return ORIGENS_NUTRI.some(prefixo => origem.startsWith(prefixo));
     }
-    if (/\bfisio/.test(perfil)) {
-      return ORIGENS_FISIO.some(prefixo => (meta.origem || '').startsWith(prefixo));
+    if (/\bfisiot/.test(perfil)) {
+      return ORIGENS_FISIO.some(prefixo => origem.startsWith(prefixo));
     }
+    if (/\bmedic/.test(perfil) || /\bnefrologist/.test(perfil) || /\bdesenvolvedor/.test(perfil) || /\bdev\b/.test(perfil)) return true;
     return false;
   };
 
