@@ -58,7 +58,6 @@ import VmFlowsheetModal from './modals/VmFlowsheetModal';
 import PhysioEvoModal from './modals/PhysioEvoModal';
 import ChecklistEvoModal from './modals/ChecklistEvoModal';
 import NoraModal from './modals/NoraModal';
-import SepsisModal from './modals/SepsisModal';
 import NutriAdmissionModal from './modals/NutriAdmissionModal';
 
 // --- PORTAL PARA MODAIS ---
@@ -213,8 +212,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     });
     return mapa;
   }, [patients]);
-
-  const [showSepsisModal, setShowSepsisModal] = useState(false);
 
   const [admissionData, setAdmissionData] = useState({});
   const [generatedAdmissionText, setGeneratedAdmissionText] = useState("");
@@ -983,41 +980,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     });
   }, [user]);
 
-  useEffect(() => {
-    const isMedico = userProfile ? userProfile.role === "Médico" : true;
-
-    if (viewMode === "medical" && currentPatient && isMedico) {
-      const currentSofa = getAutoSOFA2(currentPatient);
-      const basalSofa = parseInt(currentPatient.sofa_data_technical?.baseline_sofa || 0);
-
-      let referenceSofa = currentPatient.sofa_data_technical?.reference_sofa_for_sepsis;
-      referenceSofa = referenceSofa !== undefined ? parseInt(referenceSofa) : basalSofa;
-
-      // FILTRO DE SEGURANÇA: Verifica se a queda do SOFA é por falta de dados (início de plantão)
-      const isPlantaoZerado = !currentPatient.bh?.vitals || Object.keys(currentPatient.bh.vitals).length === 0;
-
-      // 1. O REARME CLÍNICO (Apenas se o dia NÃO estiver zerado)
-      if (currentSofa < referenceSofa && !isPlantaoZerado) {
-        const p = { ...currentPatient };
-        if (!p.sofa_data_technical) p.sofa_data_technical = {};
-        p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
-        p.sofa_data_technical.last_alerted_sofa = null;
-
-        const up = [...patients];
-        up[activeTab] = p;
-        setPatients(up);
-        return;
-      }
-
-      // 2. O GATILHO SEPSIS-3
-      if (currentSofa - referenceSofa >= 2) {
-        if (currentPatient.sofa_data_technical?.last_alerted_sofa !== currentSofa) {
-          setShowSepsisModal(true);
-        }
-      }
-    }
-  }, [patients, activeTab, viewMode, currentPatient, userProfile]);
-
   // Efeito para capturar dados vindos da Recepção assim que a tela carrega
   useEffect(() => {
     const incoming = location.state?.incomingPatient;
@@ -1602,29 +1564,6 @@ const clearAntibiotic = (i) => {
       
       return up;
     });
-  };
-
-  const handleSepsisResponse = (hasInfection) => {
-    const p = { ...currentPatient };
-    if (!p.sofa_data_technical) p.sofa_data_technical = {};
-
-    const currentSofa = getAutoSOFA2(p);
-
-    // Salva exatamente o nível de gravidade em que estamos alertando
-    p.sofa_data_technical.last_alerted_sofa = currentSofa;
-
-    // A nova referência passa a ser esse SOFA alto. Só apita de novo se subir MAIS 2 pontos.
-    p.sofa_data_technical.reference_sofa_for_sepsis = currentSofa;
-
-    // Se o médico disser sim, acende o banner
-    p.sofa_data_technical.sepsis_protocol_active = hasInfection;
-
-    const up = [...patients];
-    up[activeTab] = p;
-    setPatients(up);
-    if (user && db) setDoc(doc(db, "leitos_uti", `bed_${p.id}`), p);
-
-    setShowSepsisModal(false);
   };
 
   const updateLab = (date, exam, value) => {
@@ -5869,6 +5808,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
 
                       <MedicalDashboard
                         currentPatient={currentPatient}
+                        userProfile={userProfile}
                         isEditable={isEditable}
                         updateNested={updateNested}
                         updateP={updateP}
@@ -6609,13 +6549,6 @@ const userRole = userProfile?.role || userProfile?.perfil;
         showNoraModal={showNoraModal}
         handleBlurSave={handleBlurSave}
         handleNoraModalResponse={handleNoraModalResponse}
-      />
-
-      {/* MODAL: ALERTA DE SEPSE (Sepsis-3) */}
-      <SepsisModal
-        showSepsisModal={showSepsisModal}
-        handleBlurSave={handleBlurSave}
-        handleSepsisResponse={handleSepsisResponse}
       />
 
       {/* ======================================================== */}

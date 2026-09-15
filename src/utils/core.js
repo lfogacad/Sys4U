@@ -785,7 +785,8 @@ export const syncLabsFromHistory = (patient) => {
     "Ureia": "ureia", 
     "Creatinina": "creat", 
     "Na (Sódio)": "na", 
-    "K (Potássio)": "k" 
+    "K (Potássio)": "k", 
+    "Plaquetas": "plat"
   };
   
   // Pega as datas corretas usando a função global
@@ -1413,3 +1414,91 @@ export const formatarDataBR = (data) => {
   }
   return data;
 };
+
+// =====================================================================
+// NEWS2 — National Early Warning Score 2 (RCP, 2017)
+// Escala A (alvo SpO2 94-96%) ou Escala B (hipercápnico, alvo 88-92%).
+// Entrada: { fr, spo2, o2Terapia, pas, fc, snc, temp, hipercapnico }
+// =====================================================================
+export const getAutoNEWS = ({ fr, spo2, o2Terapia, pas, fc, snc, temp, hipercapnico = false } = {}) => {
+  const detalhes = {};
+
+  // FR (irpm): ≤8=3 | 9–11=1 | 12–20=0 | 21–24=2 | ≥25=3
+  detalhes.fr = fr == null ? null : fr <= 8 ? 3 : fr <= 11 ? 1 : fr <= 20 ? 0 : fr <= 24 ? 2 : 3;
+
+  // SpO2 (%): Escala A (padrão) OU Escala B (hipercápnico)
+  if (spo2 == null) {
+    detalhes.spo2 = null;
+  } else if (!hipercapnico) {
+    // A: ≤91=3 | 92–93=2 | 94–95=1 | ≥96=0
+    detalhes.spo2 = spo2 <= 91 ? 3 : spo2 <= 93 ? 2 : spo2 <= 95 ? 1 : 0;
+  } else {
+    // B: ≤83=3 | 84–85=2 | 86–87=1 | 88–92=0 | 93–94=1 | 95–96=2 | ≥97=3
+    detalhes.spo2 = spo2 <= 83 ? 3 : spo2 <= 85 ? 2 : spo2 <= 87 ? 1 : spo2 <= 92 ? 0 : spo2 <= 94 ? 1 : spo2 <= 96 ? 2 : 3;
+  }
+
+  // O2 suplementar: +2 (independente da SpO2)
+  detalhes.o2 = o2Terapia ? 2 : 0;
+
+  // PAS (mmHg): ≤90=3 | 91–100=2 | 101–110=1 | 111–219=0 | ≥220=3
+  detalhes.pas = pas == null ? null : pas <= 90 ? 3 : pas <= 100 ? 2 : pas <= 110 ? 1 : pas <= 219 ? 0 : 3;
+
+  // FC (bpm): ≤40=3 | 41–50=1 | 51–90=0 | 91–110=1 | 111–130=2 | ≥131=3
+  detalhes.fc = fc == null ? null : fc <= 40 ? 3 : fc <= 50 ? 1 : fc <= 90 ? 0 : fc <= 110 ? 1 : fc <= 130 ? 2 : 3;
+
+  // Consciência (AVPU): alerta=0 | qualquer alteração=3
+  detalhes.snc = snc == null ? null : (snc === 'A' ? 0 : 3);
+
+  // Temp (°C): ≤35.0=3 | 35.1–36.0=1 | 36.1–38.0=0 | 38.1–39.0=1 | ≥39.1=2
+  detalhes.temp = temp == null ? null : temp <= 35.0 ? 3 : temp <= 36.0 ? 1 : temp <= 38.0 ? 0 : temp <= 39.0 ? 1 : 2;
+
+  const pontuacao = Object.values(detalhes).reduce((acc, v) => acc + (v || 0), 0);
+
+  let risco = 'BAIXO';
+  if (pontuacao >= 7) risco = 'ALTO';
+  else if (pontuacao >= 5) risco = 'MÉDIO';
+
+  const exigencia = Object.values(detalhes).some(v => v === 3);
+
+  return { pontuacao, risco, exigencia, detalhes, escala: hipercapnico ? 'B' : 'A' };
+};
+
+// Último suporte ventilatório registrado (physiodashboard → historico_suporte_o2).
+// Retorna true se o último registro for diferente de "Ar Ambiente".
+export const getSuporteO2Atual = (patient) => {
+  const hist = patient?.historico_suporte_o2 || [];
+  if (!hist.length) return false;
+  const ultimo = [...hist].sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))[0];
+  const suporte = (ultimo?.suporte || '').trim().toLowerCase();
+  return suporte !== '' && suporte !== 'ar ambiente';
+};
+
+// Últimos sinais do BH atual + O2 + flag hipercápnico, no formato do NEWS2.
+export const getVitalsNEWS = (patient, overrides = {}) => {
+  const vitals = patient?.bh?.vitals || {};
+  const ultimo = (param) => {
+    const horas = Object.keys(vitals).sort();
+    for (let i = horas.length - 1; i >= 0; i--) {
+      const v = vitals[horas[i]]?.[param];
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        const n = Number(String(v).replace(',', '.'));
+        return isNaN(n) ? null : n;
+      }
+    }
+    return null;
+  };
+  const glasgow = getBestGlasgowForSOFA(patient);
+  return {
+    fr: ultimo('FR (irpm)'),
+    spo2: ultimo('SpO2 (%)'),
+    pas: ultimo('PAS'),
+    fc: ultimo('FC (bpm)'),
+    temp: ultimo('Temp (ºC)'),
+    snc: !glasgow || glasgow.valor == null ? null : (glasgow.valor >= 15 ? 'A' : 'C'),
+    o2Terapia: getSuporteO2Atual(patient),
+    hipercapnico: !!patient?.sofa_data_technical?.newsHipercapnico,
+    ...overrides
+  };
+};
+
+export const getAutoNEWSPaciente = (patient, overrides = {}) => getAutoNEWS(getVitalsNEWS(patient, overrides));

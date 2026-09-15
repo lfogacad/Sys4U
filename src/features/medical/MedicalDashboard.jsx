@@ -5,6 +5,7 @@ import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OP
 import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, analyzeOliguriaForSOFA, 
          calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
 import ModalSugestaoATB from "../../components/modals/ModalSugestaoATB";
+import SofaDashboard from '../../features/medical/SofaDashboard';
 
 const formatarDataBR = (dataISO) => {
   if (!dataISO) return "";
@@ -16,6 +17,7 @@ const formatarDataBR = (dataISO) => {
 
 const MedicalDashboard = ({
   currentPatient,
+  userProfile,
   isEditable,
   patients,
   activeTab,
@@ -76,110 +78,14 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
   return (
     <fieldset disabled={!isEditable} className="space-y-6 animate-fadeIn min-w-0 border-0 p-0 m-0">
       {/* === DASHBOARD DE GRAVIDADE SOFA-2 (AUTOMATIZADO) === */}
-      <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-6 shadow-2xl mb-2 border border-white/10 animate-fadeIn relative">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          
-          {/* Lado Esquerdo: O Score */}
-          <div className="flex items-center gap-6">
-            <div className="relative">
-              <svg className="w-24 h-24">
-                <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-white/10" />
-                <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="6" fill="transparent" 
-                        strokeDasharray="251" 
-                        strokeDashoffset={251 - (251 * (getAutoSOFA2(currentPatient) / 24))}
-                        className={`${getAutoSOFA2(currentPatient) >= 10 ? 'text-red-500' : 'text-blue-400'} transition-all duration-1000`} 
-                        strokeLinecap="round" />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-black leading-none">{getAutoSOFA2(currentPatient)}</span>
-                <span className="text-[10px] font-bold opacity-50 uppercase">Pontos</span>
-              </div>
-            </div>
-            
-            <div>
-              <h3 className="text-xs font-black text-indigo-300 uppercase tracking-widest mb-1">Status SOFA-2</h3>
-              <div className={`text-2xl font-black italic ${getAutoSOFA2(currentPatient) >= 10 ? 'text-red-500' : 'text-white'}`}>
-                {getAutoSOFA2(currentPatient) >= 10 ? 'CRÍTICO / FALÊNCIA' : 'ESTÁVEL / DISFUNÇÃO'}
-              </div>
-              <div className="flex items-center gap-3 mt-1 text-xs font-medium text-white/60">
-                <span>Mortalidade: <span className="text-white font-bold">{getSOFAMortality(getAutoSOFA2(currentPatient))}</span></span>
-                <span className="text-white/20">|</span>
-                
-                <label className="flex items-center gap-1 cursor-pointer" title="Se o paciente for renal crônico ou cirrótico, ajuste o SOFA de base aqui">
-                  Basal: 
-                  <input 
-                    type="number" 
-                    min="0" max="24"
-                    className="w-10 bg-white/10 border border-white/20 rounded text-center text-white focus:outline-none focus:border-indigo-400 font-bold px-1"
-                    value={currentPatient.sofa_data_technical?.baseline_sofa || 0}
-                    onChange={(e) => {
-                      const novoBasal = e.target.value;
-                      const p = currentPatient;
-                      if (!p.sofa_data_technical) p.sofa_data_technical = {};
-                      p.sofa_data_technical.baseline_sofa = novoBasal;
-                      p.sofa_data_technical.reference_sofa_for_sepsis = novoBasal;
-                      const up = [...patients];
-                      up[activeTab] = p;
-                      setPatients(up);
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Lado Direito: Auditoria da Nora */}
-          <div className="flex flex-col items-end gap-2 w-full md:w-auto border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-8">
-            <span className="text-[10px] font-black text-indigo-300 uppercase">Monitoramento Noradrenalina</span>
-            <div className="flex items-center gap-3">
-              <div className={`px-3 py-1.5 rounded-lg border font-black text-xs ${currentPatient.sofa_data_technical?.noraDoubleDoseToday ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-emerald-500/20 border-emerald-500 text-emerald-400'}`}>
-                {currentPatient.sofa_data_technical?.noraDoubleDoseToday ? 'DOSE DOBRADA' : 'DILUIÇÃO PADRÃO'}
-              </div>
-              {(() => {
-                const lastHour = BH_HOURS.slice().reverse().find(h => currentPatient.bh?.gains?.[h]?.["Noradrenalina"]);
-                const dose = calculateNoraDose(currentPatient, currentPatient.bh?.gains?.[lastHour]?.["Noradrenalina"]);
-                return dose ? (
-                  <div className="bg-white text-indigo-950 px-4 py-1.5 rounded-lg shadow-xl flex flex-col items-center">
-                    <span className="text-xl font-black leading-none">{dose}</span>
-                    <span className="text-[9px] font-black uppercase">mcg/kg/min</span>
-                  </div>
-                ) : (
-                  <div className="text-[10px] text-white/40 italic">Aguardando dados...</div>
-                );
-              })()}
-            </div>
-          </div>
-        </div>
-        
-        {/* Rodapé: Auditoria de Dados */}
-        <div className="mt-6 pt-4 border-t border-white/5 flex flex-wrap gap-4 text-[9px] font-bold text-white/40 uppercase">
-          
-          <span className={currentPatient.neuro?.glasgow || currentPatient.neuro?.sedacao ? "text-indigo-400" : ""}>
-            ● SNC: {getBestGlasgowForSOFA(currentPatient)?.valor || 'N/A'} 
-            <span className="text-[7px] ml-1 opacity-70">
-              ({getBestGlasgowForSOFA(currentPatient)?.origem || 'N/A'})
-            </span>
-          </span>
-          
-          <span className={currentPatient.sofa_data_technical?.lastPF ? "text-indigo-400" : "text-amber-500/60"}>
-            ● P/F: {currentPatient.sofa_data_technical?.lastPF || 'S/ GASO'}
-          </span>
-          
-          <span className={currentPatient.sofa_data_technical?.lastPAM ? (currentPatient.sofa_data_technical?.lastPAM < 70 ? "text-red-400 animate-pulse" : "text-indigo-400") : "text-amber-500/60"}>
-            ● PAM: {currentPatient.sofa_data_technical?.lastPAM || 'S/ DADO'}
-          </span>
-          
-          {/* 👇 A GRANDE CORREÇÃO: Agora chama-se RENAL e puxa o motivo exato (HD, Anúria, etc) */}
-          <span className={currentPatient.sofa_data_technical?.renalReason ? "text-indigo-400" : "text-amber-500/60"}>
-            ● RENAL: {currentPatient.sofa_data_technical?.renalReason || 'S/ DADO'}
-          </span>
-          
-          <span className={currentPatient.sofa_data_technical?.lastPlat ? "text-indigo-400" : "text-amber-500/60"}>
-            ● PLT: {currentPatient.sofa_data_technical?.lastPlat || 'S/ EXAME'}
-          </span>
-          
-        </div>
-      </div>
+      <SofaDashboard
+        patient={currentPatient}
+        updateNested={updateNested}
+        setPatients={setPatients}
+        activeTab={activeTab}
+        updateP={updateP}
+        userIdentity={userProfile?.perfil || userProfile?.role}
+      />
 
       {/* BOTÃO DE REABRIR ADMISSÃO */}
       <div className="flex justify-end mb-6 print:hidden">
