@@ -44,10 +44,13 @@ const TechDashboard = ({
   const [showSVDModal, setShowSVDModal] = useState(false);
   const [listaProfissionais, setListaProfissionais] = useState([]);
   // Modal de HGT < 80 — correção com GH50%
-  const [modalHGT, setModalHGT] = useState(null);        // { hora, valor, dataISO, dataBR }
-  const [correcaoGH50, setCorrecaoGH50] = useState(null); // 'S' | 'N'
+  const [modalHGT, setModalHGT] = useState(null);
+  const [correcaoGH50, setCorrecaoGH50] = useState(null);
   const [salvandoHGT, setSalvandoHGT] = useState(false);
-  const ultimoHGTChecked = useRef(''); // evita reabrir o modal para a mesma célula no mesmo valor
+  const ultimoHGTChecked = useRef('');
+  // Alerta de Bexigoma — padrão de retenção urinária
+  const [alertaBexigoma, setAlertaBexigoma] = useState(null);
+  const [bexigomaDismissed, setBexigomaDismissed] = useState(null);
 
   const canAccessRegistros = ['Téc. em Enf.', 'Desenvolvedor'].includes(userRole);
   
@@ -673,6 +676,17 @@ const salvarFralda = () => {
     return () => unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (!canAccessRegistros) return;
+    const assinatura = JSON.stringify({
+      bh: currentPatient?.bh?.losses || {},
+      prev: currentPatient?.bh_previous?.losses || {}
+    });
+    if (bexigomaDismissed === assinatura) return;
+    const padrao = detectarBexigoma();
+    if (padrao) setAlertaBexigoma(padrao);
+  }, [currentPatient?.bh, currentPatient?.bh_previous, bexigomaDismissed, canAccessRegistros]);
+
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
   const LIMITS = {
     gains: { "Dieta SNE/GTT": { min: 0, max: 900 }, "Água": { min: 0, max: 999 }, "Soro basal": { min: 0, max: 500 }, "Diluição EV": { min: 0, max: 500 }, "Volume": { min: 0, max: 1000 }, "Midazolan": { min: 0, max: 100 }, "Fentanil": { min: 0, max: 100 }, "Noradrenalina": { min: 0, max: 100 }, "Dobutamina": { min: 0, max: 100 }, "Hemocomponentes": { min: 0, max: 500 } },
@@ -703,6 +717,50 @@ const salvarFralda = () => {
     }
     
     updateBH(hour, category, item, val);
+  };
+
+  //  ALERTA DE BEXIGOMA  //
+  const detectarBexigoma = () => {
+    const bhAtual = currentPatient?.bh;
+    const bhPrev = currentPatient?.bh_previous;
+    if (!bhAtual) return null;
+
+    const horaNum = (h) => parseInt(String(h).split(':')[0], 10);
+    const ehMadrugada = (h) => horaNum(h) >= 0 && horaNum(h) <= 6;
+    const ehDia = (h) => horaNum(h) >= 7;
+
+    const lerDiurese = (bh, hora) => {
+      const v = bh?.losses?.[hora]?.Diurese;
+      if (v === undefined || v === null || String(v).trim() === '') return null;
+      return { hora, valor: safeNumber(v) };
+    };
+
+    // Sequência cronológica: todos os horários do bh_previous + todos do bh atual
+    const sequencia = [];
+    BH_HOURS.forEach(h => { const d = lerDiurese(bhPrev, h); if (d) sequencia.push({ ...d, fonte: 'prev' }); });
+    BH_HOURS.forEach(h => { const d = lerDiurese(bhAtual, h); if (d) sequencia.push({ ...d, fonte: 'atual' }); });
+
+    for (let i = 0; i < sequencia.length - 2; i++) {
+      const a = sequencia[i], b = sequencia[i + 1], c = sequencia[i + 2];
+      if (a.valor > 0 && b.valor === 0 && c.valor === 0) {
+        const tocaBhAtual = [a, b, c].some(x => x.fonte === 'atual');
+        const tocaVirada = [a, b, c].some(x => x.fonte === 'prev' && ehMadrugada(x.hora)) &&
+                           [a, b, c].some(x => x.fonte === 'atual' && ehDia(x.hora));
+        if (tocaBhAtual || tocaVirada) {
+          return { horaDiurese: a.hora, horaZero1: b.hora, horaZero2: c.hora };
+        }
+      }
+    }
+    return null;
+  };
+
+  const fecharAlertaBexigoma = () => {
+    const assinatura = JSON.stringify({
+      bh: currentPatient?.bh?.losses || {},
+      prev: currentPatient?.bh_previous?.losses || {}
+    });
+    setBexigomaDismissed(assinatura);
+    setAlertaBexigoma(null);
   };
 
   const checkMinLimitOnBlur = (hour, category, item, e) => {
@@ -3113,6 +3171,32 @@ const salvarFralda = () => {
                   <CheckCircle2 size={18} /> {salvandoHGT ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/* ALERTA DE BEXIGOMA — POSSÍVEL RETENÇÃO URINÁRIA */}
+      {alertaBexigoma && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-amber-500/20">
+            <div className="bg-amber-500 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><AlertTriangle size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Alerta de Bexigoma</h2>
+              </div>
+              <button onClick={fecharAlertaBexigoma} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-4">
+              <div className="text-center">
+                <p className="text-sm font-bold text-slate-700">Possível retenção urinária!</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  AVISE O ENFERMEIRO
+                </p>
+              </div>
+              <button onClick={fecharAlertaBexigoma} className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-xl uppercase tracking-wider">Entendi</button>
             </div>
           </div>
         </div>
