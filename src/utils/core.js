@@ -1349,6 +1349,7 @@ export const getAutoSOFA2 = (p) => {
   }
   p.sofa_data_technical.lastNoraDose = noraDose > 0 ? parseFloat(noraDose.toFixed(2)) : null;
   const ultimaPAM = buscarUltimaPAM();
+  p.sofa_data_technical.lastPAM = ultimaPAM;
   if (noraDose > 0.4 || (noraDose > 0.2 && hasVasoOrDobuta)) score += 4;
   else if (noraDose > 0.2 || (noraDose > 0 && hasVasoOrDobuta)) score += 3;
   else if (noraDose > 0) score += 2;
@@ -1394,7 +1395,8 @@ export const getAutoSOFA2 = (p) => {
   // 6. HEMATOLÓGICO (Ajustado e corrigido para valores altos)
   let plat = buscarUltimoLab(["Plaquetas", "Plat", "PLT", "Plaq"]);
   if (plat !== null) {
-    if (plat > 1000) plat = plat / 1000; // Converte 150000 para 150
+    if (plat > 1000) plat = plat / 1000;
+    p.sofa_data_technical.lastPlat = plat;
     if (plat <= 50) score += 4;
     else if (plat > 50 && plat <= 80) score += 3;
     else if (plat > 80 && plat <= 100) score += 2;
@@ -1487,14 +1489,32 @@ export const getVitalsNEWS = (patient, overrides = {}) => {
     }
     return null;
   };
-  const glasgow = getBestGlasgowForSOFA(patient);
+
+  const rass = patient?.neuro?.rass;
+  const rassAvaliado = rass !== undefined && rass !== null && String(rass).trim() !== '';
+
+  const extrairGlasgow = (val) => {
+    if (!val) return null;
+    const n = parseInt(String(val).trim(), 10);
+    return isNaN(n) ? null : n;
+  };
+  const gAO = extrairGlasgow(patient?.neuro?.glasgowAO);
+  const gRM = extrairGlasgow(patient?.neuro?.glasgowRM);
+  const gRV = extrairGlasgow(patient?.neuro?.glasgowRV);
+  const gcsTotal = (gAO != null && gRM != null && gRV != null) ? (gAO + gRM + gRV) : null;
+
+  let snc = null;
+  if (!rassAvaliado) {
+    snc = (gcsTotal != null && gcsTotal !== 15) ? 'C' : 'A';
+  }
+
   return {
     fr: ultimo('FR (irpm)'),
     spo2: ultimo('SpO2 (%)'),
     pas: ultimo('PAS'),
     fc: ultimo('FC (bpm)'),
     temp: ultimo('Temp (ºC)'),
-    snc: !glasgow || glasgow.valor == null ? null : (glasgow.valor >= 15 ? 'A' : 'C'),
+    snc,
     o2Terapia: getSuporteO2Atual(patient),
     hipercapnico: !!patient?.sofa_data_technical?.newsHipercapnico,
     ...overrides

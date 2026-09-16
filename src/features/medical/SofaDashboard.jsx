@@ -52,9 +52,54 @@ export default function SofaDashboard({
   setPatients,
   activeTab,
   updateP,
-  userIdentity
+  userIdentity,
+  savePaciente   // ← função save do medicaldashboard (persiste no Firebase)
 }) {
   const [modalEvolucao, setModalEvolucao] = useState(false);
+
+  // ── REGISTRO AUTOMÁTICO (ANTES do early return — regra dos hooks) ─────
+  // A cada mudança do SOFA-2 ou NEWS, grava um ponto no historico_escores.
+  useEffect(() => {
+    if (!patient) return;
+    const currentSOFA = getAutoSOFA2(patient);
+    const news = getAutoNEWSPaciente(patient);
+    const agora = new Date();
+    const dataISO = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`;
+    const horaAtual = `${String(agora.getHours()).padStart(2, '0')}:00`;
+
+    const historico = patient.historico_escores || [];
+    const ultimo = historico[historico.length - 1];
+
+    // Dedupe: não duplica se o último registro tem o MESMO dia/hora E os MESMOS valores
+    if (ultimo && ultimo.data === dataISO && ultimo.hora === horaAtual && ultimo.sofa === currentSOFA && ultimo.news === news.pontuacao) {
+      return;
+    }
+
+    const novoRegistro = {
+      id: `esc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      data: dataISO,
+      dataBR: formatDateDDMM(dataISO),
+      hora: horaAtual,
+      sofa: currentSOFA,
+      news: news.pontuacao,
+      riscoNews: news.risco,
+      escalaNews: news.escala,
+      registradoPor: userIdentity || 'Não identificado',
+      criadoEm: new Date().toISOString()
+    };
+
+    // Paciente novo com o histórico atualizado (objeto completo p/ persistir)
+    const novoPaciente = { ...patient, historico_escores: [...historico, novoRegistro] };
+
+    // 1) Atualiza o estado em memória (updateP já faz o setPatients)
+    updateP('historico_escores', novoPaciente.historico_escores);
+
+    // 2) Persiste no Firebase com o objeto novo (evita closure obsoleto)
+    if (savePaciente) {
+      savePaciente(novoPaciente, `Registro SOFA-2=${currentSOFA}/NEWS=${news.pontuacao} às ${horaAtual}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patient, updateP, savePaciente]);
 
   if (!patient) return null;
 
@@ -92,64 +137,33 @@ export default function SofaDashboard({
   const glasgow = getBestGlasgowForSOFA(patient);
   const hipercapnico = !!patient.sofa_data_technical?.newsHipercapnico;
 
-  // ── REGISTRO AUTOMÁTICO: a cada mudança do SOFA-2 ou NEWS ─────────────
-  useEffect(() => {
-    if (!updateP || !patient) return;
-    const agora = new Date();
-    const dataISO = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`;
-    const horaAtual = `${String(agora.getHours()).padStart(2, '0')}:00`;
-
-    const historico = patient.historico_escores || [];
-    const ultimo = historico[historico.length - 1];
-
-    // Dedupe: não duplica se o último registro tem o MESMO dia/hora E os MESMOS valores
-    if (ultimo && ultimo.data === dataISO && ultimo.hora === horaAtual && ultimo.sofa === currentSOFA && ultimo.news === news.pontuacao) {
-      return;
-    }
-
-    const novoRegistro = {
-      id: `esc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      data: dataISO,
-      dataBR: formatDateDDMM(dataISO),
-      hora: horaAtual,
-      sofa: currentSOFA,
-      news: news.pontuacao,
-      riscoNews: news.risco,
-      escalaNews: news.escala,
-      registradoPor: userIdentity || 'Não identificado',
-      criadoEm: new Date().toISOString()
+  // ── TOGGLE PACIENTE HIPERCÁPNICO (escala B) — com persistência ───────
+  const toggleHipercapnico = () => {
+    // Novo objeto do paciente com a flag atualizada (imutável)
+    const novoPaciente = {
+      ...patient,
+      sofa_data_technical: {
+        ...(patient.sofa_data_technical || {}),
+        newsHipercapnico: !hipercapnico
+      }
     };
 
-    const p = { ...patient, historico_escores: [...historico, novoRegistro] };
-    updateP(p);
-    if (setPatients) {
-      setPatients(prev => {
-        const copia = [...prev];
-        if (copia[activeTab]) copia[activeTab] = p;
-        return copia;
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSOFA, news.pontuacao]);
+    // 1) Atualiza o estado em memória (updateP já faz o setPatients)
+    updateP('sofa_data_technical', novoPaciente.sofa_data_technical);
 
-  // ── TOGGLE PACIENTE HIPERCÁPNICO (escala B) ───────────────────────────
-  const toggleHipercapnico = () => {
-    const p = patient;
-    if (!p.sofa_data_technical) p.sofa_data_technical = {};
-    p.sofa_data_technical.newsHipercapnico = !hipercapnico;
-    updateP(p);
-    if (setPatients) {
-      setPatients(prev => {
-        const copia = [...prev];
-        if (copia[activeTab]) copia[activeTab] = p;
-        return copia;
-      });
+    // 2) Persiste no Firebase com o objeto completo (evita closure obsoleto)
+    if (savePaciente) {
+      savePaciente(
+        novoPaciente,
+        `Toggle escala B NEWS (hipercápnico: ${!hipercapnico ? 'ativado' : 'desativado'})`
+      );
     }
   };
 
   const sofaCor = currentSOFA >= 10 ? 'border-red-300 bg-red-50 text-red-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700';
+  const sncAlterado = news.detalhes?.snc === 3;
   const newsCor = news.pontuacao >= 7 ? 'border-red-300 bg-red-50 text-red-700'
-    : news.pontuacao >= 5 ? 'border-amber-300 bg-amber-50 text-amber-700'
+    : sncAlterado || news.pontuacao >= 5 ? 'border-amber-300 bg-amber-50 text-amber-700'
     : 'border-emerald-200 bg-emerald-50 text-emerald-700';
 
   return (

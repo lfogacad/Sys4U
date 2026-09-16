@@ -39,7 +39,8 @@ const MedicalDashboard = ({
   addAntibiotic,
   removeAntibiotic,
   handleEditAdmission,
-  handleNeuroSwitch
+  handleNeuroSwitch,
+  savePaciente
 }) => {
   
 // 👇 INJETAMOS O "CÉREBRO" DO BOTÃO AQUI DENTRO:
@@ -85,6 +86,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         activeTab={activeTab}
         updateP={updateP}
         userIdentity={userProfile?.perfil || userProfile?.role}
+        savePaciente={savePaciente}
       />
 
       {/* BOTÃO DE REABRIR ADMISSÃO */}

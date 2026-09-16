@@ -5812,6 +5812,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         isEditable={isEditable}
                         updateNested={updateNested}
                         updateP={updateP}
+                        savePaciente={save}
                         handleBlurSave={handleBlurSave}
                         handleEditAdmission={handleEditAdmission}
                         setShowATBHistoryModal={setShowATBHistoryModal}
