@@ -677,15 +677,18 @@ const salvarFralda = () => {
   }, []);
 
   useEffect(() => {
-    if (!canAccessRegistros) return;
+    if (!canAccessRegistros) return; // só Téc. em Enf. + Desenvolvedor
     const assinatura = JSON.stringify({
       bh: currentPatient?.bh?.losses || {},
       prev: currentPatient?.bh_previous?.losses || {}
     });
-    if (bexigomaDismissed === assinatura) return;
+    // Chave por paciente no localStorage (sobrevive à troca de aba e ao recarregar)
+    const pacienteKey = currentPatient?.id || currentPatient?.leito || 'desconhecido';
+    const salvo = localStorage.getItem(`bexigoma_dismissed_${pacienteKey}`);
+    if (salvo === assinatura) return; // já fechado com os mesmos dados
     const padrao = detectarBexigoma();
     if (padrao) setAlertaBexigoma(padrao);
-  }, [currentPatient?.bh, currentPatient?.bh_previous, bexigomaDismissed, canAccessRegistros]);
+  }, [currentPatient?.bh, currentPatient?.bh_previous, canAccessRegistros]);
 
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
   const LIMITS = {
@@ -759,6 +762,9 @@ const salvarFralda = () => {
       bh: currentPatient?.bh?.losses || {},
       prev: currentPatient?.bh_previous?.losses || {}
     });
+    // Persiste a assinatura no localStorage (por paciente) para não reabrir ao trocar de aba
+    const pacienteKey = currentPatient?.id || currentPatient?.leito || 'desconhecido';
+    localStorage.setItem(`bexigoma_dismissed_${pacienteKey}`, assinatura);
     setBexigomaDismissed(assinatura);
     setAlertaBexigoma(null);
   };

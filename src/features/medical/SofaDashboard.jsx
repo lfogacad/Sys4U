@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, X, TrendingUp, Wind } from 'lucide-react';
 import { getAutoSOFA2, getSOFAMortality, getBestGlasgowForSOFA, getAutoNEWSPaciente, formatDateDDMM, safeNumber } from '../../utils/core';
-
+import { ModalPortal } from '../../components/ModuloUTI';
 // ── GRÁFICO DE EVOLUÇÃO (SVG puro) ─────────────────────────────────────
 const GraficoEvolucao = ({ registros }) => {
   const ordenados = [...(registros || [])]
@@ -236,6 +236,7 @@ export default function SofaDashboard({
 
       {/* MODAL DE EVOLUÇÃO */}
       {modalEvolucao && (
+        <ModalPortal>
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 animate-fadeIn">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col border-4 border-indigo-500/20">
             <div className="bg-slate-800 p-5 text-white flex justify-between items-center">
@@ -277,6 +278,7 @@ export default function SofaDashboard({
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </>
   );
