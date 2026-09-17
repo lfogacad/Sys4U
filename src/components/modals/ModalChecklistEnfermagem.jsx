@@ -300,8 +300,15 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
       updateNested("enfermagem", "cuidadosEnfermagem", cuidadosEnfermagem);
     }
 
+    // 🔑 MUTAÇÃO DIRETA no currentPatient (mesmo padrão dos dispositivos)
+    // Garante que o buildNursingAIPrompt enxergue os 3 campos na MESMA chamada
+    if (!currentPatient.enfermagem) currentPatient.enfermagem = {};
+    if (intercorrencias) currentPatient.enfermagem.intercorrencias = intercorrencias;
+    if (condutas) currentPatient.enfermagem.condutas = condutas;
+    if (cuidadosEnfermagem) currentPatient.enfermagem.cuidadosEnfermagem = cuidadosEnfermagem;
+
     // 5. Gera evolução passando os valores diretamente (sem depender do state)
-    onGenerateAI(intercorrencias, condutas);
+    onGenerateAI(intercorrencias, condutas, cuidadosEnfermagem);
     onClose();
   };
 

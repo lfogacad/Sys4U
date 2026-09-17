@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, HeartPulse,
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
 Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast,
@@ -28,6 +28,10 @@ const NursingDashboard = ({
   temCarrinhoEMGHoje = true,
   isDev  // 👈 ADICIONADO AQUI
 }) => {
+
+    // Ref que SEMPRE guarda o paciente mais recente (evita closure obsoleto na geração por IA)
+  const currentPatientRef = useRef(currentPatient);
+  currentPatientRef.current = currentPatient;
 
   const [showNursingChecklistModal, setShowNursingChecklistModal] = useState(false);
   const [showRegistrosDiarios, setShowRegistrosDiarios] = useState(false);

@@ -178,6 +178,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [isGeneratingNursingAI, setIsGeneratingNursingAI] = useState(false);
 
   const localEditRef = useRef(false);
+  const currentPatientRef = useRef(null);
 
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
   const [showNursingModal, setShowNursingModal] = useState(false);
@@ -245,6 +246,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   
   const rawPatient = patients[activeTab] || defaultPatient(0);
   const currentPatient = ensureBHStructure(rawPatient);
+  currentPatientRef.current = currentPatient;
   const displayedBH = viewingPreviousBH && currentPatient.bh_previous ? currentPatient.bh_previous : currentPatient.bh;
   const bhTotals = calculateTotals(displayedBH, currentPatient.nutri?.peso);
 
@@ -327,7 +329,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
   // State para guardar quais dias foram destravados nesta sessão
   const [unlockedBHDates, setUnlockedBHDates] = useState([]);
-
+  
   // A Função do Auditor (Botão de Destravar)
   const handleUnlockHistoricalBH = async (dateStr, reason) => {
     // 1. Libera visualmente na tela instantaneamente
@@ -3243,7 +3245,7 @@ ${conduta}
     setShowNutriAdmissionModal(false);
   };
 
-  const buildNursingAIPrompt = (p, registrosCarrinho = []) => {
+  const buildNursingAIPrompt = (p, registrosCarrinho = [], overrides = {}) => {
     if (!p) return "";
     const safeNum = (val) => {
       const n = parseFloat(String(val).replace(",", "."));
@@ -3597,8 +3599,8 @@ ${conduta}
       if (rcp.causaProvavel) rcpTexto += ` — Causa provável: ${rcp.causaProvavel}`;
       if (rcp.observacoes) rcpTexto += ` — Obs: ${rcp.observacoes}`;
     });
-    const intercorrencias = (p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada.") + rcpTexto;
-    const condutas = p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos.";
+    const intercorrencias = ((overrides.intercorrencias ?? p.enfermagem?.intercorrencias) || "Nenhuma intercorrência relatada.") + rcpTexto;
+    const condutas = (overrides.condutas ?? p.enfermagem?.condutas) || "Cuidados de rotina de enfermagem mantidos.";
     // Dados do modal de evolução de enfermagem (avaliação física)
     const enf = p.enfermagem || {};
     const pulsos = enf.pulsos || "não especificado";
@@ -3613,7 +3615,7 @@ ${conduta}
     const abdome = enf.abdome || "Flácido, indolor à palpação, ruídos hidroaéreos presentes";
     const acessoVenosoStatus = enf.acessoVenosoStatus || "não avaliado";
     const sinaisFlogisticos = enf.sinaisFlogisticos;
-    const cuidadosEnf = enf.cuidadosEnfermagem || "";
+    const cuidadosEnf = (overrides.cuidadosEnfermagem ?? enf.cuidadosEnfermagem) || "";
     // Dados da admissão médica
     const adm = p.admissionData || p.admissoes || {};
     const nivelConsciencia = adm.conscienciaBasal || adm.exameNeuro || "não especificado";
@@ -3754,16 +3756,18 @@ DADOS FORNECIDOS (use estes valores literais):
 - TGI intercorrências: ${tgiIntercorrencias || "Nenhuma"}
 - Secreção: ${p.physio?.secrecao ? `${p.physio?.secrecaoAspecto || "N/A"}, ${p.physio?.secrecaoColoracao || "N/A"}${p.physio?.secrecaoQuantidade ? `, ${p.physio.secrecaoQuantidade}` : ""}` : "Sem secreção"}
 - História clínica: ${p.admissionData?.historia || p.admissoes?.historia || "Sem registro prévio"}
-- Intercorrências (texto literal): ${p.enfermagem?.intercorrencias || "Nenhuma intercorrência relatada."}
-- Condutas (texto literal): ${p.enfermagem?.condutas || "Cuidados de rotina de enfermagem mantidos."}
+- Intercorrências (texto literal): ${intercorrencias}
+- Condutas (texto literal): ${condutas}
 - Cuidados de enfermagem (texto literal): ${cuidadosEnf || "Instalação em leito, identificação e orientações ao paciente/acompanhante."}
 - Dispositivos: ${dispositivos.length > 0 ? dispositivos.join(" | ") : "Nenhum"}
 - Registros de enfermagem: ${eventosTexto}
 `;
   }
 
-const generateNursingAI_Evolution = async () => {
-    if (!currentPatient) return;
+const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEnfermagem) => {
+    // Lê o paciente MAIS RECENTE do ref (não o do closure, que pode estar obsoleto)
+    const patient = currentPatientRef.current;
+    if (!patient) return;
     if (isGeneratingNursingAI) return;
     
     if (!window.confirm("A Inteligência Artificial irá escrever a evolução baseada nos dados clínicos. Isso apagará o texto existente. Continuar?")) return;
@@ -3797,7 +3801,11 @@ const generateNursingAI_Evolution = async () => {
         console.warn("Erro ao buscar carrinho_emg para evolução:", e);
       }
 
-      const promptText = buildNursingAIPrompt(currentPatient, registrosCarrinhoHoje);
+      const promptText = buildNursingAIPrompt(patient, registrosCarrinhoHoje, {
+        intercorrencias,
+        condutas,
+        cuidadosEnfermagem
+      });
       
       const modelsToTry = ["gemini-2.5-flash"];
 
@@ -3823,10 +3831,9 @@ const generateNursingAI_Evolution = async () => {
 
           const aiResponse = d.candidates?.[0]?.content?.parts?.[0]?.text;
           if (aiResponse) {
-            // Escreve a evolução na tela da enfermagem
             updateNested("enfermagem", "anotacoes", aiResponse.trim());
             // Salva no banco de dados automaticamente com o carimbo do usuário
-            save(currentPatient, "Enfermagem: Gerou evolução utilizando Inteligência Artificial");
+            save(patient, "Enfermagem: Gerou evolução utilizando Inteligência Artificial");
           }
           success = true;
           break;
