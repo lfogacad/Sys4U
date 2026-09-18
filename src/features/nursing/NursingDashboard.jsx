@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, HeartPulse,
+import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, HeartPulse, Bot, Copy,
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
 Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast,
 CheckCircle2, Printer, BriefcaseMedical } from 'lucide-react';
@@ -201,6 +201,22 @@ const NursingDashboard = ({
     intercorrencias: ''
   });
 
+  const [modalTQT, setModalTQT] = useState({
+    isOpen: false,
+    data: '',
+    horario: '',
+    intercorrenciasSelecionadas: false,
+    intercorrencias: [],
+    cirurgiao: '',
+    auxiliar: '',
+    tipoCannula: '',
+    numeroCannula: '',
+    fenestrada: false,
+    balonete: false,
+    spo2Min: '',
+    observacao: ''
+  });  
+
   const [modalRCP, setModalRCP] = useState({
     isOpen: false,
     horarioInicioRCP: '',
@@ -390,6 +406,11 @@ const NursingDashboard = ({
         oxigenacaoPre: '',
         intercorrencias: ''
       });
+      return;
+    }
+    if (tipo === 'TQT') {
+      const hoje = new Date().toISOString().split('T')[0];
+      setModalTQT({ isOpen: true, data: hoje, horario: '', intercorrenciasSelecionadas: false, intercorrencias: [], cirurgiao: '', auxiliar: '', tipoCannula: '', numeroCannula: '', fenestrada: false, balonete: false, spo2Min: '', observacao: '' });
       return;
     }
   };
@@ -871,6 +892,49 @@ const NursingDashboard = ({
     handleBlurSave(`Enfermagem: Aspiração Traqueal - ${modalAspiracao.quantidade}/${modalAspiracao.caracteristica}`);
     setModalAspiracao({ ...modalAspiracao, isOpen: false });
   };
+
+  const salvarTQT = () => {
+    if (!modalTQT.horario || !modalTQT.tipoCannula) return;
+
+    const now = new Date();
+    let dataRegistro = modalTQT.data || `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    // Converte o formato do input date (AAAA-MM-DD) para DD/MM/AAAA (padrão do filtrarHoje)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dataRegistro)) {
+      const [a, m, d] = dataRegistro.split('-');
+      dataRegistro = `${d}/${m}/${a}`;
+    }
+
+    // Registro completo do procedimento
+    const registroTQT = {
+      tipo: 'TQT',
+      data: dataRegistro,
+      horario: modalTQT.horario,
+      intercorrencias: modalTQT.intercorrencias,
+      cirurgiao: modalTQT.cirurgiao,
+      auxiliar: modalTQT.auxiliar,
+      tipoCannula: modalTQT.tipoCannula,
+      numeroCannula: modalTQT.numeroCannula,
+      fenestrada: modalTQT.fenestrada,
+      balonete: modalTQT.balonete,
+      spo2Min: modalTQT.spo2Min,
+      observacao: modalTQT.observacao || ''
+    };
+
+    // Salva no histórico independente de procedimentos (mesmo padrão do historicoCurativos)
+    const historicoTQT = [...(currentPatient.enfermagem?.historicoTQT || []), registroTQT];
+    updateNested("enfermagem", "historicoTQT", historicoTQT);
+
+    // Também atualiza o status da traqueostomia no paciente (para a evolução enxergar)
+    updateNested("enfermagem", "tqtData", dataRegistro);
+    updateNested("enfermagem", "tqtHorario", modalTQT.horario);
+    updateNested("enfermagem", "tqtTipoCannula", modalTQT.tipoCannula);
+    updateNested("enfermagem", "tqtNumeroCannula", modalTQT.numeroCannula);
+    updateNested("enfermagem", "tqtFenestrada", modalTQT.fenestrada);
+    updateNested("enfermagem", "tqtBalonete", modalTQT.balonete);
+
+    handleBlurSave(`Enfermagem: Traqueostomia realizada às ${modalTQT.horario} - cânula ${modalTQT.tipoCannula} nº${modalTQT.numeroCannula || 'N/I'}`);
+    setModalTQT({ ...modalTQT, isOpen: false });
+  };  
 
   const salvarRCP = async () => {
     const { horarioParada, horarioInicioRCP } = modalRCP;
@@ -1483,6 +1547,11 @@ return (
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">Aspiração<br/>Traqueal</span>
                   </button>
 
+                  <button onClick={() => handleAcaoEnfermagem('TQT')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
+                    <Wind size={20} className="text-slate-400" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">TQT</span>
+                  </button>
+
                   <button onClick={() => setModalRCP({ ...modalRCP, isOpen: true })} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
                     <HeartPulse size={20} className="text-slate-400" />
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">RCP /<br/>PCR</span>
@@ -1952,50 +2021,67 @@ return (
 
           {/* EVOLUÇÃO IA / PRIVATIVO */}
           <div className="p-4 bg-white border rounded-xl shadow-sm mt-4">
-            <div className="flex justify-between items-center mb-2">
+                        <div className="flex justify-between items-center mb-2">
               <h4 className="font-bold text-slate-700 flex items-center gap-2"><Edit3 size={16} className="text-slate-400" /> Evolução de Enfermagem (Privativo)</h4>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  
-                  // === VALIDAÇÕES ANTES DE ABRIR O MODAL ===
-                  
-                  // 1. Manutenção pendente
-                  if (temManutencaoPendente && !isDev) {
-                    alert(`⚠️ Manutenção pendente!\n\nO paciente possui dispositivos sem manutenção registrada hoje:\n${dispositivosPendentes.map(d => `  • ${d}`).join('\n')}\n\nFaça a manutenção diária ANTES de gerar a evolução.`);
-                    return;
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const texto = currentPatient.enfermagem?.anotacoes || "";
+                    if (!texto) { alert("Não há texto para copiar."); return; }
+                    navigator.clipboard.writeText(texto)
+                      .then(() => alert("Texto copiado!"))
+                      .catch(() => alert("Não foi possível copiar. Copie manualmente."));
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  title="Copiar o texto da evolução"
+                >
+                  <Copy size={14} /> Copiar texto
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    
+                    // === VALIDAÇÕES ANTES DE ABRIR O MODAL ===
+                    
+                    // 1. Manutenção pendente
+                    if (temManutencaoPendente && !isDev) {
+                      alert(`⚠️ Manutenção pendente!\n\nO paciente possui dispositivos sem manutenção registrada hoje:\n${dispositivosPendentes.map(d => `  • ${d}`).join('\n')}\n\nFaça a manutenção diária ANTES de gerar a evolução.`);
+                      return;
+                    }
+                    
+                    // 2. Carrinho de EMG
+                    if (!temCarrinhoEMGHoje && !isDev) {
+                      alert("⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução.");
+                      return;
+                    }
+                    
+                    // 3. Gerando no momento
+                    if (isGeneratingNursingAI) return;
+                    
+                    // Tudo ok, abre o modal
+                    setShowNursingChecklistModal(true);
+                  }}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden ${
+                    isGeneratingNursingAI
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      : (temManutencaoPendente && !isDev) || (!temCarrinhoEMGHoje && !isDev)
+                        ? "bg-red-500 text-white border border-red-600 opacity-60 cursor-not-allowed"
+                        : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                  }`}
+                  title={
+                    (temManutencaoPendente && !isDev)
+                      ? `⚠️ Manutenção pendente: ${dispositivosPendentes.join(', ')}`
+                      : (!temCarrinhoEMGHoje && !isDev)
+                        ? "⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução"
+                        : "Usar Inteligência Artificial para gerar evolução"
                   }
-                  
-                  // 2. Carrinho de EMG
-                  if (!temCarrinhoEMGHoje && !isDev) {
-                    alert("⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução.");
-                    return;
-                  }
-                  
-                  // 3. Gerando no momento
-                  if (isGeneratingNursingAI) return;
-                  
-                  // Tudo ok, abre o modal
-                  setShowNursingChecklistModal(true);
-                }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm print:hidden ${
-                  isGeneratingNursingAI
-                    ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                    : (temManutencaoPendente && !isDev) || (!temCarrinhoEMGHoje && !isDev)
-                      ? "bg-red-500 text-white border border-red-600 opacity-60 cursor-not-allowed"
-                      : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                }`}
-                title={
-                  (temManutencaoPendente && !isDev)
-                    ? `⚠️ Manutenção pendente: ${dispositivosPendentes.join(', ')}`
-                    : (!temCarrinhoEMGHoje && !isDev)
-                      ? "⚠️ Preencher Checklist do Carrinho de EMG antes de gerar evolução"
-                      : "Usar Inteligência Artificial para gerar evolução"
-                }
-              >
-                {isGeneratingNursingAI ? <><Loader2 className="animate-spin" size={14} /> Gerando...</> : <><BrainCircuit size={14} /> Evolução por IA</>}
-              </button>
+                >
+                  {isGeneratingNursingAI ? <><Loader2 className="animate-spin" size={14} /> Gerando...</> : <><Bot size={14} /> Evolução por IA</>}
+                </button>
+              </div>
             </div>
             <textarea 
               className="w-full p-3 border rounded-lg h-64 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-slate-50 focus:bg-white transition-colors whitespace-pre-wrap" 
@@ -2011,14 +2097,16 @@ return (
       )}
 
       {/* MODAL DE CHECKLIST DA ENFERMAGEM */}
-      <ModalChecklistEnfermagem
-        isOpen={showNursingChecklistModal}
-        onClose={() => setShowNursingChecklistModal(false)}
-        currentPatient={currentPatient}
-        updateNested={updateNested}
-        handleBlurSave={handleBlurSave}
-        onGenerateAI={generateNursingAI_Evolution}
-      />
+      <ModalPortal>
+        <ModalChecklistEnfermagem
+          isOpen={showNursingChecklistModal}
+          onClose={() => setShowNursingChecklistModal(false)}
+          currentPatient={currentPatient}
+          updateNested={updateNested}
+          handleBlurSave={handleBlurSave}
+          onGenerateAI={generateNursingAI_Evolution}
+        />
+      </ModalPortal>
       
       {/* ======================================================== */}
       {/* MODAL: CURATIVO                                           */}
@@ -3287,7 +3375,7 @@ return (
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Via Aérea</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {['TOT', 'TQT', 'Cânula'].map(via => (
+                  {['TOT', 'TQT', 'VAS'].map(via => (
                     <button key={via} onClick={() => setModalAspiracao({ ...modalAspiracao, viaAerea: via })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalAspiracao.viaAerea === via ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{via}</button>
                   ))}
                 </div>
@@ -3338,6 +3426,189 @@ return (
               <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button onClick={() => setModalAspiracao({ ...modalAspiracao, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
                 <button disabled={!modalAspiracao.horario || !modalAspiracao.quantidade || !modalAspiracao.caracteristica} onClick={salvarAspiracao} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: TQT (TRAQUEOSTOMIA)                               */}
+      {/* ======================================================== */}
+      {modalTQT.isOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-sky-500/20 my-auto">
+            <div className="bg-sky-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Wind size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Traqueostomia (TQT)</h2>
+              </div>
+              <button onClick={() => setModalTQT({ ...modalTQT, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+
+              {/* DATA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Data do Procedimento</label>
+                <input 
+                  type="date" 
+                  value={modalTQT.data}
+                  onChange={(e) => setModalTQT({ ...modalTQT, data: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 font-bold text-center"
+                />
+              </div>
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário do Procedimento</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTQT.horario ? modalTQT.horario.split(':')[0] : "00"} onChange={(e) => setModalTQT({ ...modalTQT, horario: `${e.target.value}:${modalTQT.horario ? modalTQT.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTQT.horario ? modalTQT.horario.split(':')[1] : "00"} onChange={(e) => setModalTQT({ ...modalTQT, horario: `${modalTQT.horario ? modalTQT.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* INTERCORRÊNCIAS — CHECKBOX + OPÇÕES RÁPIDAS */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={modalTQT.intercorrenciasSelecionadas}
+                    onChange={(e) => setModalTQT({ ...modalTQT, intercorrenciasSelecionadas: e.target.checked, intercorrencias: e.target.checked ? modalTQT.intercorrencias : [] })}
+                    className="w-5 h-5 accent-sky-600"
+                  />
+                  <span className="text-sm font-bold text-slate-700">Houve intercorrências?</span>
+                </label>
+
+                {/* OPÇÕES RÁPIDAS — só aparecem se o checkbox estiver marcado */}
+                {modalTQT.intercorrenciasSelecionadas && (
+                  <div className="mt-3">
+                    <label className="text-xs font-bold text-slate-500 mb-2 block">Selecione as intercorrências:</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['Sangramento', 'Hipoxemia (SpO₂ < 90%)', 'Bradicardia', 'Taquicardia', 'Hipotensão', 'Hipertensão', 'Pneumotórax', 'Falha na punção', 'Necessitou de O₂ suplementar', 'Óbito'].map(inter => (
+                        <button 
+                          key={inter} 
+                          type="button"
+                          onClick={() => {
+                            const jaTem = modalTQT.intercorrencias.includes(inter);
+                            setModalTQT({ 
+                              ...modalTQT, 
+                              intercorrencias: jaTem 
+                                ? modalTQT.intercorrencias.filter(i => i !== inter) 
+                                : [...modalTQT.intercorrencias, inter] 
+                            });
+                          }}
+                          className={`p-2 rounded-xl border-2 font-bold text-[11px] uppercase tracking-wide transition-all ${modalTQT.intercorrencias.includes(inter) ? 'border-sky-500 bg-sky-50 text-sky-700 shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200'}`}
+                        >
+                          {inter}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* CIRURGIÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Cirurgião</label>
+                <input 
+                  type="text" 
+                  value={modalTQT.cirurgiao}
+                  onChange={(e) => setModalTQT({ ...modalTQT, cirurgiao: e.target.value })}
+                  placeholder="Nome do cirurgião"
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 text-sm"
+                />
+              </div>
+
+              {/* AUXILIAR */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Auxiliar</label>
+                <input 
+                  type="text" 
+                  value={modalTQT.auxiliar}
+                  onChange={(e) => setModalTQT({ ...modalTQT, auxiliar: e.target.value })}
+                  placeholder="Nome do auxiliar"
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 text-sm"
+                />
+              </div>
+
+              {/* TIPO DE CÂNULA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Cânula</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Metálica', 'Plástica (PVC)', 'Silicone', 'Ajustável (Bivona)', 'Outro'].map(tipo => (
+                    <button key={tipo} onClick={() => setModalTQT({ ...modalTQT, tipoCannula: tipo })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTQT.tipoCannula === tipo ? 'border-sky-500 bg-sky-50 text-sky-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200'}`}>{tipo}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Nº DA CÂNULA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Nº da Cânula</label>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {['5', '6', '7', '7.5', '8', '8.5', '9', '10'].map(num => (
+                    <button key={num} onClick={() => setModalTQT({ ...modalTQT, numeroCannula: num })} className={`w-14 p-3 rounded-xl border-2 font-black text-lg transition-all ${modalTQT.numeroCannula === num ? 'border-sky-500 bg-sky-50 text-sky-700 shadow-md scale-[1.05]' : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200'}`}>{num}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* FENESTRADA / BALONETE */}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex items-center justify-center gap-3 p-3 bg-white border border-slate-200 rounded-xl cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={modalTQT.fenestrada}
+                    onChange={(e) => setModalTQT({ ...modalTQT, fenestrada: e.target.checked })}
+                    className="w-5 h-5 accent-sky-600"
+                  />
+                  <span className="text-sm font-bold text-slate-700">Fenestrada</span>
+                </label>
+                <label className="flex items-center justify-center gap-3 p-3 bg-white border border-slate-200 rounded-xl cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={modalTQT.balonete}
+                    onChange={(e) => setModalTQT({ ...modalTQT, balonete: e.target.checked })}
+                    className="w-5 h-5 accent-sky-600"
+                  />
+                  <span className="text-sm font-bold text-slate-700">Com balonete</span>
+                </label>
+              </div>
+
+              {/* SpO₂ MAIS BAIXA DURANTE O PROCEDIMENTO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">SpO₂ mais baixa durante o procedimento (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={modalTQT.spo2Min}
+                  onChange={(e) => setModalTQT({ ...modalTQT, spo2Min: e.target.value })}
+                  placeholder="Ex: 88"
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 text-center font-bold"
+                />
+              </div>
+
+              {/* OBSERVAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Observação (opcional)</label>
+                <textarea 
+                  value={modalTQT.observacao}
+                  onChange={(e) => setModalTQT({ ...modalTQT, observacao: e.target.value })}
+                  placeholder="Ex: Aspecto, sangramento, secreção, posição da cânula..."
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-sky-300 text-sm resize-none h-20"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalTQT({ ...modalTQT, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalTQT.horario || !modalTQT.tipoCannula} onClick={salvarTQT} className="flex-1 py-4 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>
           </div>
