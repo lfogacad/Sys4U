@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, HeartPulse, Bot, Copy,
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
-Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast,
+Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast, Slice,
 CheckCircle2, Printer, BriefcaseMedical } from 'lucide-react';
 import { collection, onSnapshot, addDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -1548,7 +1548,7 @@ return (
                   </button>
 
                   <button onClick={() => handleAcaoEnfermagem('TQT')} className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all">
-                    <Wind size={20} className="text-slate-400" />
+                    <Slice size={20} className="text-slate-400" />
                     <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight text-center">TQT</span>
                   </button>
 
@@ -3442,7 +3442,7 @@ return (
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-sky-500/20 my-auto">
             <div className="bg-sky-600 p-5 text-white flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
-                <div className="bg-white/20 p-2 rounded-full"><Wind size={20} /></div>
+                <div className="bg-white/20 p-2 rounded-full"><Slice size={20} /></div>
                 <h2 className="text-lg font-black tracking-wide leading-tight">Traqueostomia (TQT)</h2>
               </div>
               <button onClick={() => setModalTQT({ ...modalTQT, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>

@@ -160,6 +160,18 @@ const LISTAS_MOBILIZACAO = {
   // =========================================================================
   const [modalTrocaVA, setModalTrocaVA] = useState({ isOpen: false, tipo: "", data: "" });
 
+  const [modalTrocaTOT, setModalTrocaTOT] = useState({
+    isOpen: false,
+    data: '',
+    horario: '',
+    tipo: '',            // 'TOT' ou 'TQT'
+    numeroCannula: '',
+    motivo: '',
+    motivoOutro: '',
+    intercorrencias: [], // lista de intercorrências marcadas
+    observacao: ''
+  });  
+
   const salvarTrocaVA = () => {
     // Define qual campo será salvo na base de dados (TOT ou TQT)
     const campo = modalTrocaVA.tipo === 'TOT' ? 'dataUltimaTrocaTOT' : 'dataUltimaTrocaTQT';
@@ -172,6 +184,50 @@ const LISTAS_MOBILIZACAO = {
     }
     
     setModalTrocaVA({ isOpen: false, tipo: "", data: "" });
+  };
+
+  const salvarTrocaTOT = () => {
+    if (!modalTrocaTOT.horario || !modalTrocaTOT.tipo) return;
+
+    const now = new Date();
+    let dataRegistro = modalTrocaTOT.data || `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    // Converte o formato do input date (AAAA-MM-DD) para DD/MM/AAAA
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dataRegistro)) {
+      const [a, m, d] = dataRegistro.split('-');
+      dataRegistro = `${d}/${m}/${a}`;
+    }
+
+    const motivoFinal = modalTrocaTOT.motivo === 'Infecção local / outro'
+      ? (modalTrocaTOT.motivoOutro || 'Infecção local / outro')
+      : modalTrocaTOT.motivo;
+
+    const registro = {
+      id: `troca_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      data: dataRegistro,
+      horario: modalTrocaTOT.horario,
+      tipo: modalTrocaTOT.tipo,
+      numeroCannula: modalTrocaTOT.numeroCannula || '',
+      motivo: motivoFinal || '',
+      intercorrencias: modalTrocaTOT.intercorrencias || [],
+      observacao: modalTrocaTOT.observacao || ''
+    };
+
+    const historico = Array.isArray(currentPatient?.physio?.historicoTrocaVA) ? currentPatient.physio.historicoTrocaVA : [];
+    updateNested("physio", "historicoTrocaVA", [...historico, registro]);
+
+    // Atualiza também o "mais recente" para exibição rápida (opcional)
+    updateNested("physio", "dataUltimaTroca" + modalTrocaTOT.tipo, dataRegistro);
+
+    handleBlurSave(`Fisioterapia: Troca de ${modalTrocaTOT.tipo} registrada às ${modalTrocaTOT.horario} (${motivoFinal || 'N/I'})`);
+    setModalTrocaTOT({ ...modalTrocaTOT, isOpen: false });
+  };
+
+  const excluirTrocaVA = (id) => {
+    if (!window.confirm("Excluir este registro de troca de via aérea?")) return;
+    const historico = Array.isArray(currentPatient?.physio?.historicoTrocaVA) ? currentPatient.physio.historicoTrocaVA : [];
+    const novoHistorico = historico.filter(t => t.id !== id);
+    updateNested("physio", "historicoTrocaVA", novoHistorico);
+    handleBlurSave("Fisioterapia: Excluiu registro de troca de via aérea");
   };
 
   // Estado para controlar o modal do gráfico de O2
@@ -1077,6 +1133,21 @@ const TRE_CHECKLIST = [
                 <BicepsFlexed size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
                 <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Mobilização<br/>Precoce</span>
               </button>
+              
+              <button 
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  const hoje = new Date().toISOString().split('T')[0];
+                  setModalTrocaTOT({
+                    isOpen: true, data: hoje, horario: '', tipo: '', numeroCannula: '',
+                    motivo: '', motivoOutro: '', intercorrencias: [], observacao: ''
+                  });
+                }} 
+                className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
+              >
+                <RefreshCw size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Troca<br/>TOT/TQT</span>
+              </button>
 
             </div>
           </div>
@@ -1872,6 +1943,133 @@ const TRE_CHECKLIST = [
         </ModalPortal>
       )}
 
+      {/* ========================================================================= */}
+      {/* MODAL: TROCA DE TOT/TQT                                                  */}
+      {/* ========================================================================= */}
+      {modalTrocaTOT.isOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-cyan-500/20 my-auto">
+            <div className="bg-cyan-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><RefreshCw size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Troca de TOT/TQT</h2>
+              </div>
+              <button onClick={() => setModalTrocaTOT({ ...modalTrocaTOT, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+
+              {/* DATA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Data da Troca</label>
+                <input 
+                  type="date" 
+                  value={modalTrocaTOT.data}
+                  onChange={(e) => setModalTrocaTOT({ ...modalTrocaTOT, data: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-bold text-center"
+                />
+              </div>
+
+              {/* HORÁRIO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário da Troca</label>
+                <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTrocaTOT.horario ? modalTrocaTOT.horario.split(':')[0] : "00"} onChange={(e) => setModalTrocaTOT({ ...modalTrocaTOT, horario: `${e.target.value}:${modalTrocaTOT.horario ? modalTrocaTOT.horario.split(':')[1] : '00'}` })}>
+                    {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                  </select>
+                  <span className="text-3xl font-black text-slate-300 pb-1">:</span>
+                  <select className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTrocaTOT.horario ? modalTrocaTOT.horario.split(':')[1] : "00"} onChange={(e) => setModalTrocaTOT({ ...modalTrocaTOT, horario: `${modalTrocaTOT.horario ? modalTrocaTOT.horario.split(':')[0] : '00'}:${e.target.value}` })}>
+                    {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* TIPO (TOT ou TQT) */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Tipo de Via Aérea</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['TOT', 'TQT'].map(tipo => (
+                    <button key={tipo} onClick={() => setModalTrocaTOT({ ...modalTrocaTOT, tipo })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalTrocaTOT.tipo === tipo ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{tipo}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Nº DA CÂNULA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Nº da Cânula</label>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {['5', '6', '7', '7.5', '8', '8.5', '9', '10'].map(num => (
+                    <button key={num} onClick={() => setModalTrocaTOT({ ...modalTrocaTOT, numeroCannula: num })} className={`w-14 p-3 rounded-xl border-2 font-black text-lg transition-all ${modalTrocaTOT.numeroCannula === num ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-md scale-[1.05]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{num}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* MOTIVO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Motivo da Troca</label>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {['Secreção/obstrução', 'Vazamento de balonete', 'Decanulação acidental', 'Troca programada', 'Infecção local / outro'].map(mot => (
+                    <button key={mot} type="button" onClick={() => setModalTrocaTOT({ ...modalTrocaTOT, motivo: mot })} className={`p-2.5 rounded-xl border-2 font-bold text-[11px] uppercase tracking-wide transition-all ${modalTrocaTOT.motivo === mot ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}>{mot}</button>
+                  ))}
+                </div>
+                {modalTrocaTOT.motivo === 'Infecção local / outro' && (
+                  <input 
+                    type="text" 
+                    value={modalTrocaTOT.motivoOutro}
+                    onChange={(e) => setModalTrocaTOT({ ...modalTrocaTOT, motivoOutro: e.target.value })}
+                    placeholder="Descreva o motivo"
+                    className="w-full mt-2 p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm"
+                  />
+                )}
+              </div>
+
+              {/* INTERCORRÊNCIAS */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                <label className="text-xs font-bold text-slate-500 mb-2 block">Intercorrências (opcional)</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Sangramento', 'Hipoxemia (SpO₂ < 90%)', 'Bradicardia', 'Taquicardia', 'Hipotensão', 'Falha na punção', 'Necessitou de O₂ suplementar'].map(inter => (
+                    <button 
+                      key={inter} 
+                      type="button"
+                      onClick={() => {
+                        const jaTem = modalTrocaTOT.intercorrencias.includes(inter);
+                        setModalTrocaTOT({ 
+                          ...modalTrocaTOT, 
+                          intercorrencias: jaTem 
+                            ? modalTrocaTOT.intercorrencias.filter(i => i !== inter) 
+                            : [...modalTrocaTOT.intercorrencias, inter] 
+                        });
+                      }}
+                      className={`p-2 rounded-xl border-2 font-bold text-[11px] uppercase tracking-wide transition-all ${modalTrocaTOT.intercorrencias.includes(inter) ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}
+                    >
+                      {inter}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* OBSERVAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Observação (opcional)</label>
+                <textarea 
+                  value={modalTrocaTOT.observacao}
+                  onChange={(e) => setModalTrocaTOT({ ...modalTrocaTOT, observacao: e.target.value })}
+                  placeholder="Ex: Aspecto, sangramento, posição da cânula..."
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm resize-none h-20"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalTrocaTOT({ ...modalTrocaTOT, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalTrocaTOT.horario || !modalTrocaTOT.tipo} onClick={salvarTrocaTOT} className="flex-1 py-4 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+      
       {/* ========================================================================= */}
       {/* MODAL EXCLUSIVO: ASPIRAÇÃO TRAQUEAL DA FISIOTERAPIA v2                     */}
       {/* ========================================================================= */}
