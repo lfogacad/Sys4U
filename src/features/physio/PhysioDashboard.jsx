@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, ClipboardSignature, 
+import { UserPlus, Calendar, X, Wind, Activity, Move, FileText, Shield, ClipboardCheck, ClipboardSignature, CheckCircle2, Trash2, 
          Target, Printer, PlusCircle, Lock, AlertTriangle, Edit3, History, RefreshCw, ChevronDown, ChevronRight,
          Gauge, Timer, ArrowUpCircle, ClipboardList, BicepsFlexed, Map, ChartLine, TestTube, Stethoscope } from 'lucide-react';
 import { SUPORTE_RESP_OPTS, MODOS_VM, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO, 
@@ -250,6 +250,17 @@ const LISTAS_MOBILIZACAO = {
     const yy = String(d.getFullYear()).slice(-2);
     return `${dd}/${mm}/${yy}`;
   };
+
+    // Lista de trocas para o modal (todas, ou filtradas pelo tipo quando informado)
+  const historicoTrocasVA = Array.isArray(currentPatient?.physio?.historicoTrocaVA)
+    ? currentPatient.physio.historicoTrocaVA
+    : [];
+  const trocasOrdenadasVA = [...historicoTrocasVA].sort(
+    (a, b) => (b.dataISO || '').localeCompare(a.dataISO || '') || (b.horario || '').localeCompare(a.horario || '')
+  );
+  const trocasExibidasVA = modalTrocaVA?.tipo
+    ? trocasOrdenadasVA.filter(t => t.tipo === modalTrocaVA.tipo)
+    : trocasOrdenadasVA;
 
   // ==============================================================
   // EXORCISMO DE DADOS ANTIGOS: ZERA O CUFF AO VIRAR O DIA
@@ -1901,40 +1912,67 @@ const TRE_CHECKLIST = [
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: ÚLTIMA TROCA DE VIA AÉREA                                          */}
+      {/* MODAL: HISTÓRICO DE TROCAS DE VIA AÉREA                                  */}
       {/* ========================================================================= */}
       {modalTrocaVA?.isOpen && (
         <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-cyan-500/20">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-cyan-500/20">
             
             <div className="bg-cyan-600 p-5 text-white flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-full"><RefreshCw size={20} /></div>
-                <h2 className="text-lg font-black tracking-wide leading-tight">Última Troca ({modalTrocaVA.tipo})</h2>
+                <h2 className="text-lg font-black tracking-wide leading-tight">
+                  {modalTrocaVA.tipo ? `Histórico de Trocas (${modalTrocaVA.tipo})` : 'Histórico de Trocas de Via Aérea'}
+                </h2>
               </div>
               <button onClick={() => setModalTrocaVA({ isOpen: false, tipo: "", data: "" })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
                 <X size={24} />
               </button>
             </div>
 
-            <div className="p-6 bg-slate-50 space-y-6">
-              <div>
-                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Data da Troca</label>
-                <input 
-                  type="date" 
-                  className="w-full p-3 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-bold text-center text-lg shadow-inner bg-white"
-                  value={modalTrocaVA.data}
-                  onChange={(e) => setModalTrocaVA({ ...modalTrocaVA, data: e.target.value })}
-                />
-              </div>
-              
+            <div className="p-6 bg-slate-50 space-y-4 overflow-y-auto max-h-[75vh]">
+              <p className="text-xs font-bold text-slate-500 text-center">
+                Todas as trocas de TOT/TQT registradas
+              </p>
+
+              {trocasExibidasVA.length === 0 ? (
+                <p className="text-sm text-slate-400 italic text-center py-6">
+                  Nenhuma troca registrada. Use o botão "Troca TOT/TQT" para registrar.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {trocasExibidasVA.map(t => (
+                    <div key={t.id} className="bg-white border border-slate-200 rounded-xl p-3 flex justify-between items-start gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-black text-slate-700">{t.tipo}</span>
+                          <span className="text-xs font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full">
+                            {t.data}{t.horario ? ` às ${t.horario}` : ''}
+                          </span>
+                          {t.numeroCannula && <span className="text-xs font-bold text-slate-500">Cânula nº {t.numeroCannula}</span>}
+                        </div>
+                        {t.motivo && <p className="text-xs text-slate-500 mt-1">Motivo: {t.motivo}</p>}
+                        {t.intercorrencias?.length > 0 && (
+                          <p className="text-xs text-amber-600 mt-0.5">Intercorrências: {t.intercorrencias.join(', ')}</p>
+                        )}
+                        {t.observacao && <p className="text-xs text-slate-400 mt-0.5 italic">{t.observacao}</p>}
+                      </div>
+                      <button
+                        onClick={() => { if (window.confirm('Excluir esta troca de via aérea?')) excluirTrocaVA(t.id); }}
+                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                        title="Excluir"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex gap-3 pt-4 border-t border-slate-200">
-                <button onClick={() => setModalTrocaVA({ isOpen: false, tipo: "", data: "" })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
-                  Cancelar
-                </button>
-                <button onClick={salvarTrocaVA} className="flex-1 py-4 bg-cyan-600 hover:bg-cyan-700 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider">
-                  Salvar
+                <button onClick={() => setModalTrocaVA({ isOpen: false, tipo: "", data: "" })} className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">
+                  Fechar
                 </button>
               </div>
             </div>
