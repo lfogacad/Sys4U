@@ -172,6 +172,17 @@ const LISTAS_MOBILIZACAO = {
     observacao: ''
   });  
 
+  const [modalTitularPeep, setModalTitularPeep] = useState({
+    isOpen: false,
+    etapa: 1, // 1=Parâmetros prévios, 2=PEEP inicial pós-recrutamento, 3=Tabela de titulação, 4=PEEP utilizada + parâmetros após
+    data: '',
+    pre: { hora: '', spo2: '', pa: '', fc: '', fio2: '', peep: '', vc: '', fr: '', pinsp: '' },
+    peepInicialPos: '',
+    linhas: [], // tabela dinâmica gerada a partir da PEEP inicial
+    peepUtilizada: '',
+    pos: { hora: '', spo2: '', pa: '', fc: '', fio2: '', peep: '', vc: '', fr: '', pinsp: '' }
+  });  
+
   const salvarTrocaVA = () => {
     // Define qual campo será salvo na base de dados (TOT ou TQT)
     const campo = modalTrocaVA.tipo === 'TOT' ? 'dataUltimaTrocaTOT' : 'dataUltimaTrocaTQT';
@@ -228,6 +239,85 @@ const LISTAS_MOBILIZACAO = {
     const novoHistorico = historico.filter(t => t.id !== id);
     updateNested("physio", "historicoTrocaVA", novoHistorico);
     handleBlurSave("Fisioterapia: Excluiu registro de troca de via aérea");
+  };
+
+  // Gera a tabela dinâmica: desce de 2 em 2 até 6 (PEEP par) ou 5 (PEEP ímpar)
+  const gerarLinhasTitulacao = (peepInicial) => {
+    const inicio = parseInt(peepInicial, 10);
+    if (isNaN(inicio) || inicio < 5) return [];
+    const linhas = [];
+    for (let v = inicio; v >= 5; v -= 2) {
+      linhas.push({ peep: v, pplato: '', ppico: '', vc: '', spo2: '' });
+    }
+    return linhas;
+  };
+
+  // Calcula DP e Complacência de uma linha (auto, a partir de Pplatô, PEEP e VC)
+  const calcularLinhaTitulacao = (linha) => {
+    const pplato = parseFloat(String(linha.pplato).replace(',', '.'));
+    const vc = parseFloat(String(linha.vc).replace(',', '.'));
+    const dp = (!isNaN(pplato) && pplato >= linha.peep) ? +(pplato - linha.peep).toFixed(1) : '';
+    const complacencia = (!isNaN(vc) && dp !== '') ? +(vc / dp).toFixed(1) : '';
+    return { ...linha, dp, complacencia };
+  };
+
+  // Atualiza um campo de uma linha da tabela
+  const atualizarLinhaTitulacao = (idx, campo, valor) => {
+    setModalTitularPeep(p => {
+      const linhas = p.linhas.map((l, i) => (i === idx ? { ...l, [campo]: valor } : l));
+      return { ...p, linhas };
+    });
+  };
+
+  const salvarTitulacaoPeep = () => {
+    if (!modalTitularPeep.peepUtilizada) return;
+
+    // Data no formato DD-MM-AAAA (sua preferência)
+    let dataBr = modalTitularPeep.data || new Date().toISOString().split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dataBr)) {
+      const [a, m, d] = dataBr.split('-');
+      dataBr = `${d}-${m}-${a}`;
+    }
+
+    const tabelaCompleta = modalTitularPeep.linhas.map(calcularLinhaTitulacao);
+
+    const registro = {
+      id: `peep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      tipo: 'TitulacaoPEEP',
+      data: dataBr,
+      pre: modalTitularPeep.pre,
+      peepInicialPos: modalTitularPeep.peepInicialPos,
+      tabela: tabelaCompleta,
+      peepUtilizada: modalTitularPeep.peepUtilizada,
+      pos: modalTitularPeep.pos,
+      registradoEm: new Date().toISOString()
+    };
+
+    const historico = Array.isArray(currentPatient?.physio?.historicoTitulacaoPeep)
+      ? currentPatient.physio.historicoTitulacaoPeep
+      : [];
+    updateP('physio', {
+      ...(currentPatient.physio || {}),
+      historicoTitulacaoPeep: [...historico, registro]
+    });
+
+    handleBlurSave(`Fisioterapia: Registrou Titulação de PEEP (PEEP utilizada: ${modalTitularPeep.peepUtilizada})`);
+
+    if (typeof registrarLogAuditoria === "function") {
+      registrarLogAuditoria(
+        'VENTILAÇÃO: TITULAÇÃO DE PEEP',
+        `PEEP inicial pós-recrutamento: ${modalTitularPeep.peepInicialPos} — PEEP utilizada: ${modalTitularPeep.peepUtilizada} — SpO₂ final: ${modalTitularPeep.pos.spo2 || 'N/I'}`,
+        currentPatient.id,
+        currentPatient.nome
+      );
+    }
+
+    setModalTitularPeep({
+      isOpen: false, etapa: 1, data: '',
+      pre: { hora: '', spo2: '', pa: '', fc: '', fio2: '', peep: '', vc: '', fr: '', pinsp: '' },
+      peepInicialPos: '', linhas: [], peepUtilizada: '',
+      pos: { hora: '', spo2: '', pa: '', fc: '', fio2: '', peep: '', vc: '', fr: '', pinsp: '' }
+    });
   };
 
   // Estado para controlar o modal do gráfico de O2
@@ -1158,6 +1248,26 @@ const TRE_CHECKLIST = [
               >
                 <RefreshCw size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
                 <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Troca<br/>TOT/TQT</span>
+              </button>
+
+              <button 
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  setModalTitularPeep({
+                    isOpen: true,
+                    etapa: 1,
+                    data: new Date().toISOString().split('T')[0],
+                    pre: { hora: '', spo2: '', pa: '', fc: '', fio2: '', peep: '', vc: '', fr: '', pinsp: '' },
+                    peepInicialPos: '',
+                    linhas: [],
+                    peepUtilizada: '',
+                    pos: { hora: '', spo2: '', pa: '', fc: '', fio2: '', peep: '', vc: '', fr: '', pinsp: '' }
+                  });
+                }} 
+                className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white border border-slate-200 rounded-xl hover:bg-cyan-50 hover:border-cyan-300 transition-all group"
+              >
+                <Gauge size={22} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+                <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-700 uppercase leading-tight text-center transition-colors">Titular<br/>PEEP</span>
               </button>
 
             </div>
@@ -2102,6 +2212,263 @@ const TRE_CHECKLIST = [
                 <button onClick={() => setModalTrocaTOT({ ...modalTrocaTOT, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
                 <button disabled={!modalTrocaTOT.horario || !modalTrocaTOT.tipo} onClick={salvarTrocaTOT} className="flex-1 py-4 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: TITULAÇÃO DE PEEP                                  */}
+      {/* ======================================================== */}
+      {modalTitularPeep.isOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-cyan-500/20 my-auto">
+            <div className="bg-cyan-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Gauge size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Titulação de PEEP</h2>
+              </div>
+              <button onClick={() => setModalTitularPeep({ ...modalTitularPeep, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            {/* INDICADOR DE ETAPA */}
+            <div className="px-6 pt-4 flex items-center justify-center gap-2">
+              {['Parâmetros prévios', 'PEEP inicial', 'Titulação', 'Finalização'].map((nome, i) => (
+                <div key={nome} className="flex items-center gap-1">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${i + 1 === modalTitularPeep.etapa ? 'bg-cyan-600 text-white' : i + 1 < modalTitularPeep.etapa ? 'bg-cyan-200 text-cyan-700' : 'bg-slate-200 text-slate-400'}`}>{i + 1}</div>
+                  <span className={`text-[9px] font-bold uppercase tracking-wide ${i + 1 === modalTitularPeep.etapa ? 'text-cyan-700' : 'text-slate-400'}`}>{nome}</span>
+                  {i < 3 && <div className="w-4 h-px bg-slate-200"></div>}
+                </div>
+              ))}
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+
+              {/* DATA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Data do Procedimento</label>
+                <input 
+                  type="date" 
+                  value={modalTitularPeep.data}
+                  onChange={(e) => setModalTitularPeep({ ...modalTitularPeep, data: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-bold text-center"
+                />
+              </div>
+
+              {/* ============ ETAPA 1: PARÂMETROS PRÉVIOS ============ */}
+              {modalTitularPeep.etapa === 1 && (
+                <div className="space-y-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                    <div className="bg-cyan-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <h3 className="text-sm font-black text-cyan-800 uppercase tracking-wide">Parâmetros Antes</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-500">Hora:</span>
+                        <input 
+                          type="time" 
+                          value={modalTitularPeep.pre.hora}
+                          onChange={(e) => setModalTitularPeep({ ...modalTitularPeep, pre: { ...modalTitularPeep.pre, hora: e.target.value } })}
+                          className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { key: 'spo2', label: 'SpO₂', unit: '%', ph: '96' },
+                        { key: 'pa', label: 'PA', unit: 'mmHg', ph: '120x80' },
+                        { key: 'fc', label: 'FC', unit: 'bpm', ph: '80' },
+                        { key: 'fio2', label: 'FiO₂', unit: '%', ph: '40' },
+                        { key: 'peep', label: 'PEEP', unit: 'cmH₂O', ph: '8' },
+                        { key: 'vc', label: 'VC', unit: 'mL', ph: '420' },
+                        { key: 'fr', label: 'FR', unit: 'irpm', ph: '16' },
+                        { key: 'pinsp', label: 'Pinsp', unit: 'cmH₂O', ph: '18' }
+                      ].map(campo => (
+                        <div key={campo.key}>
+                          <label className="text-[10px] font-bold text-slate-500 mb-1 block">{campo.label} {campo.unit && <span className="text-slate-400">({campo.unit})</span>}</label>
+                          <input 
+                            type="text" 
+                            inputMode="numeric"
+                            placeholder={campo.ph}
+                            value={modalTitularPeep.pre[campo.key]}
+                            onChange={(e) => setModalTitularPeep({ ...modalTitularPeep, pre: { ...modalTitularPeep.pre, [campo.key]: e.target.value } })}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm font-bold text-center"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => setModalTitularPeep({ ...modalTitularPeep, isOpen: false })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                    <button onClick={() => setModalTitularPeep({ ...modalTitularPeep, etapa: 2 })} className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider">Avançar →</button>
+                  </div>
+                </div>
+              )}
+
+              {/* ============ ETAPA 2: PEEP INICIAL PÓS-RECRUTAMENTO ============ */}
+              {modalTitularPeep.etapa === 2 && (
+                <div className="space-y-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                    <label className="text-xs font-bold text-slate-600 mb-3 block text-center">PEEP inicial após recrutamento (cmH₂O)</label>
+                    <input 
+                      type="number" 
+                      min="5" 
+                      max="40"
+                      value={modalTitularPeep.peepInicialPos}
+                      onChange={(e) => setModalTitularPeep({ ...modalTitularPeep, peepInicialPos: e.target.value })}
+                      placeholder="Ex: 20"
+                      className="w-full p-4 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-2xl font-black text-center"
+                    />
+                    <p className="text-[11px] text-slate-400 text-center mt-3">
+                      A tabela será montada descendo de 2 em 2 até {parseInt(modalTitularPeep.peepInicialPos) % 2 === 0 ? '6' : '5'} cmH₂O.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button onClick={() => setModalTitularPeep({ ...modalTitularPeep, etapa: 1 })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">← Voltar</button>
+                    <button 
+                      disabled={!modalTitularPeep.peepInicialPos || parseInt(modalTitularPeep.peepInicialPos) < 5}
+                      onClick={() => setModalTitularPeep(p => ({ ...p, linhas: gerarLinhasTitulacao(p.peepInicialPos), etapa: 3 }))}
+                      className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                    >
+                      Montar Tabela →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ============ ETAPA 3: TABELA DE TITULAÇÃO ============ */}
+              {modalTitularPeep.etapa === 3 && (
+                <div className="space-y-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                    <div className="bg-cyan-50 px-4 py-3 border-b border-slate-200">
+                      <h3 className="text-sm font-black text-cyan-800 uppercase tracking-wide">Tabela de Titulação</h3>
+                      <p className="text-[10px] text-slate-500 mt-0.5">DP = Pplatô − PEEP • Complacência = VC ÷ DP (calculadas automaticamente)</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-center text-xs">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-600">
+                            <th className="p-2 font-black">PEEP (cmH₂O)</th>
+                            <th className="p-2 font-black">Pplatô</th>
+                            <th className="p-2 font-black">DP</th>
+                            <th className="p-2 font-black">Ppico</th>
+                            <th className="p-2 font-black">Complacência</th>
+                            <th className="p-2 font-black">VCexp</th>
+                            <th className="p-2 font-black">SpO₂</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {modalTitularPeep.linhas.map((linha, idx) => {
+                            const calc = calcularLinhaTitulacao(linha);
+                            return (
+                              <tr key={linha.peep} className="border-t border-slate-100">
+                                <td className="p-1.5 font-black text-cyan-700">{linha.peep}</td>
+                                <td className="p-1.5"><input type="number" value={linha.pplato} onChange={(e) => atualizarLinhaTitulacao(idx, 'pplato', e.target.value)} className="w-14 p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300" /></td>
+                                <td className="p-1.5 font-black text-slate-700">{calc.dp !== '' ? calc.dp : '—'}</td>
+                                <td className="p-1.5"><input type="number" value={linha.ppico} onChange={(e) => atualizarLinhaTitulacao(idx, 'ppico', e.target.value)} className="w-14 p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300" /></td>
+                                <td className="p-1.5 font-black text-slate-700">{calc.complacencia !== '' ? calc.complacencia : '—'}</td>
+                                <td className="p-1.5"><input type="number" value={linha.vc} onChange={(e) => atualizarLinhaTitulacao(idx, 'vc', e.target.value)} className="w-16 p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300" /></td>
+                                <td className="p-1.5"><input type="number" value={linha.spo2} onChange={(e) => atualizarLinhaTitulacao(idx, 'spo2', e.target.value)} className="w-14 p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-cyan-300" /></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button onClick={() => setModalTitularPeep({ ...modalTitularPeep, etapa: 2 })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">← Voltar</button>
+                    <button 
+                      disabled={!modalTitularPeep.linhas.some(l => l.pplato !== '' )}
+                      onClick={() => setModalTitularPeep({ ...modalTitularPeep, etapa: 4 })}
+                      className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                    >
+                      Finalizar Titulação →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ============ ETAPA 4: PEEP UTILIZADA + PARÂMETROS APÓS ============ */}
+              {modalTitularPeep.etapa === 4 && (
+                <div className="space-y-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                    <label className="text-xs font-bold text-slate-600 mb-3 block text-center">PEEP utilizada após o procedimento (cmH₂O)</label>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {modalTitularPeep.linhas.map(linha => (
+                        <button
+                          key={linha.peep}
+                          type="button"
+                          onClick={() => {
+                            const calc = calcularLinhaTitulacao(linha);
+                            setModalTitularPeep(p => ({
+                              ...p,
+                              peepUtilizada: String(linha.peep),
+                              pos: { ...p.pos, peep: String(linha.peep), spo2: p.pos.spo2 || linha.spo2 || '' }
+                            }));
+                          }}
+                          className={`w-14 p-3 rounded-xl border-2 font-black text-lg transition-all ${modalTitularPeep.peepUtilizada === String(linha.peep) ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-md scale-[1.05]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-200'}`}
+                        >
+                          {linha.peep}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                    <div className="bg-cyan-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <h3 className="text-sm font-black text-cyan-800 uppercase tracking-wide">Parâmetros Após</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-500">Hora:</span>
+                        <input 
+                          type="time" 
+                          value={modalTitularPeep.pos.hora}
+                          onChange={(e) => setModalTitularPeep({ ...modalTitularPeep, pos: { ...modalTitularPeep.pos, hora: e.target.value } })}
+                          className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { key: 'spo2', label: 'SpO₂', unit: '%', ph: '96' },
+                        { key: 'pa', label: 'PA', unit: 'mmHg', ph: '120x80' },
+                        { key: 'fc', label: 'FC', unit: 'bpm', ph: '80' },
+                        { key: 'fio2', label: 'FiO₂', unit: '%', ph: '40' },
+                        { key: 'peep', label: 'PEEP', unit: 'cmH₂O', ph: '' },
+                        { key: 'vc', label: 'VC', unit: 'mL', ph: '420' },
+                        { key: 'fr', label: 'FR', unit: 'irpm', ph: '16' },
+                        { key: 'pinsp', label: 'Pinsp', unit: 'cmH₂O', ph: '18' }
+                      ].map(campo => (
+                        <div key={campo.key}>
+                          <label className="text-[10px] font-bold text-slate-500 mb-1 block">{campo.label} {campo.unit && <span className="text-slate-400">({campo.unit})</span>}</label>
+                          <input 
+                            type="text" 
+                            inputMode="numeric"
+                            placeholder={campo.ph}
+                            value={modalTitularPeep.pos[campo.key]}
+                            onChange={(e) => setModalTitularPeep({ ...modalTitularPeep, pos: { ...modalTitularPeep.pos, [campo.key]: e.target.value } })}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 text-sm font-bold text-center"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2 border-t border-slate-200">
+                    <button onClick={() => setModalTitularPeep({ ...modalTitularPeep, etapa: 3 })} className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">← Voltar</button>
+                    <button 
+                      disabled={!modalTitularPeep.peepUtilizada}
+                      onClick={salvarTitulacaoPeep} 
+                      className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"
+                    >
+                      <CheckCircle2 size={18} /> Salvar Titulação
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

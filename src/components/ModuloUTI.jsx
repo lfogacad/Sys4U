@@ -4077,6 +4077,30 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
     }
 
     // ==============================================================
+    // 🧠 7b. TITULAÇÃO DE PEEP DO DIA (NOVO)
+    // ==============================================================
+    let titulacaoPeepTexto = "";
+    const titulacoesHoje = (phy.historicoTitulacaoPeep || []).filter(t => {
+      if (!t.data) return false;
+      const dataReg = String(t.data).replace(/-/g, "/");
+      return dataReg === hoje;
+    });
+    if (titulacoesHoje.length > 0) {
+      titulacoesHoje.forEach(t => {
+        const horario = t.pos?.hora || "";
+        const peepFinal = t.peepUtilizada || "N/I";
+        // DP, Pplato e Cest da linha da PEEP utilizada na tabela de titulação
+        const linhaUtilizada = (t.tabela || []).find(l => String(l.peep) === String(peepFinal));
+        const pplatoFinal = (linhaUtilizada?.pplato !== undefined && linhaUtilizada?.pplato !== '') ? linhaUtilizada.pplato : "N/I";
+        const dpFinal = (linhaUtilizada?.dp !== undefined && linhaUtilizada?.dp !== '') ? linhaUtilizada.dp : "N/I";
+        const cestFinal = (linhaUtilizada?.complacencia !== undefined && linhaUtilizada?.complacencia !== '') ? linhaUtilizada.complacencia : "N/I";
+        const spo2Final = t.pos?.spo2 || "N/I";
+        titulacaoPeepTexto += `[${horario}] Titulação de PEEP: PEEP final: ${peepFinal}, Pplato final: ${pplatoFinal}, DP final: ${dpFinal}, Cest final: ${cestFinal}, SpO2 final: ${spo2Final}`;
+        titulacaoPeepTexto += `\n`;
+      });
+    }
+
+    // ==============================================================
     // 📝 CONSTRUÇÃO DO TEXTO FINAL
     // ==============================================================
     let evo = `EVOLUÇÃO FISIOTERAPÊUTICA\n\n`;
@@ -4115,6 +4139,11 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
 
     evo += `--- GASOMETRIA ---\n`;
     evo += `${gasoTxt}\n`;
+
+    if (titulacaoPeepTexto) {
+      evo += `--- TITULAÇÃO DE PEEP ---\n`;
+      evo += `${titulacaoPeepTexto}\n`;
+    }
 
     if (phy.dataHMEF) {
       evo += `Filtro HMEF:\nData de instalação: ${formatDt(phy.dataHMEF)}\n\n`;
