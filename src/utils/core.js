@@ -712,7 +712,7 @@ export const calcularHDBalancoFinal = (p) => {
 };
 
 export const defaultPatient = (id) => ({
-  id, leito: id + 1, nome: "", dataNascimento: "", sexo: "", procedencia: "",
+  id, leito: id + 1, nome: "", cpf: "", dataNascimento: "", sexo: "", procedencia: "",
   diagnostico: "", historiaClinica: "", comorbidades: "", dataInternacao: "",
   dataIntubacao: "", dataExtubacao: "", dataTQT: "", dataDecanulacao: "", peso: "",
   saps3: { origemMapped: "", diasHospital: "", vasopressorPre: false, motivoAdmissao: "", infeccaoAdmissao: "", comorbidades: [] },

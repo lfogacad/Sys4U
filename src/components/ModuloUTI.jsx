@@ -1110,6 +1110,17 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     }
   };
 
+  // 🛡️ Limpa COMPLETAMENTE um leito no Firestore (substitui o documento inteiro, SEM merge)
+  const limparLeito = async (index, objetoVazio) => {
+    const empty = objetoVazio || defaultPatient(index);
+    empty.cpf = "";              // trava extra contra resquício de CPF
+    empty.nome = "";
+    empty.dataInternacao = "";
+    // setDoc SEM merge = substitui o doc: campos ausentes são APAGADOS
+    await setDoc(doc(db, "leitos_uti", `bed_${index + 1}`), empty);
+    return empty;
+  };
+
   // Atualiza as metas do dia de um paciente específico (por índice) e persiste via save
   const atualizarMetasPaciente = (idx, updater) => {
     setPatients(prev => {
@@ -7161,7 +7172,10 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       // 4. SALVA NO FIREBASE (motor nativo)
                       if (typeof save === "function") {
                         save(pacienteTransferido);
-                        save(camaVelhaLimpa);
+                      }
+                      // 🛡️ Leito original: SUBSTITUI o documento inteiro (sem merge) — apaga todos os resquícios
+                      if (typeof limparLeito === "function") {
+                        limparLeito(activeTab, camaVelhaLimpa);
                       }
 
                       // 5. LOG DE AUDITORIA

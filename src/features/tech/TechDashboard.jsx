@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bone, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, HeartPulse,
+import { Bone, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, HeartPulse, Ambulance,
          Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar, Coffee, ArrowRight, CheckCircle2,
          ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
          FileText, Copy, Syringe, Scissors, Snowflake, TestTube, ChevronDown, ChevronRight } from 'lucide-react';
@@ -539,6 +539,61 @@ const salvarFralda = () => {
   };
 
   // =========================================================================
+  // ESTADOS, FUNÇÕES DO MODAL DE SAIDA PARA PROCEDIMENTO
+  // =========================================================================      
+  const [modalSaidaProcedimento, setModalSaidaProcedimento] = useState({
+    isOpen: false,
+    data: '',               // vem do input date (AAAA-MM-DD), convertido para DD/MM/AAAA ao salvar
+    horarioSaida: '',
+    horarioChegada: '',
+    procedimento: '',
+    procedimentoOutro: '',
+    equipe: '',             // 'Transporte Sanitário - USB' ou 'SAMU - USA'
+    observacao: ''
+  });
+
+  const salvarSaidaProcedimento = () => {
+    if (!modalSaidaProcedimento.horarioSaida || !modalSaidaProcedimento.procedimento) return;
+
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    if (!p.enfermagem) p.enfermagem = {};
+    if (!p.enfermagem.historicoSaidaProcedimento) p.enfermagem.historicoSaidaProcedimento = [];
+
+    // Data no formato DD/MM/AAAA — MESMO padrão do nursingdashboard (coleção compartilhada)
+    const agora = new Date();
+    let dataRegistro = modalSaidaProcedimento.data || `${String(agora.getDate()).padStart(2, '0')}/${String(agora.getMonth() + 1).padStart(2, '0')}/${agora.getFullYear()}`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dataRegistro)) {
+      const [a, m, d] = dataRegistro.split('-');
+      dataRegistro = `${d}/${m}/${a}`;
+    }
+
+    const procedimentoFinal = modalSaidaProcedimento.procedimento === 'Outro'
+      ? (modalSaidaProcedimento.procedimentoOutro || 'Outro')
+      : modalSaidaProcedimento.procedimento;
+
+    const registro = {
+      id: `saida_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      tipo: 'SaidaProcedimento',
+      data: dataRegistro,
+      horarioSaida: modalSaidaProcedimento.horarioSaida,
+      horarioChegada: modalSaidaProcedimento.horarioChegada || '',
+      procedimento: procedimentoFinal,
+      equipe: modalSaidaProcedimento.equipe || '',
+      observacao: modalSaidaProcedimento.observacao || '',
+      registradoEm: new Date().toISOString()
+    };
+
+    p.enfermagem.historicoSaidaProcedimento.push(registro);
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: Saída para procedimento (${procedimentoFinal}) às ${modalSaidaProcedimento.horarioSaida}`);
+
+    setModalSaidaProcedimento({ isOpen: false, data: '', horarioSaida: '', horarioChegada: '', procedimento: '', procedimentoOutro: '', equipe: '', observacao: '' });
+  };
+
+  // =========================================================================
   // ESTADOS E FUNÇÕES DO RELATÓRIO DE ENFERMAGEM
   // =========================================================================
   const [modalRelatorio, setModalRelatorio] = useState({ isOpen: false, texto: "" });
@@ -589,6 +644,21 @@ const salvarFralda = () => {
     addEvent(enf.historico_tricotomia, (i) => `Tricotomia: ${i.local}.`);
     addEvent(enf.historico_crioterapia, () => `Crioterapia realizada.`);
     addEvent(enf.historico_insulina, (i) => `Insulina: ${i.tipo} - ${i.dose} UI.`);
+    // Saída para Procedimento (coleção compartilhada com nursing — data DD/MM/AAAA)
+    if (Array.isArray(enf.historicoSaidaProcedimento)) {
+      enf.historicoSaidaProcedimento.forEach(item => {
+        if (!item.data || !item.horarioSaida) return;
+        // Converte DD/MM/AAAA para AAAA-MM-DD para comparar com dataHoje
+        const dataISO = String(item.data).replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, '$3-$2-$1');
+        if (dataISO !== dataHoje) return;
+        let txt = `Saída para procedimento: ${item.procedimento} (saída ${item.horarioSaida}`;
+        if (item.horarioChegada) txt += `, chegada ${item.horarioChegada}`;
+        txt += `)`;
+        if (item.equipe) txt += `. Transporte: ${item.equipe}`;
+        if (item.observacao) txt += `. ${item.observacao}`;
+        eventos.push({ horario: item.horarioSaida, texto: txt });
+      });
+    }    
     // CVC (registro usa 'data' e 'horario', não 'dataHoraRegistro')
     if (Array.isArray(enf.historicoCVC)) {
       enf.historicoCVC.forEach(item => {
@@ -1356,6 +1426,26 @@ const salvarFralda = () => {
             >
               <HeartPulse size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
               <span className="text-[10px] font-bold uppercase text-center">RCP / PCR</span>
+            </button>
+
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                setModalSaidaProcedimento({
+                  isOpen: true,
+                  data: getManausDateStr(),
+                  horarioSaida: getHoraAtualArredondada(),
+                  horarioChegada: "",
+                  procedimento: "",
+                  procedimentoOutro: "",
+                  equipe: "",
+                  observacao: ""
+                });
+              }}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
+            >
+              <Ambulance size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+              <span className="text-[10px] font-bold uppercase text-center">Saída Procedimento</span>
             </button>
 
           </div>
@@ -3121,6 +3211,108 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: SAÍDA PARA PROCEDIMENTO                                            */}
+      {/* ========================================================================= */}
+      {modalSaidaProcedimento.isOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20 my-auto">
+            {/* CABEÇALHO */}
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><LogOut size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Saída Para Procedimento</h2>
+              </div>
+              <button onClick={() => setModalSaidaProcedimento({ ...modalSaidaProcedimento, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+
+              {/* DATA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Data</label>
+                <input 
+                  type="date" 
+                  value={modalSaidaProcedimento.data}
+                  onChange={(e) => setModalSaidaProcedimento({ ...modalSaidaProcedimento, data: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-bold text-center"
+                />
+              </div>
+
+              {/* HORÁRIO DE SAÍDA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário de Saída</label>
+                <input 
+                  type="time" 
+                  value={modalSaidaProcedimento.horarioSaida}
+                  onChange={(e) => setModalSaidaProcedimento({ ...modalSaidaProcedimento, horarioSaida: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-bold text-center"
+                />
+              </div>
+
+              {/* HORÁRIO DE CHEGADA */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Horário de Chegada</label>
+                <input 
+                  type="time" 
+                  value={modalSaidaProcedimento.horarioChegada}
+                  onChange={(e) => setModalSaidaProcedimento({ ...modalSaidaProcedimento, horarioChegada: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 font-bold text-center"
+                />
+              </div>
+
+              {/* PROCEDIMENTO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Procedimento</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['TC', 'US', 'ECO', 'EDA', 'Traqueostomia (TQT)', 'Cirurgia Abdominal', 'Outro'].map(proc => (
+                    <button key={proc} type="button" onClick={() => setModalSaidaProcedimento({ ...modalSaidaProcedimento, procedimento: proc })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalSaidaProcedimento.procedimento === proc ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{proc}</button>
+                  ))}
+                </div>
+                {modalSaidaProcedimento.procedimento === 'Outro' && (
+                  <input 
+                    type="text" 
+                    value={modalSaidaProcedimento.procedimentoOutro}
+                    onChange={(e) => setModalSaidaProcedimento({ ...modalSaidaProcedimento, procedimentoOutro: e.target.value })}
+                    placeholder="Descreva o procedimento"
+                    className="w-full mt-2 p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 text-sm"
+                  />
+                )}
+              </div>
+
+              {/* EQUIPE DE TRANSPORTE */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Equipe de Transporte</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Transporte Sanitário - USB', 'SAMU - USA'].map(equipe => (
+                    <button key={equipe} type="button" onClick={() => setModalSaidaProcedimento({ ...modalSaidaProcedimento, equipe })} className={`p-3 rounded-xl border-2 font-bold text-xs uppercase tracking-wide transition-all ${modalSaidaProcedimento.equipe === equipe ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md scale-[1.02]' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}`}>{equipe}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* OBSERVAÇÃO */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Observação (opcional)</label>
+                <textarea 
+                  value={modalSaidaProcedimento.observacao}
+                  onChange={(e) => setModalSaidaProcedimento({ ...modalSaidaProcedimento, observacao: e.target.value })}
+                  placeholder="Ex: acompanhado por enfermeiro, monitorização durante transporte..."
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 text-sm resize-none h-20"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200">
+                <button onClick={() => setModalSaidaProcedimento({ ...modalSaidaProcedimento, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalSaidaProcedimento.horarioSaida || !modalSaidaProcedimento.procedimento} onClick={salvarSaidaProcedimento} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
       )}
 
       {/* MODAL HGT < 80 — CORREÇÃO COM GH50% */}
