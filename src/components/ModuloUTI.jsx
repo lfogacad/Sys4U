@@ -3580,7 +3580,12 @@ ${conduta}
     const tqtsHoje = filtrarHoje(p.enfermagem?.historicoTQT);
     tqtsHoje.forEach(tqt => {
       eventosRegistros.push(`- Traqueostomia (TQT) ${tqt.horario} — cânula ${tqt.tipoCannula || 'N/I'} nº${tqt.numeroCannula || 'N/I'}${tqt.fenestrada ? ', fenestrada' : ''}${tqt.balonete ? ', com balonete' : ''}${tqt.spo2Min ? `, SpO₂ mín ${tqt.spo2Min}%` : ''}${tqt.cirurgiao ? `, cirurgião: ${tqt.cirurgiao}` : ''}${tqt.auxiliar ? `, auxiliar: ${tqt.auxiliar}` : ''}${tqt.intercorrencias?.length ? `, intercorrências: ${tqt.intercorrencias.join(', ')}` : ''}${tqt.observacao ? `, obs: ${tqt.observacao}` : ''}`);
-    });    
+    });
+    // Saída para Procedimento
+    const saidasHoje = filtrarHoje(p.enfermagem?.historicoSaidaProcedimento);
+    saidasHoje.forEach(s => {
+      eventosRegistros.push(`- Saída para procedimento: ${s.procedimento} — saída ${s.horarioSaida}${s.horarioChegada ? `, chegada ${s.horarioChegada}` : ''}${s.equipe ? `, transporte: ${s.equipe}` : ''}${s.observacao ? `, obs: ${s.observacao}` : ''}`);
+    });
     const eventosTexto = eventosRegistros.length > 0
       ? eventosRegistros.join('\n')
       : 'Nenhum registro adicional no período.';
