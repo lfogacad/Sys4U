@@ -78,10 +78,18 @@ const ChecklistEvoModal = ({
     }    
 
     // ====================================================================
-    // 🚨 A MÁGICA ACONTECE AQUI: GRAVANDO NO BANCO PARA O ROBÔ DA PAV LER
+    // 📅 ÚNICA PERSISTÊNCIA: data em que houve novo/progressivo infiltrado (auditoria)
     // ====================================================================
-    updateNested("medical", "imagemPulmonar", imagemPulmonar);
-    updateNested("medical", "novoInfiltrado", imagemPulmonar === 'sim' ? novoInfiltrado : "nao");
+    if (imagemPulmonar === 'sim' && novoInfiltrado === 'sim') {
+      const historicoAtual = Array.isArray(currentPatient?.medical?.historicoInfiltrado)
+        ? currentPatient.medical.historicoInfiltrado
+        : [];
+      const novoRegistro = {
+        data: new Date().toISOString().split('T')[0],  // AAAA-MM-DD (data da avaliação)
+        registradoEm: new Date().toISOString()
+      };
+      updateNested("medical", "historicoInfiltrado", [...historicoAtual, novoRegistro]);
+    }
 
     // Preparamos o pacote de dados para enviar direto para a evolução da IA
     const dadosEnvio = {

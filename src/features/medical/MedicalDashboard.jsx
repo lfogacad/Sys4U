@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, FileText, Activity, ChevronDown, 
-         ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle } from 'lucide-react';
+import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, Plus, FileText, Activity, ChevronDown, 
+         ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle, CheckCircle2 } from 'lucide-react';
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
 import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, analyzeOliguriaForSOFA, 
          calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
 import ModalSugestaoATB from "../../components/modals/ModalSugestaoATB";
 import SofaDashboard from '../../features/medical/SofaDashboard';
+import { ModalPortal } from '../../components/ModuloUTI';
 
 const formatarDataBR = (dataISO) => {
   if (!dataISO) return "";
@@ -43,9 +44,36 @@ const MedicalDashboard = ({
   savePaciente
 }) => {
   
-// 👇 INJETAMOS O "CÉREBRO" DO BOTÃO AQUI DENTRO:
-const [historyOpen, setHistoryOpen] = useState(false);
-const [showSugestaoModal, setShowSugestaoModal] = useState(false);
+  // 👇 INJETAMOS O "CÉREBRO" DO BOTÃO AQUI DENTRO:
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [showSugestaoModal, setShowSugestaoModal] = useState(false);
+  const [modalImagemTorax, setModalImagemTorax] = useState({
+    isOpen: false,
+    data: '',
+    novoInfiltrado: null
+  });
+
+  const salvarImagemTorax = () => {
+    if (!modalImagemTorax.data || !modalImagemTorax.novoInfiltrado) return;
+
+    // 📅 ÚNICA PERSISTÊNCIA: registra a data SOMENTE quando há novo/progressivo infiltrado (auditoria)
+    if (modalImagemTorax.novoInfiltrado === 'sim') {
+      const historicoAtual = Array.isArray(currentPatient?.medical?.historicoInfiltrado)
+        ? currentPatient.medical.historicoInfiltrado
+        : [];
+      const novoRegistro = {
+        data: modalImagemTorax.data,                 // AAAA-MM-DD (data do exame)
+        registradoEm: new Date().toISOString()       // quando foi lançado no sistema
+      };
+      updateNested("medical", "historicoInfiltrado", [...historicoAtual, novoRegistro]);
+    }
+
+    if (typeof handleBlurSave === "function") {
+      handleBlurSave(`Medicina: Imagem de tórax em ${modalImagemTorax.data} — novo infiltrado: ${modalImagemTorax.novoInfiltrado}`);
+    }
+
+    setModalImagemTorax({ isOpen: false, data: '', novoInfiltrado: null });
+  };
 
 const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOliguriaForSOFA(currentPatient) : null;
 
@@ -89,8 +117,25 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         savePaciente={savePaciente}
       />
 
-      {/* BOTÃO DE REABRIR ADMISSÃO */}
-      <div className="flex justify-end mb-6 print:hidden">
+      {/* BOTÃO DE REABRIR ADMISSÃO + IMAGEM TÓRAX */}
+      <div className="flex justify-end mb-6 print:hidden gap-2">
+        {/* NOVO: + IMAGEM TÓRAX */}
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            setModalImagemTorax({ isOpen: true, data: new Date().toISOString().split('T')[0], novoInfiltrado: null });
+          }}
+          disabled={!isEditable}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition shadow-sm ${
+            !isEditable
+              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+              : "bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200"
+          }`}
+          title="Registrar exame de imagem pulmonar e novo infiltrado (critério de PAV)"
+        >
+          <Plus size={16} /> Imagem Tórax
+        </button>
+
         <button
           onClick={(e) => {
             e.preventDefault();
@@ -667,6 +712,55 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
           />
         )}
       </div>
+
+      {/* ======================================================== */}
+      {/* MODAL: IMAGEM TÓRAX / NOVO INFILTRADO (PAV)              */}
+      {/* ======================================================== */}
+      {modalImagemTorax.isOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-blue-500/20 my-auto">
+            <div className="bg-blue-600 p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><Activity size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide leading-tight">Imagem de Tórax</h2>
+              </div>
+              <button onClick={() => setModalImagemTorax({ isOpen: false, data: '', novoInfiltrado: null })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="p-6 bg-slate-50 space-y-6 overflow-y-auto max-h-[70vh]">
+
+              {/* DATA DA IMAGEM */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Data do Exame de Imagem</label>
+                <input
+                  type="date"
+                  value={modalImagemTorax.data}
+                  onChange={(e) => setModalImagemTorax({ ...modalImagemTorax, data: e.target.value })}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-blue-300 font-bold text-center"
+                />
+              </div>
+
+              {/* PERGUNTA: NOVO INFILTRADO (mesma da evolução médica) */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-blue-500">
+                <h4 className="font-bold text-slate-800 mb-4">
+                  Existe um novo infiltrado ou progressão de infiltrado existente?
+                </h4>
+                <div className="flex gap-4">
+                  <button onClick={() => setModalImagemTorax({ ...modalImagemTorax, novoInfiltrado: 'sim' })} className={`flex-1 py-3 rounded-lg border-2 font-bold text-sm transition-all ${modalImagemTorax.novoInfiltrado === 'sim' ? 'bg-red-50 border-red-500 text-red-700' : 'bg-white border-slate-200 text-slate-500 hover:border-red-300'}`}>Sim, novo/progressivo</button>
+                  <button onClick={() => setModalImagemTorax({ ...modalImagemTorax, novoInfiltrado: 'nao' })} className={`flex-1 py-3 rounded-lg border-2 font-bold text-sm transition-all ${modalImagemTorax.novoInfiltrado === 'nao' ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-300'}`}>Não</button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 shrink-0">
+                <button onClick={() => setModalImagemTorax({ isOpen: false, data: '', novoInfiltrado: null })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button disabled={!modalImagemTorax.data || !modalImagemTorax.novoInfiltrado} onClick={salvarImagemTorax} className="flex-1 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
 
       {/* ======================== */}
       {/* MODAL DE SUGESTÃO DE ATB */}
