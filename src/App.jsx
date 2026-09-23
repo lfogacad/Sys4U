@@ -18,7 +18,7 @@ import TrocaSenhaObrigatoria from "./components/TrocaSenhaObrigatoria";
 import SeletorUnidade from "./components/SeletorUnidade";
 import ModuloRecepcao from "./components/ModuloRecepcao";
 import GestorDashboard from './components/GestorDashboard';
-import useIdleLogout from './hooks/useIdleLogout';
+import useIdleLogout, { isSessionExpired } from './hooks/useIdleLogout';
 
 // Componente de Segurança (Disjuntor)
 class ErrorBoundary extends React.Component {
@@ -226,7 +226,16 @@ const handleRegister = async (e) => {
     window.location.href = "/"; 
   };
 
-  useIdleLogout(handleLogout, !!user, 90 * 60 * 1000);
+  useIdleLogout(handleLogout, !!user, 2 * 60 * 60 * 1000);
+
+  // 🛡️ BLOQUEIO DE SESSÃO EXPIRADA: se passou de 2h desde a última atividade (ex.: dia seguinte),
+  // força o logout ANTES de renderizar o sistema — impede o login automático do Firebase.
+  useEffect(() => {
+    if (user && isSessionExpired(2 * 60 * 60 * 1000)) {
+      handleLogout();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-bold text-emerald-600 animate-pulse">Sincronizando Ecossistema...</div>;
