@@ -21,21 +21,28 @@ const RelatorioANVISA = ({ db, mesAno }) => {
         });
 
         // 2. IRAS (Apenas Numeradores das Taxas)
-        const auditorias = [
-          { col: "auditorias_pav", tipo: "PAV" },
-          { col: "auditorias_ipcsc", tipo: "IPCS-C" },
-          { col: "auditorias_itu", tipo: "ITU-AC" }
-        ];
-        
         let casos = { pav: 0, ipcsc: 0, itu: 0 };
-        for (const { col, tipo } of auditorias) {
+        let casosIPCSL = []; // casos classificados de IPCS (para exibir categorias)
+
+        // PAV e ITU: status Confirmado + mesReferencia (inalterado)
+        for (const col of ["auditorias_pav", "auditorias_itu"]) {
            const snap = await getDocs(query(collection(db, col), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado")));
            snap.forEach(() => {
-               if (tipo === "PAV") casos.pav++;
-               if (tipo === "IPCS-C") casos.ipcsc++;
-               if (tipo === "ITU-AC") casos.itu++;
+               if (col === "auditorias_pav") casos.pav++;
+               else casos.itu++;
            });
         }
+
+        // IPCS: busca as classificadas e atribui pelo MÊS DA INFECÇÃO (mesInfeccao)
+        // Somente "IPCSL" (associada ao cateter) entra na densidade ANVISA
+        const snapIPCS = await getDocs(query(collection(db, "auditorias_ipcsc"), where("status", "in", ["IPCSL", "NaoRelacionada", "Importada", "Descartado"])));
+        snapIPCS.forEach(d => {
+            const a = d.data();
+            const mesEf = a.mesInfeccao || (a.dataInfeccao ? String(a.dataInfeccao).slice(0, 7) : null) || a.mesReferencia || '';
+            if (mesEf !== mesAno) return;
+            casosIPCSL.push({ ...a, firebaseId: d.id });
+            if (a.status === "IPCSL") casos.ipcsc++; // só IPCSL entra na densidade
+        });
 
         // 3. MICROBIOLOGIA (Lendo direto do seu Painel de Culturas Globais)
         let germes = [];
@@ -87,7 +94,7 @@ const RelatorioANVISA = ({ db, mesAno }) => {
             });
         }
 
-        setDados({ totais, casos, germes, consumo });
+        setDados({ totais, casos, germes, consumo, casosIPCSL });
       } catch (error) {
         console.error("Erro ao processar relatório:", error);
       }
@@ -168,6 +175,54 @@ const RelatorioANVISA = ({ db, mesAno }) => {
         <p className="text-[10px] text-gray-500 mt-2 italic">* DI = (Nº Casos Confirmados / Dias de Dispositivo) x 1000</p>
       </section>
 
+      {/* BLOCO 2.1: CATEGORIAS DE IPCSL */}
+      <section className="mb-8">
+        <h2 className="font-bold border-b border-gray-400 mb-2 text-lg uppercase bg-gray-100 p-1">2.1. IPCSL — Casos por Categoria</h2>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-600">
+              <th className="pb-2">Categoria</th>
+              <th className="pb-2 text-center">Quantidade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              { id: 'IPCSL', label: 'IPCSL — relacionada ao cateter' },
+              { id: 'NaoRelacionada', label: 'IPCSL — não relacionada ao cateter' },
+              { id: 'Importada', label: 'IPCSL — importada (não contabiliza na UTI)' },
+              { id: 'Descartado', label: 'Descartado' }
+            ].map(c => (
+              <tr key={c.id} className="border-t border-gray-100">
+                <td className="py-1.5 font-medium">{c.label}</td>
+                <td className="text-center font-black">{dados.casosIPCSL.filter(a => a.status === c.id).length}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {dados.casosIPCSL.length > 0 && (
+          <table className="w-full text-sm mt-3">
+            <thead>
+              <tr className="text-left text-xs text-gray-600">
+                <th className="pb-2">Paciente</th>
+                <th className="pb-2">Data da Infecção</th>
+                <th className="pb-2">Germe</th>
+                <th className="pb-2">Categoria</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dados.casosIPCSL.slice().sort((a, b) => (a.dataInfeccao || '').localeCompare(b.dataInfeccao || '')).map((c, i) => (
+                <tr key={c.firebaseId || i} className="border-t border-gray-100">
+                  <td className="py-1.5">{c.nome}</td>
+                  <td className="py-1.5">{c.dataInfeccao ? c.dataInfeccao.split('-').reverse().join('/') : (c.dataEventoDOE || '').split('-').reverse().join('/')}</td>
+                  <td className="py-1.5">{c.germe || '-'}</td>
+                  <td className="py-1.5">{c.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+      
       {/* BLOCO 3: PERFIL MICROBIOLÓGICO REFORMULADO */}
       <section className="mb-8">
         <h2 className="font-bold border-b border-gray-400 mb-2 text-lg uppercase bg-gray-100 p-1">3. Perfil Microbiológico (Notivisa)</h2>

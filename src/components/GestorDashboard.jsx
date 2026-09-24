@@ -8,7 +8,7 @@ import {
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
   FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance, Truck,
-  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain, Droplets, Refrigerator
+  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain, Droplets, Refrigerator, CalendarRange
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
@@ -138,47 +138,60 @@ const GestorDashboard = ({ userProfile }) => {
   const [historicoDensidadeITU, setHistoricoDensidadeITU] = useState([]);
   const [historicoDensidadeIPCSC, setHistoricoDensidadeIPCSC] = useState([]);
 
-  useEffect(() => {
-    const buscarHistorico = async () => {
-      if (!db) return;
-      const meses = [];
-      const hoje = new Date();
-      for (let i = 11; i >= 0; i--) {
-        const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-        const mesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        const label = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
-        meses.push({ mesAno, label });
-      }
-      const resultadoPAV = [];
-      const resultadoIPCSC = [];
-      const resultadoITU = [];
-      for (const { mesAno, label } of meses) {
-        const [snapCenso, snapPAV, snapIPCSC, snapITU] = await Promise.all([
-          getDocs(query(collection(db, "censo_diario"), where("data", ">=", `${mesAno}-01`), where("data", "<=", `${mesAno}-31`))),
-          getDocs(query(collection(db, "auditorias_pav"), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado"))),
-          getDocs(query(collection(db, "auditorias_ipcsc"), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado"))),
-          getDocs(query(collection(db, "auditorias_itu"), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado")))
-        ]);
-        let diasVM = 0, diasCVC = 0, diasSVD = 0;
-        snapCenso.forEach(d => {
-          const c = d.data();
-          diasVM += (Number(c.pacientesEmVM) || 0);
-          diasCVC += (Number(c.pacientesComCVC) || 0);
-          diasSVD += (Number(c.pacientesComSVD) || 0);
-        });
-        const casosPAV = snapPAV.size;
-        const casosIPCSC = snapIPCSC.size;
-        const casosITU = snapITU.size;
-        resultadoPAV.push({ mes: label, di: parseFloat((diasVM > 0 ? (casosPAV / diasVM) * 1000 : 0).toFixed(2)), casos: casosPAV, diasVM });
-        resultadoIPCSC.push({ mes: label, di: parseFloat((diasCVC > 0 ? (casosIPCSC / diasCVC) * 1000 : 0).toFixed(2)), casos: casosIPCSC, diasCVC });
-        resultadoITU.push({ mes: label, di: parseFloat((diasSVD > 0 ? (casosITU / diasSVD) * 1000 : 0).toFixed(2)), casos: casosITU, diasSVD });
-      }
-      setHistoricoDensidadePAV(resultadoPAV);
-      setHistoricoDensidadeIPCSC(resultadoIPCSC);
-      setHistoricoDensidadeITU(resultadoITU);
-    };
-    buscarHistorico();
-  }, [db]);
+useEffect(() => {
+  const buscarHistorico = async () => {
+    if (!db) return;
+    const meses = [];
+    const hoje = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      const mesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
+      meses.push({ mesAno, label });
+    }
+
+    // IPCSL: 1 consulta única por status; atribuição por MÊS DA INFECÇÃO no cliente
+    let docsIPCSC = [];
+    try {
+      const snapIPCSC = await getDocs(query(collection(db, "auditorias_ipcsc"), where("status", "==", "IPCSL")));
+      docsIPCSC = snapIPCSC.docs.map(d => d.data());
+    } catch (e) { console.error(e); }
+
+    const mesEfetivo = (a) => a?.mesInfeccao
+      || (a?.dataInfeccao ? String(a.dataInfeccao).slice(0, 7) : null)
+      || a?.mesReferencia || '';
+
+    const resultadoPAV = [];
+    const resultadoIPCSC = [];
+    const resultadoITU = [];
+    for (const { mesAno, label } of meses) {
+      const [snapCenso, snapPAV, snapITU] = await Promise.all([
+        getDocs(query(collection(db, "censo_diario"), where("data", ">=", `${mesAno}-01`), where("data", "<=", `${mesAno}-31`))),
+        getDocs(query(collection(db, "auditorias_pav"), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado"))),
+        getDocs(query(collection(db, "auditorias_itu"), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado")))
+      ]);
+      let diasVM = 0, diasCVC = 0, diasSVD = 0;
+      snapCenso.forEach(d => {
+        const c = d.data();
+        diasVM += (Number(c.pacientesEmVM) || 0);
+        diasCVC += (Number(c.pacientesComCVC) || 0);
+        diasSVD += (Number(c.pacientesComSVD) || 0);
+      });
+
+      const casosPAV = snapPAV.size;
+      const casosIPCSC = docsIPCSC.filter(a => mesEfetivo(a) === mesAno).length;  // ← mês da infecção
+      const casosITU = snapITU.size;
+
+      resultadoPAV.push({ mes: label, di: parseFloat((diasVM > 0 ? (casosPAV / diasVM) * 1000 : 0).toFixed(2)), casos: casosPAV, diasVM });
+      resultadoIPCSC.push({ mes: label, di: parseFloat((diasCVC > 0 ? (casosIPCSC / diasCVC) * 1000 : 0).toFixed(2)), casos: casosIPCSC, diasCVC });
+      resultadoITU.push({ mes: label, di: parseFloat((diasSVD > 0 ? (casosITU / diasSVD) * 1000 : 0).toFixed(2)), casos: casosITU, diasSVD });
+    }
+    setHistoricoDensidadePAV(resultadoPAV);
+    setHistoricoDensidadeIPCSC(resultadoIPCSC);
+    setHistoricoDensidadeITU(resultadoITU);
+  };
+  buscarHistorico();
+}, [db]);
 
   const [modalRelatorioCarrinho, setModalRelatorioCarrinho] = useState({ isOpen: false, texto: '' });
 
@@ -186,6 +199,7 @@ const GestorDashboard = ({ userProfile }) => {
   const [auditoriasIPCSC, setAuditoriasIPCSC] = useState([]);
   const [filtroStatusIPCSC, setFiltroStatusIPCSC] = useState('Suspeito');
   const [modalAuditoriaIPCSC, setModalAuditoriaIPCSC] = useState(null);
+  const [statusSelecionado, setStatusSelecionado] = useState(""); // classificação final do caso (select do rodapé)
 
   // ==========================================
   // CONTROLES DE INSERÇÃO MANUAL (IPCS-C)
@@ -255,6 +269,8 @@ const GestorDashboard = ({ userProfile }) => {
 
   const [dadosDispositivos, setDadosDispositivos] = useState([]);
   const [dadosDesfechos, setDadosDesfechos] = useState([]);
+
+  const [dataInfeccaoEditavel, setDataInfeccaoEditavel] = useState("");
 
   const [listaCenso, setListaCenso] = useState([]);
 
@@ -906,7 +922,11 @@ const GestorDashboard = ({ userProfile }) => {
     }
   };
 
-  const imprimirRelatorioCVC = (checklists, mesAno, metricas, acessosMes) => {
+  const mesEfetivoAuditoria = (a) => a?.mesInfeccao
+    || (a?.dataInfeccao ? String(a.dataInfeccao).slice(0, 7) : null)
+    || a?.mesReferencia || '';
+
+  const imprimirRelatorioCVC = (checklists, mesAno, metricas, acessosMes, casosIPCSL = []) => {
     // Análise das barreiras mais falhas
     const analiseBarreiras = {};
     let totalItens = 0;
@@ -959,15 +979,44 @@ const GestorDashboard = ({ userProfile }) => {
       </tr>
     `).join('');
 
-    // Monta as linhas da tabela de checklists
+    // Monta as linhas da tabela de checklists (SEM a coluna Leito)
     const linhasChecklists = checklists.map((c, i) => `
       <tr${i % 2 === 0 ? '' : ' style="background-color: #f8fafc;"'}>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.paciente}</td>
-        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data?.split('-').reverse().join('/')} ${c.horario}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data?.split('-').reverse().join('/')} ${c.horario || ''}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.tipoCateter}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.localInsercao}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.medico}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${c.todasCumpridas ? '#047857' : '#b91c1c'};">${c.cumpridas}/${c.total}</td>
+      </tr>
+    `).join('');
+
+    // ── IPCSL: categorias classificadas ───────────────────────
+    const categoriasIPCSL = [
+      { id: 'IPCSL',          label: 'IPCSL — relacionada ao cateter' },
+      { id: 'NaoRelacionada', label: 'IPCSL — não relacionada ao cateter' },
+      { id: 'Importada',      label: 'IPCSL — importada (não contabiliza na UTI)' },
+      { id: 'Descartado',     label: 'Descartado' }
+    ];
+    const mesEfetivo = (a) => a?.mesInfeccao
+      || (a?.dataInfeccao ? String(a.dataInfeccao).slice(0, 7) : null)
+      || a?.mesReferencia || '';
+    const casosDoMes = (casosIPCSL || []).filter(a => mesEfetivo(a) === mesAno);
+    const linhasResumoCat = categoriasIPCSL.map(c => `
+      <tr>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.label}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold;">${casosDoMes.filter(a => a.status === c.id).length}</td>
+      </tr>
+    `).join('');
+    const linhasCasosIPCSL = casosDoMes
+      .slice()
+      .sort((a, b) => (a.dataInfeccao || '').localeCompare(b.dataInfeccao || ''))
+      .map(c => `
+      <tr>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.nome}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.dataInfeccao ? c.dataInfeccao.split('-').reverse().join('/') : (c.dataEventoDOE || '').split('-').reverse().join('/')}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.germe || '-'}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${categoriasIPCSL.find(x => x.id === c.status)?.label || c.status}</td>
       </tr>
     `).join('');
 
@@ -1068,7 +1117,6 @@ const GestorDashboard = ({ userProfile }) => {
       <thead>
         <tr>
           <th>Paciente</th>
-          <th>Leito</th>
           <th>Data</th>
           <th>Cateter</th>
           <th>Local</th>
@@ -1081,6 +1129,36 @@ const GestorDashboard = ({ userProfile }) => {
       </tbody>
     </table>
     ` : '<p style="color: #94a3b8; font-style: italic;">Nenhum checklist registrado no período.</p>'}
+
+    <h2>4. IPCSL — Casos por Categoria</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Categoria</th>
+          <th class="center">Quantidade</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhasResumoCat}
+      </tbody>
+    </table>
+
+    <h2>5. Casos de IPCSL do Período</h2>
+    ${casosDoMes.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Paciente</th>
+          <th>Data da Infecção</th>
+          <th>Germe</th>
+          <th>Categoria</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhasCasosIPCSL}
+      </tbody>
+    </table>
+    ` : '<p style="color: #94a3b8; font-style: italic;">Nenhum caso de IPCSL classificado no período.</p>'}
 
     <div class="footer">
       <p>Relatório gerado automaticamente pelo sistema de gestão de leitos UTI</p>
@@ -1096,7 +1174,7 @@ const GestorDashboard = ({ userProfile }) => {
     const janela = window.open('', '_blank');
     janela.document.write(html);
     janela.document.close();
-  };  
+  };
 
   const imprimirRelatorioSVD = (checklists, mesAno, metricas, acessosMes) => {
     const analiseItens = {};
@@ -1151,7 +1229,7 @@ const GestorDashboard = ({ userProfile }) => {
     const linhasChecklists = checklists.map((c, i) => `
       <tr${i % 2 === 0 ? '' : ' style="background-color: #f8fafc;"'}>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.paciente}</td>
-        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data?.split('-').reverse().join('/')} ${c.horario}</td>
+        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.data?.split('-').reverse().join('/')} ${c.horario || ''}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.indicacao}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">${c.enfermeiro}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${c.todasCumpridas ? '#047857' : '#b91c1c'};">${c.cumpridas}/${c.total}</td>
@@ -3893,25 +3971,31 @@ const imprimirRelatorioGeladeira = () => {
     let casos = { pav: 0, ipcsc: 0, itu: 0 };
     let perfilMicrobiologico = []; // Aqui guardaremos a resistência
 
-    for (const colecao of auditorias) {
-        const qAud = query(collection(db, colecao), where("mesReferencia", "==", mesAno), where("status", "==", "Confirmado"));
-        const snap = await getDocs(qAud);
-        
-        snap.forEach(d => {
-            const docData = d.data();
-            if (colecao === "auditorias_pav") casos.pav++;
-            if (colecao === "auditorias_ipcsc") casos.ipcsc++;
-            if (colecao === "auditorias_itu") casos.itu++;
-            
-            // Extrai dados para o perfil microbiológico (Perfil de Resistência)
-            if (docData.evidencias?.microbiologia) {
-                perfilMicrobiologico.push({
-                    origem: colecao,
-                    detalhe: docData.evidencias.microbiologia
-                });
-            }
-        });
-    }
+  for (const colecao of auditorias) {
+    const statusFilter = colecao === "auditorias_ipcsc" ? "IPCSL" : "Confirmado";
+    const qAud = colecao === "auditorias_ipcsc"
+      ? query(collection(db, colecao), where("status", "==", statusFilter))
+      : query(collection(db, colecao), where("mesReferencia", "==", mesAno), where("status", "==", statusFilter));
+    const snap = await getDocs(qAud);
+
+    snap.forEach(d => {
+      const docData = d.data();
+      // IPCSL: atribui pelo MÊS DA INFECÇÃO (fallback: coleta)
+      if (colecao === "auditorias_ipcsc") {
+        const mesEf = docData.mesInfeccao
+          || (docData.dataInfeccao ? String(docData.dataInfeccao).slice(0, 7) : null)
+          || docData.mesReferencia || '';
+        if (mesEf !== mesAno) return;
+      }
+      if (colecao === "auditorias_pav") casos.pav++;
+      if (colecao === "auditorias_ipcsc") casos.ipcsc++;
+      if (colecao === "auditorias_itu") casos.itu++;
+
+      if (docData.evidencias?.microbiologia) {
+        perfilMicrobiologico.push({ origem: colecao, detalhe: docData.evidencias.microbiologia });
+      }
+    });
+  }
 
     return {
         totais,
@@ -4267,6 +4351,156 @@ const imprimirRelatorioGeladeira = () => {
     }
   };
 
+  // ─────────────────────────────────────────────
+  // 🔍 JANELA EPIDEMIOLÓGICA IPCS (montada no modal)
+  // ─────────────────────────────────────────────
+  const [dadosJanelaIPCS, setDadosJanelaIPCS] = useState(null);
+
+  useEffect(() => {
+    if (!modalAuditoriaIPCSC || !db) { setDadosJanelaIPCS(null); return; }
+    let cancelado = false;
+
+    const calcularJanela = async () => {
+      try {
+        const aud = modalAuditoriaIPCSC;
+        const dColeta = aud.dataEventoDOE || aud.dataSuspeita;
+        if (!dColeta) return;
+
+        // Fallback de tipoCriterio para auditorias antigas (sem o campo)
+        let tipo = aud.tipoCriterio;
+        if (!tipo) {
+          const strMic = String(aud.evidencias?.microbiologia || '').toLowerCase();
+          tipo = strMic.includes('comensal') ? 'comensal' : 'patogeno';
+        }
+
+        // Paciente (enfermagem CVC/Shiley + BH/histórico)
+        let paciente = null;
+        if (aud.pacienteId) {
+          const snapPac = await getDoc(doc(db, "leitos_uti", aud.pacienteId));
+          if (snapPac.exists()) paciente = snapPac.data();
+        }
+
+        const norm = (s) => (s && s.includes('/') ? s.split('/').reverse().join('-') : s);
+        const cvcIni = norm(paciente?.enfermagem?.cvcData);
+        const cvcFim = norm(paciente?.enfermagem?.cvcRetiradaData);
+        const shiIni = norm(paciente?.enfermagem?.shileyData);
+        const shiFim = norm(paciente?.enfermagem?.shileyRetiradaData);
+        const dataInternacaoISO = norm(paciente?.dataInternacao);        
+
+        const dataColetaISO = norm(dColeta);
+        const central = new Date(`${dataColetaISO}T12:00:00`);
+        const paraISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+        // D-5 a D+5 (destaque: D-3 a D+3 = janela epidemiológica)
+        const linhas = [];
+        for (let off = -5; off <= 5; off++) {
+          const iso = paraISO(new Date(central.getTime() + off * 86400000));
+          const naJanela = off >= -3 && off <= 3;
+
+          // COLUNA ACESSO CENTRAL (CVC e Shiley — 2 tipos)
+          const acesso = [];
+          if (cvcIni && iso >= cvcIni && (!cvcFim || iso <= cvcFim)) acesso.push('CVC');
+          if (shiIni && iso >= shiIni && (!shiFim || iso <= shiFim)) acesso.push('Shiley');
+
+          // COLUNA CRITÉRIO
+          let criterio = null;
+          if (tipo === 'patogeno') {
+            if (off === 0) criterio = 'Hemocultura +';
+          } else {
+            // comensal: varre BH/histórico do dia (febre ≥38, PAS ≤90, DVA, calafrios)
+            const blocos = [];
+            if (paciente?.bh && paciente.bh.date === iso) blocos.push(paciente.bh);
+            if (Array.isArray(paciente?.historico_bh)) {
+              paciente.historico_bh.forEach((b) => { if (b && b.date === iso) blocos.push(b); });
+            }
+            const achados = [];
+            for (const bloco of blocos) {
+              if (!bloco || !bloco.vitals) continue;
+              Object.keys(bloco.vitals).forEach((hora) => {
+                const v = bloco.vitals[hora];
+                const t = Number(String(v?.["Temp (ºC)"] ?? '').replace(',', '.'));
+                if (t >= 38) achados.push(`Febre ${t.toFixed(1).replace('.', ',')}`);
+                const pas = Number(String(v?.["PAS"] ?? '').replace(',', '.'));
+                if (pas && pas <= 90) achados.push(`PAS ${pas}`);
+                const nora = Number(String(v?.["Noradrenalina"] ?? '').replace(',', '.'));
+                if (nora > 0) achados.push('DVA');
+              });
+              // 📌 CALAFRIOS: campo novo definido — blocoBh.calafrios (boolean)
+              if (bloco.calafrios === true) achados.push('Calafrios');
+            }
+            if (achados.length) criterio = [...new Set(achados)].join(' · ');
+          }
+
+          // 📅 DIA DE INTERNAÇÃO (D1, D2...) — baseado em dataInternacao
+          let diaInternacao = null;
+          if (dataInternacaoISO) {
+            const dInt = new Date(`${dataInternacaoISO}T12:00:00`);
+            const diffInt = Math.floor((new Date(`${iso}T12:00:00`) - dInt) / 86400000);
+            if (diffInt >= 0) diaInternacao = diffInt + 1;
+          }
+
+          // 📅 DIA DO CATETER (D1, D2...) — por tipo de acesso
+          const diaAcesso = [];
+          if (cvcIni && iso >= cvcIni && (!cvcFim || iso <= cvcFim)) {
+            const dCvc = new Date(`${cvcIni}T12:00:00`);
+            diaAcesso.push({ tipo: 'CVC', dia: Math.floor((new Date(`${iso}T12:00:00`) - dCvc) / 86400000) + 1 });
+          }
+          if (shiIni && iso >= shiIni && (!shiFim || iso <= shiFim)) {
+            const dShi = new Date(`${shiIni}T12:00:00`);
+            diaAcesso.push({ tipo: 'Shiley', dia: Math.floor((new Date(`${iso}T12:00:00`) - dShi) / 86400000) + 1 });
+          }
+
+          linhas.push({ data: iso, naJanela, acesso: acesso.join(' + ') || null, diaAcesso, diaInternacao, criterio });
+        }
+
+        // DATA DA INFECÇÃO
+        let dataInfeccao = null;
+        if (tipo === 'patogeno') {
+          dataInfeccao = dataColetaISO; // dia da coleta
+        } else {
+          const primeiro = linhas.find((l) => l.naJanela && l.criterio); // 1º dado na janela
+          dataInfeccao = primeiro ? primeiro.data : null;
+        }
+
+        if (!cancelado) {
+          setDadosJanelaIPCS({ linhas, dataColetaISO, dataInfeccao, tipo, cvcFim, shiFim });
+          setDataInfeccaoEditavel(aud.dataInfeccao || dataInfeccao || "");
+
+          // ⚖️ SUGESTÃO AUTOMÁTICA DE CLASSIFICAÇÃO (cruzamento dos critérios IPCS)
+          const linhaD0 = linhas.find(l => l.data === dataColetaISO);
+          const diaInternacaoD0 = linhaD0?.diaInternacao ?? null;
+          const acessoD0 = linhaD0?.diaAcesso || [];
+
+          // Cateter em uso há >= 3 dias no D0  OU  retirado no dia anterior (dia seguinte à retirada)
+          const cateterD3 = acessoD0.some(a => a.dia >= 3);
+          const diaAntes = paraISO(new Date(central.getTime() - 86400000));
+          const retiradaDiaAnterior = (cvcFim && cvcFim === diaAntes) || (shiFim && shiFim === diaAntes);
+          const cateterOK = cateterD3 || retiradaDiaAnterior;
+
+          // Sinais clínicos: febvre/PAS≤90/DVA/calafrios dentro da janela — exigidos SOMENTE p/ comensal
+          const sinaisClinicos = linhas.some(l => l.naJanela && l.criterio && /(Febre|PAS|DVA|Calafrios)/.test(l.criterio));
+          const clinicoOK = tipo === 'patogeno' || sinaisClinicos;
+
+          let sugestao;
+          if (!clinicoOK) {
+            sugestao = 'Descartado'; // ex.: comensal 2+ sem sinais clínicos na janela
+          } else if (diaInternacaoD0 !== null && diaInternacaoD0 <= 2) {
+            sugestao = cateterOK ? 'Importada' : 'NaoRelacionada';
+          } else {
+            sugestao = cateterOK ? 'IPCSL' : 'NaoRelacionada';
+          }
+          setStatusSelecionado(sugestao);
+        }
+      } catch (err) {
+        console.error("Erro ao montar janela IPCS:", err);
+      }
+    };
+
+    calcularJanela();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalAuditoriaIPCSC?.firebaseId]);
+
   const carregarAuditoriasIPCSC = async () => {
     if (!db) return;
     try {
@@ -4286,6 +4520,24 @@ const imprimirRelatorioGeladeira = () => {
       setModalAuditoriaIPCSC(null);
       alert(`✅ Caso IPCS-C classificado como: ${novoStatus}`);
     } catch (err) { alert("Falha ao salvar a decisão."); }
+  };
+
+  const salvarDataInfeccao = async (idDocumento) => {
+    if (!db) return;
+    if (!dataInfeccaoEditavel) { alert("Selecione uma data para a infecção."); return; }
+    try {
+      await setDoc(doc(db, "auditorias_ipcsc", idDocumento), {
+        dataInfeccao: dataInfeccaoEditavel,
+        mesInfeccao: dataInfeccaoEditavel.slice(0, 7),   // NOVO
+        dataInfeccaoManual: true,
+        dataInfeccaoAtualizadaEm: new Date().toISOString()
+      }, { merge: true });
+      setModalAuditoriaIPCSC(prev => prev ? { ...prev, dataInfeccao: dataInfeccaoEditavel } : prev);
+      alert("✅ Data da infecção salva.");
+    } catch (err) {
+      alert("Falha ao salvar a data da infecção.");
+      console.error(err);
+    }
   };
 
   // Busca as culturas imortais no banco de dados
@@ -5956,7 +6208,7 @@ const imprimirRelatorioGeladeira = () => {
               onClick={() => setAbaIrasAtiva('ipcsc')}
               className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${abaIrasAtiva === 'ipcsc' ? 'border-purple-600 text-purple-700 bg-purple-50/50 rounded-t-xl' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
             >
-              IPCS-C (Corrente Sanguínea)
+              IPCSL (Corrente Sanguínea)
             </button>
             <button 
               onClick={() => setAbaIrasAtiva('itu')}
@@ -6723,21 +6975,20 @@ const imprimirRelatorioGeladeira = () => {
           )}
 
           {/* ========================================= */}
-          {/* ABA IPCS-C */}
+          {/* ABA IPCS */}
           {/* ========================================= */}
           {abaIrasAtiva === 'ipcsc' && (
             <div className="w-full animate-fadeIn space-y-6">
               
-              {/* CABEÇALHO IPCS-C */}
+              {/* CABEÇALHO IPCS */}
               <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 rounded-xl p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-black flex items-center gap-2">
                     <ShieldAlert size={24} className="text-indigo-400" />
-                    Central de Vigilância: IPCS-C
+                    Central de Vigilância: IPCSL
                   </h3>
                   <p className="text-indigo-200 text-sm mt-1 max-w-xl">
-                    Rastreio inteligente baseado na data da Hemocultura Positiva (D0). 
-                    Cruza comensais vs. patógenos, janela de sinais sistêmicos de 7 dias e uso prévio de CVC (&gt; 2 dias).
+                    Rastreio inteligente = Hemocultura Positiva + comensais vs. patógenos.
                   </p>
                 </div>
                 
@@ -6760,7 +7011,7 @@ const imprimirRelatorioGeladeira = () => {
                       onClick={async () => {
                         if (!db) return alert("Banco não conectado.");
                         try {
-                          console.log("🕵️ INICIANDO VARREDURA DE IPCS-C...");
+                          console.log("🕵️ INICIANDO VARREDURA DE IPCS...");
                           const snapshot = await getDocs(collection(db, "leitos_uti"));
                           const pacientesAtivos = [];
                           snapshot.forEach(doc => { if (doc.data().nome) pacientesAtivos.push({ id: doc.id, leito: doc.id.replace('bed_',''), ...doc.data() }); });
@@ -6789,103 +7040,69 @@ const imprimirRelatorioGeladeira = () => {
                               let evidenciasSistemicas = [];
 
                               if (!isComensal) {
-                                criterioMicrobiologicoAprovado = true; // Patógeno verdadeiro (Ex: S. aureus, Klebsiella) -> Notifica direto
+                                // 🎯 IPCSL — CRITÉRIO 1: ≥1 hemocultura positiva para patógeno conhecido (não comensal)
+                                criterioMicrobiologicoAprovado = true;
                               } else {
-                                // Se for comensal, exige estritamente amostras múltiplas
-                                if (hemo.amostrasPositivas !== 'multiplas') continue; 
-                                
-                                let temSinalSistemico = false;
-
-                                // FUNÇÃO DE VARREDURA ESTRUTURADA NO BH (Evita repetições e captura a Data)
-                                const varrerSinaisSistemicosBH = (blocoBh) => {
-                                  if (!blocoBh || !blocoBh.date) return;
-                                  
-                                  const dataRefUS = blocoBh.date;
-                                  
-                                  // A TRAVA DA JANELA: Só executa se a data do balanço estiver na janela de 7 dias
-                                  if (datasJanela.includes(dataRefUS)) {
-                                    const dataRef = dataRefUS.split('-').reverse().join('/');
-                                    const strBloco = JSON.stringify(blocoBh);
-
-                                    // A) Captura de Febre (>= 38ºC)
-                                    const regexTemp = /"Temp\s*\(ºC\)":\s*"?((?:3[8-9]|4\d)(?:[.,]\d+)?)"?/g;
-                                    let matchTemp;
-                                    while ((matchTemp = regexTemp.exec(strBloco)) !== null) {
-                                      temSinalSistemico = true;
-                                      const msg = `Febre (${matchTemp[1]} ºC) detectada no registro de ${dataRef}`;
-                                      if (!evidenciasSistemicas.includes(msg)) evidenciasSistemicas.push(msg);
-                                    }
-
-                                    // B) Captura de PAS Baixa (10 a 89 mmHg)
-                                    const regexPAS = /"PAS":\s*"?([1-8]\d)"?/g;
-                                    let matchPAS;
-                                    while ((matchPAS = regexPAS.exec(strBloco)) !== null) {
-                                      temSinalSistemico = true;
-                                      const msg = `PAS Baixa (${matchPAS[1]} mmHg) detectada no registro de ${dataRef}`;
-                                      if (!evidenciasSistemicas.includes(msg)) evidenciasSistemicas.push(msg);
-                                    }
-
-                                    // C) Captura de Uso de DVA (Noradrenalina)
-                                    const regexNora = /"Noradrenalina":\s*"?([1-9]\d*(?:[.,]\d+)?|0[.,][1-9]\d*)"?/g;
-                                    let matchNora;
-                                    while ((matchNora = regexNora.exec(strBloco)) !== null) {
-                                      temSinalSistemico = true;
-                                      const msg = `Uso de DVA (Nora: ${matchNora[1]}) detectado no registro de ${dataRef}`;
-                                      if (!evidenciasSistemicas.includes(msg)) evidenciasSistemicas.push(msg);
-                                    }
-                                  }
-                                };
-
-                                // Executa a varredura focada no BH atual e no histórico
-                                if (p.bh) varrerSinaisSistemicosBH(p.bh);
-                                if (p.historico_bh && Array.isArray(p.historico_bh)) p.historico_bh.forEach(varrerSinaisSistemicosBH);
-
-                                if (temSinalSistemico) {
-                                  criterioMicrobiologicoAprovado = true;
-                                }
+                                // 🎯 IPCSL — CRITÉRIO 2: ≥2 hemoculturas positivas para comensal (amostras múltiplas)
+                                if (hemo.amostrasPositivas !== 'multiplas') continue;
+                                criterioMicrobiologicoAprovado = true;
                               }
 
                               if (!criterioMicrobiologicoAprovado) continue;
 
-                              // 3. ASSOCIAÇÃO AO DISPOSITIVO (CVC) - TRAVA OBRIGATÓRIA
-                              if (!p.enfermagem?.cvcData) continue;
-                              
-                              let dCvcStr = p.enfermagem.cvcData.includes('/') ? p.enfermagem.cvcData.split('/').reverse().join('-') : p.enfermagem.cvcData;
-                              const dataCvcObj = new Date(`${dCvcStr}T12:00:00`);
-                              
-                              const diffCvcColeta = Math.floor((dataColetaObj - dataCvcObj) / (1000 * 60 * 60 * 24));
-                              let associadoCVC = diffCvcColeta >= 2;
-
-                              if (associadoCVC && p.enfermagem.cvcRetiradaData) {
-                                let dCvcRetStr = p.enfermagem.cvcRetiradaData.includes('/') ? p.enfermagem.cvcRetiradaData.split('/').reverse().join('-') : p.enfermagem.cvcRetiradaData;
-                                const diffRetColeta = Math.floor((dataColetaObj - new Date(`${dCvcRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24));
-                                if (diffRetColeta > 1) associadoCVC = false;
+                              // 3. ASSOCIAÇÃO AO DISPOSITIVO (CVC) — INFORMATIVA (não bloqueia o card)
+                              // A classificação (IPCSL/IPCS/descartado) será feita depois; aqui só registramos o contexto
+                              let infoDispositivo = "Sem registro de CVC — manter para investigação";
+                              if (p.enfermagem?.cvcData) {
+                                let dCvcStr = p.enfermagem.cvcData.includes('/') ? p.enfermagem.cvcData.split('/').reverse().join('-') : p.enfermagem.cvcData;
+                                const dataCvcObj = new Date(`${dCvcStr}T12:00:00`);
+                                const diffCvcColeta = Math.floor((dataColetaObj - dataCvcObj) / (1000 * 60 * 60 * 24));
+                                infoDispositivo = `CVC inserido em ${dCvcStr.split('-').reverse().join('/')} (D${diffCvcColeta + 1} no dia da coleta)${diffCvcColeta >= 2 ? '' : ' — CVC recente (< 48h), revisar'}`;
+                                if (p.enfermagem.cvcRetiradaData) {
+                                  let dCvcRetStr = p.enfermagem.cvcRetiradaData.includes('/') ? p.enfermagem.cvcRetiradaData.split('/').reverse().join('-') : p.enfermagem.cvcRetiradaData;
+                                  const diffRetColeta = Math.floor((dataColetaObj - new Date(`${dCvcRetStr}T12:00:00`)) / (1000 * 60 * 60 * 24));
+                                  if (diffRetColeta > 1) infoDispositivo = `CVC retirado em ${dCvcRetStr.split('-').reverse().join('/')} (${diffRetColeta} dia(s) antes da coleta) — revisar`;
+                                }
                               }
 
-                              if (associadoCVC) {
-                                const idAuditoria = `${p.cpf || p.id}_ipcsc_${hemo.id || dColetaStr}`;
-                                const docRef = doc(db, "auditorias_ipcsc", idAuditoria);
-                                const audDoc = await getDocs(query(collection(db, "auditorias_ipcsc"), where("id", "==", idAuditoria)));
-                                
-                                if (audDoc.empty) {
-                                  await setDoc(docRef, {
-                                    id: idAuditoria, pacienteId: p.id, nome: p.nome, leito: p.leito, mesReferencia: mesCorrenteHemo,
-                                    dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
-                                    evidencias: {
-                                      microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
-                                      sistemicos: evidenciasSistemicas.length > 0 ? evidenciasSistemicas : ['Critério Clínico dispensado (Patógeno Reconhecido para ANVISA)'],
-                                      dispositivo: `CVC inserido em ${dCvcStr.split('-').reverse().join('/')} (D${diffCvcColeta + 1} no dia da coleta)`,
-                                      justificativa: "Cruzamento automatizado: Hemocultura Positiva + Critérios ANVISA + Linha de Tempo de CVC."
-                                    },
-                                    timestampCriacao: new Date().toISOString()
-                                  });
-                                  novosCasos++;
-                                }
+                              // 4. TRAVA DE EPISÓDIO (14 DIAS): mesmo paciente com auditoria IPCS
+                              //    nos últimos 14 dias → NÃO abrir novo card (mesmo episódio)
+                              const snapAuditados = await getDocs(query(collection(db, "auditorias_ipcsc"), where("pacienteId", "==", p.id)));
+                              let temAuditoriaRecente = false;
+                              snapAuditados.forEach(docAud => {
+                                const aud = docAud.data();
+                                if (!aud.dataEventoDOE) return;
+                                const evStr = aud.dataEventoDOE.includes('/') ? aud.dataEventoDOE.split('/').reverse().join('-') : aud.dataEventoDOE;
+                                const evDate = new Date(`${evStr}T12:00:00`);
+                                const diffDias = Math.floor((dataColetaObj - evDate) / (1000 * 60 * 60 * 24));
+                                if (diffDias >= 0 && diffDias <= 14) temAuditoriaRecente = true;
+                              });
+                              if (temAuditoriaRecente) continue;
+
+                              const idAuditoria = `${p.cpf || p.id}_ipcsc_${hemo.id || dColetaStr}`;
+                              const docRef = doc(db, "auditorias_ipcsc", idAuditoria);
+                              const audDoc = await getDocs(query(collection(db, "auditorias_ipcsc"), where("id", "==", idAuditoria)));
+
+                              if (audDoc.empty) {
+                                await setDoc(docRef, {
+                                  id: idAuditoria, pacienteId: p.id, nome: p.nome, leito: p.leito, mesReferencia: mesCorrenteHemo,
+                                  dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
+                                  tipoCriterio: isComensal ? "comensal" : "patogeno",
+                                  germe: hemo.germe || "",
+                                  evidencias: {
+                                    microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em 2+ amostras' : 'Patógeno Reconhecido'})`,
+                                    sistemicos: ['Critério laboratorial — IPCSL não exige sinais clínicos'],
+                                    dispositivo: infoDispositivo,
+                                    justificativa: "Cruzamento automatizado: Hemocultura Positiva (critério IPCSL) + Trava de 14 dias sem episódio prévio."
+                                  },
+                                  timestampCriacao: new Date().toISOString()
+                                });
+                                novosCasos++;
                               }
                             }
                           }
-                          if (novosCasos > 0) alert(`🚨 ${novosCasos} novos casos suspeitos de IPCS-C capturados!`);
-                          else alert("Nenhum novo caso de IPCS-C preencheu os critérios de elegibilidade.");
+                          if (novosCasos > 0) alert(`🚨 ${novosCasos} novos casos suspeitos de IPCS capturados!`);
+                          else alert("Nenhum novo caso de IPCS preencheu os critérios de elegibilidade.");
                           carregarAuditoriasIPCSC();
                         } catch (err) { alert("Falha na varredura."); console.error(err); }
                       }}
@@ -6897,15 +7114,17 @@ const imprimirRelatorioGeladeira = () => {
                 </div>
               </div>
 
-              {/* NAVEGAÇÃO INTERNA IPCS-C + BOTAO MANUAL */}
+              {/* NAVEGAÇÃO INTERNA IPCSL + BOTAO MANUAL */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-2 gap-4">
                 <div className="flex gap-2">
                   {[
                     { id: 'Suspeito', label: 'Alerta de Suspeita', color: 'bg-amber-100 text-amber-700' },
-                    { id: 'Confirmado', label: 'IPCS-C Confirmada', color: 'bg-red-100 text-red-700' },
+                    { id: 'IPCSL', label: 'IPCSL Confirmada', color: 'bg-red-100 text-red-700' },
+                    { id: 'NaoRelacionada', label: 'Não Relacionada ao Cateter', color: 'bg-sky-100 text-sky-700' },
+                    { id: 'Importada', label: 'Importadas', color: 'bg-orange-100 text-orange-700' },
                     { id: 'Descartado', label: 'Descartados', color: 'bg-emerald-100 text-emerald-700' }
                   ].map(tab => {
-                    const count = auditoriasIPCSC.filter(a => a.status === tab.id && a.mesReferencia === mesFiltroIrasCompartilhado).length;
+                    const count = auditoriasIPCSC.filter(a => a.status === tab.id && mesEfetivoAuditoria(a) === mesFiltroIrasCompartilhado).length;
                     return (
                       <button
                         key={tab.id}
@@ -6919,29 +7138,31 @@ const imprimirRelatorioGeladeira = () => {
                   })}
                 </div>
 
-                {/* BOTÃO DE LANÇAMENTO MANUAL IPCS-C */}
+                {/* BOTÃO DE LANÇAMENTO MANUAL IPCSL */}
                 <button 
                   onClick={() => setIsModalManualIPCSCOpen(true)}
                   className="bg-white border-2 border-indigo-500 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-2"
                 >
-                  <PlusCircle size={16} /> Lançar IPCS-C Manual
+                  <PlusCircle size={16} /> Lançar IPCSL Manual
                 </button>
               </div>
 
-              {/* LISTA DE CASOS IPCS-C */}
+              {/* LISTA DE CASOS IPCSL */}
               <div className="grid md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-b-xl border border-t-0 border-slate-200 min-h-[300px]">
-                {auditoriasIPCSC.filter(a => a.status === filtroStatusIPCSC && a.mesReferencia === mesFiltroIrasCompartilhado).length === 0 ? (
+                {auditoriasIPCSC.filter(a => a.status === filtroStatusIPCSC && mesEfetivoAuditoria(a) === mesFiltroIrasCompartilhado).length === 0 ? (
                   <div className="col-span-3 flex flex-col items-center justify-center text-slate-400 py-10">
                     <CheckCircle size={48} className="text-slate-300 mb-3 opacity-50"/>
                     <p className="font-bold">Nenhum caso {filtroStatusIPCSC.toLowerCase()} neste mês.</p>
                   </div>
                 ) : (
-                  auditoriasIPCSC.filter(a => a.status === filtroStatusIPCSC && a.mesReferencia === mesFiltroIrasCompartilhado).map((caso) => (
-                    <div key={caso.firebaseId} className={`bg-white border-2 rounded-xl p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md ${filtroStatusIPCSC === 'Suspeito' ? 'border-amber-200' : filtroStatusIPCSC === 'Confirmado' ? 'border-red-200' : 'border-emerald-200'}`}>
-                      <div className={`absolute top-0 left-0 w-2 h-full ${filtroStatusIPCSC === 'Suspeito' ? 'bg-amber-500' : filtroStatusIPCSC === 'Confirmado' ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
+                  auditoriasIPCSC.filter(a => a.status === filtroStatusIPCSC && mesEfetivoAuditoria(a) === mesFiltroIrasCompartilhado).map((caso) => (
+                    <div key={caso.firebaseId} className={`bg-white border-2 rounded-xl p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md ${filtroStatusIPCSC === 'Suspeito' ? 'border-amber-200' : filtroStatusIPCSC === 'IPCSL' ? 'border-red-200' : filtroStatusIPCSC === 'NaoRelacionada' ? 'border-sky-200' : filtroStatusIPCSC === 'Importada' ? 'border-orange-200' : 'border-emerald-200'}`}>
+                      <div className={`absolute top-0 left-0 w-2 h-full ${filtroStatusIPCSC === 'Suspeito' ? 'bg-amber-500' : filtroStatusIPCSC === 'IPCSL' ? 'bg-red-500' : filtroStatusIPCSC === 'NaoRelacionada' ? 'bg-sky-500' : filtroStatusIPCSC === 'Importada' ? 'bg-orange-500' : 'bg-emerald-500'}`}></div>
                       <div className="pl-3 flex flex-col h-full">
                         <div className="flex justify-between items-start mb-2">
-                          <span className="text-[10px] font-black text-indigo-500 uppercase">Coleta: {caso.dataSuspeita?.split('-').reverse().join('/')}</span>
+                          <span className="text-[10px] font-black text-indigo-500 uppercase">
+                            {caso.dataInfeccao ? `Infecção: ${caso.dataInfeccao.split('-').reverse().join('/')}` : `Coleta: ${caso.dataSuspeita?.split('-').reverse().join('/')}`}
+                          </span>
                           <span className="text-xs font-bold text-slate-800">Leito {caso.leito}</span>
                         </div>
                         <h4 className="font-bold text-slate-800 text-sm truncate uppercase">{caso.nome}</h4>
@@ -6961,11 +7182,11 @@ const imprimirRelatorioGeladeira = () => {
                 )}
               </div>
 
-              {/* MODAL DE AUDITORIA IPCS-C */}
+              {/* MODAL DE AUDITORIA IPCS */}
               {modalAuditoriaIPCSC && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-                  <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-slideUp">
-                    <div className={`p-4 text-white flex justify-between items-center ${modalAuditoriaIPCSC.status === 'Suspeito' ? 'bg-indigo-800' : modalAuditoriaIPCSC.status === 'Confirmado' ? 'bg-red-700' : 'bg-emerald-700'}`}>
+                  <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-slideUp flex flex-col max-h-[90vh]">
+                    <div className={`p-4 text-white flex justify-between items-center ${modalAuditoriaIPCSC.status === 'Suspeito' ? 'bg-indigo-800' : modalAuditoriaIPCSC.status === 'IPCSL' ? 'bg-red-700' : modalAuditoriaIPCSC.status === 'Descartado' ? 'bg-emerald-700' : 'bg-amber-700'}`}>
                       <h2 className="font-black flex items-center gap-2">
                         <ShieldAlert size={20} className="opacity-80" />
                         Auditoria Corrente Sanguínea - Leito {modalAuditoriaIPCSC.leito}
@@ -6973,13 +7194,34 @@ const imprimirRelatorioGeladeira = () => {
                       <button onClick={() => setModalAuditoriaIPCSC(null)} className="text-white/70 hover:text-white transition-colors"><X size={24} /></button>
                     </div>
 
-                    <div className="p-6">
+                    <div className="p-6 overflow-y-auto flex-1 min-h-0">
                       <div className="flex justify-between items-start mb-6">
                         <div>
                           <h3 className="font-black text-xl text-slate-800 uppercase">{modalAuditoriaIPCSC.nome}</h3>
-                          <span className="text-xs text-slate-500 font-bold">Data da Coleta (D.O.E): {modalAuditoriaIPCSC.dataSuspeita?.split('-').reverse().join('/')}</span>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                            <span className="text-xs text-slate-500 font-bold">Data da Coleta (D.O.E): {modalAuditoriaIPCSC.dataSuspeita?.split('-').reverse().join('/')}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-slate-600">Data da Infecção:</span>
+                              <input
+                                type="date"
+                                value={dataInfeccaoEditavel}
+                                onChange={(e) => setDataInfeccaoEditavel(e.target.value)}
+                                className={`px-2 py-1 rounded-lg border text-xs font-black outline-none focus:ring-2 transition-all ${
+                                  dataInfeccaoEditavel
+                                    ? 'border-red-300 text-red-700 focus:ring-red-200 bg-red-50'
+                                    : 'border-amber-300 text-amber-700 focus:ring-amber-200 bg-amber-50'
+                                }`}
+                              />
+                              <button
+                                onClick={() => salvarDataInfeccao(modalAuditoriaIPCSC.firebaseId)}
+                                className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[11px] font-black transition-colors"
+                              >
+                                Salvar
+                              </button>                              
+                            </div>
+                          </div>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${modalAuditoriaIPCSC.status === 'Suspeito' ? 'bg-amber-100 text-amber-700' : modalAuditoriaIPCSC.status === 'Confirmado' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${modalAuditoriaIPCSC.status === 'Suspeito' ? 'bg-amber-100 text-amber-700' : modalAuditoriaIPCSC.status === 'IPCSL' ? 'bg-red-100 text-red-700' : modalAuditoriaIPCSC.status === 'Descartado' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
                           {modalAuditoriaIPCSC.status}
                         </span>
                       </div>
@@ -6989,23 +7231,71 @@ const imprimirRelatorioGeladeira = () => {
                           <h4 className="text-xs font-black text-purple-800 uppercase mb-2">Microbiologia (Hemocultura)</h4>
                           <p className="text-sm text-purple-900 font-bold">✓ {modalAuditoriaIPCSC.evidencias?.microbiologia}</p>
                         </div>
-
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg">
-                            <h4 className="text-xs font-black text-rose-800 uppercase mb-2 flex items-center gap-1"><Activity size={12}/> Sinais Sistêmicos (Janela 7D)</h4>
-                            <ul className="text-xs text-rose-900 font-medium space-y-1 list-disc pl-4">
-                              {modalAuditoriaIPCSC.evidencias?.sistemicos.map((e, i) => <li key={i}>{e}</li>)}
-                            </ul>
-                          </div>
-
-                          <div className="p-3 bg-cyan-50 border border-cyan-100 rounded-lg">
-                            <h4 className="text-xs font-black text-cyan-800 uppercase mb-2 flex items-center gap-1"><Wind size={12}/> Associação ao Dispositivo</h4>
-                            <p className="text-xs text-cyan-900 font-medium">{modalAuditoriaIPCSC.evidencias?.dispositivo}</p>
-                          </div>
-                        </div>
                       </div>
 
-                      {/* NOVO CAMPO DE ANOTAÇÕES DA CCIH (IPCS-C) */}
+                      {/* 📅 TABELA: JANELA EPIDEMIOLÓGICA (D-3 a D+3) */}
+                      <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div className="px-3 py-2 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                          <h4 className="text-[11px] font-black text-slate-600 uppercase flex items-center gap-1">
+                            <CalendarRange size={12} /> Janela Epidemiológica (D-3 a D+3)
+                          </h4>
+                          <span className="text-[10px] font-bold text-slate-500">
+                            Dia central (coleta): {dadosJanelaIPCS?.dataColetaISO ? dadosJanelaIPCS.dataColetaISO.split('-').reverse().join('/') : '—'}
+                          </span>
+                        </div>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-[10px] uppercase text-slate-500 bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-1.5 font-black w-24">Data</th>
+                              <th className="text-left px-3 py-1.5 font-black w-32">Acesso Central</th>
+                              <th className="text-left px-3 py-1.5 font-black">Critério</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(dadosJanelaIPCS?.linhas || []).map((l, i) => (
+                              <tr key={i} className={`border-b border-slate-100 last:border-0 ${l.naJanela ? 'bg-amber-50/60' : ''}`}>
+                                <td className={`px-3 py-1.5 font-bold ${l.naJanela ? 'text-amber-900' : 'text-slate-400'}`}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{l.data.split('-').reverse().join('/')}</span>
+                                    {l.diaInternacao && (
+                                      <span className="inline-block text-[9px] font-black text-slate-500 bg-slate-100 rounded px-1 py-0.5">D{l.diaInternacao}</span>
+                                    )}
+                                    {l.data === dadosJanelaIPCS?.dataColetaISO && (
+                                      <span className="inline-block text-[9px] font-black text-white bg-amber-500 rounded px-1 py-0.5">D0</span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  {l.diaAcesso && l.diaAcesso.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {l.diaAcesso.map((a, ai) => (
+                                        <span key={ai} className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${a.tipo === 'CVC' ? 'bg-cyan-100 text-cyan-700' : 'bg-sky-100 text-sky-700'}`}>
+                                          {a.tipo} D{a.dia}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-1.5 font-medium text-slate-700">
+                                  {l.criterio || <span className="text-slate-300">—</span>}
+                                  {l.criterio && (
+                                    <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-red-500 align-middle" title="Critério presente" />
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                            {(!dadosJanelaIPCS || dadosJanelaIPCS.linhas.length === 0) && (
+                              <tr>
+                                <td colSpan={3} className="px-3 py-4 text-center text-xs text-slate-400 font-bold">Calculando janela epidemiológica...</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* NOVO CAMPO DE ANOTAÇÕES DA CCIH (IPCS) */}
                       <div className="mt-6 bg-slate-50 border border-slate-200 p-3 rounded-lg shadow-sm">
                         <label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1 mb-2">
                           <Edit3 size={14} /> Parecer / Justificativa da CCIH:
@@ -7020,36 +7310,48 @@ const imprimirRelatorioGeladeira = () => {
                         <p className="text-[10px] text-slate-400 mt-1 italic text-right">* A nota é salva automaticamente ao sair do campo.</p>
                       </div>
 
-                      {modalAuditoriaIPCSC.status === 'Suspeito' && (
+                            {modalAuditoriaIPCSC.status === 'Suspeito' && (
                         <div className="mt-6 flex flex-col gap-3 pt-4 border-t border-slate-100">
-                          <div className="flex gap-4">
-                            <button 
-                              onClick={() => {
-                                atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Confirmado');
-                                setModalAuditoriaIPCSC(null);
-                              }} 
-                              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                          <div>
+                            <label className="text-xs font-black text-slate-500 uppercase mb-2 block flex items-center gap-1">
+                              <ShieldAlert size={14} /> Classificação do Caso:
+                            </label>
+                            <select
+                              value={statusSelecionado}
+                              onChange={(e) => setStatusSelecionado(e.target.value)}
+                              className="w-full p-3 border-2 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-200 transition-all bg-white"
                             >
-                              <CheckCircle size={18} /> Confirmar IPCS-C
-                            </button>
-                            <button 
-                              onClick={() => {
-                                atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Descartado');
-                                setModalAuditoriaIPCSC(null);
-                              }} 
-                              className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-colors shadow-sm"
-                            >
-                              Descartar Suspeita
-                            </button>
+                              <option value="IPCSL">IPCSL — relacionada ao cateter</option>
+                              <option value="NaoRelacionada">IPCSL — não relacionada ao cateter</option>
+                              <option value="Importada">IPCSL importada (não contabiliza na UTI)</option>
+                              <option value="Descartado">Descartar suspeita</option>
+                            </select>
+                            <p className="text-[10px] text-slate-400 mt-1.5 italic">
+                              Sugestão gerada automaticamente pelo cruzamento dos critérios (hemocultura, cateter, internação e sinais clínicos). Você pode alterar antes de salvar.
+                            </p>
                           </div>
-                          <button 
-                            onClick={() => {
-                              atualizarStatusIPCSC(modalAuditoriaIPCSC.firebaseId, 'Importada');
-                              setModalAuditoriaIPCSC(null);
-                            }} 
-                            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+
+                          <button
+                            onClick={async () => {
+                              const infec = dataInfeccaoEditavel || dadosJanelaIPCS?.dataInfeccao || "";
+                              if (!db) return;
+                              try {
+                                await setDoc(doc(db, "auditorias_ipcsc", modalAuditoriaIPCSC.firebaseId), {
+                                  status: statusSelecionado,
+                                  dataInfeccao: infec || null,
+                                  mesInfeccao: infec ? infec.slice(0, 7) : null,   // mês da infecção (base ANVISA)
+                                  dataAuditoria: new Date().toISOString()
+                                }, { merge: true });
+                                setAuditoriasIPCSC(prev => prev.map(a => a.firebaseId === modalAuditoriaIPCSC.firebaseId
+                                  ? { ...a, status: statusSelecionado, dataInfeccao: infec || null, mesInfeccao: infec ? infec.slice(0, 7) : null }
+                                  : a));
+                                setModalAuditoriaIPCSC(null);
+                                alert(`✅ Caso classificado como: ${statusSelecionado}`);
+                              } catch (err) { alert("Falha ao salvar a classificação."); console.error(err); }
+                            }}
+                            className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
                           >
-                            <ShieldAlert size={18} /> Registrar como Importada (não contabiliza na UTI)
+                            <CheckCircle size={18} /> Salvar Classificação
                           </button>
                         </div>
                       )}
@@ -7202,21 +7504,21 @@ const imprimirRelatorioGeladeira = () => {
                     <div className="bg-slate-100 border-t border-slate-200 p-5 flex justify-end gap-3 shrink-0">
                       <button onClick={() => setIsModalManualIPCSCOpen(false)} className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancelar</button>
                       <button onClick={salvarIPCSCManual} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors flex items-center gap-2">
-                        <CheckCircle size={18} /> Processar e Salvar IPCS-C
+                        <CheckCircle size={18} /> Processar e Salvar IPCSL
                       </button>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* GRÁFICO DE DENSIDADE DE INCIDÊNCIA IPCS-C — ÚLTIMOS 12 MESES */}
+              {/* GRÁFICO DE DENSIDADE DE INCIDÊNCIA IPCSL — ÚLTIMOS 12 MESES */}
               <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 mt-6">
                 <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
                   <TrendingUp size={20} className="text-indigo-600" />
-                  Densidade de Incidência de IPCS-C — Últimos 12 Meses
+                  Densidade de Incidência de IPCSL — Últimos 12 Meses
                 </h3>
                 <p className="text-xs text-slate-500 mb-4">
-                  Casos de IPCS-C confirmados por 1.000 dias de cateter central
+                  Casos de IPCSL confirmados por 1.000 dias de cateter central
                 </p>
                 {historicoDensidadeIPCSC.length === 0 ? (
                   <div className="h-64 flex items-center justify-center text-slate-400 animate-pulse font-bold">
@@ -8773,11 +9075,12 @@ const imprimirRelatorioGeladeira = () => {
                   </div>
                   
                   <div className="flex-1 overflow-auto bg-white p-8">
-                    <RelatorioChecklistCVC 
+                    <RelatorioChecklistCVC
                       checklists={checklistsCVCDoMes}
                       mesAno={mesFiltroCVC}
                       metricas={metricasCVC}
                       acessosMes={acessosMesCVC ?? metricasCVC.totalChecklists}
+                      casosIPCSL={auditoriasIPCSC.filter(a => (a.mesInfeccao || (a.dataInfeccao ? String(a.dataInfeccao).slice(0, 7) : null) || a.mesReferencia) === mesFiltroCVC)}
                     />
                   </div>
                 </div>
