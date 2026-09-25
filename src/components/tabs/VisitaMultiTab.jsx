@@ -249,6 +249,12 @@ const VisitaMultiTab = ({ currentPatient, save, userProfile, calculateDiurese12h
   const fmtBR = (iso) => { const [a, m, d] = String(iso).split('-'); return `${d}-${m}-${a}`; };
   const dataBR = fmtBR(dataISO);
   const ontemBR = fmtBR(ontemISO);
+  // Janela do dia calendário anterior — declarada aqui para ser usada em todo o componente
+  const inicioDiaCalendario = new Date();
+  inicioDiaCalendario.setDate(inicioDiaCalendario.getDate() - 1);
+  inicioDiaCalendario.setHours(0, 0, 0, 0);
+  const fimDiaCalendario = new Date();
+  fimDiaCalendario.setHours(0, 0, 0, 0);  
 
   // ===== MAPEIA O CARGO DO PROFISSIONAL PARA A SUB-ABA INICIAL =====
   const cargoParaCategoria = (cargo) => {
@@ -505,11 +511,6 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   const totalAtualBH = Math.round((bhPrev?.accumulated || 0) + balanco24hBH);
 
   // ---------- ENFERMEIRO: HIGIENE ORAL (dia calendário anterior) ----------
-  const inicioDiaCalendario = new Date();
-  inicioDiaCalendario.setDate(inicioDiaCalendario.getDate() - 1);
-  inicioDiaCalendario.setHours(0, 0, 0, 0);
-  const fimDiaCalendario = new Date();
-  fimDiaCalendario.setHours(0, 0, 0, 0);
   const higieneOralOntem = (currentPatient?.enfermagem?.historico_higiene_oral || [])
     .filter(h => {
       const dt = h.dataHoraRegistro ? new Date(h.dataHoraRegistro) : null;
@@ -940,11 +941,10 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
 
   const sugerirMeta = (descricao, origem, statusInicial = 'aguardando') => {
     atualizarMetas(lista => {
-      const ativa = lista.some(m =>
-        (m.descricao === descricao || m.origem === origem) &&
-        (m.status === 'aguardando' || m.status === 'pendente')
+      const jaExiste = lista.some(m =>
+        m.descricao === descricao || m.origem === origem
       );
-      if (ativa) return lista;
+      if (jaExiste) return lista;
       return [...lista, {
         id: `meta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         descricao, origem, status: statusInicial, criadoEm: dataISO,

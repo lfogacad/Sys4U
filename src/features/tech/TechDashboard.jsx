@@ -3223,7 +3223,7 @@ const salvarFralda = () => {
             {/* CABEÇALHO */}
             <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
-                <div className="bg-white/20 p-2 rounded-full"><LogOut size={20} /></div>
+                <div className="bg-white/20 p-2 rounded-full"><Ambulance size={20} /></div>
                 <h2 className="text-lg font-black tracking-wide leading-tight">Saída Para Procedimento</h2>
               </div>
               <button onClick={() => setModalSaidaProcedimento({ ...modalSaidaProcedimento, isOpen: false })} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
