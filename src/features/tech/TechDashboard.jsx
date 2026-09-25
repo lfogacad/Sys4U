@@ -424,20 +424,19 @@ const salvarFralda = () => {
     if (!p.enfermagem) p.enfermagem = {};
     if (!p.enfermagem.historico_tricotomia) p.enfermagem.historico_tricotomia = [];
 
-    const horario = modalTricotomia.horario;
     const locais = modalTricotomia.locais;
+    const locaisTexto = locais.join(', ');
 
-    locais.forEach(local => {
-      p.enfermagem.historico_tricotomia.push({
-        dataHoraRegistro: new Date().toISOString(),
-        horario,
-        local
-      });
+    // UM registro só, com todas as áreas unidas na mesma linha
+    p.enfermagem.historico_tricotomia.push({
+      dataHoraRegistro: new Date().toISOString(),
+      horario: modalTricotomia.horario,
+      local: locaisTexto
     });
 
     up[activeTab] = p;
     setPatients(up);
-    save(up[activeTab], `Enfermagem: Registrou Tricotomia (${locais.join(', ')})`);
+    save(up[activeTab], `Enfermagem: Registrou Tricotomia (${locaisTexto})`);
     setModalTricotomia({ isOpen: false, horario: "", locais: [] });
   };
 
@@ -1376,7 +1375,7 @@ const salvarFralda = () => {
             </button>
 
             <button 
-              onClick={(e) => { e.preventDefault(); setModalTricotomia({ isOpen: true, horario: getHoraAtualArredondada(), local: "" }); }}
+              onClick={(e) => { e.preventDefault(); setModalTricotomia({ isOpen: true, horario: getHoraAtualArredondada(), locais: [] }); }}
               className="flex flex-col items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-slate-600 hover:text-indigo-700 hover:shadow-sm group"
             >
               <Scissors size={22} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
@@ -2997,7 +2996,7 @@ const salvarFralda = () => {
                 <label className="text-xs font-bold text-slate-600 mb-3 block text-center">Local</label>
                 <div className="grid grid-cols-2 gap-2">
                   {['Cabelo', 'Face', 'Tórax', 'Abdome', 'MMSS', 'MMII', 'Região Púbica'].map(local => {
-                    const selecionado = modalTricotomia.locais.includes(local);
+                    const selecionado = (modalTricotomia.locais || []).includes(local);
                     return (
                       <button key={local} onClick={() => setModalTricotomia({
                         ...modalTricotomia,
@@ -3011,7 +3010,7 @@ const salvarFralda = () => {
               </div>
               <div className="flex gap-3 pt-4 border-t border-slate-200">
                 <button onClick={() => setModalTricotomia({ ...modalTricotomia, isOpen: false })} className="px-4 py-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
-                <button disabled={!modalTricotomia.horario || modalTricotomia.locais.length === 0} onClick={salvarTricotomia} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
+                <button disabled={!modalTricotomia.horario || (modalTricotomia.locais || []).length === 0} onClick={salvarTricotomia} className="flex-1 py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 uppercase tracking-wider"><CheckCircle2 size={18} /> Salvar</button>
               </div>
             </div>
           </div>
