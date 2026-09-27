@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, HeartPulse, Bot, Copy,
-Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList,
+Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList, History,
 Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast, Slice,
 CheckCircle2, Printer, BriefcaseMedical } from 'lucide-react';
 import { collection, onSnapshot, addDoc } from 'firebase/firestore';
@@ -37,6 +37,10 @@ const NursingDashboard = ({
   const [showRegistrosDiarios, setShowRegistrosDiarios] = useState(false);
   const [listaProfissionais, setListaProfissionais] = useState([]);
 
+  const [modalHistorico, setModalHistorico] = useState(null); // 'cvc' | 'shiley' | 'svd' | null
+  // Controla o reset VISUAL dos campos de data após retirada confirmada (não toca no Firebase)
+  const [resetVisualDispositivo, setResetVisualDispositivo] = useState({ cvc: false, shiley: false, svd: false });
+  
   const [modalCVC, setModalCVC] = useState({
     isOpen: false,
     horario: '',
@@ -429,6 +433,54 @@ const NursingDashboard = ({
       setModalSaidaProcedimento({ isOpen: true, data: hoje, horarioSaida: '', horarioChegada: '', procedimento: '', procedimentoOutro: '', equipe: '', observacao: '' });
       return;
     }    
+  };
+
+  // Formata ISO (AAAA-MM-DD) para DD/MM/AAAA
+  const fmtDataBR = (iso) => {
+    if (!iso) return '';
+    const [a, m, d] = String(iso).split('-');
+    return `${d}/${m}/${a}`;
+  };
+
+  // Confirma a retirada no onBlur do campo de data de retirada
+  const confirmarRetirada = (dispositivo) => {
+    const enf = currentPatient.enfermagem || {};
+    const dataIns = enf[dispositivo.dataInser];
+    const dataRet = enf[dispositivo.retiradaData];
+    if (!dataRet) return; // sem data de retirada, não faz nada
+
+    // Sem data de inserção: só salva normalmente (não dá para arquivar período)
+    if (!dataIns) {
+      handleBlurSave(`Enfermagem: Registrou retirada do ${dispositivo.nome}`);
+      return;
+    }
+
+    const ok = window.confirm(`Você confirma a retirada do ${dispositivo.nome} no dia ${fmtDataBR(dataRet)}?`);
+    if (!ok) {
+      handleBlurSave(`Enfermagem: Registrou retirada do ${dispositivo.nome}`);
+      return;
+    }
+
+    // Confirmou — arquiva o período no histórico
+    const historico = [...(enf[dispositivo.historicoCampo] || [])];
+    historico.push({ inicio: dataIns, fim: dataRet });
+    updateNested("enfermagem", dispositivo.historicoCampo, historico);
+
+    // Reseta o LOCAL da inserção no Firebase (novo ciclo)
+    if (dispositivo.localCampo) {
+      updateNested("enfermagem", dispositivo.localCampo, "");
+    }
+
+    // NÃO limpa cvcData/cvcRetiradaData no Firebase (mantém para as calculadoras).
+    // Apenas marca o reset visual para esvaziar os campos no JSX.
+    setResetVisualDispositivo(prev => ({ ...prev, [dispositivo.key]: true }));
+
+    if (typeof registrarLogAuditoria === "function") {
+      registrarLogAuditoria(`DISPOSITIVO: ${dispositivo.nome}`,
+        `Retirada confirmada em ${fmtDataBR(dataRet)} — período arquivado`,
+        currentPatient.id, currentPatient.nome);
+    }
+    handleBlurSave(`Enfermagem: Retirada do ${dispositivo.nome} confirmada e arquivada`);
   };
 
   const salvarCurativo = () => {
@@ -1761,7 +1813,10 @@ return (
 
               {/* 2. CVC/PICC */}
               <div>
-                <label className="text-xs font-bold text-gray-500">CVC/PICC (Inserção)</label>
+                <label className="text-xs font-bold text-gray-500 flex items-center gap-2">
+                  CVC/PICC (Inserção)
+                  <button onClick={() => setModalHistorico('cvc')} className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-0.5 hover:bg-indigo-100 transition-colors">Histórico</button>
+                </label>
                 <div className="flex gap-2">
                   {/* 🔥 SUBSTITUÍDO O INPUT DE TEXTO POR UM SELECT */}
                   <select 
@@ -1788,8 +1843,13 @@ return (
                   <input 
                     type="date" 
                     className="w-32 p-2 border rounded shrink-0 text-sm outline-none focus:ring-2 focus:ring-blue-100" 
-                    value={currentPatient.enfermagem?.cvcData || ""} 
-                    onChange={(e) => updateNested("enfermagem", "cvcData", e.target.value)} 
+                    value={resetVisualDispositivo.cvc ? "" : (currentPatient.enfermagem?.cvcData || "")}
+                    onChange={(e) => {
+                      updateNested("enfermagem", "cvcData", e.target.value);
+                      // Nova inserção = novo ciclo: limpa a data de retirada anterior no Firebase
+                      updateNested("enfermagem", "cvcRetiradaData", "");
+                      setResetVisualDispositivo(prev => ({ ...prev, cvc: false }));
+                    }}
                     onBlur={(e) => {
                       handleBlurSave("Enfermagem: Editou CVC/PICC (Data Inserção)");
                       if (typeof registrarLogAuditoria === "function") {
@@ -1805,14 +1865,9 @@ return (
                     <input 
                       type="date" 
                       className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none text-sm" 
-                      value={currentPatient.enfermagem?.cvcRetiradaData || ""} 
+                      value={resetVisualDispositivo.cvc ? "" : (currentPatient.enfermagem?.cvcRetiradaData || "")} 
                       onChange={(e) => updateNested("enfermagem", "cvcRetiradaData", e.target.value)} 
-                      onBlur={(e) => {
-                        handleBlurSave("Enfermagem: Registrou retirada do CVC/PICC");
-                        if (typeof registrarLogAuditoria === "function") {
-                          registrarLogAuditoria("DISPOSITIVO: CVC/PICC", `Data de retirada registada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
-                        }
-                      }}
+                      onBlur={() => confirmarRetirada({ key: 'cvc', nome: 'CVC/PICC', dataInser: 'cvcData', retiradaData: 'cvcRetiradaData', localCampo: 'cvcLocal', historicoCampo: 'historicoPeriodoCVC' })}
                       disabled={!isEditable} 
                     />
                   </div>
@@ -1821,7 +1876,10 @@ return (
 
               {/* 3. SHILEY (HEMODIÁLISE) */}
               <div>
-                <label className="text-xs font-bold text-gray-500">Cateter de Shiley (Inserção)</label>
+                <label className="text-xs font-bold text-gray-500 flex items-center gap-2">
+                  Cateter de Shiley (Inserção)
+                  <button onClick={() => setModalHistorico('shiley')} className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-0.5 hover:bg-indigo-100 transition-colors">Histórico</button>
+                </label>
                 <div className="flex gap-2">
                   <select 
                     className="w-full p-2 border rounded bg-white outline-none" 
@@ -1840,8 +1898,13 @@ return (
                   <input 
                     type="date" 
                     className="w-32 p-2 border rounded shrink-0" 
-                    value={currentPatient.enfermagem?.shileyData || ""} 
-                    onChange={(e) => updateNested("enfermagem", "shileyData", e.target.value)} 
+                    value={resetVisualDispositivo.shiley ? "" : (currentPatient.enfermagem?.shileyData || "")}
+                    onChange={(e) => {
+                      updateNested("enfermagem", "shileyData", e.target.value);
+                      // Nova inserção = novo ciclo: limpa a data de retirada anterior no Firebase
+                      updateNested("enfermagem", "shileyRetiradaData", "");
+                      setResetVisualDispositivo(prev => ({ ...prev, shiley: false }));
+                    }}
                     onBlur={(e) => {
                       handleBlurSave("Enfermagem: Editou Shiley (Data Inserção)");
                       if (typeof registrarLogAuditoria === "function") {
@@ -1857,14 +1920,9 @@ return (
                     <input 
                       type="date" 
                       className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
-                      value={currentPatient.enfermagem?.shileyRetiradaData || ""} 
+                      value={resetVisualDispositivo.shiley ? "" : (currentPatient.enfermagem?.shileyRetiradaData || "")} 
                       onChange={(e) => updateNested("enfermagem", "shileyRetiradaData", e.target.value)} 
-                      onBlur={(e) => {
-                        handleBlurSave("Enfermagem: Registrou retirada do Shiley");
-                        if (typeof registrarLogAuditoria === "function") {
-                          registrarLogAuditoria("DISPOSITIVO: SHILEY", `Data de retirada registada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
-                        }
-                      }}
+                      onBlur={() => confirmarRetirada({ key: 'shiley', nome: 'Shiley', dataInser: 'shileyData', retiradaData: 'shileyRetiradaData', localCampo: 'shileyLocal', historicoCampo: 'historicoPeriodoShiley' })}
                       disabled={!isEditable} 
                     />
                   </div>
@@ -1879,14 +1937,20 @@ return (
               {/* SVD (Sem Checkbox) */}
               <div>
                 <label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-1">
-                  SVD (Sonda Vesical / Inserção)
+                  SVD (Inserção)
+                  <button onClick={() => setModalHistorico('svd')} className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-0.5 hover:bg-indigo-100 transition-colors">Histórico</button>
                 </label>
                 <div className="space-y-2">
                   <input 
                     type="date" 
                     className="w-full p-2 border rounded focus:ring-2 focus:ring-orange-500 outline-none" 
-                    value={currentPatient.enfermagem?.svdData || ""} 
-                    onChange={(e) => updateNested("enfermagem", "svdData", e.target.value)} 
+                    value={resetVisualDispositivo.svd ? "" : (currentPatient.enfermagem?.svdData || "")}
+                    onChange={(e) => {
+                      updateNested("enfermagem", "svdData", e.target.value);
+                      // Nova inserção = novo ciclo: limpa a data de retirada anterior no Firebase
+                      updateNested("enfermagem", "svdRetiradaData", "");
+                      setResetVisualDispositivo(prev => ({ ...prev, svd: false }));
+                    }}
                     onBlur={(e) => {
                       handleBlurSave("Enfermagem: Editou SVD (Data Inserção)");
                       if (typeof registrarLogAuditoria === "function") {
@@ -1903,14 +1967,9 @@ return (
                       <input 
                         type="date" 
                         className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
-                        value={currentPatient.enfermagem?.svdRetiradaData || ""} 
+                        value={resetVisualDispositivo.svd ? "" : (currentPatient.enfermagem?.svdRetiradaData || "")}
                         onChange={(e) => updateNested("enfermagem", "svdRetiradaData", e.target.value)} 
-                        onBlur={(e) => {
-                          handleBlurSave("Enfermagem: Registrou retirada da SVD");
-                          if (typeof registrarLogAuditoria === "function") {
-                            registrarLogAuditoria("DISPOSITIVO: SVD", `Data de retirada registada para: ${e.target.value || "Vazio"}`, currentPatient.id, currentPatient.nome);
-                          }
-                        }}
+                        onBlur={() => confirmarRetirada({ key: 'svd', nome: 'SVD', dataInser: 'svdData', retiradaData: 'svdRetiradaData', historicoCampo: 'historicoPeriodoSVD' })}
                         disabled={!isEditable} 
                       />
                     </div>
@@ -3907,6 +3966,44 @@ return (
         </div>
         </ModalPortal>
       )}
+
+      {/*  */}
+      {/* MODAL: HISTÓRICO DISPOSITIVOS */}
+      {/*  */}
+      {modalHistorico && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+              <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="bg-white/20 p-2 rounded-full"><History size={20} /></div>
+                  <h2 className="text-lg font-black tracking-wide leading-tight">
+                    Histórico — {modalHistorico === 'cvc' ? 'CVC/PICC' : modalHistorico === 'shiley' ? 'Shiley' : 'SVD'}
+                  </h2>
+                </div>
+                <button onClick={() => setModalHistorico(null)} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+              </div>
+              <div className="p-6 bg-slate-50">
+                {(() => {
+                  const campo = modalHistorico === 'cvc' ? 'historicoPeriodoCVC' : modalHistorico === 'shiley' ? 'historicoPeriodoShiley' : 'historicoPeriodoSVD';
+                  const hist = currentPatient.enfermagem?.[campo] || [];
+                  if (hist.length === 0) return <p className="text-sm text-slate-400 italic text-center py-6">Nenhum período registrado.</p>;
+                  return (
+                    <ul className="space-y-2">
+                      {hist.map((p, i) => (
+                        <li key={i} className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 flex items-center justify-between">
+                          <span>{fmtDataBR(p.inicio)} a {fmtDataBR(p.fim)}</span>
+                          <span className="text-[10px] font-black text-slate-400 uppercase">{i + 1}º</span>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+)}
 
     </div>
   );
