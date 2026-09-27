@@ -497,7 +497,7 @@ exports.gerarCensoUTI = onSchedule({
 
               if (associadoDispositivo) {
                 const idAuditoria = `${p.cpf || leitoId}_ipcsc_${hemo.id || dColetaStr}`;
-                const docRefIPCSC = db.collection("auditorias_ipcsc").doc(idAuditoria);
+                const docRefIPCSC = db.collection("auditorias_ipcsl").doc(idAuditoria);
                 const promessaIPCSC = docRefIPCSC.get().then(async (audDoc) => {
                   if (!audDoc.exists) {
                     await docRefIPCSC.set({

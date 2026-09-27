@@ -35,7 +35,7 @@ const RelatorioANVISA = ({ db, mesAno }) => {
 
         // IPCS: busca as classificadas e atribui pelo MÊS DA INFECÇÃO (mesInfeccao)
         // Somente "IPCSL" (associada ao cateter) entra na densidade ANVISA
-        const snapIPCS = await getDocs(query(collection(db, "auditorias_ipcsc"), where("status", "in", ["IPCSL", "NaoRelacionada", "Importada", "Descartado"])));
+        const snapIPCS = await getDocs(query(collection(db, "auditorias_ipcsl"), where("status", "in", ["IPCSL", "NaoRelacionada", "Importada", "Descartado"])));
         snapIPCS.forEach(d => {
             const a = d.data();
             const mesEf = a.mesInfeccao || (a.dataInfeccao ? String(a.dataInfeccao).slice(0, 7) : null) || a.mesReferencia || '';
