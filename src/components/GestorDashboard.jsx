@@ -3863,7 +3863,7 @@ const imprimirRelatorioGeladeira = () => {
         nome: p.nome, leito: leitoLimpo,
         mesReferencia: mesRef, dataSuspeita: dataEventoDOE, dataEventoDOE: dataEventoDOE,
         dataInfeccao: dataInfeccao,
-        status: formManualIPCSC.ehImportada ? "Importada" : "Confirmado",
+        status: formManualIPCSC.ehImportada ? "Importada" : "IPCSL",
         evidencias: {
           microbiologia: `${formManualIPCSC.germe} (${formManualIPCSC.tipoGerme === 'patogeno' ? 'Patógeno Reconhecido' : 'Comensal em amostras múltiplas'})`,
           sistemicos: evidenciasSys.length > 0 ? evidenciasSys : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
@@ -4443,10 +4443,10 @@ const imprimirRelatorioGeladeira = () => {
 
           // COLUNA CRITÉRIO
           let criterio = null;
-          if (tipo === 'patogeno') {
-            if (off === 0) criterio = 'Hemocultura +';
-          } else {
-            // comensal: varre BH/histórico do dia (febre ≥38, PAS ≤90, DVA, calafrios)
+          if (tipo === 'patogeno' && off === 0) criterio = 'Hemocultura +';
+          {
+            // Sinais clínicos: varre BH/histórico do dia (febre ≥38, PAS ≤90, DVA, calafrios)
+            // para TODOS os tipos — visibilidade na auditoria (só é obrigatório p/ comensal na classificação)
             const blocos = [];
             if (paciente?.bh && paciente.bh.date === iso) blocos.push(paciente.bh);
             if (Array.isArray(paciente?.historico_bh)) {
@@ -4454,7 +4454,10 @@ const imprimirRelatorioGeladeira = () => {
             }
             const achados = [];
             for (const bloco of blocos) {
-              if (!bloco || !bloco.vitals) continue;
+              if (!bloco) continue;
+              // 📌 CALAFRIOS: campo novo definido — blocoBh.calafrios (boolean)
+              if (bloco.calafrios === true) achados.push('Calafrios');
+              if (!bloco.vitals) continue;
               Object.keys(bloco.vitals).forEach((hora) => {
                 const v = bloco.vitals[hora];
                 const t = Number(String(v?.["Temp (ºC)"] ?? '').replace(',', '.'));
@@ -4464,10 +4467,11 @@ const imprimirRelatorioGeladeira = () => {
                 const nora = Number(String(v?.["Noradrenalina"] ?? '').replace(',', '.'));
                 if (nora > 0) achados.push('DVA');
               });
-              // 📌 CALAFRIOS: campo novo definido — blocoBh.calafrios (boolean)
-              if (bloco.calafrios === true) achados.push('Calafrios');
             }
-            if (achados.length) criterio = [...new Set(achados)].join(' · ');
+            if (achados.length) {
+              const sinais = [...new Set(achados)].join(' · ');
+              criterio = criterio ? `${criterio} · ${sinais}` : sinais;
+            }
           }
 
           // 📅 DIA DE INTERNAÇÃO (D1, D2...) — baseado em dataInternacao
@@ -7204,7 +7208,7 @@ const imprimirRelatorioGeladeira = () => {
                         <div className="mt-auto pt-4 border-t border-slate-50">
                           <button 
                             onClick={() => setmodalAuditoriaIPCSL(caso)}
-                            className={`w-full text-white text-xs font-bold py-2 rounded transition-colors flex items-center justify-center gap-2 ${filtroStatusIPCSC === 'Suspeito' ? 'bg-indigo-800 hover:bg-indigo-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
+                            className={`w-full text-white text-xs font-bold py-2 rounded transition-colors flex items-center justify-center gap-2 ${filtroStatusIPCSC === 'Suspeito' ? 'bg-indigo-800 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                           >
                             <Search size={14} /> {filtroStatusIPCSC === 'Suspeito' ? 'Auditar Caso' : 'Ver Detalhes'}
                           </button>

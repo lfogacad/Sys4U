@@ -54,6 +54,8 @@ const TechDashboard = ({
 
   const canAccessRegistros = ['Téc. em Enf.', 'Desenvolvedor'].includes(userRole);
   
+  const [confirmarCalafrios, setConfirmarCalafrios] = useState(false);
+
   // =========================================================================
   // FUNÇÃO AUXILIAR: ARREDONDA A HORA ATUAL PARA 00, 15, 30 OU 45
   // =========================================================================
@@ -595,6 +597,23 @@ const salvarFralda = () => {
     save(up[activeTab], `Enfermagem: Saída para procedimento (${procedimentoFinal}) às ${modalSaidaProcedimento.horarioSaida}`);
 
     setModalSaidaProcedimento({ isOpen: false, data: '', horarioSaida: '', horarioChegada: '', procedimento: '', procedimentoOutro: '', equipe: '', observacao: '' });
+  };
+
+  const reportarCalafrios = () => {
+    const hoje = new Date().toISOString().slice(0, 10); // AAAA-MM-DD
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+    // Garante que o bloco de BH de hoje exista na RAIZ e marca calafrios
+    if (!p.bh || typeof p.bh !== 'object') p.bh = {};
+    p.bh.date = hoje;
+    p.bh.calafrios = true;
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], "Enfermagem: Reportou calafrios no dia de hoje");
+    setConfirmarCalafrios(false);
+    alert("Calafrio reportado com sucesso!");
   };
 
   // =========================================================================
@@ -1819,9 +1838,17 @@ const salvarFralda = () => {
       </fieldset>
 
       <div className="mt-8 print:mt-0 print:pt-0">
-        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2 print:hidden">
-          <Activity className="text-red-500" /> Sinais Vitais
-        </h3>
+        <div className="flex items-center justify-between mb-2 print:hidden">
+          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <Activity className="text-red-500" /> Sinais Vitais
+          </h3>
+          <button
+            onClick={() => setConfirmarCalafrios(true)}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors flex items-center gap-1.5"
+          >
+            <AlertTriangle size={14} /> Reportar Calafrios
+          </button>
+        </div>
         
         <fieldset disabled={isBHReadOnly} className="overflow-x-auto border rounded-xl print:border-none print:overflow-visible min-w-0 border-0 p-0 m-0 print:w-full print:block">
           <table className="w-full text-xs text-center border-collapse">
@@ -3410,6 +3437,42 @@ const salvarFralda = () => {
             </div>
           </div>
         </div>
+        </ModalPortal>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE CALAFRIOS */}
+      {confirmarCalafrios && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-amber-500/20">
+              <div className="bg-amber-500 p-5 text-white flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="bg-white/20 p-2 rounded-full"><AlertTriangle size={20} /></div>
+                  <h2 className="text-lg font-black tracking-wide leading-tight">Reportar Calafrios</h2>
+                </div>
+                <button onClick={() => setConfirmarCalafrios(false)} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors"><X size={24} /></button>
+              </div>
+              <div className="p-6 bg-slate-50">
+                <p className="text-sm text-slate-700 font-semibold text-center">
+                  Você confirma que o paciente apresentou calafrios hoje?
+                </p>
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => setConfirmarCalafrios(false)}
+                    className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={reportarCalafrios}
+                    className="flex-1 py-3 text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors"
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </ModalPortal>
       )}
 
