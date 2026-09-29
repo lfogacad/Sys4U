@@ -226,6 +226,8 @@ exports.gerarCensoUTI = onSchedule({
       pacientesComCVC: 0,
       pacientesComSVD: 0,
       pacientesComShiley: 0,
+      pacientesComAcessoCentral: 0,   // 📌 NOVO — cateter central-dia ANVISA (união CVC OU Shiley)
+      pacientesComAmbos: 0,           // 📌 NOVO — opcional, transparência/auditoria
       pacientesIdentificados: 0,
       timestampProcessamento: admin.firestore.FieldValue.serverTimestamp()
     };
@@ -275,17 +277,18 @@ exports.gerarCensoUTI = onSchedule({
             }
 
             // CVC: inserido e não retirado
-            if (p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData) {
-              contadores.pacientesComCVC++;
-            }
+            const temCVC = !!(p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData);
+            if (temCVC) contadores.pacientesComCVC++;
             // SVD: inserido e não retirado
             if (p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData) {
               contadores.pacientesComSVD++;
             }
             // Shiley: inserido e não retirado
-            if (p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData) {
-              contadores.pacientesComShiley++;
-            }
+            const temShiley = !!(p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData);
+            if (temShiley) contadores.pacientesComShiley++;
+            // 📌 Cateter central-dia (ANVISA): CVC OU Shiley — conta 1 por paciente
+            if (temCVC || temShiley) contadores.pacientesComAcessoCentral++;
+            if (temCVC && temShiley) contadores.pacientesComAmbos++;
           } // 🔚 Fim do filtro de morador
 
           // 2. SNIFFER DE SUSPEITA DE PAV (ANVISA)

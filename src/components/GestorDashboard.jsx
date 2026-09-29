@@ -2162,6 +2162,14 @@ useEffect(() => {
     });
   }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput, typeof listaHistorico !== 'undefined' ? listaHistorico : [], typeof patients !== 'undefined' ? patients : []]);
 
+  // Acessos efetivos = manual se o usuário preencheu; senão usa o total de checklists (mesmo fallback do card)
+  const acessosEfetivos = acessosMesCVC !== null ? acessosMesCVC : metricasCVC.totalChecklists;
+
+  // Checklists com 100% das barreiras cumpridas (numerador da conformidade ANVISA)
+  const total100Conformes = Array.isArray(checklists)
+    ? checklists.filter(c => c.todasCumpridas).length
+    : 0;
+
   // ================================================================
   // 🔥 MOTOR DO MAPA EPIDEMIOLÓGICO CORRIGIDO (RASTREAMENTO MÁXIMO)
   // ================================================================
@@ -12434,7 +12442,13 @@ const imprimirRelatorioGeladeira = () => {
                       <RelatorioANVISA 
                           db={db} 
                           mesAno={mesRelatorioSelecao} 
-                          leitosConfig={leitosConfig} 
+                          leitosConfig={leitosConfig}
+                          checklistResumo={{
+                            adesao: acessosEfetivos > 0 ? Math.round((metricasCVC.totalChecklists / acessosEfetivos) * 100) : 0,
+                            conformidade: metricasCVC.totalChecklists > 0 ? Math.round((metricasCVC.total100Porcento / metricasCVC.totalChecklists) * 100) : 0,
+                            totalChecklists: metricasCVC.totalChecklists,
+                            acessosMes: acessosEfetivos
+                          }}
                       />
                     </div>
                   </div>

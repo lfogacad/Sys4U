@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 
-const RelatorioANVISA = ({ db, mesAno }) => {
+const RelatorioANVISA = ({ db, mesAno, checklistResumo }) => {
   const [dados, setDados] = useState(null);
 
   useEffect(() => {
@@ -15,7 +15,9 @@ const RelatorioANVISA = ({ db, mesAno }) => {
         snapCenso.forEach(d => {
           const c = d.data();
           totais.vm += (Number(c.pacientesEmVM) || 0);
-          totais.cvc += (Number(c.pacientesComCVC) || 0);
+          // 📌 Cateter central-dia (ANVISA): união CVC OU Shiley (1/paciente), com fallback p/ censos antigos
+          const acessoCentral = c.pacientesComAcessoCentral != null ? (Number(c.pacientesComAcessoCentral) || 0) : (Number(c.pacientesComCVC) || 0);
+          totais.cvc += acessoCentral;
           totais.svd += (Number(c.pacientesComSVD) || 0);
           totais.pacientesDia += (Number(c.totalLeitosOcupados) || 0);
         });
@@ -43,6 +45,13 @@ const RelatorioANVISA = ({ db, mesAno }) => {
             casosIPCSL.push({ ...a, firebaseId: d.id });
             if (a.status === "IPCSL") casos.ipcsc++; // só IPCSL entra na densidade
         });
+
+        // 3.1 MICROBIOLOGIA IPCSL: nº absoluto por microrganismo etiológico
+        const contagemGermesIPCSL = {};
+        casosIPCSL.filter(a => a.status === "IPCSL").forEach(a => {
+          const g = (a.germe || "Não identificado").trim();
+          contagemGermesIPCSL[g] = (contagemGermesIPCSL[g] || 0) + 1;
+        });        
 
         // 3. MICROBIOLOGIA (Lendo direto do seu Painel de Culturas Globais)
         let germes = [];
@@ -73,6 +82,21 @@ const RelatorioANVISA = ({ db, mesAno }) => {
             }
         });
 
+        // 3.2 PERFIL FENOTÍPICO: % de resistência por germe × antimicrobiano
+        const perfilResistencia = {};
+        snapCulturas.forEach(d => {
+          const c = d.data();
+          const dataRef = c.dataResultado || c.dataColeta || "";
+          if (!dataRef.startsWith(mesAno)) return;
+          const g = (c.germe || "Não identificado").trim();
+          if (!perfilResistencia[g]) perfilResistencia[g] = {};
+          (c.testados || []).forEach(atb => {
+            if (!perfilResistencia[g][atb]) perfilResistencia[g][atb] = { testados: 0, resistentes: 0 };
+            perfilResistencia[g][atb].testados++;
+            if ((c.resistentes || []).includes(atb)) perfilResistencia[g][atb].resistentes++;
+          });
+        });
+
         // 4. CONSUMO (DDD e Álcool)
         let consumo = { listaDDD: [], alcool: "0.0" };
         const docIndicadoresRef = doc(db, "indicadores_ccih", `mes_${mesAno}`);
@@ -94,7 +118,7 @@ const RelatorioANVISA = ({ db, mesAno }) => {
             });
         }
 
-        setDados({ totais, casos, germes, consumo, casosIPCSL });
+        setDados({ totais, casos, germes, consumo, casosIPCSL, contagemGermesIPCSL, perfilResistencia });
       } catch (error) {
         console.error("Erro ao processar relatório:", error);
       }
@@ -106,6 +130,8 @@ const RelatorioANVISA = ({ db, mesAno }) => {
 
   const calcDI = (casos, dias) => dias > 0 ? ((casos / dias) * 1000).toFixed(2) : "0.00";
   const calcTaxaUso = (dias, pacDia) => pacDia > 0 ? ((dias / pacDia) * 100).toFixed(1) : "0.0";
+  // 📌 Checklist VPIS-CC — replicação dos resultados (calculados no RelatorioChecklistCVC)
+  const chk = checklistResumo || { adesao: null, conformidade: null, totalChecklists: 0, acessosMes: 0 };
 
   return (
     <div className="print-area p-10 bg-white text-black min-h-[297mm] w-[210mm] shadow-lg mx-auto border border-gray-200">
@@ -130,7 +156,7 @@ const RelatorioANVISA = ({ db, mesAno }) => {
                 <td className="text-right text-xs text-gray-500 font-bold">Taxa de Uso: {calcTaxaUso(dados.totais.vm, dados.totais.pacientesDia)}%</td>
             </tr>
             <tr className="border-t border-gray-100">
-                <td className="py-1">Dias de Cateter Central (CVC):</td>
+                <td className="py-1">Dias de Cateter Central (CVC + Shiley):</td>
                 <td className="font-bold py-1 text-right">{dados.totais.cvc}</td>
                 <td className="text-right text-xs text-gray-500 font-bold">Taxa de Uso: {calcTaxaUso(dados.totais.cvc, dados.totais.pacientesDia)}%</td>
             </tr>
@@ -222,7 +248,34 @@ const RelatorioANVISA = ({ db, mesAno }) => {
           </table>
         )}
       </section>
-      
+
+      {/* BLOCO 2.2: MICRORGANISMOS ETIOLÓGICOS (Nº ABSOLUTO) */}
+      <section className="mb-8">
+        <h2 className="font-bold border-b border-gray-400 mb-2 text-lg uppercase bg-gray-100 p-1">2.2. Microrganismos Etiológicos da IPCSL — Nº Absoluto</h2>
+        {Object.keys(dados.contagemGermesIPCSL).length === 0 ? (
+          <p className="text-sm italic text-gray-500 p-2">Nenhum caso IPCSL com germe identificado neste mês.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-600">
+                <th className="pb-2">Microrganismo</th>
+                <th className="pb-2 text-center">Nº absoluto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(dados.contagemGermesIPCSL)
+                .sort((a, b) => b[1] - a[1])
+                .map(([germe, n]) => (
+                  <tr key={germe} className="border-t border-gray-100">
+                    <td className="py-1.5 font-medium">{germe}</td>
+                    <td className="py-1.5 text-center font-black">{n}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
       {/* BLOCO 3: PERFIL MICROBIOLÓGICO REFORMULADO */}
       <section className="mb-8">
         <h2 className="font-bold border-b border-gray-400 mb-2 text-lg uppercase bg-gray-100 p-1">3. Perfil Microbiológico (Notivisa)</h2>
@@ -251,6 +304,62 @@ const RelatorioANVISA = ({ db, mesAno }) => {
         )}
       </section>
 
+      {/* BLOCO 3.1: PERFIL DE RESISTÊNCIA (indicador obrigatório) */}
+      <section className="mb-8">
+        <h2 className="font-bold border-b border-gray-400 mb-2 text-lg uppercase bg-gray-100 p-1">3.1. Perfil de Resistência Microbiana (%)</h2>
+        {Object.keys(dados.perfilResistencia).length === 0 ? (
+          <p className="text-sm italic text-gray-500 p-2">Nenhum teste de sensibilidade registrado neste mês.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-600">
+                <th className="pb-2">Microrganismo</th>
+                <th className="pb-2">Antimicrobiano</th>
+                <th className="pb-2 text-center">Resistentes</th>
+                <th className="pb-2 text-center">Testados</th>
+                <th className="pb-2 text-right">% Resistência</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(dados.perfilResistencia).flatMap(([germe, atbs]) =>
+                Object.entries(atbs).map(([atb, v]) => (
+                  <tr key={`${germe}-${atb}`} className="border-t border-gray-100">
+                    <td className="py-1.5 font-medium">{germe}</td>
+                    <td className="py-1.5">{atb}</td>
+                    <td className="py-1.5 text-center">{v.resistentes}</td>
+                    <td className="py-1.5 text-center">{v.testados}</td>
+                    <td className="py-1.5 text-right font-black text-red-700">
+                      {v.testados > 0 ? ((v.resistentes / v.testados) * 100).toFixed(1) : "—"}%
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* BLOCO 3.2: CHECKLIST VPIS-CC (indicador obrigatório — replicado do RelatorioChecklistCVC) */}
+      <section className="mb-8">
+        <h2 className="font-bold border-b border-gray-400 mb-2 text-lg uppercase bg-gray-100 p-1">3.2. Adesão ao Checklist de Inserção Segura (VPIS-CC)</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <tr className="border-b border-gray-100">
+              <td className="py-1.5 font-semibold">Adesão ao checklist (checklists aplicados ÷ inserções)</td>
+              <td className="py-1.5 text-right font-black text-indigo-700">{chk.adesao != null ? `${chk.adesao}%` : '—'}</td>
+            </tr>
+            <tr className="border-b border-gray-100">
+              <td className="py-1.5 font-semibold">Conformidade das práticas (checklists 100% ÷ checklists aplicados)</td>
+              <td className="py-1.5 text-right font-black text-indigo-700">{chk.conformidade != null ? `${chk.conformidade}%` : '—'}</td>
+            </tr>
+            <tr className="border-b border-gray-100">
+              <td className="py-1.5 text-xs text-gray-500">Checklists registrados / Acessos realizados</td>
+              <td className="py-1.5 text-right text-xs text-gray-500 font-bold">{chk.totalChecklists} / {chk.acessosMes}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      
       {/* BLOCO 4: CONSUMO E INDICADORES DE PROCESSO */}
       <section className="mb-8">
         <h2 className="font-bold border-b border-gray-400 mb-2 text-lg uppercase bg-gray-100 p-1">4. Indicadores de Processo e Consumo</h2>
