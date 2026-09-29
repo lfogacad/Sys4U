@@ -3060,7 +3060,7 @@ ${conduta}
                   historicoCulturas = [...currentPatient.culturas.lista];
                 }
 
-                const hojeISO = new Date().toISOString().split('T')[0];
+                const hojeISO = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Manaus' }).format(new Date());
 
                 // 2. Adiciona as novas
                 dadosDoTimeout.culturasTipos.forEach(tipo => {

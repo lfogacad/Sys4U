@@ -403,7 +403,7 @@ exports.gerarCensoUTI = onSchedule({
             }
           }
 
-          // 3. SNIFFER DE SUSPEITA DE IPCS-C (CVC ou Shiley)
+          // 3. SNIFFER DE SUSPEITA DE IPCS-C (CVC ou Shiley) 
           if (p.culturas && p.culturas.lista) {
             const hemoculturasPositivas = p.culturas.lista.filter(c => c.tipo?.toLowerCase().includes('hemocultura') && c.status === 'Positivo');
             const listaComensais = ['staphylococcus coagulase negativo', 'epidermidis', 'hominis', 'haemolyticus', 'saprophyticus', 'corynebacterium', 'bacillus', 'micrococcus', 'propionibacterium', 'cutibacterium'];
@@ -462,6 +462,13 @@ exports.gerarCensoUTI = onSchedule({
                       const msg = `Uso de DVA (Nora: ${matchNora[1]}) detectado no registro de ${dataRef}`;
                       if (!evidenciasSistemicasIPCS.includes(msg)) evidenciasSistemicasIPCS.push(msg);
                     }
+
+                    // 📌 CALAFRIOS: campo novo (blocoBh.calafrios boolean) — reportado pela equipe
+                    if (blocoBh.calafrios === true) {
+                      criterioMicroAprovado = true;
+                      const msg = `Calafrios reportados no registro de ${dataRef}`;
+                      if (!evidenciasSistemicasIPCS.includes(msg)) evidenciasSistemicasIPCS.push(msg);
+                    }
                   }
                 };
 
@@ -499,16 +506,38 @@ exports.gerarCensoUTI = onSchedule({
                 const idAuditoria = `${p.cpf || leitoId}_ipcsc_${hemo.id || dColetaStr}`;
                 const docRefIPCSC = db.collection("auditorias_ipcsl").doc(idAuditoria);
                 const promessaIPCSC = docRefIPCSC.get().then(async (audDoc) => {
+                  // 📌 AVISO DE EPISÓDIO (14 DIAS): mesmo paciente com auditoria IPCS recente
+                  let temAuditoriaRecente = false;
+                  let dataAuditoriaRecente = null;
+                  try {
+                    const snapAuditados = await db.collection("auditorias_ipcsl").where("pacienteId", "==", leitoId).get();
+                    snapAuditados.forEach(docAud => {
+                      const aud = docAud.data();
+                      if (!aud.dataEventoDOE) return;
+                      const evStr = aud.dataEventoDOE.includes('/') ? aud.dataEventoDOE.split('/').reverse().join('-') : aud.dataEventoDOE;
+                      const evDate = new Date(`${evStr}T12:00:00`);
+                      const diffDias = Math.floor((dataColetaObj - evDate) / (1000 * 60 * 60 * 24));
+                      if (diffDias >= 0 && diffDias <= 14) {
+                        temAuditoriaRecente = true;
+                        dataAuditoriaRecente = aud.dataEventoDOE;
+                      }
+                    });
+                  } catch (e) { console.error("Erro ao verificar repetição IPCS:", e); }
+
                   if (!audDoc.exists) {
                     await docRefIPCSC.set({
                       id: idAuditoria, pacienteId: leitoId, cpf: p.cpf || "000.000.000-00",
                       nome: p.nome, leito: leitoNumero, mesReferencia: mesCorrenteHemo,
                       dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
+                      repeticaoInfeccao: temAuditoriaRecente,
+                      dataEpisodioAnterior: dataAuditoriaRecente,
                       evidencias: {
                         microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
                         sistemicos: evidenciasSistemicasIPCS.length > 0 ? evidenciasSistemicasIPCS : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
                         dispositivo: `Dispositivo (${dispIPCSC.tipoOriginal}) inserido em ${dDispStrNorm.split('-').reverse().join('/')} (D${diffDispColeta >= 0 ? diffDispColeta + 1 : '?'} no dia da coleta)`,
-                        justificativa: "Cruzamento automatizado: Hemocultura + Janela 7D + Dispositivo Central."
+                        justificativa: temAuditoriaRecente
+                          ? `Cruzamento automatizado: Hemocultura + Janela 7D + Dispositivo Central. ⚠️ ATENÇÃO: há outra IPCS deste paciente dentro do Prazo de Infecção de Repetição (14 dias) — episódio anterior em ${dataAuditoriaRecente}.`
+                          : "Cruzamento automatizado: Hemocultura + Janela 7D + Dispositivo Central."
                       },
                       timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
                     });

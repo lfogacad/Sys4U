@@ -7102,19 +7102,22 @@ const imprimirRelatorioGeladeira = () => {
                                 }
                               }
 
-                              // 4. TRAVA DE EPISÓDIO (14 DIAS): mesmo paciente com auditoria IPCS
-                              //    nos últimos 14 dias → NÃO abrir novo card (mesmo episódio)
+                              // 4. AVISO DE EPISÓDIO (14 DIAS): mesmo paciente com auditoria IPCS
+                              //    nos últimos 14 dias → AINDA abre o card, mas sinaliza repetição
                               const snapAuditados = await getDocs(query(collection(db, "auditorias_ipcsl"), where("pacienteId", "==", p.id)));
                               let temAuditoriaRecente = false;
+                              let dataAuditoriaRecente = null;
                               snapAuditados.forEach(docAud => {
                                 const aud = docAud.data();
                                 if (!aud.dataEventoDOE) return;
                                 const evStr = aud.dataEventoDOE.includes('/') ? aud.dataEventoDOE.split('/').reverse().join('-') : aud.dataEventoDOE;
                                 const evDate = new Date(`${evStr}T12:00:00`);
                                 const diffDias = Math.floor((dataColetaObj - evDate) / (1000 * 60 * 60 * 24));
-                                if (diffDias >= 0 && diffDias <= 14) temAuditoriaRecente = true;
+                                if (diffDias >= 0 && diffDias <= 14) {
+                                  temAuditoriaRecente = true;
+                                  dataAuditoriaRecente = aud.dataEventoDOE;
+                                }
                               });
-                              if (temAuditoriaRecente) continue;
 
                               const idAuditoria = `${p.cpf || p.id}_ipcsc_${hemo.id || dColetaStr}`;
                               const docRef = doc(db, "auditorias_ipcsl", idAuditoria);
@@ -7126,11 +7129,15 @@ const imprimirRelatorioGeladeira = () => {
                                   dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
                                   tipoCriterio: isComensal ? "comensal" : "patogeno",
                                   germe: hemo.germe || "",
+                                  repeticaoInfeccao: temAuditoriaRecente,
+                                  dataEpisodioAnterior: dataAuditoriaRecente,
                                   evidencias: {
                                     microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em 2+ amostras' : 'Patógeno Reconhecido'})`,
                                     sistemicos: ['Critério laboratorial — IPCSL não exige sinais clínicos'],
                                     dispositivo: infoDispositivo,
-                                    justificativa: "Cruzamento automatizado: Hemocultura Positiva (critério IPCSL) + Trava de 14 dias sem episódio prévio."
+                                    justificativa: temAuditoriaRecente
+                                      ? `Cruzamento automatizado: Hemocultura Positiva (critério IPCSL). ⚠️ ATENÇÃO: há outra IPCS deste paciente dentro do Prazo de Infecção de Repetição (14 dias) — episódio anterior em ${dataAuditoriaRecente}.`
+                                      : "Cruzamento automatizado: Hemocultura Positiva (critério IPCSL)."
                                   },
                                   timestampCriacao: new Date().toISOString()
                                 });
@@ -7204,6 +7211,18 @@ const imprimirRelatorioGeladeira = () => {
                         </div>
                         <h4 className="font-bold text-slate-800 text-sm truncate uppercase">{caso.nome}</h4>
                         <p className="text-[10px] text-slate-500 mt-2 mb-4 italic line-clamp-2">{caso.evidencias?.microbiologia}</p>
+
+                        {caso.repeticaoInfeccao === true && (
+                          <div className="mb-3 flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg p-2.5">
+                            <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                            <div className="text-[10px] text-amber-800 leading-snug">
+                              <span className="font-black uppercase">Prazo de Infecção de Repetição</span>
+                              <br />
+                              Há outra IPCS deste paciente nos últimos 14 dias
+                              {caso.dataEpisodioAnterior ? ` (episódio anterior em ${caso.dataEpisodioAnterior.split('-').reverse().join('/')})` : ''}.
+                            </div>
+                          </div>
+                        )}
                         
                         <div className="mt-auto pt-4 border-t border-slate-50">
                           <button 

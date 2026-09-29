@@ -100,7 +100,7 @@ REGRA DE ISOLAMENTO: Retorne true se o germe for multirresistente (KPC, MRSA, VR
           relevanciaClinica: resultadoIA.relevanciaClinica || "",
           // ----------------------------------
           analiseIA: resultadoIA.analise || "",
-          dataResultado: new Date().toISOString().split('T')[0],
+          dataResultado: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Manaus' }).format(new Date()),
           irasAssociada: "" 
         };
       }
@@ -112,7 +112,7 @@ REGRA DE ISOLAMENTO: Retorne true se o germe for multirresistente (KPC, MRSA, VR
       if (resultadoIA.exigeIsolamento) {
         updateNested("medical", "isolamentoContato", true);
         updateNested("medical", "motivoIsolamento", resultadoIA.germe);
-        updateNested("medical", "dataInicioIsolamento", new Date().toISOString().split('T')[0]);
+        updateNested("medical", "dataInicioIsolamento", new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Manaus' }).format(new Date()));
       }
 
     } catch (error) {
