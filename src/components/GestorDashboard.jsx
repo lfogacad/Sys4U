@@ -2162,14 +2162,6 @@ useEffect(() => {
     });
   }, [listaCenso, dataInicio, dataFim, indicadorTendencia, capacidadeInput, typeof listaHistorico !== 'undefined' ? listaHistorico : [], typeof patients !== 'undefined' ? patients : []]);
 
-  // Acessos efetivos = manual se o usuário preencheu; senão usa o total de checklists (mesmo fallback do card)
-  const acessosEfetivos = acessosMesCVC !== null ? acessosMesCVC : metricasCVC.totalChecklists;
-
-  // Checklists com 100% das barreiras cumpridas (numerador da conformidade ANVISA)
-  const total100Conformes = Array.isArray(checklists)
-    ? checklists.filter(c => c.todasCumpridas).length
-    : 0;
-
   // ================================================================
   // 🔥 MOTOR DO MAPA EPIDEMIOLÓGICO CORRIGIDO (RASTREAMENTO MÁXIMO)
   // ================================================================
@@ -8267,6 +8259,48 @@ const imprimirRelatorioGeladeira = () => {
     );
   };
 
+    // ==========================================
+    // CÁLCULOS DA ABA CHECKLIST CVC
+    // ==========================================
+    const calcularMetricasCVC = (mesReferencia) => {
+      // Junta pacientes ativos + histórico
+      const todosPacientes = [...leitosConfig, ...listaHistorico];
+      let totalChecklists = 0;
+      let total100Porcento = 0;
+
+      todosPacientes.forEach(pac => {
+        const historico = pac.enfermagem?.historicoCVC || 
+                          pac.backupProntuario?.enfermagem?.historicoCVC || [];
+        historico.forEach(registro => {
+          if (registro.data && registro.data.startsWith(mesReferencia)) {
+            totalChecklists++;
+            if (registro.barreiras?.todasCumpridas) {
+              total100Porcento++;
+            }
+          }
+        });
+      });
+
+      return { totalChecklists, total100Porcento };
+    };
+
+    const metricasCVC = calcularMetricasCVC(mesFiltroCVC);
+
+    // Acessos efetivos = manual se o usuário preencheu; senão usa o total de checklists
+    const acessosEfetivos = acessosMesCVC !== null && acessosMesCVC !== undefined
+      ? acessosMesCVC
+      : (metricasCVC?.totalChecklists ?? 0);
+
+    // Resumo do checklist para o RelatorioANVISA (seção 3.2)
+    const checklistResumo = {
+      adesao: acessosEfetivos > 0 ? Math.round(((metricasCVC?.totalChecklists ?? 0) / acessosEfetivos) * 100) : 0,
+      conformidade: (metricasCVC?.totalChecklists ?? 0) > 0
+        ? Math.round(((metricasCVC?.total100Porcento ?? 0) / (metricasCVC?.totalChecklists ?? 1)) * 100)
+        : 0,
+      totalChecklists: metricasCVC?.totalChecklists ?? 0,
+      acessosMes: acessosEfetivos
+    };
+      
   // ==========================================
   // VISÃO DA GESTÃO DE RISCO E QUALIDADE (NSP)
   // ==========================================
@@ -8311,33 +8345,6 @@ const imprimirRelatorioGeladeira = () => {
         dia: eventosPorDia[chave].data.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
         eventos: eventosPorDia[chave].contagem
       }));
-
-    // ==========================================
-    // CÁLCULOS DA ABA CHECKLIST CVC
-    // ==========================================
-    const calcularMetricasCVC = (mesReferencia) => {
-      // Junta pacientes ativos + histórico
-      const todosPacientes = [...leitosConfig, ...listaHistorico];
-      let totalChecklists = 0;
-      let total100Porcento = 0;
-
-      todosPacientes.forEach(pac => {
-        const historico = pac.enfermagem?.historicoCVC || 
-                          pac.backupProntuario?.enfermagem?.historicoCVC || [];
-        historico.forEach(registro => {
-          if (registro.data && registro.data.startsWith(mesReferencia)) {
-            totalChecklists++;
-            if (registro.barreiras?.todasCumpridas) {
-              total100Porcento++;
-            }
-          }
-        });
-      });
-
-      return { totalChecklists, total100Porcento };
-    };
-
-    const metricasCVC = calcularMetricasCVC(mesFiltroCVC);
 
   const calcularMetricasSVD = (mesReferencia) => {
     const todosPacientes = [...leitosConfig, ...listaHistorico];
@@ -12443,12 +12450,7 @@ const imprimirRelatorioGeladeira = () => {
                           db={db} 
                           mesAno={mesRelatorioSelecao} 
                           leitosConfig={leitosConfig}
-                          checklistResumo={{
-                            adesao: acessosEfetivos > 0 ? Math.round((metricasCVC.totalChecklists / acessosEfetivos) * 100) : 0,
-                            conformidade: metricasCVC.totalChecklists > 0 ? Math.round((metricasCVC.total100Porcento / metricasCVC.totalChecklists) * 100) : 0,
-                            totalChecklists: metricasCVC.totalChecklists,
-                            acessosMes: acessosEfetivos
-                          }}
+                          checklistResumo={checklistResumo}
                       />
                     </div>
                   </div>
