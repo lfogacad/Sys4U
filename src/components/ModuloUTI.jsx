@@ -166,7 +166,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showATBHistoryModal, setShowATBHistoryModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
-  const [bulkUploadLogs, setBulkProgress] = useState([]);
+  const [bulkUploadLogs, setBulkUploadLogs] = useState([]);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [pdfProcessingStatus, setPdfProcessingStatus] = useState("");
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
@@ -176,6 +176,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const [centerTab, setCenterTab] = useState(null);
   const navScrollRef = useRef(null);
   const [isGeneratingNursingAI, setIsGeneratingNursingAI] = useState(false);
+
+  const fileInputRef = useRef(null);
 
   const localEditRef = useRef(false);
   const currentPatientRef = useRef(null);
@@ -481,6 +483,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
   const handleBulkUpload = async (e) => {
+    console.log(">>> handleBulkUpload DISPARADO, arquivos:", e.target.files.length);
     const files = Array.from(e.target.files);
     e.target.value = null;
 
@@ -493,11 +496,11 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       status: "loading",
       msg: `Iniciando leitura de ${f.name}...`,
     }));
-    setBulkProgress(initialProgress);
+    setBulkUploadLogs(initialProgress);
 
     const promessasDeLeitura = files.map(async (file, fileIndex) => {
       try {
-        setBulkProgress((prev) => {
+        setBulkUploadLogs((prev) => {
           const n = [...prev];
           n[fileIndex] = { status: "loading", msg: `IA Lendo ${file.name}...` };
           return n;
@@ -559,7 +562,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
             return list;
           });
 
-          setBulkProgress((prev) => {
+          setBulkUploadLogs((prev) => {
             const n = [...prev];
             n[fileIndex] = {
               status: json.isFallback ? "error" : "success",
@@ -570,7 +573,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           });
 
         } else {
-          setBulkProgress((prev) => {
+          setBulkUploadLogs((prev) => {
             const n = [...prev];
             n[fileIndex] = {
               status: "error",
@@ -581,7 +584,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         }
       } catch (e) {
         console.error(`Erro ao processar ${file.name}:`, e);
-        setBulkProgress((prev) => {
+        setBulkUploadLogs((prev) => {
           const n = [...prev];
           // 🔥 CORREÇÃO: Agora ele mostra o motivo real do erro na tela!
           n[fileIndex] = { status: "error", msg: `❌ Erro: ${e.message}` };
@@ -5361,16 +5364,14 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   <label
                     className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors text-slate-700"
                     title="Upload de Exames"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
                   >
                     <FolderInput size={18} className="text-teal-600" />
                     <span className="text-xs font-bold whitespace-nowrap">Upload Exames</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="application/pdf"
-                      className="hidden"
-                      onChange={handleBulkUpload}
-                    />
                   </label>
 
                   {/* ÍCONE 2: GASOMETRIA */}
@@ -7267,6 +7268,16 @@ const userRole = userProfile?.role || userProfile?.perfil;
           </div>
         </div>
       )}
+
+      {/* Input de arquivo SEMPRE montado — fora do dropdown, para o onChange nunca se perder */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="application/pdf"
+        className="hidden"
+        onChange={handleBulkUpload}
+      />      
 
     </div>
   );
