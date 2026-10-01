@@ -1973,10 +1973,10 @@ const salvarFralda = () => {
       {modalDieta.isOpen && (
         <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
+          <div className="bg-white w-full max-w-md max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             
             {/* CABEÇALHO */}
-            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center">
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">mo
               <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-full"><Utensils size={20} /></div>
                 <div>
@@ -1989,7 +1989,7 @@ const salvarFralda = () => {
               </button>
             </div>
 
-            <div className="p-6 bg-slate-50">
+            <div className="p-4 sm:p-6 bg-slate-50 overflow-y-auto flex-1 min-h-0">
               
               {/* ETAPA 1: DETALHES E O QUE FOI OFERECIDO? */}
               {modalDieta.step === 1 && (
@@ -2088,7 +2088,7 @@ const salvarFralda = () => {
                       <div className="flex items-center gap-2 text-orange-700 font-black mb-4 border-b border-slate-100 pb-2">
                         <Utensils size={16} /> DIETA SÓLIDA (Prato)
                       </div>
-                      <div className="flex justify-between gap-2">
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                         {[
                           // val = % consumida (salva no banco) | fill = % que sobrou (desenho na tela)
                           { val: 0, label: '100%', desc: 'Tudo (Recusou)', fill: 100 },
@@ -2126,7 +2126,7 @@ const salvarFralda = () => {
                       <div className="flex items-center gap-2 text-blue-700 font-black mb-4 border-b border-slate-100 pb-2">
                         <Coffee size={16} /> DIETA LÍQUIDA (Copo)
                       </div>
-                      <div className="flex justify-between gap-2">
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                         {[
                           // val = % consumida (salva no banco) | fill = % que sobrou (desenho na tela)
                           { val: 0, label: '100%', desc: 'Tudo (Recusou)', fill: 100 },
