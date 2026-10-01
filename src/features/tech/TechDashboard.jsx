@@ -1976,7 +1976,7 @@ const salvarFralda = () => {
           <div className="bg-white w-full max-w-md max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in border-4 border-indigo-500/20">
             
             {/* CABEÇALHO */}
-            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">mo
+            <div className="bg-indigo-600 p-5 text-white flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-full"><Utensils size={20} /></div>
                 <div>
