@@ -5204,6 +5204,18 @@ const userRole = userProfile?.role || userProfile?.perfil;
   const isEditable = currentRolePerms.edits.includes(viewMode); 
   // (Certifique-se de usar essa variável isEditable nos seus inputs/botões de salvar em todas as abas!)
 
+  // Centraliza um botão do carrossel calculando a rolagem exata (funciona no iOS)
+  const centerNavItem = (btnId) => {
+    const container = navScrollRef.current;
+    const el = document.getElementById(`nav-${btnId}`);
+    if (!container || !el) return;
+    const cRect = container.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+    // scrollLeft necessário para deixar o centro do botão no centro do container
+    const alvo = container.scrollLeft + (eRect.left - cRect.left) - (cRect.width / 2) + (eRect.width / 2);
+    container.scrollTo({ left: alvo, behavior: 'smooth' });
+  };
+
   const handleNavScroll = () => {
     if (!navScrollRef.current || window.innerWidth >= 768) return;
     const container = navScrollRef.current;
@@ -5547,16 +5559,14 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       }
                       if (isMobile && !poucasAbas) {
                         if (centerTab !== btn.id) {
-                          const el = document.getElementById(`nav-${btn.id}`);
-                          if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                          centerNavItem(btn.id);
                         } else {
                           setViewMode(btn.id);
                         }
                       } else {
                         setViewMode(btn.id);
                         if (isMobile) {
-                          const el = document.getElementById(`nav-${btn.id}`);
-                          if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                          centerNavItem(btn.id);
                         }
                       }
                     };
