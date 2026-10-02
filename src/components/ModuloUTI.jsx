@@ -5675,6 +5675,10 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   );
                 })()}
 
+              </div>
+            </div>
+          </div>
+
           {/* ========================================== */}
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
           {/* ========================================== */}
