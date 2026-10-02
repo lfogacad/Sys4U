@@ -5515,7 +5515,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   { id: 'notificacao', label: 'Notificar Evento', icon: <AlertTriangle size={22} />, type: 'notificacao' },
                 ];
 
-                  const poucasAbas = carouselItems.length <= 3;
+                  const poucasAbas = allNavButtons.length <= 3;
 
                   return (
                     <>
