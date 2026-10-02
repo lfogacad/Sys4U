@@ -5503,7 +5503,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 className={`flex overflow-x-auto md:overflow-visible md:flex-col pb-4 md:pb-0 scrollbar-hide items-center transition-all duration-300
                   ${allNavButtons.length > 3 
                     ? "gap-2 md:gap-3" 
-                    : "gap-3 justify-start w-full px-1"
+                    : "gap-4 justify-center w-full"
                   }
                 `}
               >
@@ -5520,11 +5520,12 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   return (
                     <>
                     {!poucasAbas && <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />}
-                    {carouselItems.map((btn, index) => {
+                    {carouselItems.filter(b => b.type === 'nav' || window.innerWidth >= 768).map((btn, index) => {
                     const isActive = btn.type === 'nav' && viewMode === btn.id;
                     const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
 
-                    const centerIndex = carouselItems.findIndex(b => b.id === (centerTab || carouselItems[0]?.id));
+                    const itemsAtuais = carouselItems.filter(b => b.type === 'nav' || window.innerWidth >= 768);
+                    const centerIndex = itemsAtuais.findIndex(b => b.id === (centerTab || itemsAtuais[0]?.id));
                     const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
                     const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
 
@@ -5549,7 +5550,6 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     const labelClass = btn.type === 'carrinho' ? 'text-amber-700' : btn.type === 'geladeira' ? 'text-sky-700' : btn.type === 'notificacao' ? 'text-red-700' : '';
 
                     const handleClick = () => {
-                      const isMobile = window.innerWidth < 768;
                       if (btn.type === 'carrinho') {
                         setModalCarrinhoAberto(true);
                         return;
@@ -5562,16 +5562,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         setIsEventModalOpen(true);
                         return;
                       }
-                      if (isMobile && !poucasAbas) {
-                        if (centerTab !== btn.id) {
-                          centerNavItem(btn.id);
-                        } else {
-                          setViewMode(btn.id);
-                        }
-                      } else {
-                        // Técnicos (poucas abas) ou desktop: abre imediatamente, SEM mover o scroll
-                        setViewMode(btn.id);
-                      }
+                      // TOQUE ÚNICO: qualquer aba visível abre direto — sem depender de centralizar no iOS
+                      setViewMode(btn.id);
                     };
 
                     return (
@@ -5616,6 +5608,31 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     </>
                   );
                 })()}
+
+                {/* AÇÕES EXTRAS — linha fixa abaixo do carrossel (celular) */}
+                <div className="flex justify-center gap-2 mt-2 md:hidden">
+                  <button
+                    onClick={() => setModalCarrinhoAberto(true)}
+                    title="Carrinho EMG"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold shadow-sm"
+                  >
+                    <Ambulance size={16} /> Carrinho
+                  </button>
+                  <button
+                    onClick={() => setModalGeladeiraAberto(true)}
+                    title="Geladeira"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-xs font-bold shadow-sm"
+                  >
+                    <Refrigerator size={16} /> Geladeira
+                  </button>
+                  <button
+                    onClick={() => setIsEventModalOpen(true)}
+                    title="Notificar Evento"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold shadow-sm"
+                  >
+                    <AlertTriangle size={16} /> Notificar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
