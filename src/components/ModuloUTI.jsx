@@ -5521,7 +5521,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       // ===== TÉCNICOS NO CELULAR: BOTÕES RETANGULARES COM NOME =====
                       if (poucasAbas && isMobile) {
                         return (
-                          <div className="flex flex-wrap justify-center gap-2 w-full py-1">
+                                <div className="flex items-center gap-2 w-full py-1 px-2 overflow-x-auto">
                             {carouselItems.map((btn) => {
                               const isActive = btn.type === 'nav' && viewMode === btn.id;
 
@@ -5561,7 +5561,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                                   key={btn.id}
                                   onClick={handleClick}
                                   title={btn.label}
-                                  className={`flex items-center gap-1.5 px-3 h-11 rounded-xl border transition-all duration-200 shadow-sm ${btnClass}`}
+                                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 h-11 rounded-xl border transition-all duration-200 shadow-sm ${btnClass}`}
                                 >
                                   <span className={`flex-shrink-0 ${iconClass}`}>{btn.icon}</span>
                                   <span className={`text-xs font-bold whitespace-nowrap ${labelClass}`}>{btn.label}</span>
