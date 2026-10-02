@@ -5669,34 +5669,6 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   );
                 })()}
 
-                {/* AÇÕES EXTRAS — linha fixa abaixo do carrossel (celular) */}
-                <div className="flex justify-center gap-2 mt-2 md:hidden">
-                  <button
-                    onClick={() => setModalCarrinhoAberto(true)}
-                    title="Carrinho EMG"
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold shadow-sm"
-                  >
-                    <Ambulance size={16} /> Carrinho
-                  </button>
-                  <button
-                    onClick={() => setModalGeladeiraAberto(true)}
-                    title="Geladeira"
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-xs font-bold shadow-sm"
-                  >
-                    <Refrigerator size={16} /> Geladeira
-                  </button>
-                  <button
-                    onClick={() => setIsEventModalOpen(true)}
-                    title="Notificar Evento"
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold shadow-sm"
-                  >
-                    <AlertTriangle size={16} /> Notificar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* ========================================== */}
           {/* LADO DIREITO: ÁREA DAS ABAS (Conteúdo) */}
           {/* ========================================== */}
