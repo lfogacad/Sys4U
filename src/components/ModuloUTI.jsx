@@ -5502,8 +5502,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 style={{ WebkitOverflowScrolling: 'touch' }} 
                 className={`flex overflow-x-auto md:overflow-visible md:flex-col pb-4 md:pb-0 scrollbar-hide items-center transition-all duration-300
                   ${allNavButtons.length > 3 
-                    ? "gap-0 md:gap-3" 
-                    : "gap-4 justify-center w-full"
+                    ? "gap-2 md:gap-3" 
+                    : "gap-3 justify-start w-full px-1"
                   }
                 `}
               >
@@ -5519,7 +5519,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
 
                   return (
                     <>
-                    <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />
+                    {!poucasAbas && <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />}
                     {carouselItems.map((btn, index) => {
                     const isActive = btn.type === 'nav' && viewMode === btn.id;
                     const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
@@ -5569,10 +5569,8 @@ const userRole = userProfile?.role || userProfile?.perfil;
                           setViewMode(btn.id);
                         }
                       } else {
+                        // Técnicos (poucas abas) ou desktop: abre imediatamente, SEM mover o scroll
                         setViewMode(btn.id);
-                        if (isMobile) {
-                          centerNavItem(btn.id);
-                        }
                       }
                     };
 
@@ -5614,7 +5612,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       </div>
                       );
                     })}
-                    <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />
+                    {!poucasAbas && <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />}
                     </>
                   );
                 })()}
