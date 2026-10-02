@@ -4629,6 +4629,16 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       entry[field] = value;
 
       // 🧠 MOTOR DE CÁLCULO AUTOMÁTICO (Mecânica Ventilatória)
+      // Cst agora é EDITÁVEL MANUALMENTE: o cálculo automático só preenche quando
+      // o campo está vazio — nunca sobrescreve um valor digitado à mão.
+
+      // Se o usuário está editando o próprio Cst, apenas guarda o valor digitado
+      if (field === 'cst') {
+        p.physio.vmFlowsheet[index] = entry;
+        up[activeTab] = p;
+        return up;
+      }
+
       // Substitui vírgula por ponto para não dar erro no cálculo se o fisio digitar "14,5"
       const plato = parseFloat(entry.pPlato?.toString().replace(',', '.'));
       const peep = parseFloat(entry.peep?.toString().replace(',', '.'));
@@ -4639,18 +4649,17 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         const dp = plato - peep;
         entry.dp = dp > 0 ? dp.toFixed(0) : "";
 
-        // 2. Calcula a Complacência Estática (Cst = VC / DP)
-        if (!isNaN(vc) && dp > 0) {
+        // 2. Complacência Estática (Cst = VC / DP) — SOMENTE se o campo estiver vazio
+        const cstVazio = entry.cst === undefined || entry.cst === "" || entry.cst === null;
+        if (!isNaN(vc) && dp > 0 && cstVazio) {
           const cst = vc / dp;
           entry.cst = cst.toFixed(1);
-        } else {
-          entry.cst = ""; // Limpa se faltar o VC
         }
+        // Se o usuário JÁ digitou Cst manualmente, o valor NÃO é sobrescrito
       } else {
-        // Se o usuário apagar o Platô ou PEEP, limpamos os cálculos para não mostrar "NaN"
+        // Se o usuário apagar o Platô ou PEEP, limpa a DP; Cst manual é preservado
         if (field === 'pPlato' || field === 'peep') {
           entry.dp = "";
-          entry.cst = "";
         }
       }
 
@@ -5479,7 +5488,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 style={{ WebkitOverflowScrolling: 'touch' }} 
                 className={`flex overflow-x-auto md:overflow-visible md:flex-col pb-4 md:pb-0 scrollbar-hide items-center transition-all duration-300
                   ${allNavButtons.length > 3 
-                    ? "gap-0 md:gap-3 snap-x snap-mandatory touch-pan-x before:content-[''] before:min-w-[40vw] before:flex-shrink-0 md:before:hidden after:content-[''] after:min-w-[40vw] after:flex-shrink-0 md:after:hidden" 
+                    ? "gap-0 md:gap-3 snap-x snap-proximity px-[calc(50%_-_1.75rem)] md:px-0" 
                     : "gap-4 justify-center w-full"
                   }
                 `}
