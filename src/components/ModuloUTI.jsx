@@ -5518,53 +5518,59 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   const poucasAbas = allNavButtons.length <= 3;
                   const isMobile = window.innerWidth < 768;
 
-                    // ===== TÉCNICOS NO CELULAR: BOTÕES FIXOS EM LINHA, SÓ ÍCONE =====
-                    if (poucasAbas && isMobile) {
-                      return (
-                        <div className="flex items-center justify-center gap-2 w-full py-1">
-                          {carouselItems.map((btn) => {
-                            const isActive = btn.type === 'nav' && viewMode === btn.id;
+                      // ===== TÉCNICOS NO CELULAR: BOTÕES RETANGULARES COM NOME =====
+                      if (poucasAbas && isMobile) {
+                        return (
+                          <div className="flex flex-wrap justify-center gap-2 w-full py-1">
+                            {carouselItems.map((btn) => {
+                              const isActive = btn.type === 'nav' && viewMode === btn.id;
 
-                            let btnClass = '';
-                            let iconClass = '';
-                            if (btn.type === 'nav') {
-                              btnClass = isActive
-                                ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white shadow-teal-500/40"
-                                : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm";
-                              iconClass = isActive ? 'text-white' : 'text-slate-500';
-                            } else if (btn.type === 'carrinho') {
-                              btnClass = "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100";
-                              iconClass = 'text-amber-600';
-                            } else if (btn.type === 'geladeira') {
-                              btnClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100";
-                              iconClass = 'text-sky-600';
-                            } else {
-                              btnClass = "bg-red-50 border-red-200 text-red-600 hover:bg-red-100";
-                              iconClass = 'text-red-600';
-                            }
+                              let btnClass = '';
+                              let iconClass = '';
+                              let labelClass = '';
+                              if (btn.type === 'nav') {
+                                btnClass = isActive
+                                  ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white shadow-teal-500/40"
+                                  : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm";
+                                iconClass = isActive ? 'text-white' : 'text-slate-500';
+                                labelClass = isActive ? 'text-white' : 'text-slate-600';
+                              } else if (btn.type === 'carrinho') {
+                                btnClass = "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100";
+                                iconClass = 'text-amber-600';
+                                labelClass = 'text-amber-700';
+                              } else if (btn.type === 'geladeira') {
+                                btnClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100";
+                                iconClass = 'text-sky-600';
+                                labelClass = 'text-sky-700';
+                              } else {
+                                btnClass = "bg-red-50 border-red-200 text-red-600 hover:bg-red-100";
+                                iconClass = 'text-red-600';
+                                labelClass = 'text-red-700';
+                              }
 
-                            const handleClick = () => {
-                              if (btn.type === 'carrinho') { setModalCarrinhoAberto(true); return; }
-                              if (btn.type === 'geladeira') { setModalGeladeiraAberto(true); return; }
-                              if (btn.type === 'notificacao') { setIsEventModalOpen(true); return; }
-                              // TÉCNICO: clique ativa a aba imediatamente
-                              setViewMode(btn.id);
-                            };
+                              const handleClick = () => {
+                                if (btn.type === 'carrinho') { setModalCarrinhoAberto(true); return; }
+                                if (btn.type === 'geladeira') { setModalGeladeiraAberto(true); return; }
+                                if (btn.type === 'notificacao') { setIsEventModalOpen(true); return; }
+                                // TÉCNICO: clique ativa a aba imediatamente
+                                setViewMode(btn.id);
+                              };
 
-                            return (
-                              <button
-                                key={btn.id}
-                                onClick={handleClick}
-                                title={btn.label}
-                                className={`flex items-center justify-center w-12 h-12 rounded-xl border transition-all duration-200 shadow-sm ${btnClass}`}
-                              >
-                                <span className={iconClass}>{btn.icon}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      );
-                    }
+                              return (
+                                <button
+                                  key={btn.id}
+                                  onClick={handleClick}
+                                  title={btn.label}
+                                  className={`flex items-center gap-1.5 px-3 h-11 rounded-xl border transition-all duration-200 shadow-sm ${btnClass}`}
+                                >
+                                  <span className={`flex-shrink-0 ${iconClass}`}>{btn.icon}</span>
+                                  <span className={`text-xs font-bold whitespace-nowrap ${labelClass}`}>{btn.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      }
 
                   // ===== CARROSSEL (MÉDICOS / DESKTOP) — inalterado =====
                   return (
