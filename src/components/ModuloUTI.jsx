@@ -5508,103 +5508,166 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 `}
               >
                 {(() => {
-                const carouselItems = [
-                  ...allNavButtons.map(btn => ({ ...btn, type: 'nav' })),
-                  { id: 'carrinho', label: 'Carrinho EMG', icon: <Ambulance size={22} />, type: 'carrinho' },
-                  { id: 'geladeira', label: 'Geladeira', icon: <Refrigerator size={22} />, type: 'geladeira' },
-                  { id: 'notificacao', label: 'Notificar Evento', icon: <AlertTriangle size={22} />, type: 'notificacao' },
-                ];
+                  const carouselItems = [
+                    ...allNavButtons.map(btn => ({ ...btn, type: 'nav' })),
+                    { id: 'carrinho', label: 'Carrinho EMG', icon: <Ambulance size={22} />, type: 'carrinho' },
+                    { id: 'geladeira', label: 'Geladeira', icon: <Refrigerator size={22} />, type: 'geladeira' },
+                    { id: 'notificacao', label: 'Notificar Evento', icon: <AlertTriangle size={22} />, type: 'notificacao' },
+                  ];
 
                   const poucasAbas = allNavButtons.length <= 3;
+                  const isMobile = window.innerWidth < 768;
 
+                  // ===== TÉCNICOS NO CELULAR: BOTÕES FIXOS, SEM CARROSSEL =====
+                  if (poucasAbas && isMobile) {
+                    return (
+                      <div className="flex flex-wrap justify-center gap-2 w-full py-1">
+                        {carouselItems.map((btn) => {
+                          const isActive = btn.type === 'nav' && viewMode === btn.id;
+
+                          let btnClass = '';
+                          let iconClass = '';
+                          if (btn.type === 'nav') {
+                            btnClass = isActive
+                              ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white shadow-teal-500/40"
+                              : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm";
+                            iconClass = isActive ? 'text-white' : 'text-slate-500';
+                          } else if (btn.type === 'carrinho') {
+                            btnClass = "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100";
+                            iconClass = 'text-amber-600';
+                          } else if (btn.type === 'geladeira') {
+                            btnClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100";
+                            iconClass = 'text-sky-600';
+                          } else {
+                            btnClass = "bg-red-50 border-red-200 text-red-600 hover:bg-red-100";
+                            iconClass = 'text-red-600';
+                          }
+
+                          const labelClass = btn.type === 'carrinho' ? 'text-amber-700' : btn.type === 'geladeira' ? 'text-sky-700' : btn.type === 'notificacao' ? 'text-red-700' : '';
+
+                          const handleClick = () => {
+                            if (btn.type === 'carrinho') { setModalCarrinhoAberto(true); return; }
+                            if (btn.type === 'geladeira') { setModalGeladeiraAberto(true); return; }
+                            if (btn.type === 'notificacao') { setIsEventModalOpen(true); return; }
+                            // TÉCNICO: clique ativa a aba imediatamente, sem carrossel, sem expandir
+                            setViewMode(btn.id);
+                          };
+
+                          return (
+                            <button
+                              key={btn.id}
+                              onClick={handleClick}
+                              className={`flex items-center gap-1.5 px-3 h-12 rounded-xl border transition-all duration-200 shadow-sm ${btnClass}`}
+                              title={btn.label}
+                            >
+                              <span className={iconClass}>{btn.icon}</span>
+                              <span className={`text-xs font-bold whitespace-nowrap ${labelClass}`}>{btn.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+
+                  // ===== CARROSSEL (MÉDICOS / DESKTOP) — inalterado =====
                   return (
                     <>
-                    {!poucasAbas && <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />}
-                    {carouselItems.filter(b => b.type === 'nav' || window.innerWidth >= 768).map((btn, index) => {
-                    const isActive = btn.type === 'nav' && viewMode === btn.id;
-                    const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
+                    <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />
+                    {carouselItems.map((btn, index) => {
+                      const isActive = btn.type === 'nav' && viewMode === btn.id;
+                      const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
 
-                    const itemsAtuais = carouselItems.filter(b => b.type === 'nav' || window.innerWidth >= 768);
-                    const centerIndex = itemsAtuais.findIndex(b => b.id === (centerTab || itemsAtuais[0]?.id));
-                    const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
-                    const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
+                      const centerIndex = carouselItems.findIndex(b => b.id === (centerTab || carouselItems[0]?.id));
+                      const distanceToCenter = Math.abs(index - (centerIndex !== -1 ? centerIndex : 0));
+                      const zIndexCascata = window.innerWidth < 768 ? (40 - distanceToCenter) : 10;
 
-                    let btnClass = '';
-                    let iconClass = '';
-                    if (btn.type === 'nav') {
-                      btnClass = isActive
-                        ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
-                        : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm";
-                      iconClass = isActive ? 'text-white' : 'text-slate-500';
-                    } else if (btn.type === 'carrinho') {
-                      btnClass = "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100";
-                      iconClass = 'text-amber-600';
-                    } else if (btn.type === 'geladeira') {
-                      btnClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100";
-                      iconClass = 'text-sky-600';
-                    } else {
-                      btnClass = "bg-red-50 border-red-200 text-red-600 hover:bg-red-100";
-                      iconClass = 'text-red-600';
-                    }
-
-                    const labelClass = btn.type === 'carrinho' ? 'text-amber-700' : btn.type === 'geladeira' ? 'text-sky-700' : btn.type === 'notificacao' ? 'text-red-700' : '';
-
-                    const handleClick = () => {
-                      if (btn.type === 'carrinho') {
-                        setModalCarrinhoAberto(true);
-                        return;
+                      let btnClass = '';
+                      let iconClass = '';
+                      if (btn.type === 'nav') {
+                        btnClass = isActive
+                          ? "bg-gradient-to-r from-teal-400 to-blue-600 border-transparent text-white scale-[1.05] md:scale-100 shadow-teal-500/40"
+                          : "bg-slate-100 border-slate-300 text-slate-500 shadow-sm";
+                        iconClass = isActive ? 'text-white' : 'text-slate-500';
+                      } else if (btn.type === 'carrinho') {
+                        btnClass = "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100";
+                        iconClass = 'text-amber-600';
+                      } else if (btn.type === 'geladeira') {
+                        btnClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100";
+                        iconClass = 'text-sky-600';
+                      } else {
+                        btnClass = "bg-red-50 border-red-200 text-red-600 hover:bg-red-100";
+                        iconClass = 'text-red-600';
                       }
-                      if (btn.type === 'geladeira') {
-                        setModalGeladeiraAberto(true);
-                        return;
-                      }
-                      if (btn.type === 'notificacao') {
-                        setIsEventModalOpen(true);
-                        return;
-                      }
-                      // TOQUE ÚNICO: qualquer aba visível abre direto — sem depender de centralizar no iOS
-                      setViewMode(btn.id);
-                    };
 
-                    return (
-                      <div
-                        key={btn.id}
-                        id={`nav-${btn.id}`}
-                        style={{ zIndex: zIndexCascata }}
-                        className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out
-                          ${!poucasAbas ? 'snap-center' : ''}
-                          ${window.innerWidth < 768 && !poucasAbas ? '-ml-5 first:ml-0' : ''}
-                          md:hover:z-[100]
-                          ${btn.type !== 'nav' ? 'md:mt-4' : ''}
-                        `}
-                      >
-                        <button
-                          onClick={handleClick}
-                          className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg ${btnClass}
-                            ${isExpandedMobile ? "w-[170px]" : "w-14"}
-                            md:w-12 ${btn.type === 'carrinho' || btn.type === 'geladeira' ? 'md:hover:w-[190px]' : btn.type === 'notificacao' ? 'md:hover:w-[190px]' : 'md:hover:w-[180px]'}
+                      const labelClass = btn.type === 'carrinho' ? 'text-amber-700' : btn.type === 'geladeira' ? 'text-sky-700' : btn.type === 'notificacao' ? 'text-red-700' : '';
+
+                      const handleClick = () => {
+                        const isMobile = window.innerWidth < 768;
+                        if (btn.type === 'carrinho') {
+                          setModalCarrinhoAberto(true);
+                          return;
+                        }
+                        if (btn.type === 'geladeira') {
+                          setModalGeladeiraAberto(true);
+                          return;
+                        }
+                        if (btn.type === 'notificacao') {
+                          setIsEventModalOpen(true);
+                          return;
+                        }
+                        if (isMobile && !poucasAbas) {
+                          if (centerTab !== btn.id) {
+                            centerNavItem(btn.id);
+                          } else {
+                            setViewMode(btn.id);
+                          }
+                        } else {
+                          setViewMode(btn.id);
+                          if (isMobile) {
+                            centerNavItem(btn.id);
+                          }
+                        }
+                      };
+
+                      return (
+                        <div
+                          key={btn.id}
+                          id={`nav-${btn.id}`}
+                          style={{ zIndex: zIndexCascata }}
+                          className={`relative flex-shrink-0 md:snap-align-none transition-all duration-300 ease-out
+                            ${!poucasAbas ? 'snap-center' : ''}
+                            ${window.innerWidth < 768 && !poucasAbas ? '-ml-5 first:ml-0' : ''}
+                            md:hover:z-[100]
+                            ${btn.type !== 'nav' ? 'md:mt-4' : ''}
                           `}
-                          title={btn.label}
                         >
-                          <div className={`flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300 ${iconClass}`}>
-                            <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
-                              {btn.icon}
-                            </div>
-                          </div>
-                          <div
-                            className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
-                              ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
+                          <button
+                            onClick={handleClick}
+                            className={`flex items-center h-14 md:h-12 min-w-[3.5rem] p-0 rounded-2xl border transition-all duration-300 ease-out outline-none group overflow-hidden shadow-lg ${btnClass}
+                              ${isExpandedMobile ? "w-[170px]" : "w-14"}
+                              md:w-12 ${btn.type === 'carrinho' || btn.type === 'geladeira' ? 'md:hover:w-[190px]' : btn.type === 'notificacao' ? 'md:hover:w-[190px]' : 'md:hover:w-[180px]'}
                             `}
+                            title={btn.label}
                           >
-                            <span className={`text-xs md:text-sm font-bold tracking-wide ${labelClass}`}>
-                              {btn.label}
-                            </span>
-                          </div>
-                        </button>
-                      </div>
+                            <div className={`flex-shrink-0 flex items-center justify-center w-14 h-14 md:w-12 md:h-12 transition-transform duration-300 ${iconClass}`}>
+                              <div className={isExpandedMobile || isActive ? "scale-100" : "scale-75 md:scale-90"}>
+                                {btn.icon}
+                              </div>
+                            </div>
+                            <div
+                              className={`whitespace-nowrap transition-all duration-300 pr-4 flex items-center
+                                ${isExpandedMobile ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 md:translate-x-0 md:group-hover:opacity-100"}
+                              `}
+                            >
+                              <span className={`text-xs md:text-sm font-bold tracking-wide ${labelClass}`}>
+                                {btn.label}
+                              </span>
+                            </div>
+                          </button>
+                        </div>
                       );
                     })}
-                    {!poucasAbas && <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />}
+                    <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />
                     </>
                   );
                 })()}
