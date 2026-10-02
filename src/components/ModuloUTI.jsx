@@ -5211,9 +5211,11 @@ const userRole = userProfile?.role || userProfile?.perfil;
     if (!container || !el) return;
     const cRect = container.getBoundingClientRect();
     const eRect = el.getBoundingClientRect();
-    // scrollLeft necessário para deixar o centro do botão no centro do container
     const alvo = container.scrollLeft + (eRect.left - cRect.left) - (cRect.width / 2) + (eRect.width / 2);
-    container.scrollTo({ left: alvo, behavior: 'smooth' });
+    // Garante que o alvo fique dentro do limite real de rolagem (importante pro último botão)
+    const maxScroll = container.scrollWidth - container.clientWidth;
+    const final = Math.min(Math.max(0, alvo), maxScroll);
+    container.scrollTo({ left: final, behavior: 'smooth' });
   };
 
   const handleNavScroll = () => {
@@ -5500,7 +5502,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                 style={{ WebkitOverflowScrolling: 'touch' }} 
                 className={`flex overflow-x-auto md:overflow-visible md:flex-col pb-4 md:pb-0 scrollbar-hide items-center transition-all duration-300
                   ${allNavButtons.length > 3 
-                    ? "gap-0 md:gap-3 snap-x snap-proximity px-[calc(50%_-_1.75rem)] md:px-0" 
+                    ? "gap-0 md:gap-3" 
                     : "gap-4 justify-center w-full"
                   }
                 `}
@@ -5515,7 +5517,10 @@ const userRole = userProfile?.role || userProfile?.perfil;
 
                   const poucasAbas = carouselItems.length <= 3;
 
-                  return carouselItems.map((btn, index) => {
+                  return (
+                    <>
+                    <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />
+                    {carouselItems.map((btn, index) => {
                     const isActive = btn.type === 'nav' && viewMode === btn.id;
                     const isExpandedMobile = window.innerWidth < 768 && (poucasAbas ? isActive : centerTab === btn.id);
 
@@ -5607,8 +5612,11 @@ const userRole = userProfile?.role || userProfile?.perfil;
                           </div>
                         </button>
                       </div>
-                    );
-                  });
+                      );
+                    })}
+                    <div className="w-[calc(50%-1.75rem)] flex-shrink-0" aria-hidden="true" />
+                    </>
+                  );
                 })()}
               </div>
             </div>
