@@ -25,9 +25,6 @@ const MedicalAdmissionModal = ({
             Admissão Médica (Leito {activeTab + 1})
             {isReadOnly && <span className="ml-2 text-xs bg-slate-800 px-2 py-1 rounded-full uppercase tracking-wider">Imutável (Apenas Leitura)</span>}
           </h3>
-          <button onClick={() => setShowAdmissionModal(false)} className="hover:bg-black/20 p-1 rounded transition-colors">
-            <X size={20} />
-          </button>
         </div>
 
         {/* CORPO DO MODAL */}

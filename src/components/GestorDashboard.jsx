@@ -1816,10 +1816,19 @@ useEffect(() => {
     trintaDiasAtras.setDate(hoje.getDate() - 30);
 
     const parseData = (dataStr) => {
-      if (!dataStr) return new Date(0);
+      if (!dataStr) return null; // null em vez de 1970 — evita LOS gigante
+      // Formato brasileiro: DD/MM/AAAA ou DD/MM/AAAA HH:mm
       if (dataStr.includes && dataStr.includes('/')) {
         const parts = dataStr.split(' ')[0].split('/');
-        if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+        if (parts.length === 3) {
+          return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+        }
+      }
+      // Formato ISO: AAAA-MM-DD (com ou sem hora) — extrai SÓ a data,
+      // para não sofrer o deslocamento de fuso do "new Date()" em datas sem hora
+      const m = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) {
+        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
       }
       return new Date(dataStr);
     };
@@ -1844,17 +1853,22 @@ useEffect(() => {
     let somaDiasInternacao30d = 0;
 
     listaHistorico.forEach(pac => {
-      const dataEntrada = parseData(pac.dataEntrada || pac.dataAdmissao);
-      const dataSaida = parseData(pac.dataSaida || pac.dataDesfecho);
+    const dataEntrada = parseData(pac.dataEntrada || pac.dataAdmissao);
+    const dataSaida = parseData(pac.dataSaida || pac.dataDesfecho);
 
-      // Avalia apenas quem SAIU nos últimos 30 dias
-      if (dataSaida >= trintaDiasAtras && dataSaida <= hoje) {
-        totalSaidas30d++;
+    // Ignora registros sem data válida — impede LOS absurdo (ex.: 20 mil dias)
+    if (!dataEntrada || !dataSaida || isNaN(dataEntrada) || isNaN(dataSaida)) return;
 
-        let dias = (dataSaida - dataEntrada) / (1000 * 60 * 60 * 24);
-        if (dias < 1) dias = 1; // SUS: internou e saiu no mesmo dia = 1 diária
-        somaDiasInternacao30d += dias;
-      }
+    // Avalia apenas quem SAIU nos últimos 30 dias
+    if (dataSaida >= trintaDiasAtras && dataSaida <= hoje) {
+    totalSaidas30d++;
+
+    // DIAS DE INTERNAÇÃO = diferença de DIAS DE CALENDÁRIO + 1
+    // (conta o dia da entrada E o dia da saída — internou hoje, saiu hoje = 1)
+    // Como ambas as datas estão normalizadas ao meio-dia local, a divisão é exata
+    const dias = Math.round((dataSaida - dataEntrada) / (1000 * 60 * 60 * 24)) + 1;
+    somaDiasInternacao30d += dias;
+    }
     });
 
     // Giro = Total de Saídas / Leitos Válidos (Mostra a verdadeira rotatividade da equipe)
