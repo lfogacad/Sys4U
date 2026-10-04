@@ -625,13 +625,65 @@ const salvarFralda = () => {
     const enf = currentPatient.enfermagem || {};
     let eventos = [];
 
-    const dataHoje = getManausDateStr();
+    // ==============================================================
+    // DATA-BASE DO PLANTÃO (fuso Manaus, UTC-4 — sem horário de verão)
+    // Plantão: 07h de hoje → 06h59 de amanhã.
+    // GUARD: se a geração ocorrer ANTES das 07h de Manaus, o plantão
+    // vigente ainda é o que começou ONTEM (ex.: relatório às 03h do dia
+    // 04/10 ainda é do plantão do dia 03/10). Por isso recuamos a data.
+    // ==============================================================
+    const agoraManaus = new Date(Date.now() - 4 * 3600 * 1000); // relógio "virtual" em UTC-4
+    let dataHoje = getManausDateStr();
+    if (agoraManaus.getUTCHours() < 7) {
+      const ontem = new Date(agoraManaus);
+      ontem.setUTCDate(ontem.getUTCDate() - 1);
+      dataHoje = `${ontem.getUTCFullYear()}-${String(ontem.getUTCMonth() + 1).padStart(2, '0')}-${String(ontem.getUTCDate()).padStart(2, '0')}`;
+    }
+
+    // ==============================================================
+    // JANELA DO PLANTÃO: 07:00 de HOJE até 07:00 de AMANHÃ (Manaus/UTC-4)
+    // 07:00 em Manaus = 11:00 UTC. Usar Date.UTC evita depender do fuso do servidor.
+    // ==============================================================
+    const [ano, mes, dia] = dataHoje.split('-').map(Number);
+    const inicioPlantao = new Date(Date.UTC(ano, mes - 1, dia, 11, 0, 0));       // hoje 07:00 Manaus
+    const fimPlantao    = new Date(Date.UTC(ano, mes - 1, dia + 1, 11, 0, 0));   // amanhã 07:00 Manaus (exclusivo)
+
+    // Converte data (e hora opcional) do fuso Manaus para um Date absoluto.
+    // Aceita "AAAA-MM-DD", "DD/MM/AAAA", com hora "HH:mm" separada ou "AAAA-MM-DDTHH:mm".
+    const parseManaus = (dataStr, horaStr = "00:00") => {
+      if (!dataStr) return null;
+      let d = dataStr;
+      let h = horaStr;
+      if (String(dataStr).includes('T') || (String(dataStr).includes(' ') && !horaStr)) {
+        const partes = String(dataStr).split(/[T ]/);
+        d = partes[0];
+        if (partes[1]) h = partes[1].slice(0, 5);
+      }
+      const br = String(d).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (br) d = `${br[3]}-${br[2]}-${br[1]}`;
+      const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return null;
+      const [hh, mm] = String(h).split(':').map(Number);
+      // Manaus é UTC-4: hora local + 4h = UTC
+      return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), (hh || 0) + 4, mm || 0));
+    };
+
+    // true se o registro caiu dentro da janela 07h de hoje → 07h de amanhã (Manaus)
+    const dentroDoPlantao = (dataHoraRegistro) => {
+      if (!dataHoraRegistro) return false;
+      let dt;
+      if (dataHoraRegistro instanceof Date) dt = dataHoraRegistro;
+      else if (String(dataHoraRegistro).endsWith('Z')) dt = new Date(dataHoraRegistro); // já é instante absoluto
+      else dt = parseManaus(dataHoraRegistro);
+      if (!dt || isNaN(dt)) return false;
+      return dt >= inicioPlantao && dt < fimPlantao;
+    };
 
     // Função auxiliar para os modais
     const addEvent = (historico, formatador) => {
       if (Array.isArray(historico)) {
         historico.forEach(item => {
-          if (item.horario && item.dataHoraRegistro && item.dataHoraRegistro.startsWith(dataHoje)) {
+          if (dentroDoPlantao(item.dataHoraRegistro)) {
             eventos.push({ horario: item.horario, texto: formatador(item) });
           }
         });
@@ -671,9 +723,8 @@ const salvarFralda = () => {
     if (Array.isArray(enf.historicoSaidaProcedimento)) {
       enf.historicoSaidaProcedimento.forEach(item => {
         if (!item.data || !item.horarioSaida) return;
-        // Converte DD/MM/AAAA para AAAA-MM-DD para comparar com dataHoje
-        const dataISO = String(item.data).replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, '$3-$2-$1');
-        if (dataISO !== dataHoje) return;
+        const dtProc = parseManaus(item.data, item.horarioSaida);
+        if (!dtProc || dtProc < inicioPlantao || dtProc >= fimPlantao) return;
         let txt = `Saída para procedimento: ${item.procedimento} (saída ${item.horarioSaida}`;
         if (item.horarioChegada) txt += `, chegada ${item.horarioChegada}`;
         txt += `)`;
@@ -681,27 +732,29 @@ const salvarFralda = () => {
         if (item.observacao) txt += `. ${item.observacao}`;
         eventos.push({ horario: item.horarioSaida, texto: txt });
       });
-    }    
+    }   
     // CVC (registro usa 'data' e 'horario', não 'dataHoraRegistro')
     if (Array.isArray(enf.historicoCVC)) {
       enf.historicoCVC.forEach(item => {
-        if (item.data && item.data === dataHoje && item.horario) {
-          const localCVC = item.localInserção || item.localInsercao || 'local não informado';
-          eventos.push({ horario: item.horario, texto: `Inserção de CVC em ${localCVC}.` });
-        }
+        if (!item.data || !item.horario) return;
+        const dtCVC = parseManaus(item.data, item.horario);
+        if (!dtCVC || dtCVC < inicioPlantao || dtCVC >= fimPlantao) return;
+        const localCVC = item.localInserção || item.localInsercao || 'local não informado';
+        eventos.push({ horario: item.horario, texto: `Inserção de CVC em ${localCVC}.` });
       });
     }
     // SVD (registro usa 'data' e 'horario', não 'dataHoraRegistro')
     if (Array.isArray(enf.historicoSVD)) {
       enf.historicoSVD.forEach(item => {
-        if (item.data && item.data === dataHoje && item.horario) {
-          eventos.push({ horario: item.horario, texto: `Sondagem vesical de demora realizada${item.indicacao ? ` (${item.indicacao})` : ''}.` });
-        }
+        if (!item.data || !item.horario) return;
+        const dtSVD = parseManaus(item.data, item.horario);
+        if (!dtSVD || dtSVD < inicioPlantao || dtSVD >= fimPlantao) return;
+        eventos.push({ horario: item.horario, texto: `Sondagem vesical de demora realizada${item.indicacao ? ` (${item.indicacao})` : ''}.` });
       });
     }    
     if (Array.isArray(enf.historico_rcp_pcr)) {
       enf.historico_rcp_pcr.forEach(item => {
-        if (item.horarioPCR && item.dataHoraRegistro && item.dataHoraRegistro.startsWith(dataHoje)) {
+        if (item.horarioPCR && dentroDoPlantao(item.dataHoraRegistro)) {
           let txt = `RCP/PCR - Início: ${item.horarioPCR}`;
           if (item.tempoRCP) txt += `, Tempo de RCP: ${item.tempoRCP} min`;
           if (item.desfecho) txt += `, Desfecho: ${item.desfecho}`;
@@ -710,31 +763,58 @@ const salvarFralda = () => {
       });
     }
 
-    // 🔥 NOVO: Extraindo Diurese diretamente da tabela do Balanço Hídrico (BH)
-    if (currentPatient.bh && currentPatient.bh.losses) {
-      // Verifica se o BH atual é de hoje (para não puxar diurese de dias anteriores)
-      const dataBH = currentPatient.bh.date;
-      if (!dataBH || dataBH.startsWith(dataHoje)) {
-        Object.keys(currentPatient.bh.losses).forEach(horaBH => {
-          const volumeDiurese = currentPatient.bh.losses[horaBH]["Diurese"];
-          // Se tiver algum valor digitado na coluna "Diurese" para este horário
-          if (volumeDiurese && volumeDiurese.toString().trim() !== "") {
-            // Converte "08h" para "08:00" para ficar no mesmo padrão do relatório
-            const horaFormatada = horaBH.replace('h', ':00').padStart(5, '0');
-            eventos.push({ 
-              horario: horaFormatada, 
-              texto: `Desprezado diurese (${volumeDiurese} ml).` 
-            });
-          }
-        });
+    // 🔥 DIURESE DO BH — JANELA DO PLANTÃO (07h → 06h59 Manaus = 11:00Z → 11:00Z)
+    // O BH é guardado por DIA UTC (`bh.date`) e migra p/ `historico_bh` quando o UTC
+    // vira 00h. As chaves de hora DENTRO dos maps são corrigidas p/ Manaus (UTC-4).
+    // O plantão cruza DOIS dias UTC → lemos os DOIS buckets e filtramos pela hora de Manaus.
+    const bh_parts = dataHoje.split('-').map(Number); // [ano, mês, dia] do dia do plantão
+    const bh_inicioUTC = new Date(Date.UTC(bh_parts[0], bh_parts[1] - 1, bh_parts[2], 11, 0, 0));   // 07h Manaus
+    const bh_fimUTC = new Date(Date.UTC(bh_parts[0], bh_parts[1] - 1, bh_parts[2] + 1, 11, 0, 0)); // 07h Manaus do dia seguinte
+    const bh_pad2 = n => String(n).padStart(2, '0');
+    const bh_bucketDate = dt => `${dt.getUTCFullYear()}-${bh_pad2(dt.getUTCMonth() + 1)}-${bh_pad2(dt.getUTCDate())}`;
+
+    // Busca o bucket (gains/losses) de uma data UTC — no bh atual ou no historico_bh
+    const bh_getBucket = (dataUTC) => {
+      if (currentPatient.bh && currentPatient.bh.date === dataUTC) return currentPatient.bh;
+      if (Array.isArray(currentPatient.historico_bh)) {
+        return currentPatient.historico_bh.find(b => b && b.date === dataUTC) || null;
       }
-    }
+      return null;
+    };
+
+    // "HH:MM" (ou "HHh") é hora de Manaus. Se hora >= 20, o dia de Manaus é o dia UTC - 1.
+    const bh_horaParaInstante = (chave, dataUTC) => {
+      const mt = String(chave).match(/^(\d{1,2})[:h](\d{0,2})/);
+      if (!mt) return null;
+      const hora = parseInt(mt[1], 10);
+      const min = parseInt(mt[2] || '0', 10) || 0;
+      if (isNaN(hora) || hora > 23) return null;
+      const base = new Date(dataUTC + 'T00:00:00Z');
+      if (hora >= 20) base.setUTCDate(base.getUTCDate() - 1); // Manaus ainda no dia anterior
+      return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), hora + 4, min, 0));
+    };
+
+    // Dias UTC que o plantão cruza: o dia do início (11:00Z) e o dia seguinte
+    [bh_bucketDate(bh_inicioUTC), bh_bucketDate(new Date(Date.UTC(bh_parts[0], bh_parts[1] - 1, bh_parts[2] + 1, 0, 0, 0)))]
+      .forEach(dataUTC => {
+        const bucket = bh_getBucket(dataUTC);
+        if (!bucket || !bucket.losses) return;
+        Object.keys(bucket.losses).forEach(horaBH => {
+          const instante = bh_horaParaInstante(horaBH, dataUTC);
+          if (!instante || instante < bh_inicioUTC || instante >= bh_fimUTC) return;
+          const volumeDiurese = bucket.losses[horaBH]["Diurese"];
+          const v = volumeDiurese !== undefined && volumeDiurese !== null ? String(volumeDiurese).trim() : '';
+          if (v === "" || v === "-") return; // "-" é placeholder no seu BH
+          const horarioEv = horaBH.replace('h', ':00').padStart(5, '0');
+          eventos.push({ horario: horarioEv, texto: `Desprezado diurese (${v} ml).` });
+        });
+      });
 
     // Ordena todos os eventos de HOJE por horário (do mais cedo pro mais tarde)
     eventos.sort((a, b) => a.horario.localeCompare(b.horario));
 
     // 🔥 CORREÇÃO: Pega a data da "pasta" do plantão e formata para DD/MM/AAAA
-    const dataDoPlantao = selectedDate || currentPatient.bh?.date || getManausDateStr();
+    const dataDoPlantao = selectedDate || dataHoje;
     const dataFormatada = dataDoPlantao.split('-').reverse().join('/');
 
     // Monta o texto final
