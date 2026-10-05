@@ -683,7 +683,7 @@ const salvarFralda = () => {
     const addEvent = (historico, formatador) => {
       if (Array.isArray(historico)) {
         historico.forEach(item => {
-          if (dentroDoPlantao(item.dataHoraRegistro)) {
+          if (item.horario && dentroDoPlantao(item.dataHoraRegistro)) {
             eventos.push({ horario: item.horario, texto: formatador(item) });
           }
         });
@@ -810,8 +810,9 @@ const salvarFralda = () => {
         });
       });
 
-    // Ordena todos os eventos de HOJE por horário (do mais cedo pro mais tarde)
-    eventos.sort((a, b) => a.horario.localeCompare(b.horario));
+    // Ordena todos os eventos de HOJE por horário (do mais cedo pro mais tarde).
+    // String(v || '') protege contra evento sem horário — nunca quebra o sort.
+    eventos.sort((a, b) => String(a.horario || '').localeCompare(String(b.horario || '')));
 
     // 🔥 CORREÇÃO: Pega a data da "pasta" do plantão e formata para DD/MM/AAAA
     const dataDoPlantao = selectedDate || dataHoje;
