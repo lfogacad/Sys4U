@@ -704,60 +704,43 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     return () => unsubscribe();
   }, [db]); // Importante: adicionamos db como dependência para segurança
 
-  // --- SINCRONIZAÇÃO DOS LEITOS COM O FIREBASE ---
+  // ==============================================================
+  // LISTENER ÚNICO DA COLEÇÃO leitos_uti (pacientes + leitosConfig + censo)
+  // ==============================================================
   useEffect(() => {
     if (!db) return;
 
-    const q = collection(db, "leitos_uti");
+    const unsubscribe = onSnapshot(collection(db, "leitos_uti"), (snapshot) => {
+      const firestoreBeds = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => {
+          const numA = parseInt(a.id.replace('bed_', ''));
+          const numB = parseInt(b.id.replace('bed_', ''));
+          return numA - numB;
+        });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const firestoreBeds = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // 1) Configuração dos leitos (bloqueado / ignorarEstatistica)
+      setLeitosConfig(firestoreBeds);
 
-      firestoreBeds.sort((a, b) => {
-        const numA = parseInt(a.id.replace('bed_', ''));
-        const numB = parseInt(b.id.replace('bed_', ''));
-        return numA - numB;
-      });
+      // 2) Censo (auto-preenchimento das notificações) — agora em tempo real
+      setListaCenso(firestoreBeds);
 
-      const updatedPatients = firestoreBeds.map(bedData => {
-        const index = parseInt(bedData.id.replace('bed_', '')) - 1;
-        return mergePatientData(defaultPatient(index), bedData);
-      });
-
-      console.log("Leitos sincronizados dinamicamente!");
+      // 3) Pacientes — com a trava de edição local
       setPatients(prev => {
-        if (localEditRef.current) {
-          return prev;
-        }
+        if (localEditRef.current) return prev;
+        const updatedPatients = firestoreBeds.map(bedData => {
+          const index = parseInt(bedData.id.replace('bed_', '')) - 1;
+          const merged = mergePatientData(defaultPatient(index), bedData);
+          return syncLabsFromHistory(merged); // comportamento do listener 1, agora para todos os leitos
+        });
         return updatedPatients;
       });
+    }, (error) => {
+      console.error("Erro ao sincronizar leitos_uti:", error);
     });
 
     return () => unsubscribe();
-  }, []);
-
-  // BUSCA OS PACIENTES INTERNADOS (Para auto-preencher as notificações)
-  useEffect(() => {
-    const carregarCenso = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, "leitos_uti"));
-        const pacientesTemp = [];
-        
-        querySnapshot.forEach((doc) => {
-          pacientesTemp.push({ id: doc.id, ...doc.data() });
-        });
-        
-        setListaCenso(pacientesTemp);
-      } catch (error) {
-        console.error("Erro ao carregar o censo para notificações:", error);
-      }
-    };
-
-    carregarCenso();
-  }, []);
+  }, [db]);
 
   // BUSCA OS EVENTOS ADVERSOS NO FIREBASE
   useEffect(() => {
@@ -850,18 +833,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
     return () => unsubscribe();
   }, [db, currentPatient?.nome]);
-
-  // Busca configuração dos leitos para bloquear botão de Puxar Paciente
-  useEffect(() => {
-    if (!db) return;
-    const unsubscribe = onSnapshot(collection(db, "leitos_uti"), (snapshot) => {
-      const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setLeitosConfig(dados);
-    }, (error) => {
-      console.error("Erro ao buscar leitos_uti:", error);
-    });
-    return () => unsubscribe();
-  }, [db]);
 
   // Alerta de Leito (em tempo real)
   useEffect(() => {
@@ -966,24 +937,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       setWaitingList(list);
     });
   }, []);
-
-  useEffect(() => {
-    if (!user || !db) return;
-    return onSnapshot(collection(db, "leitos_uti"), (snap) => {
-      const up = [...patients];
-      let ch = false;
-      snap.forEach((d) => {
-        const dt = d.data();
-        // A MÁGICA AQUI: Mudamos de < 10 para < 11 para incluir o Leito Teste!
-        if (dt.id >= 0 && dt.id < 11) {
-          const sp = mergePatientData(defaultPatient(dt.id), dt);
-          up[dt.id] = syncLabsFromHistory(sp);
-          ch = true;
-        }
-      });
-      if (ch) setPatients(up);
-    });
-  }, [user]);
 
   // Efeito para capturar dados vindos da Recepção assim que a tela carrega
   useEffect(() => {

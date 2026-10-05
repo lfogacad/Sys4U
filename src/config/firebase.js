@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
-import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, enableIndexedDbPersistence } from "firebase/firestore";
 
 // --- CONFIGURAÇÃO FIREBASE ---
 const firebaseConfig = {
@@ -20,6 +20,18 @@ try {
   app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
   auth = getAuth(app);
   db = getFirestore(app);
+
+  // PERSISTÊNCIA OFFLINE: cache local no navegador + fila automática de escritas
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      // Já existe persistência ativa em OUTRA aba do mesmo navegador. Normal — ignora.
+      console.warn("Persistência offline já ativa em outra aba. Ignorado.");
+    } else if (err.code === 'unimplemented') {
+      // Navegador não suporta IndexedDB para este fim (raro).
+      console.warn("Navegador não suporta persistência offline.");
+    }
+  });
+
 } catch (error) {
   console.error("Falha ao inicializar Firebase:", error);
   firebaseError = error;
@@ -29,5 +41,5 @@ export {
   app, auth, db, firebaseError, 
   signInWithEmailAndPassword, createUserWithEmailAndPassword, 
   updatePassword, signOut, onAuthStateChanged, sendPasswordResetEmail, 
-  collection, doc, setDoc, getDoc, onSnapshot 
+  collection, doc, setDoc, getDoc, onSnapshot, enableIndexedDbPersistence 
 };
