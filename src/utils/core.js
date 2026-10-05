@@ -859,10 +859,17 @@ export const calculateTotals = (bh, peso = 0) => {
     insensible = Math.round(pesoNum * 12);
   }
 
-  // 👇 O CONSERTO ESTÁ AQUI 👇
-  // Somamos a Perda Insensível ao Total de Perdas antes de devolver para a tela!
-  const finalTotalLosses = adjustedTotalLosses + insensible;
-  // 👆 ======================= 👆
+  // Detecta se a tabela de perdas JÁ contém "Perda Insensível" por horário
+  const lossesHavePI = bh.losses
+    ? Object.values(bh.losses).some(h =>
+        Object.keys(h).some(k => /perda\s*insens|^pi$/i.test(String(k)))
+      )
+    : false;
+
+  // Só soma a PI por fora se ela NÃO estiver já computada na tabela de perdas
+  const finalTotalLosses = lossesHavePI
+    ? adjustedTotalLosses
+    : adjustedTotalLosses + insensible;
 
   const dailyBalance = totalGains - finalTotalLosses;
   const accumulated = safeNumber(bh.accumulated) + dailyBalance;
