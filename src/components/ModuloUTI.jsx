@@ -180,6 +180,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const fileInputRef = useRef(null);
 
   const localEditRef = useRef(false);
+  const editCountRef = useRef(0);
   const currentPatientRef = useRef(null);
 
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
@@ -994,6 +995,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
     // SUTURA DE SEGURANÇA: Esterilizando o payload
     const pacienteSeguro = JSON.parse(JSON.stringify(updatedPatient));
+    const contagemNoInicio = editCountRef.current; // edições que existiam quando o save começou
 
     // 🔄 SINCRONIZAÇÃO BH HISTÓRICO → bh_previous
     const dataBHPrev = pacienteSeguro.bh_previous?.date;
@@ -1060,8 +1062,15 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       }
 
       console.log(`[AUDITORIA]: ${logMsg} no documento ${docId}`);
+
+      // Libera a trava SOMENTE se nada novo foi digitado durante o save.
+      // Se o usuário seguiu digitando, mantém travado e o próximo save libera.
+      if (editCountRef.current === contagemNoInicio) {
+        localEditRef.current = false;
+      }
     } catch (err) { 
       console.error("Erro fatal ao salvar no Firebase:", err);
+      localEditRef.current = false; // evita travar a sincronização para sempre
       alert("Aviso: Ocorreu um erro ao gravar na nuvem. Verifique o console.");
     }
   };
@@ -1149,15 +1158,20 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   };
 
   const updateNested = (categoria, campo, valor) => {
+    // MARCA EDIÇÃO LOCAL: impede o listener unificado de sobrescrever a digitação
+    editCountRef.current += 1;
+    localEditRef.current = true;
+
+    let pacienteAlvo;
     setPatients(prev => {
       const novosPacientes = [...prev];
-      const pacienteAlvo = JSON.parse(JSON.stringify(novosPacientes[activeTab])); 
-      
+      pacienteAlvo = JSON.parse(JSON.stringify(novosPacientes[activeTab]));
+
       if (!pacienteAlvo[categoria]) pacienteAlvo[categoria] = {};
       pacienteAlvo[categoria][campo] = valor;
 
       // 🔄 SINCRONIZAÇÃO DE MÃO DUPLA (SHILEY <-> HEMODIÁLISE)
-      
+
       // 1. Sincroniza a Data de Inserção
       if (categoria === "enfermagem" && campo === "shileyData") {
         if (!pacienteAlvo["hd_acesso"]) pacienteAlvo["hd_acesso"] = {};
@@ -1175,15 +1189,15 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         if (!pacienteAlvo["enfermagem"]) pacienteAlvo["enfermagem"] = {};
         pacienteAlvo["enfermagem"]["shileyLocal"] = valor;
       }
-      
+
       novosPacientes[activeTab] = pacienteAlvo;
-      
-      if (typeof save === 'function') {
-        save(pacienteAlvo, `Atualização Automática: ${categoria} > ${campo}`);
-      }
-      
       return novosPacientes;
     });
+
+    // SAVE FORA DO setPatients: roda UMA vez por chamada (não duplica no StrictMode)
+    if (pacienteAlvo && typeof save === 'function') {
+      save(pacienteAlvo, `Atualização Automática: ${categoria} > ${campo}`);
+    }
   };
 
   const updateP = (field, value) => {
@@ -4193,6 +4207,10 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
 
 // 1. Função Vital: Atualizar células do BH (Agora com Roteamento Histórico)
   const updateBH = (hour, category, item, value) => {
+    // MARCA EDIÇÃO LOCAL: impede o listener unificado de sobrescrever a digitação
+    editCountRef.current += 1;
+    localEditRef.current = true;
+
     setPatients(prev => {
       const up = [...prev];
       const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda para não ferir o estado
