@@ -1151,7 +1151,7 @@ const salvarFralda = () => {
         ? safeNumber(displayedBH.insensibleLoss)
         : (safeNumber(currentPatient.nutri?.peso) > 0 ? Math.round(safeNumber(currentPatient.nutri?.peso) * 12) : 0);
 
-    const calcTotalPerdas = Math.round((bhTotals.totalLosses || 0) + pi);
+    const calcTotalPerdas = Math.round(bhTotals.totalLosses || 0);
     const calcDaily = Math.round(bhTotals.dailyBalance || 0);
     const calcAcc = Math.round(bhTotals.accumulated || 0);
 
