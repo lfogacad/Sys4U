@@ -540,7 +540,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         </div>
       </div>
 
-            {/* ATB */}
+      {/* ATB */}
       <div className="p-4 border border-orange-200 bg-orange-50 rounded-xl">
         <div className="flex justify-between items-center mb-3">
           <h4 className="text-sm font-bold text-orange-700">Prescrição de Antimicrobianos</h4>
@@ -635,8 +635,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
                           onClick={(e) => { 
                             e.preventDefault(); 
                             if (atb.name && atb.date) { 
-                              updateAntibiotic(idx, "locked", true); 
-                              setTimeout(() => handleBlurSave(`Médico: Fixou Prescrição de ATB (${atb.name})`), 100);
+                              updateAntibiotic(idx, "locked", true); // já salva a versão exata
                             } else { 
                               alert("Preencha o Nome e a Data do antibiótico para fixá-lo!"); 
                             }

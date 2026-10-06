@@ -1584,9 +1584,12 @@ const clearAntibiotic = (i) => {
       const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda
       p.antibiotics[i][f] = v;
       up[activeTab] = p;
+      // 🚨 SALVAMENTO DIRETO: grava a versão exata (mesmo padrão de add/remove/clear)
+      if (typeof save === 'function') {
+        save(p, "Médico: Atualizou prescrição de ATB");
+      }
       return up;
     });
-    // O 'save' foi removido! A auditoria acontecerá pelo onBlur no <input>
   };
 
     const replaceAntibiotics = (newArray) => {
