@@ -14,53 +14,54 @@ const PhysioEvoModal = ({
   setPhysioEvoText
 }) => {
   const [evolucaoData, setEvolucaoData] = useState({});
+  const physioEvoPacienteRef = useRef(null);   // detecta troca de paciente
+  const physioEvoAberturaRef = useRef(false);  // detecta abertura do modal  
   const [isSaving, setIsSaving] = useState(false);
 
-  // Inicializa o estado local com os dados atuais do paciente toda vez que o modal abre
+  // Inicializa o estado local APENAS quando o modal ABRE ou o paciente MUDA de verdade.
+  // Protege a digitação: snapshots do Firestore não re-rodam este bloco no meio da edição.
   useEffect(() => {
     if (showPhysioEvoModal && currentPatient?.physio) {
       const physio = currentPatient.physio;
-      
-      // Função inteligente para ler o MRC e IMS (seja string ou histórico de datas)
-      const getLatest = (val) => {
-        if (val === null || val === undefined) return "";
-        if (typeof val === "string" || typeof val === "number") return String(val);
-        if (typeof val === "object" && !Array.isArray(val)) {
-          const hoje = new Date().toLocaleDateString('pt-BR');
-          if (val[hoje] !== undefined) return val[hoje];
-          const keys = Object.keys(val).sort();
-          if (keys.length === 0) return "";
-          return val[keys[keys.length - 1]];
-        }
-        return "";
-      };
 
-      setEvolucaoData({
-        // Avaliação Respiratória
-        expansibilidadeTipo: physio.expansibilidadeTipo || "",
-        expansibilidadePredominio: physio.expansibilidadePredominio || "",
-        auscultaPulmonar: physio.auscultaPulmonar || "",
-        tosse: physio.tosse || "",
-        secrecao: physio.secrecao || false,
-        secrecaoAspecto: physio.secrecaoAspecto || "",
-        secrecaoColoracao: physio.secrecaoColoracao || "",
-        secrecaoQtd: physio.secrecaoQtd || "",
-        desconfortoRespiratorio: physio.desconfortoRespiratorio || false,
-        sinaisDesconforto: Array.isArray(physio.sinaisDesconforto) ? [...physio.sinaisDesconforto] : [],
-        // Avaliação Musculoesquelética
-        tonusMuscular: physio.tonusMuscular || "",
-        retracoesMusculares: physio.retracoesMusculares || false,
-        amplitudeMovimento: physio.amplitudeMovimento || "",
-        amplitudeDescricao: physio.amplitudeDescricao || "",
-        // Escalas Funcionais (agora puxam corretamente)
-        mrcScore: "",
-        ims: "",
-        // Condutas e Planejamento
-        condutas: physio.condutas || "",
-        planoMetas: physio.planoMetas || "",
-        observacoes: physio.observacoes || "",
-        intercorrencias: physio.intercorrencias || ""
-      });
+      const abriuAgora = !physioEvoAberturaRef.current;
+      physioEvoAberturaRef.current = true;
+
+      const chavePaciente = currentPatient.id || currentPatient.leito || currentPatient.nome || 'chave-desconhecida';
+      const precisaReset = abriuAgora || chavePaciente !== physioEvoPacienteRef.current;
+
+      if (precisaReset) {
+        physioEvoPacienteRef.current = chavePaciente;
+
+        setEvolucaoData({
+          // Avaliação Respiratória
+          expansibilidadeTipo: physio.expansibilidadeTipo || "",
+          expansibilidadePredominio: physio.expansibilidadePredominio || "",
+          auscultaPulmonar: physio.auscultaPulmonar || "",
+          tosse: physio.tosse || "",
+          secrecao: physio.secrecao || false,
+          secrecaoAspecto: physio.secrecaoAspecto || "",
+          secrecaoColoracao: physio.secrecaoColoracao || "",
+          secrecaoQtd: physio.secrecaoQtd || "",
+          desconfortoRespiratorio: physio.desconfortoRespiratorio || false,
+          sinaisDesconforto: Array.isArray(physio.sinaisDesconforto) ? [...physio.sinaisDesconforto] : [],
+          // Avaliação Musculoesquelética
+          tonusMuscular: physio.tonusMuscular || "",
+          retracoesMusculares: physio.retracoesMusculares || false,
+          amplitudeMovimento: physio.amplitudeMovimento || "",
+          amplitudeDescricao: physio.amplitudeDescricao || "",
+          // Escalas Funcionais — SEMPRE zeradas ao abrir (conforme solicitado)
+          mrcScore: "",
+          ims: "",
+          // Condutas e Planejamento
+          condutas: physio.condutas || "",
+          planoMetas: physio.planoMetas || "",
+          observacoes: physio.observacoes || "",
+          intercorrencias: physio.intercorrencias || ""
+        });
+      }
+    } else {
+      physioEvoAberturaRef.current = false; // modal fechado → próxima abertura reseta
     }
   }, [showPhysioEvoModal, currentPatient]);
 
