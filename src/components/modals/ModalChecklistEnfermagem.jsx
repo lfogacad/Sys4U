@@ -39,6 +39,9 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
   const [bradenData, setBradenData] = useState({ percepcaoSensorial: '', umidade: '', atividade: '', mobilidade: '', nutricao: '', friccaoCisalhamento: '' });
   const [morseData, setMorseData] = useState({ historicoDeQuedas: '', diagnosticoSecundario: '', auxilioNaMarcha: '', terapiaEndovenosa: '', marcha: '', estadoMental: '' });
 
+  const escalaPacienteRef = useRef(null);
+  const modalAberturaRef = useRef(false); // false = modal estava fechado  
+
   // Estados Dispositivos
   const [cvcActive, setCvcActive] = useState(false);
   const [shileyActive, setShileyActive] = useState(false);
@@ -75,44 +78,63 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
   useEffect(() => {
     if (isOpen && currentPatient) {
       const escalasHoje = currentPatient.enfermagem?.escalas_diarias?.[today];
-      
-      // 🔥 Zera as escalas toda vez que o modal abre
-      setBradenData({ percepcaoSensorial: '', umidade: '', atividade: '', mobilidade: '', nutricao: '', friccaoCisalhamento: '' });
-      setMorseData({ historicoDeQuedas: '', diagnosticoSecundario: '', auxilioNaMarcha: '', terapiaEndovenosa: '', marcha: '', estadoMental: '' });
 
-      const enf = currentPatient.enfermagem || {};
-      
-      const hasActiveCvc = !!enf.cvcData && !enf.cvcRetiradaData;
-      const hasActiveShiley = !!enf.shileyData && !enf.shileyRetiradaData;
-      const hasActiveSvd = !!enf.svdData && !enf.svdRetiradaData;
+      // Reset confiável: dispara quando o modal ABRE (false → true) OU quando o
+      // paciente troca de verdade. Não depende de um único campo do paciente.
+      const abriuAgora = !modalAberturaRef.current;
+      modalAberturaRef.current = true; // só volta a false quando o modal fechar (Passo 3)
 
-      setCvcActive(hasActiveCvc); 
-      setShileyActive(hasActiveShiley); 
-      setSvdActive(hasActiveSvd);
-      
-      setInitialCvc(hasActiveCvc); 
-      setInitialShiley(hasActiveShiley); 
-      setInitialSvd(hasActiveSvd);
-      setCvcLocal(enf.cvcLocal || '');
-      setShileyLocal(enf.shileyLocal || '');
+      const chavePaciente = currentPatient.id || currentPatient.leito || currentPatient.nome || 'chave-desconhecida';
+      const pacienteMudou = abriuAgora || chavePaciente !== escalaPacienteRef.current;
 
-      // Carrega dados salvos anteriormente (persistência diária)
-      setHemodialise(enf.hemodialise || false);
-      setAcessoHemodialise(enf.acessoHemodialise || '');
-      setPulsos(enf.pulsos || '');
-      setEnchimentoCapilar(enf.enchimentoCapilar || '');
-      setSuporteO2(enf.suporteO2 || '');
-      setEsforcoRespiratorio(enf.esforcoRespiratorio || '');
-      setColoracaoPele(enf.coloracaoPele || '');
-      setCianose(enf.cianose || '');
-      setIctericia(enf.ictericia || '');
-      setDiurese(enf.diurese || '');
-      setDiureseCaracteristica(enf.diureseCaracteristica || '');
-      setAcessoVenosoStatus(enf.acessoVenosoStatus || '');
-      setSinaisFlogisticos(enf.sinaisFlogisticos || false);
-      setAbdome(enf.abdome || 'Flácido, indolor à palpação, ruídos hidroaéreos presentes');
-      setCuidadosEnfermagem(enf.cuidadosEnfermagem || '');      
-    }
+      if (pacienteMudou) {
+        escalaPacienteRef.current = chavePaciente;
+
+        // Escalas
+        setBradenData({ percepcaoSensorial: '', umidade: '', atividade: '', mobilidade: '', nutricao: '', friccaoCisalhamento: '' });
+        setMorseData({ historicoDeQuedas: '', diagnosticoSecundario: '', auxilioNaMarcha: '', terapiaEndovenosa: '', marcha: '', estadoMental: '' });
+
+        const enf = currentPatient.enfermagem || {};
+
+        const hasActiveCvc = !!enf.cvcData && !enf.cvcRetiradaData;
+        const hasActiveShiley = !!enf.shileyData && !enf.shileyRetiradaData;
+        const hasActiveSvd = !!enf.svdData && !enf.svdRetiradaData;
+
+        // Dispositivos
+        setCvcActive(hasActiveCvc);
+        setShileyActive(hasActiveShiley);
+        setSvdActive(hasActiveSvd);
+        setInitialCvc(hasActiveCvc);
+        setInitialShiley(hasActiveShiley);
+        setInitialSvd(hasActiveSvd);
+        setCvcLocal(enf.cvcLocal || '');
+        setShileyLocal(enf.shileyLocal || '');
+
+        // Hemodiálise
+        setHemodialise(enf.hemodialise || false);
+        setAcessoHemodialise(enf.acessoHemodialise || '');
+
+        // Avaliação Física
+        setPulsos(enf.pulsos || '');
+        setEnchimentoCapilar(enf.enchimentoCapilar || '');
+        setSuporteO2(enf.suporteO2 || '');
+        setEsforcoRespiratorio(enf.esforcoRespiratorio || '');
+        setColoracaoPele(enf.coloracaoPele || '');
+        setCianose(enf.cianose || '');
+        setIctericia(enf.ictericia || '');
+        setDiurese(enf.diurese || '');
+        setDiureseCaracteristica(enf.diureseCaracteristica || '');
+        setAcessoVenosoStatus(enf.acessoVenosoStatus || '');
+        setSinaisFlogisticos(enf.sinaisFlogisticos || false);
+        setAbdome(enf.abdome || 'Flácido, indolor à palpação, ruídos hidroaéreos presentes');
+        setCuidadosEnfermagem(enf.cuidadosEnfermagem || '');
+        setIntercorrencias(currentPatient.enfermagem?.intercorrencias || '');
+        setCondutas(currentPatient.enfermagem?.condutas || '');
+      }
+    } else {
+      modalAberturaRef.current = false; // modal fechado → próxima abertura resetará
+    }      
+    }    
   }, [isOpen, currentPatient, today]);
 
   // Cálculos Braden
