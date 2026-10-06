@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Activity, X, Printer, Plus, Wind } from 'lucide-react';
 
 const VmFlowsheetModal = ({
@@ -15,48 +15,8 @@ const VmFlowsheetModal = ({
   if (!showVmFlowsheet) return null;
 
   const getEntryTime = (entry) => entry?.dataHora || "Horário Indefinido";
-  const hasAutoAddedRef = useRef(false);
-
   // Determina o tipo de suporte atual
-  const suporteAtual = currentPatient?.physio?.suporte || "Ar Ambiente";
-  
-  // ==============================================================
-  // CÃO DE GUARDA - CRIA COLUNA AUTOMATICAMENTE À MEIA-NOITE
-  // ==============================================================
-  useEffect(() => {
-    if (!showVmFlowsheet || !currentPatient?.id) return;
-
-    const checkAndAddNewDayColumn = () => {
-      const now = new Date();
-      const todayStamp = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
-      const storageKey = `vm_col_added_${currentPatient.id}`;
-      
-      const lastAddedDate = localStorage.getItem(storageKey);
-      if (lastAddedDate === todayStamp) return; 
-
-      const flowsheet = currentPatient.physio?.vmFlowsheet || [];
-      if (flowsheet.length > 0) {
-        const lastEntry = flowsheet[flowsheet.length - 1]; 
-        const lastDate = lastEntry?.dataHora?.split(' ')[0]; 
-        if (lastDate) {
-           const [d, m, y] = lastDate.split('/');
-           const lastEntryStamp = `${parseInt(d)}/${parseInt(m)}/${y}`;
-           if (lastEntryStamp === todayStamp) {
-             localStorage.setItem(storageKey, todayStamp);
-             return;
-           }
-        }
-      }
-
-      if (typeof handleAddVmEntry === 'function') handleAddVmEntry();
-      localStorage.setItem(storageKey, todayStamp);
-    };
-
-    checkAndAddNewDayColumn();
-    const interval = setInterval(checkAndAddNewDayColumn, 300000);
-    return () => clearInterval(interval);
-
-  }, [showVmFlowsheet, currentPatient?.id, currentPatient?.physio?.suporte]); 
+  const suporteAtual = currentPatient?.physio?.suporte || "Ar Ambiente"; 
 
   const displayVmEntries = [...(currentPatient.physio?.vmFlowsheet || [])].reverse();
 
@@ -94,6 +54,7 @@ const getRowsBySuporte = () => {
     { key: 'p01', label: 'P 0.1' },
     { key: 'irrs', label: 'IRRS (Tobin)' },
     { key: 'satO2', label: 'SatO2 (%)' },
+    { key: 'etco2', label: 'EtCO2 (mmHg)' },
     { key: 'ajustesDia', label: 'Ajustes do Dia' }
   ];
 };

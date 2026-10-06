@@ -195,6 +195,9 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
   const [patients, setPatients] = useState(Array(11).fill(null).map((_, i) => defaultPatient(i)));
 
+  const patientsRef = useRef(patients);
+  useEffect(() => { patientsRef.current = patients; });
+
   const [modalGasometria, setModalGasometria] = useState({ isOpen: false, cartuchos: 0, cartuchosLactato: 0, selecionados: [] });
 
   const [modalPainelMetas, setModalPainelMetas] = useState({ isOpen: false });
@@ -4539,7 +4542,8 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
   // ========================================================================
 
   const handleAddVmEntry = () => {
-    const up = [...patients];
+    setPatients(prev => {
+    const up = [...prev];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
 
     if (!p.physio) p.physio = {};
@@ -4583,18 +4587,23 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       vtPc: "", vm: "", fluxoInsp: "", tInsp: "", ie: "",
       pPico: "", pPlato: "", dp: "", cst: "",
       cdin: "", rva: "", autoPeep: "", p01: "", irrs: "",
-      satO2: "", ajustesDia: ""
+      satO2: p.physio.satO2 || "",
+      etco2: p.physio.etco2 || "",
+      ajustesDia: ""
     };
 
     p.physio.vmFlowsheet.push(newEntry);
 
     up[activeTab] = p;
-    setPatients(up);
+    return up;
+    });
 
     save(p, "Fisioterapia: Adicionou nova coluna de avaliação no Mapa de Suporte Ventilatório");
   };
 
   const updateVmEntry = (index, field, value) => {
+    // 🛡️ Mesmo padrão de updateP/updateNested: trava o listener enquanto edita
+    if (localEditRef) localEditRef.current = true;
     setPatients(prev => {
       const up = [...prev];
       const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda segura
@@ -4659,7 +4668,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     setPatients(up);
   };
 
-  const handleBlurSave = () => save(patients[activeTab], "Auto-save on blur");
+  const handleBlurSave = () => save(patientsRef.current[activeTab], "Auto-save on blur");
 
   // Adiciona uma nova lesão à lista
   const addLesao = () => {
