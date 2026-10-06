@@ -131,9 +131,6 @@ const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNeste
         setIntercorrencias(currentPatient.enfermagem?.intercorrencias || '');
         setCondutas(currentPatient.enfermagem?.condutas || '');
       }
-    } else {
-      modalAberturaRef.current = false; // modal fechado → próxima abertura resetará
-    }      
     }    
   }, [isOpen, currentPatient, today]);
 
