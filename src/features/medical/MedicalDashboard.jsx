@@ -52,6 +52,33 @@ const MedicalDashboard = ({
     data: '',
     novoInfiltrado: null
   });
+  // Estado local da História Clínica (digitação instantânea, sem depender do servidor)
+  const [historiaLocal, setHistoriaLocal] = useState(currentPatient.historiaClinica || "");
+  const historiaTimer = useRef(null);
+  const historiaPacienteRef = useRef(currentPatient?.id || currentPatient?.leito || null);
+
+  useEffect(() => {
+    const chave = currentPatient?.id || currentPatient?.leito || null;
+    if (chave !== historiaPacienteRef.current) {
+      historiaPacienteRef.current = chave;
+      setHistoriaLocal(currentPatient.historiaClinica || "");
+    }
+  }, [currentPatient?.id, currentPatient?.leito, currentPatient?.historiaClinica]);
+    
+  const handleHistoriaChange = (e) => {
+    const v = e.target.value;
+    setHistoriaLocal(v);                       // atualiza a tela na hora (nunca "apaga")
+    clearTimeout(historiaTimer.current);
+    historiaTimer.current = setTimeout(() => { // salva 800ms após a última tecla
+      updateP("historiaClinica", v);
+    }, 800);
+  };
+
+  const handleHistoriaBlur = () => {
+    clearTimeout(historiaTimer.current);       // flush imediato ao sair do campo
+    updateP("historiaClinica", historiaLocal);
+    handleBlurSave("Médico: Editou História Clínica");
+  };
 
   const salvarImagemTorax = () => {
     if (!modalImagemTorax.data || !modalImagemTorax.novoInfiltrado) return;
@@ -277,7 +304,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         
       </div>
 
-{/* HISTÓRIA CLÍNICA */}
+      {/* HISTÓRIA CLÍNICA */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 transition-all duration-300">
         <button 
           type="button"
@@ -291,9 +318,9 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         {historyOpen && (
           <div className="pt-3 animate-fadeIn">
             <textarea 
-              value={currentPatient.historiaClinica || ""} 
-              onChange={(e) => updateP("historiaClinica", e.target.value)} 
-              onBlur={() => handleBlurSave("Médico: Editou História Clínica")}
+              value={historiaLocal} 
+              onChange={handleHistoriaChange} 
+              onBlur={handleHistoriaBlur}
               className="w-full p-3 border border-slate-200 rounded-lg h-32 text-sm bg-white outline-none focus:ring-2 focus:ring-teal-100 resize-none shadow-inner" 
               placeholder="Digite a história clínica detalhada do paciente..." 
             />

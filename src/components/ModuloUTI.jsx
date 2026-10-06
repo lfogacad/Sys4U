@@ -1201,6 +1201,10 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   };
 
   const updateP = (field, value) => {
+    // MARCA EDIÇÃO LOCAL: impede o listener unificado de sobrescrever a digitação
+    editCountRef.current += 1;
+    localEditRef.current = true;
+
     const up = [...patients];
     up[activeTab] = { ...up[activeTab], [field]: value };
     setPatients(up);
