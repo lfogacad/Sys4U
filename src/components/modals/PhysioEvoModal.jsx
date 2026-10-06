@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileText, X, Copy, Activity, Shield, ClipboardCheck, Target } from 'lucide-react';
 import { ICU_MOBILITY_SCALE, ASPECTO_SECRECAO, COLORACAO_SECRECAO, QTD_SECRECAO } from '../../constants/clinicalLists';
 import { ModalPortal } from '../ModuloUTI';
