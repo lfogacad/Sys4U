@@ -48,6 +48,12 @@ const TechDashboard = ({
   const [correcaoGH50, setCorrecaoGH50] = useState(null);
   const [salvandoHGT, setSalvandoHGT] = useState(false);
   const ultimoHGTChecked = useRef('');
+
+    // Estado local do campo de anotações (digitação instantânea, sem depender do servidor)
+  const [anotacoesLocal, setAnotacoesLocal] = useState(currentPatient.enfermagem?.anotacoes_tech || "");
+  const anotacoesTimer = useRef(null);
+  const anotacoesPacienteRef = useRef(currentPatient?.id || currentPatient?.leito || null);
+
   // Alerta de Bexigoma — padrão de retenção urinária
   const [alertaBexigoma, setAlertaBexigoma] = useState(null);
   const [bexigomaDismissed, setBexigomaDismissed] = useState(null);
@@ -864,6 +870,14 @@ const salvarFralda = () => {
     if (padrao) setAlertaBexigoma(padrao);
   }, [currentPatient?.bh, currentPatient?.bh_previous, canAccessRegistros]);
 
+  useEffect(() => {
+    const chave = currentPatient?.id || currentPatient?.leito || null;
+    if (chave !== anotacoesPacienteRef.current) {
+      anotacoesPacienteRef.current = chave;
+      setAnotacoesLocal(currentPatient.enfermagem?.anotacoes_tech || "");
+    }
+  }, [currentPatient?.id, currentPatient?.leito, currentPatient?.enfermagem?.anotacoes_tech]);
+    
   // SISTEMA ANTI-ERRO DE DIGITAÇÃO ===
   const LIMITS = {
     gains: { "Dieta SNE/GTT": { min: 0, max: 900 }, "Água": { min: 0, max: 999 }, "Soro basal": { min: 0, max: 500 }, "Diluição EV": { min: 0, max: 500 }, "Volume": { min: 0, max: 1000 }, "Midazolan": { min: 0, max: 100 }, "Fentanil": { min: 0, max: 100 }, "Noradrenalina": { min: 0, max: 100 }, "Dobutamina": { min: 0, max: 100 }, "Hemocomponentes": { min: 0, max: 500 } },
@@ -1016,6 +1030,21 @@ const salvarFralda = () => {
     }
   };
 
+  const handleAnotacoesChange = (e) => {
+    const v = e.target.value;
+    setAnotacoesLocal(v);                       // atualiza a tela na hora (nunca "apaga")
+    clearTimeout(anotacoesTimer.current);
+    anotacoesTimer.current = setTimeout(() => { // salva 800ms após a última tecla
+      updateNested("enfermagem", "anotacoes_tech", v);
+    }, 800);
+  };
+
+  const handleAnotacoesBlur = () => {
+    clearTimeout(anotacoesTimer.current);       // flush imediato ao sair do campo
+    updateNested("enfermagem", "anotacoes_tech", anotacoesLocal);
+    handleBlurSave("Equipe Técnica: Editou as Anotações Gerais");
+  };
+    
   // ==============================================================
   // EXTRAÇÃO DE DATAS DISPONÍVEIS DO PACIENTE
   // ==============================================================
@@ -2031,9 +2060,9 @@ const salvarFralda = () => {
           <textarea 
             className="w-full p-3 border rounded-lg h-32 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-slate-50 focus:bg-white transition-colors" 
             placeholder="Registros do plantão, intercorrências, observações gerais..." 
-            value={currentPatient.enfermagem?.anotacoes_tech || ""} 
-            onChange={(e) => updateNested("enfermagem", "anotacoes_tech", e.target.value)} 
-            onBlur={() => handleBlurSave("Equipe Técnica: Editou as Anotações Gerais")}
+            value={anotacoesLocal} 
+            onChange={handleAnotacoesChange} 
+            onBlur={handleAnotacoesBlur}
           />
         </div>
 
