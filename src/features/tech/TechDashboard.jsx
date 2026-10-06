@@ -858,16 +858,24 @@ const salvarFralda = () => {
 
   useEffect(() => {
     if (!canAccessRegistros) return; // só Téc. em Enf. + Desenvolvedor
-    const assinatura = JSON.stringify({
-      bh: currentPatient?.bh?.losses || {},
-      prev: currentPatient?.bh_previous?.losses || {}
-    });
-    // Chave por paciente no localStorage (sobrevive à troca de aba e ao recarregar)
-    const pacienteKey = currentPatient?.id || currentPatient?.leito || 'desconhecido';
-    const salvo = localStorage.getItem(`bexigoma_dismissed_${pacienteKey}`);
-    if (salvo === assinatura) return; // já fechado com os mesmos dados
     const padrao = detectarBexigoma();
-    if (padrao) setAlertaBexigoma(padrao);
+    if (!padrao) return;
+
+    // Registro (por paciente) dos horários de diurese que JÁ dispararam o alerta.
+    // Sobrevive à troca de aba e ao recarregar.
+    const pacienteKey = currentPatient?.id || currentPatient?.leito || 'desconhecido';
+    const chave = `bexigoma_alertados_${pacienteKey}`;
+    let alertados = [];
+    try { alertados = JSON.parse(localStorage.getItem(chave) || '[]'); } catch { alertados = []; }
+
+    // Só abre se ESTA sequência (âncora = horário da diurese) ainda não foi alertada.
+    // Reabre apenas quando aparecer OUTRA sequência (outro horário de diurese + 2 zeros).
+    if (alertados.includes(padrao.horaDiurese)) return;
+
+    // Marca como alertada e abre uma única vez.
+    alertados.push(padrao.horaDiurese);
+    localStorage.setItem(chave, JSON.stringify(alertados));
+    setAlertaBexigoma(padrao);
   }, [currentPatient?.bh, currentPatient?.bh_previous, canAccessRegistros]);
 
   useEffect(() => {
@@ -946,14 +954,6 @@ const salvarFralda = () => {
   };
 
   const fecharAlertaBexigoma = () => {
-    const assinatura = JSON.stringify({
-      bh: currentPatient?.bh?.losses || {},
-      prev: currentPatient?.bh_previous?.losses || {}
-    });
-    // Persiste a assinatura no localStorage (por paciente) para não reabrir ao trocar de aba
-    const pacienteKey = currentPatient?.id || currentPatient?.leito || 'desconhecido';
-    localStorage.setItem(`bexigoma_dismissed_${pacienteKey}`, assinatura);
-    setBexigomaDismissed(assinatura);
     setAlertaBexigoma(null);
   };
 
