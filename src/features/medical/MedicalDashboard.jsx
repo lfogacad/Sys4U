@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, Plus, FileText, Activity, ChevronDown, 
          ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle, CheckCircle2 } from 'lucide-react';
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
@@ -64,7 +64,7 @@ const MedicalDashboard = ({
       setHistoriaLocal(currentPatient.historiaClinica || "");
     }
   }, [currentPatient?.id, currentPatient?.leito, currentPatient?.historiaClinica]);
-    
+
   const handleHistoriaChange = (e) => {
     const v = e.target.value;
     setHistoriaLocal(v);                       // atualiza a tela na hora (nunca "apaga")
