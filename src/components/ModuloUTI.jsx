@@ -182,6 +182,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const localEditRef = useRef(false);
   const editCountRef = useRef(0);
   const currentPatientRef = useRef(null);
+  const bhViradaRef = useRef({}); // chave: leito, valor: última data arquivada
 
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
   const [showNursingModal, setShowNursingModal] = useState(false);
@@ -746,6 +747,15 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     return () => unsubscribe();
   }, [db]);
 
+  useEffect(() => {
+    if (!auth) return;
+    // Mantém o token do Firebase renovado durante plantões longos
+    const unsub = auth.onIdTokenChanged(async (user) => {
+      if (user) await user.getIdToken(true); // força renovação periódica
+    });
+    return () => unsub();
+  }, [auth]);
+
   // BUSCA OS EVENTOS ADVERSOS NO FIREBASE
   useEffect(() => {
     if (viewMode === 'auditoria') { // Só busca se o usuário abrir a tela de Gestão de Risco
@@ -861,71 +871,71 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   // ==============================================================
   // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" das 07h00)
   // ==============================================================
-  useEffect(() => {
-    const automatizarFechamentoBH = async () => {
-      if (!db || !currentPatient || !currentPatient.bh || !currentPatient.bh.date) return;
+useEffect(() => {
+  const automatizarFechamentoBH = async () => {
+    if (!db || !currentPatient || !currentPatient.bh || !currentPatient.bh.date) return;
 
-      const logicalToday = getLogicalDate();
-      const currentBHDate = currentPatient.bh.date;
+    const logicalToday = getLogicalDate();
+    const currentBHDate = currentPatient.bh.date;
+    if (currentBHDate >= logicalToday) return; // nada a fazer
 
-      if (currentBHDate < logicalToday) {
-        console.log(`[SYS4U] Virada de plantão detectada. Arquivando BH do dia ${currentBHDate} para o Leito ${currentPatient.leito}`);
+    // 🛡️ SÓ roda uma vez por leito por dia — nunca por snapshot/edição repetida
+    const chaveLeito = currentPatient.id ?? currentPatient.leito ?? 'desconhecido';
+    if (bhViradaRef.current[chaveLeito] === logicalToday) return;
+    bhViradaRef.current[chaveLeito] = logicalToday;
 
-        const historicoAntigo = currentPatient.historico_bh || [];
+    console.log(`[SYS4U] Virada de plantão detectada. Arquivando BH do dia ${currentBHDate} para o Leito ${currentPatient.leito}`);
 
-        // Usa calculateTotals (já testada e correta) em vez de cálculo inline
-        const { accumulated: saldoAnterior } = calculateTotals(currentPatient.bh, currentPatient.nutri?.peso);
+    const historicoAntigo = currentPatient.historico_bh || [];
+    const { accumulated: saldoAnterior } = calculateTotals(currentPatient.bh, currentPatient.nutri?.peso);
 
-        const novoBHzero = {
-          date: logicalToday,
-          gains: {},
-          losses: {},
-          vitals: {},
-          irrigation: {},
-          customGains: currentPatient.bh.customGains || [],
-          customLosses: currentPatient.bh.customLosses || [],
-          accumulated: saldoAnterior || 0,
-          insensibleLoss: 0
-        };
-
-        try {
-          let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
-          const apenasNumero = String(idBruto).replace(/bed_/g, "");
-          const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
-          const leitoRef = doc(db, "leitos_uti", docId);
-
-          await updateDoc(leitoRef, {
-            historico_bh: [...historicoAntigo, currentPatient.bh],
-            bh_previous: { ...currentPatient.bh },   // ← PROBLEMA 2 CORRIGIDO
-            bh: novoBHzero
-          });
-
-          // Atualiza o estado local imediatamente (não espera o onSnapshot)
-          setPatients(prev => {
-            const novos = [...prev];
-            const idx = novos.findIndex(p => 
-              p.id === currentPatient.id || p.leito === currentPatient.leito
-            );
-            if (idx !== -1) {
-              novos[idx] = {
-                ...novos[idx],
-                historico_bh: [...historicoAntigo, currentPatient.bh],
-                bh_previous: { ...currentPatient.bh },
-                bh: novoBHzero
-              };
-            }
-            return novos;
-          });
-
-          console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso. BH Ant.: ${saldoAnterior}.`);
-        } catch (error) {
-          console.error("[SYS4U] Erro crítico ao automatizar fechamento do BH:", error);
-        }
-      }
+    const novoBHzero = {
+      date: logicalToday,
+      gains: {},
+      losses: {},
+      vitals: {},
+      irrigation: {},
+      customGains: currentPatient.bh.customGains || [],
+      customLosses: currentPatient.bh.customLosses || [],
+      accumulated: saldoAnterior || 0,
+      insensibleLoss: 0
     };
 
-    automatizarFechamentoBH();
-  }, [currentPatient, db]);
+    try {
+      let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
+      const apenasNumero = String(idBruto).replace(/bed_/g, "");
+      const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
+      const leitoRef = doc(db, "leitos_uti", docId);
+
+      await updateDoc(leitoRef, {
+        historico_bh: [...historicoAntigo, currentPatient.bh],
+        bh_previous: { ...currentPatient.bh },
+        bh: novoBHzero
+      });
+
+      setPatients(prev => {
+        const novos = [...prev];
+        const idx = novos.findIndex(p => p.id === currentPatient.id || p.leito === currentPatient.leito);
+        if (idx !== -1) {
+          novos[idx] = {
+            ...novos[idx],
+            historico_bh: [...historicoAntigo, currentPatient.bh],
+            bh_previous: { ...currentPatient.bh },
+            bh: novoBHzero
+          };
+        }
+        return novos;
+      });
+
+      console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso. BH Ant.: ${saldoAnterior}.`);
+    } catch (error) {
+      console.error("[SYS4U] Erro crítico ao automatizar fechamento do BH:", error);
+      delete bhViradaRef.current[chaveLeito]; // permite nova tentativa na próxima mudança
+    }
+  };
+
+  automatizarFechamentoBH();
+}, [currentPatient, db]);
 
   // Efeito para buscar a fila de espera da UTI em tempo real
   useEffect(() => {
@@ -1027,8 +1037,15 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
       const docId = `bed_${numeroFinal}`;
       
-      // Grava no Prontuário Físico (Leito Atual)
-      await setDoc(doc(db, "leitos_uti", docId), pacienteSeguro, { merge: true });
+      // Grava no Prontuário Físico (Leito Atual) — só os campos que mudaram, com merge
+      await setDoc(doc(db, "leitos_uti", docId), {
+        ...pacienteSeguro,
+        // garante que os blocos críticos sempre sejam persistidos juntos
+        bh: pacienteSeguro.bh,
+        vitals: pacienteSeguro.bh?.vitals,
+        historico_bh: pacienteSeguro.historico_bh,
+        bh_previous: pacienteSeguro.bh_previous
+      }, { merge: true });
       
       // =========================================================
       // 🚨 O PULO DO GATO: ESPELHAMENTO GLOBAL DE CULTURAS (CCIH)
@@ -1073,8 +1090,12 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       }
     } catch (err) { 
       console.error("Erro fatal ao salvar no Firebase:", err);
-      localEditRef.current = false; // evita travar a sincronização para sempre
-      alert("Aviso: Ocorreu um erro ao gravar na nuvem. Verifique o console.");
+      // Se ainda há edições não salvas, MANTÉM a trava para o listener não apagar a tela.
+      // O usuário pode tentar salvar de novo; só libera quando um save tiver sucesso.
+      if (editCountRef.current === contagemNoInicio) {
+        localEditRef.current = false;
+      }
+      alert("Aviso: Ocorreu um erro ao gravar na nuvem. Verifique o console e tente novamente.");
     }
   };
 
@@ -1604,32 +1625,6 @@ const clearAntibiotic = (i) => {
       return up;
     });
     // O salvamento no Firebase será chamado pelo handleBlurSave no Dashboard
-  };
-
-  const handleNextDayBH = () => {
-    if (!window.confirm("Deseja fechar o balanço atual e iniciar um novo dia?")) return;
-
-    const up = [...patients];
-    const p = JSON.parse(JSON.stringify(up[activeTab]));
-
-    const { accumulated } = calculateTotals(p.bh || {}, p.nutri?.peso);
-    
-    // Adiciona ao histórico (não só bh_previous)
-    if (!p.historico_bh) p.historico_bh = [];
-    p.historico_bh.push({ ...(p.bh || {}) });
-    
-    p.bh_previous = { ...(p.bh || {}) };
-    p.bh = {
-      date: getManausDateStr(),
-      accumulated: accumulated || 0,
-      insensibleLoss: p.bh?.insensibleLoss || 0,
-      gains: {}, losses: {}, irrigation: {}, vitals: {}, 
-      customGains: p.bh?.customGains || [], customLosses: p.bh?.customLosses || [],
-    };
-
-    up[activeTab] = p;
-    setPatients(up);
-    save(p, "Balanço Hídrico: Fechou o dia (Balanço de 24h)");
   };
 
   const deleteATBHistoryItem = (id) => {
