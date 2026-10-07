@@ -959,17 +959,27 @@ const salvarFralda = () => {
 
   const checkMinLimitOnBlur = (hour, category, item, e) => {
     let val = e.target.value;
-    handleBlurSave(`BH: Editou ${item} às ${hour}h (${category === 'gains' ? 'Ganho' : category === 'losses' ? 'Perda' : 'Sinal Vital'})`);
-    if (val === "") return;
+
+    // Célula vazia: persiste o apagamento SÓ na célula
+    if (val === "") {
+      updateBH(hour, category, item, "");
+      saveBHCell(category, hour, item, "");
+      return;
+    }
+
     const numVal = parseFloat(val.replace(',', '.'));
     if (!isNaN(numVal)) {
       const limits = getLimits(category, item);
       if (limits && numVal < limits.min) {
         alert(`ATENÇÃO de SEGURANÇA:\n\nO valor inserido em ${item} é inferior ao mínimo permitido (${limits.min}).\nO dado foi removido para evitar erros no Prontuário.`);
-        updateBH(hour, category, item, ""); 
-        handleBlurSave(`Segurança BH: O sistema bloqueou um valor irreal (${val}) no campo ${item} às ${hour}h`);
+        updateBH(hour, category, item, "");
+        saveBHCell(category, hour, item, "");
+        return;
       }
     }
+
+    // Caso normal: salva SOMENTE a célula (nunca o paciente inteiro)
+    saveBHCell(category, hour, item, val);
   };
 
   // ── HGT < 80: abre o modal de correção com GH50% ──────────────────────────
@@ -1895,7 +1905,7 @@ const salvarFralda = () => {
                         value={displayedBH.irrigation?.[h] || ""} 
                         onKeyDown={(e) => handleGridKeyDown(e, "irrig", 0, colIndex, 0, numCols)}
                         onChange={(e) => updateBH(h, "irrigation", null, e.target.value)} 
-                        onBlur={() => handleBlurSave(`BH: Editou Irrigação Vesical às ${h}h`)}
+                        onBlur={(e) => saveBHCell("irrigation", h, null, e.target.value)}
                       />
                       <span className="hidden print:block text-center text-[8px] w-full text-black align-middle">{displayedBH.irrigation?.[h] || ""}</span>
                     </td>

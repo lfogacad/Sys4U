@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, arrayUnion, writeBatch, increment, 
-         onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+         onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp, FieldPath } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
   Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
@@ -4250,6 +4250,52 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
       up[activeTab] = p;
       return up;
     });
+  };
+
+  // Grava UMA célula do BH/SSVV no Firestore (caminho de campo via FieldPath).
+  // Com 2 abas abertas (PC + celular), cada blur grava SÓ a célula editada —
+  // nenhuma aba sobrescreve o paciente inteiro nem apaga dados da outra.
+  const saveBHCell = async (category, hour, item, value) => {
+    if (!db || !currentPatient) return;
+
+    const contagemNoInicio = editCountRef.current; // edições existentes no início
+
+    let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
+    const apenasNumero = String(idBruto).replace(/bed_/g, "");
+    const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
+
+    // Roteamento histórico: edição de dia passado vai para historico_bh
+    const logicalToday = getLogicalDate();
+    const isHistorical = selectedBHDate !== (currentPatient.bh?.date || logicalToday);
+
+    let fieldPath;
+    if (isHistorical) {
+      const idx = (currentPatient.historico_bh || []).findIndex(h => h.date === selectedBHDate);
+      if (idx === -1) return; // gaveta ainda não existe no servidor; o updateBH local cuida
+      fieldPath = category === "irrigation"
+        ? new FieldPath("historico_bh", String(idx), "irrigation", hour)
+        : new FieldPath("historico_bh", String(idx), category, hour, item);
+    } else {
+      fieldPath = category === "irrigation"
+        ? new FieldPath("bh", "irrigation", hour)
+        : new FieldPath("bh", category, hour, item);
+    }
+
+    try {
+      await updateDoc(doc(db, "leitos_uti", docId), { [fieldPath]: value });
+
+      // Libera a trava SOMENTE se nada novo foi digitado durante o save.
+      // Se o usuário seguiu digitando, mantém travado e o próximo save libera.
+      if (editCountRef.current === contagemNoInicio) {
+        localEditRef.current = false;
+      }
+    } catch (err) {
+      console.error("Erro ao salvar célula do BH:", err);
+      // Se ainda há edições não salvas, MANTÉM a trava para o listener não apagar a tela.
+      if (editCountRef.current === contagemNoInicio) {
+        localEditRef.current = false;
+      }
+    }
   };
 
     // 2. Imprimir Balanço Hídrico
