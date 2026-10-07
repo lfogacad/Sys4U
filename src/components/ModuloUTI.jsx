@@ -747,15 +747,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     return () => unsubscribe();
   }, [db]);
 
-  useEffect(() => {
-    if (!auth) return;
-    // Mantém o token do Firebase renovado durante plantões longos
-    const unsub = auth.onIdTokenChanged(async (user) => {
-      if (user) await user.getIdToken(true); // força renovação periódica
-    });
-    return () => unsub();
-  }, [auth]);
-
   // BUSCA OS EVENTOS ADVERSOS NO FIREBASE
   useEffect(() => {
     if (viewMode === 'auditoria') { // Só busca se o usuário abrir a tela de Gestão de Risco
