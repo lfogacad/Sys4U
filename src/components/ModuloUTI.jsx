@@ -4282,7 +4282,7 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
     }
 
     try {
-      await updateDoc(doc(db, "leitos_uti", docId), { [fieldPath]: value });
+      await updateDoc(doc(db, "leitos_uti", docId), fieldPath, value);
 
       // Libera a trava SOMENTE se nada novo foi digitado durante o save.
       // Se o usuário seguiu digitando, mantém travado e o próximo save libera.
@@ -6118,6 +6118,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         setCurrentNoraRate={setCurrentNoraRate} 
                         setShowNoraModal={setShowNoraModal} 
                         handleBlurSave={handleBlurSave}
+                        saveBHCell={saveBHCell}
                       />
                     );
                   })()}

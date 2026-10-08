@@ -34,6 +34,7 @@ const TechDashboard = ({
   setCurrentNoraHour,
   setCurrentNoraRate,
   setShowNoraModal,
+  saveBHCell,
   handleBlurSave
 }) => {
 
@@ -979,7 +980,12 @@ const salvarFralda = () => {
     }
 
     // Caso normal: salva SOMENTE a célula (nunca o paciente inteiro)
-    saveBHCell(category, hour, item, val);
+    if (typeof saveBHCell === 'function') {
+      saveBHCell(category, hour, item, val);
+    } else {
+      console.warn("[saveBHCell] não recebida no TechDashboard — célula não persistida");
+      localEditRef.current = false; // evita tela presa em modo edição
+    }
   };
 
   // ── HGT < 80: abre o modal de correção com GH50% ──────────────────────────
