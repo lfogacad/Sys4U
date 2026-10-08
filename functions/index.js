@@ -658,3 +658,46 @@ exports.gerarCensoUTI = onSchedule({
     console.error("❌ Erro fatal no fechamento do servidor:", error);
   }
 });
+
+/**
+ * Backup automático dos leitos da UTI — roda a cada 1 hora.
+ * Salva o estado completo de leitos_uti em backup_leitos/{YYYY-MM-DDTHH}
+ * (1 documento por hora) — mesma coleção que o seletor da tela lê.
+ */
+exports.backupLeitosHorario = onSchedule({
+  schedule: "0 * * * *",              // minuto 0 de cada hora
+  timeZone: "America/Porto_Velho",   // mesmo fuso do gerarCensoUTI
+  memory: "512MiB"
+}, async () => {
+  const snapshotId = new Date().toISOString().slice(0, 13); // ex.: "2026-10-08T19"
+  const snap = await db.collection("leitos_uti").get();
+  const leitos = {};
+  snap.forEach(d => { leitos[d.id] = d.data(); });
+  await db.collection("backup_leitos").doc(snapshotId).set({
+    criadoEm: admin.firestore.Timestamp.now(),
+    tipo: "automatico",
+    leitos
+  });
+  console.log(`[BACKUP] ${snapshotId} salvo com ${snap.size} leitos`);
+});
+
+/**
+ * Limpeza — apaga snapshots de backup mais antigos que 30 dias (roda 1x/dia às 03h)
+ */
+exports.limparBackupsAntigos = onSchedule({
+  schedule: "0 3 * * *",
+  timeZone: "America/Porto_Velho"
+}, async () => {
+  const limite = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const snap = await db.collection("backup_leitos").get();
+  const apagar = [];
+  snap.forEach(d => {
+    const criado = d.data().criadoEm;
+    const t = criado && typeof criado.toMillis === "function"
+      ? criado.toMillis()
+      : (criado && criado.toDate ? criado.toDate().getTime() : NaN);
+    if (t && t < limite) apagar.push(d.ref);
+  });
+  await Promise.all(apagar.map(ref => ref.delete()));
+  console.log(`[BACKUP] Limpeza: ${apagar.length} snapshots antigos removidos`);
+});
