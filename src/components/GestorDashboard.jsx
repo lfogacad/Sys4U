@@ -25,6 +25,42 @@ import RelatorioChecklistCVC from './relatorios/RelatorioChecklistCVC';
 import RelatorioChecklistSVD from './relatorios/RelatorioChecklistSVD';
 import RelatorioChecklistIOT from './relatorios/RelatorioChecklistIOT';
 
+// ==========================================================
+// MAPAS DE CATEGORIA ↔ SLUG (MESMOS do ImportadorEscala —
+// leitura e escrita precisam bater exatamente)
+// ==========================================================
+const CATEGORIA_SLUGS = {
+  'Médico': 'medico',
+  'Médico Plantonista': 'medico',
+  'Enfermeiro': 'enfermeiro',
+  'Téc. Enfermagem': 'tec-enfermagem',
+  'Téc. Hemodiálise': 'tec-hemodialise',
+  'Fisioterapeuta': 'fisioterapeuta',
+  'Fonoaudiólogo': 'fonoaudiologo',
+  'Nutricionista': 'nutricionista',
+  'Psicólogo': 'psicologo',
+  'Motorista': 'motorista',
+  'Recepção': 'recepcao',
+};
+// SLUG → categoria canônica (usada na Visão Geral e na leitura)
+const SLUG_CATEGORIA = {
+  medico: 'Médico',
+  enfermeiro: 'Enfermeiro',
+  'tec-enfermagem': 'Téc. Enfermagem',
+  'tec-hemodialise': 'Téc. Hemodiálise',
+  fisioterapeuta: 'Fisioterapeuta',
+  fonoaudiologo: 'Fonoaudiólogo',
+  nutricionista: 'Nutricionista',
+  psicologo: 'Psicólogo',
+  motorista: 'Motorista',
+  recepcao: 'Recepção',
+};
+const getSlugCategoria = (categoria) => CATEGORIA_SLUGS[categoria] || 'outros';
+const normalizarBuscaEscala = (nome) =>
+  String(nome || '').toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '');
+
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
   // Controle de navegação principal (hub, indicadores, tendencias, qualidade, auditoria, equipe)
@@ -3674,34 +3710,47 @@ const imprimirRelatorioGeladeira = () => {
   const buscarDadosRelatorio = async (mesAlvo) => {
     setIsLoadingRelatorio(true);
     try {
-      const escalasRef = collection(db, "escalas");
-      const snapshot = await getDocs(escalasRef); 
       const mudancas = [];
-      
-      snapshot.forEach(doc => {
-        const plantao = doc.data();
-        
-        // Filtra pelo MÊS diretamente no motor de busca
-        if (plantao.data && plantao.data.startsWith(mesAlvo)) {
-          const nomeFinal = plantao.nome || "";
-          const alteracao = plantao.statusAlteracao || "";
-          const tipoPlantao = plantao.tipo || "";
 
-          const isFalta = nomeFinal.includes('[FALTOU]') || alteracao === 'Falta';
-          const isAtestado = nomeFinal.includes('[ATESTADO]') || alteracao === 'Atestado';
-          const isExtra = tipoPlantao === 'plantao_extra' || nomeFinal.includes('[EXTRA]') || alteracao === 'Extra';
-          const isTroca = alteracao === 'Normal';
-          const isExcluido = alteracao === 'Excluído' || nomeFinal.includes('[EXCLUÍDO]');
+      // Percorre todas as profissões (slugs) — mesma lista do leitor/importador
+      for (const slug of Object.keys(SLUG_CATEGORIA)) {
+        const mesRef = doc(db, "escalas", slug, "meses", mesAlvo);
+        const snap = await getDoc(mesRef);
+        if (!snap.exists()) continue; // profissão/mês ainda não importado
 
-          if (isFalta || isExtra || isAtestado || isTroca || isExcluido) {
-             mudancas.push({ id: doc.id, ...plantao });
-          }
-        }
-      });
+        const dadosMes = snap.data();
+        const categoriaCanonica = SLUG_CATEGORIA[slug] || dadosMes.categoria || slug;
+        const dias = dadosMes.dias || {};
 
-      mudancas.sort((a, b) => a.data.localeCompare(b.data));
+        Object.entries(dias).forEach(([dia, turnosDoDia]) => {
+          Object.entries(turnosDoDia || {}).forEach(([turnoId, turno]) => {
+            const dataTurno = turno.data || `${mesAlvo}-${dia}`;
+            if (!dataTurno.startsWith(mesAlvo)) return; // defensivo: ignora dado fora do mês
+
+            const nomeFinal = turno.nome || "";
+            const alteracao = turno.statusAlteracao || "";
+            const tipoPlantao = turno.tipo || "";
+
+            const isFalta = nomeFinal.includes('[FALTOU]') || alteracao === 'Falta';
+            const isAtestado = nomeFinal.includes('[ATESTADO]') || alteracao === 'Atestado';
+            const isExtra = tipoPlantao === 'plantao_extra' || nomeFinal.includes('[EXTRA]') || alteracao === 'Extra';
+            const isTroca = alteracao === 'Normal';
+            const isExcluido = alteracao === 'Excluído' || nomeFinal.includes('[EXCLUÍDO]');
+
+            if (isFalta || isExtra || isAtestado || isTroca || isExcluido) {
+              mudancas.push({
+                id: turno.id || turnoId,
+                ...turno,
+                dia,
+                categoria: categoriaCanonica
+              });
+            }
+          });
+        });
+      }
+
+      mudancas.sort((a, b) => (a.data || "").localeCompare(b.data || ""));
       setRelatorioMudancas(mudancas);
-      
     } catch (error) {
       console.error("Erro ao buscar relatório de mudanças:", error);
       alert("Erro ao compilar o relatório.");
@@ -4748,44 +4797,50 @@ const imprimirRelatorioGeladeira = () => {
   processarDadosParaGraficos();
 }, []);
 
-  // Efeito: Buscar Plantões do Dia
+  // Efeito: Buscar Plantões do Dia — NOVA ESTRUTURA escalas/{slug}/meses/{anoMes}
   useEffect(() => {
     if (subViewEquipe !== 'escalas' || modoVisao !== 'dia') return;
-
     const buscarDados = async () => {
       setIsLoadingPlantoes(true);
       try {
-        let q;
-        if (categoriaAtiva === 'Visão Geral') {
-          q = query(collection(db, "escalas"), where("data", "==", dataSelecionada));
-        } else {
-          q = query(
-            collection(db, "escalas"),
-            where("data", "==", dataSelecionada),
-            where("categoria", "==", categoriaAtiva)
-          );
-        }
-        
-        const querySnapshot = await getDocs(q);
+        const anoMes = dataSelecionada.substring(0, 7); // "2026-10"
+        const dia = dataSelecionada.split('-')[2];      // "05"
+
+        const categoriasParaLer = categoriaAtiva === 'Visão Geral'
+          ? Object.values(SLUG_CATEGORIA) // todas as 10 profissões
+          : [categoriaAtiva];
+
         const resultados = [];
         const agrupadoGeral = {};
 
-        querySnapshot.forEach((doc) => {
-          const dados = { id: doc.id, ...doc.data() };
-          // 🚫 PULA apenas EXCLUSÃO TOTAL da escala ativa (nome sem desmembramento Dia/Noite)
-          //    Exclusão PARCIAL (ex.: "NOME [EXCLUÍDO] (D) / NOME (N)") continua aparecendo,
-          //    para o usuário ver que o dia foi excluído mas a noite segue (igual ao atestado parcial)
-          const nomeEscala = dados.nome || "";
-          const ehExclusaoTotal =
-            (nomeEscala.includes('[EXCLUÍDO]') || dados.statusAlteracao === 'Excluído') &&
-            !nomeEscala.includes(' / ');
-          if (ehExclusaoTotal) return;
-          resultados.push(dados);
-          
-          if (!agrupadoGeral[dados.categoria]) agrupadoGeral[dados.categoria] = [];
-          agrupadoGeral[dados.categoria].push(dados);
-        });
-        
+        for (const catNome of categoriasParaLer) {
+          const slug = getSlugCategoria(catNome);
+          const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+          const snap = await getDoc(mesRef);
+          if (!snap.exists()) continue; // profissão/mês ainda não importado
+          const dadosMes = snap.data();
+          const turnosDoDia = dadosMes.dias?.[dia] || {};
+          const categoriaCanonica = SLUG_CATEGORIA[slug] || dadosMes.categoria || catNome;
+
+          Object.entries(turnosDoDia).forEach(([idTurno, turno]) => {
+            const dados = {
+              id: turno.id || idTurno,
+              dia, // guarda o dia para gravar de volta no caminho certo
+              ...turno,
+              categoria: categoriaCanonica
+            };
+            // 🚫 PULA exclusão TOTAL (sem desmembramento Dia/Noite) — mesma regra de antes
+            const nomeEscala = dados.nome || "";
+            const ehExclusaoTotal =
+              (nomeEscala.includes('[EXCLUÍDO]') || dados.statusAlteracao === 'Excluído') &&
+              !nomeEscala.includes(' / ');
+            if (ehExclusaoTotal) return;
+            resultados.push(dados);
+            if (!agrupadoGeral[dados.categoria]) agrupadoGeral[dados.categoria] = [];
+            agrupadoGeral[dados.categoria].push(dados);
+          });
+        }
+
         setPlantoesDoDia(resultados);
         setConsolidadoDia(agrupadoGeral);
       } catch (error) {
@@ -4794,117 +4849,82 @@ const imprimirRelatorioGeladeira = () => {
         setIsLoadingPlantoes(false);
       }
     };
-
     buscarDados();
   }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
 
-  // Efeito: Buscar Grade Mensal
+  // Efeito: Buscar Grade Mensal — NOVA ESTRUTURA
   useEffect(() => {
     if (subViewEquipe !== 'escalas' || modoVisao !== 'mes') return;
-
     const buscarPlantoesMes = async () => {
       setIsLoadingMes(true);
       try {
-        const anoMesAlvo = dataSelecionada.substring(0, 7); 
-
-        const q = query(
-          collection(db, "escalas"),
-          where("categoria", "==", categoriaAtiva)
-        );
-
-        const querySnapshot = await getDocs(q);
+        const anoMesAlvo = dataSelecionada.substring(0, 7);
+        const slug = getSlugCategoria(categoriaAtiva);
+        const mesRef = doc(db, "escalas", slug, "meses", anoMesAlvo);
+        const snap = await getDoc(mesRef);
         const dadosAgrupados = {};
-
-        querySnapshot.forEach((doc) => {
-          const p = doc.data();
-          
-          if (p.data && p.data.startsWith(anoMesAlvo)) {
-            let atribuicoes = [];
-            let strNome = p.nome || "";
-            let siglaOriginal = p.sigla;
-
-            // ======================================================
-            // DECODIFICADOR DE SUBSTITUIÇÕES E OCORRÊNCIAS
-            // ======================================================
-            
-            // 1. É um EXTRA?
-            if (strNome.includes('[EXTRA]')) {
-              atribuicoes.push({ nome: strNome.replace('[EXTRA]', '').trim(), sigla: siglaOriginal });
-            } 
-            // 2. É uma Troca Fatiada (Dia / Noite)?
-            else if (strNome.includes(' / ')) {
-              let partes = strNome.split(' / ');
-              partes.forEach(parte => {
-                // Tenta achar o nome e o turno, ex: "Dra. Julia (D)"
-                let match = parte.match(/(.+?)\s*\((D|N)\)/);
-                if (match) {
-                  let nomeExt = match[1].trim();
-                  let siglaExt = match[2];
-                  // Só atribui se o médico daquele turno NÃO faltou
-                  if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]') && !nomeExt.includes('[EXCLUÍDO]')) {
-                    atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
-                  }
+        if (snap.exists()) {
+          const dias = snap.data().dias || {};
+          Object.keys(dias)
+            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10)) // 01..31
+            .forEach((dia) => {
+              Object.values(dias[dia] || {}).forEach((p) => {
+                let atribuicoes = [];
+                let strNome = p.nome || "";
+                let siglaOriginal = p.sigla;
+                // ================================================
+                // DECODIFICADOR DE SUBSTITUIÇÕES E OCORRÊNCIAS
+                // (idêntico ao código original, agora por turno)
+                // ================================================
+                if (strNome.includes('[EXTRA]')) {
+                  atribuicoes.push({ nome: strNome.replace('[EXTRA]', '').trim(), sigla: siglaOriginal });
+                } else if (strNome.includes(' / ')) {
+                  let partes = strNome.split(' / ');
+                  partes.forEach(parte => {
+                    let match = parte.match(/(.+?)\s*\((D|N)\)/);
+                    if (match) {
+                      let nomeExt = match[1].trim();
+                      let siglaExt = match[2];
+                      if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]') && !nomeExt.includes('[EXCLUÍDO]')) {
+                        atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
+                      }
+                    }
+                  });
+                } else if (strNome.includes('(Cobrindo:')) {
+                  let match = strNome.match(/(.+?)\s*\(Cobrindo:/);
+                  if (match) atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
+                } else if (strNome.includes('[EXCLUÍDO]')) {
+                  // buraco vazio — só fica no relatório
+                } else if (strNome.includes('[FALTOU]') || strNome.includes('[ATESTADO]')) {
+                  // buraco vazio
+                } else {
+                  atribuicoes.push({ nome: strNome.trim(), sigla: siglaOriginal });
                 }
+                atribuicoes.forEach(attr => {
+                  const nomeFinal = attr.nome.toUpperCase();
+                  const siglaFinal = attr.sigla;
+                  if (!dadosAgrupados[nomeFinal]) dadosAgrupados[nomeFinal] = {};
+                  if (!dadosAgrupados[nomeFinal][dia]) dadosAgrupados[nomeFinal][dia] = [];
+                  if (!dadosAgrupados[nomeFinal][dia].includes(siglaFinal)) {
+                    dadosAgrupados[nomeFinal][dia].push(siglaFinal);
+                  }
+                });
               });
-            } 
-            // 3. É uma Cobertura Total?
-            else if (strNome.includes('(Cobrindo:')) {
-              // Pega apenas quem está cobrindo, ignorando quem faltou
-              let match = strNome.match(/(.+?)\s*\(Cobrindo:/);
-              if (match) {
-                atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
-              }
-            }
-            // 3.5 O plantonista foi EXCLUÍDO da escala? (buraco vazio, só fica no relatório)
-            else if (strNome.includes('[EXCLUÍDO]')) {
-               // Ninguém recebe o plantão, o buraco fica vazio na escala do mês!
-            } 
-            // 4. O médico faltou ou deu atestado e NINGUÉM cobriu?
-            else if (strNome.includes('[FALTOU]') || strNome.includes('[ATESTADO]')) {
-               // Ninguém recebe o plantão, o buraco fica vazio na escala do mês!
-            } 
-            // 5. Plantão Normal
-            else {
-              atribuicoes.push({ nome: strNome.trim(), sigla: siglaOriginal });
-            }
-
-            // ======================================================
-            // INJETAR OS RESULTADOS NA GRADE MENSAL
-            // ======================================================
-            const dia = p.data.split('-')[2]; 
-            
-            atribuicoes.forEach(attr => {
-              const nomeFinal = attr.nome.toUpperCase(); // Normaliza o nome para evitar linhas duplicadas
-              const siglaFinal = attr.sigla;
-
-              if (!dadosAgrupados[nomeFinal]) dadosAgrupados[nomeFinal] = {};
-              if (!dadosAgrupados[nomeFinal][dia]) dadosAgrupados[nomeFinal][dia] = [];
-              
-              if (!dadosAgrupados[nomeFinal][dia].includes(siglaFinal)) {
-                dadosAgrupados[nomeFinal][dia].push(siglaFinal);
-              }
             });
-          }
-        });
-
-        // Ordenar os turnos bonitinho dentro do mesmo dia (se fizer M e depois N)
+        }
+        // Ordena os turnos dentro do dia (mesma regra de antes)
         const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6 };
         Object.keys(dadosAgrupados).forEach(nome => {
-          Object.keys(dadosAgrupados[nome]).forEach(dia => {
-             dadosAgrupados[nome][dia] = dadosAgrupados[nome][dia]
-               .sort((a, b) => (ordemTurnos[a] || 99) - (ordemTurnos[b] || 99))
-               .join('');
+          Object.keys(dadosAgrupados[nome]).forEach(d => {
+            dadosAgrupados[nome][d] = dadosAgrupados[nome][d]
+              .sort((a, b) => (ordemTurnos[a] || 99) - (ordemTurnos[b] || 99))
+              .join('');
           });
         });
-
-        // Ordena os nomes em ordem alfabética para a tabela
+        // Ordena os nomes em ordem alfabética
         const dadosOrdenados = Object.keys(dadosAgrupados)
           .sort()
-          .reduce((acc, key) => {
-            acc[key] = dadosAgrupados[key];
-            return acc;
-          }, {});
-
+          .reduce((acc, key) => { acc[key] = dadosAgrupados[key]; return acc; }, {});
         setPlantoesDoMes(dadosOrdenados);
       } catch (error) {
         console.error("Erro ao buscar a escala do mês:", error);
@@ -4912,13 +4932,13 @@ const imprimirRelatorioGeladeira = () => {
         setIsLoadingMes(false);
       }
     };
-
     buscarPlantoesMes();
   }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
 
-  const abrirModalTroca = (plantaoId, turnoEHorario, nomeAtual, sigla) => {
+  const abrirModalTroca = (plantaoId, dia, turnoEHorario, nomeAtual, sigla) => {
     setPlantaoEditado({ 
-      id: plantaoId, 
+      id: plantaoId,
+      dia,
       turno: turnoEHorario, 
       nomeAtual: nomeAtual,
       sigla: sigla
@@ -4984,13 +5004,17 @@ const imprimirRelatorioGeladeira = () => {
     );
 
     try {
-      const escalaRef = doc(db, "escalas", plantaoEditado.id); 
-      await updateDoc(escalaRef, {
-        nome: nomeFinal,
-        // 🚨 CORREÇÃO: Usando a chave exata que o Raio-X revelou
-        nomeOriginal: plantaoEditado.nomeAtual, 
-        statusAlteracao: statusPlantonista, 
-        modificadoEm: new Date().toISOString()
+      const anoMes = dataSelecionada.substring(0, 7);
+      const dia = plantaoEditado.dia || dataSelecionada.split('-')[2];
+      const slug = getSlugCategoria(categoriaAtiva);
+      const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+      const idTurno = plantaoEditado.id;
+      // Grava SÓ os campos do turno afetado — nenhum outro dia/turno é tocado
+      await updateDoc(mesRef, {
+        [`dias.${dia}.${idTurno}.nome`]: nomeFinal,
+        [`dias.${dia}.${idTurno}.nomeOriginal`]: plantaoEditado.nomeAtual,
+        [`dias.${dia}.${idTurno}.statusAlteracao`]: statusPlantonista,
+        [`dias.${dia}.${idTurno}.modificadoEm`]: new Date().toISOString()
       });
       console.log("✅ Atualização salva no Firebase com sucesso!");
     } catch (error) {
@@ -5008,12 +5032,16 @@ const imprimirRelatorioGeladeira = () => {
 
     let horario = extraTurno === 'DN' ? '07:00 às 07:00' : extraTurno === 'D' ? '07:00 às 19:00' : '19:00 às 07:00';
     let turnoFormatado = extraTurno === 'DN' ? 'Plantão 24h' : extraTurno === 'D' ? 'Plantão Dia' : 'Plantão Noite';
-    
-    // Montamos o objeto exatamente como o seu Firebase exige
+
+    const novoId = `${normalizarBuscaEscala(extraNome.trim())}_EXTRA_${Date.now()}`;
+
     const novoPlantaoDB = {
+      id: novoId,
+      uid: "",
+      busca: normalizarBuscaEscala(extraNome.trim()),
       cadastradoEm: new Date().toISOString(),
-      categoria: categoriaAtiva, // Deve ser "Médico" baseado no seu painel
-      data: dataSelecionada, // A data que o senhor está visualizando na tela
+      categoria: categoriaAtiva,
+      data: dataSelecionada,
       horario: horario,
       nome: `${extraNome.trim().toUpperCase()} [EXTRA]`,
       sigla: extraTurno,
@@ -5022,21 +5050,26 @@ const imprimirRelatorioGeladeira = () => {
       turno: turnoFormatado
     };
 
-    // Criamos um ID no mesmo padrão do seu sistema para manter a organização
-    const novoDocId = `${dataSelecionada}_${categoriaAtiva}_EXTRA_${Date.now()}`;
-
     // 1. ATUALIZA A TELA INSTANTANEAMENTE
-    setPlantoesDoDia([...plantoesDoDia, { id: novoDocId, ...novoPlantaoDB }]);
-    
-    // 2. CRIA O NOVO DOCUMENTO NO FIREBASE
+    const diaExtra = dataSelecionada.split('-')[2];
+    setPlantoesDoDia([...plantoesDoDia, { id: novoId, dia: diaExtra, ...novoPlantaoDB }]);
+
+    // 2. GRAVA SÓ O TURNO EXTRA no documento do mês (merge preserva os demais dias)
     try {
-      // Usamos setDoc para criar um documento com ID específico na coleção "escalas"
-      await setDoc(doc(db, "escalas", novoDocId), novoPlantaoDB);
-      console.log("✅ Plantonista Extra criado no Firebase!");
+      const anoMes = dataSelecionada.substring(0, 7);
+      const slug = getSlugCategoria(categoriaAtiva);
+      const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+      await setDoc(mesRef, {
+        categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+        ano: parseInt(anoMes.split('-')[0], 10),
+        mes: parseInt(anoMes.split('-')[1], 10),
+        ultimaAtualizacao: new Date().toISOString(),
+        dias: { [diaExtra]: { [novoId]: novoPlantaoDB } }
+      }, { merge: true }); // merge:true funde o mapa dias — só adiciona este turno
+      console.log("✅ Plantonista Extra gravado no documento mensal!");
     } catch (error) {
       console.error("❌ Erro ao criar Extra no Firebase:", error);
     }
-
     setIsExtraModalOpen(false);
     setExtraNome("");
     setExtraTurno("DN");
@@ -5073,12 +5106,16 @@ const imprimirRelatorioGeladeira = () => {
     if (!confirmar) return;
 
     try {
-      const escalaRef = doc(db, "escalas", plantaoEditado.id);
-      await updateDoc(escalaRef, {
-        nome: nomeFinal,
-        nomeOriginal: plantaoEditado.nomeAtual,
-        statusAlteracao: 'Excluído',
-        modificadoEm: new Date().toISOString()
+      const anoMes = dataSelecionada.substring(0, 7);
+      const dia = plantaoEditado.dia || dataSelecionada.split('-')[2];
+      const slug = getSlugCategoria(categoriaAtiva);
+      const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+      const idTurno = plantaoEditado.id;
+      await updateDoc(mesRef, {
+        [`dias.${dia}.${idTurno}.nome`]: nomeFinal,
+        [`dias.${dia}.${idTurno}.nomeOriginal`]: plantaoEditado.nomeAtual,
+        [`dias.${dia}.${idTurno}.statusAlteracao`]: 'Excluído',
+        [`dias.${dia}.${idTurno}.modificadoEm`]: new Date().toISOString()
       });
       // Exclusão TOTAL: remove o card da escala do dia
       // Exclusão PARCIAL: atualiza o nome e MANTÉM o card (mostra D excluído, N ativo)
@@ -5163,9 +5200,10 @@ const imprimirRelatorioGeladeira = () => {
       { titulo: "FISIOTERAPEUTA", chave: "Fisioterapeuta" },
       { titulo: "MOTORISTA", chave: "Motorista" },
       { titulo: "NUTRICIONISTA", chave: "Nutricionista" },
-      { titulo: "PSICÓLOGO", chave: "Psicólogo" }
+      { titulo: "PSICÓLOGO", chave: "Psicólogo" },
+      { titulo: "FONOAUDIÓLOGO", chave: "Fonoaudiólogo" },
+      { titulo: "RECEPÇÃO", chave: "Recepção" }
     ];
-
     mapaCategorias.forEach(cat => {
       texto += `${cat.titulo}\n`;
       const profissionaisRaw = consolidadoDia[cat.chave] || [];
@@ -11843,7 +11881,7 @@ const imprimirRelatorioGeladeira = () => {
                         <div key={plantao.id} className={`p-4 ${corBg} border ${corBorder} rounded-xl relative group`}>
                           <span className={`text-[10px] font-bold ${corText} uppercase`}>{plantao.turno} ({plantao.horario})</span>
                           <div className="text-lg font-black text-slate-800 mt-1">{plantao.nome}</div>
-                          <button onClick={() => abrirModalTroca(plantao.id, `${plantao.turno} (${plantao.horario})`, plantao.nome, plantao.sigla)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Gerenciar Plantonista">
+                          <button onClick={() => abrirModalTroca(plantao.id, plantao.dia, `${plantao.turno} (${plantao.horario})`, plantao.nome, plantao.sigla)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Gerenciar Plantonista">
                             <Settings size={16} />
                           </button>
                         </div>
