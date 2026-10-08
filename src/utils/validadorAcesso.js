@@ -1,4 +1,4 @@
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase'; 
 
 // A "Lista VIP" da UTI
@@ -13,6 +13,21 @@ const PERFIS_EXCECAO = [
   "Desenvolvedor",
   "Nutricionista",
 ];
+
+// Mapa perfil do usuário → slug da profissão (MESMO do importador/leitor)
+const PERFIL_SLUGS = {
+  'Médico': 'medico',
+  'Médico Plantonista': 'medico',
+  'Enfermeiro': 'enfermeiro',
+  'Téc. Enfermagem': 'tec-enfermagem',
+  'Téc. Hemodiálise': 'tec-hemodialise',
+  'Fisioterapeuta': 'fisioterapeuta',
+  'Fonoaudiólogo': 'fonoaudiologo',
+  'Nutricionista': 'nutricionista',
+  'Psicólogo': 'psicologo',
+  'Motorista': 'motorista',
+  'Recepção': 'recepcao',
+};
 
 // Helper: Calcula a janela de acesso (-1h antes, +1h depois) com base na sigla
 const verificarJanelaDeTempo = (dataPlantao, sigla, dataHoraAtual) => {
@@ -49,53 +64,68 @@ export const verificarCatraca = async (userProfile) => {
   }
 
   const now = new Date();
-  
-  // 2º FILTRO: Busca em lote. Precisamos da escala de ONTEM (para plantões N e DN ativos) e de HOJE
+
+  // Determina a profissão (slug) do usuário a partir do perfil
+  const slugUsuario = PERFIL_SLUGS[userProfile.perfil];
+  if (!slugUsuario) {
+    return { liberado: false, motivo: "Profissão não reconhecida no cadastro. Entre em contato com a administração." };
+  }
+
+  // Meses a consultar: mês atual + mês anterior (plantões N/DN cruzam meia-noite)
   const hoje = new Date(now);
   const ontem = new Date(now);
   ontem.setDate(ontem.getDate() - 1);
 
-  // Formato YYYY-MM-DD para o Firebase
   const formatarData = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  
+  const formatarAnoMes = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
   const dataHojeStr = formatarData(hoje);
   const dataOntemStr = formatarData(ontem);
+  const anoMesHoje = formatarAnoMes(hoje);
+  const anoMesOntem = formatarAnoMes(ontem);
+  const mesRefs = [...new Set([anoMesHoje, anoMesOntem])]; // dedupe se for o mesmo mês
+
+  let plantonistaEncontradoEJanelaAtiva = false;
+  let turnosAchados = [];
+  const uidUsuario = userProfile.uid;
+  const nomeBanco = userProfile.nome.toUpperCase().trim();
 
   try {
-    const escalasRef = collection(db, "escalas");
-    // Consulta dupla usando a cláusula 'in'
-    const q = query(escalasRef, where("data", "in", [dataOntemStr, dataHojeStr]));
-    const querySnapshot = await getDocs(q);
+    for (const anoMes of mesRefs) {
+      const mesRef = doc(db, "escalas", slugUsuario, "meses", anoMes);
+      const snap = await getDoc(mesRef);
+      if (!snap.exists()) continue; // profissão/mês ainda não importado
 
-    let plantonistaEncontradoEJanelaAtiva = false;
-    let turnosAchados = [];
-    const nomeBanco = userProfile.nome.toUpperCase().trim();
+      const dias = snap.data().dias || {};
 
-    querySnapshot.forEach((doc) => {
-      const plantao = doc.data();
-      if (!plantao.nome || !plantao.sigla) return;
+      // Percorre todos os dias do mês
+      Object.entries(dias).forEach(([dia, turnosDoDia]) => {
+        Object.values(turnosDoDia || {}).forEach((turno) => {
+          if (!turno || !turno.sigla) return;
+          const dataTurno = turno.data || `${anoMes}-${dia}`;
 
-      // 🔥 CORREÇÃO: Limpa as tags do nome antes de comparar
-      const nomeEscala = plantao.nome
-        .toUpperCase()
-        .replace('[EXTRA]', '')
-        .replace('[FALTOU]', '')
-        .replace('[ATESTADO]', '')
-        .trim();
+          // Considera apenas ONTEM e HOJE (mesmo critério da versão antiga)
+          if (dataTurno !== dataHojeStr && dataTurno !== dataOntemStr) return;
 
-      // Regra da Interseção Nominal (Verifica de ambos os lados para garantir)
-      if (nomeBanco.includes(nomeEscala) || nomeEscala.includes(nomeBanco)) {
-        // Valida se, além de estar na escala, ele está na janela cronológica correta
-        const dentroDaJanela = verificarJanelaDeTempo(plantao.data, plantao.sigla, now);
-        
-        if (dentroDaJanela) {
-          plantonistaEncontradoEJanelaAtiva = true;
-        } else {
-          // Guarda o turno bloqueado para dar feedback preciso ao usuário
-          turnosAchados.push(`${plantao.sigla} (Data base: ${plantao.data})`);
-        }
-      }
-    });
+          // Match por UID (chave primária) — fallback por nome
+          let corresponde = false;
+          if (uidUsuario && turno.uid && turno.uid === uidUsuario) {
+            corresponde = true;
+          } else if (turno.nome) {
+            const nomeEscala = turno.nome.toUpperCase()
+              .replace('[EXTRA]', '').replace('[FALTOU]', '').replace('[ATESTADO]', '').trim();
+            corresponde = nomeBanco.includes(nomeEscala) || nomeEscala.includes(nomeBanco);
+          }
+          if (!corresponde) return;
+
+          if (verificarJanelaDeTempo(dataTurno, turno.sigla, now)) {
+            plantonistaEncontradoEJanelaAtiva = true;
+          } else {
+            turnosAchados.push(`${turno.sigla} (Data base: ${dataTurno})`);
+          }
+        });
+      });
+    }
 
     if (plantonistaEncontradoEJanelaAtiva) {
       return { liberado: true, motivo: "Acesso liberado: Profissional validado no horário de plantão." };
@@ -104,7 +134,6 @@ export const verificarCatraca = async (userProfile) => {
     } else {
       return { liberado: false, motivo: "Acesso Negado: Você não possui plantão escalado ou ativo no momento." };
     }
-
   } catch (error) {
     console.error("Erro na catraca de acesso cronológica:", error);
     return { liberado: false, motivo: "Erro ao consultar a validação cronológica. Comunique a coordenação." };
