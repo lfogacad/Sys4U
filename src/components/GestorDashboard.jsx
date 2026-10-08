@@ -8,7 +8,8 @@ import {
   ArrowLeft, Activity, Calendar, TrendingUp, AlertCircle, Clock, Plus, PlusCircle, Shield, FileDown, X, Bug,
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
   FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance, Truck,
-  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain, Droplets, Refrigerator, CalendarRange
+  LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain, Droplets, Refrigerator, CalendarRange,
+  Database, RefreshCw, RotateCcw
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
@@ -16,6 +17,7 @@ import {
 } from 'recharts';
 import { collection, onSnapshot, getDocs, getDoc, doc, deleteDoc, setDoc, orderBy, limit, updateDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
+import { gerarSnapshotLeitos, listarSnapshots, restaurarSnapshot } from '../utils/backupLeitos';
 
 import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
@@ -521,6 +523,15 @@ useEffect(() => {
   const [leitosConfig, setLeitosConfig] = useState([]);
   const [capacidadeInput, setCapacidadeInput] = useState(10);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  // BACKUP DE LEITOS
+  const [snapshotsLista, setSnapshotsLista] = useState([]);
+  const [snapshotSelecionado, setSnapshotSelecionado] = useState('');
+  const [restaurarModo, setRestaurarModo] = useState('vazios'); // 'vazios' | 'sobrescrever'
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [msgBackup, setMsgBackup] = useState('');
+
   const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
   const [listaHistorico, setListaHistorico] = useState([]);
   const [metricasEquipe, setMetricasEquipe] = useState({
@@ -912,6 +923,72 @@ useEffect(() => {
     const prob = ((Math.exp(logit) / (1 + Math.exp(logit))) * 100).toFixed(1);
     return { score, prob, details };
   };
+
+  const formatarDataHoraBR = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${dd}-${mm}-${d.getFullYear()} ${hh}:${min}`;
+  };
+
+  const carregarSnapshots = async () => {
+    try {
+      const lista = await listarSnapshots();
+      setSnapshotsLista(lista);
+      if (lista.length > 0) setSnapshotSelecionado(prev => prev || lista[0].id);
+    } catch (err) {
+      console.error('Erro ao listar backups:', err);
+      setMsgBackup('Erro ao listar backups. Verifique o console.');
+    }
+  };
+
+  const gerarBackupAgora = async () => {
+    setIsBackingUp(true);
+    setMsgBackup('');
+    try {
+      await gerarSnapshotLeitos('manual-config');
+      await carregarSnapshots();
+      setMsgBackup(`Backup gerado em ${formatarDataHoraBR(new Date().toISOString())}`);
+    } catch (err) {
+      console.error('Erro ao gerar backup:', err);
+      setMsgBackup('Erro ao gerar backup. Verifique o console.');
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const restaurarBackup = async () => {
+    if (!snapshotSelecionado) return;
+    const sSel = snapshotsLista.find(s => s.id === snapshotSelecionado);
+    const horaBackup = formatarDataHoraBR(sSel?.criadoEm);
+    const aceito = window.confirm(
+      `Restaurar os leitos a partir do backup de ${horaBackup}?\n\n` +
+      (restaurarModo === 'vazios'
+        ? 'Somente os campos vazios/faltantes serão preenchidos. Dados atuais NÃO serão sobrescritos.'
+        : 'Os documentos dos leitos serão SUBSTITUÍDOS pelo conteúdo do backup.')
+    );
+    if (!aceito) return;
+    setIsRestoring(true);
+    setMsgBackup('');
+    try {
+      const restaurados = await restaurarSnapshot(snapshotSelecionado, { apenasCamposVazios: restaurarModo === 'vazios' });
+      setMsgBackup(`${restaurados.length} leito(s) restaurado(s) a partir de ${horaBackup}`);
+    } catch (err) {
+      console.error('Erro ao restaurar backup:', err);
+      setMsgBackup('Erro ao restaurar. Verifique o console.');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+  
+  useEffect(() => {
+    if (subViewEquipe === 'config') carregarSnapshots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subViewEquipe]);
 
   // Salva a auditoria no Firebase
   const salvarAuditoriaSAPS3 = async () => {
@@ -12191,6 +12268,76 @@ const imprimirRelatorioGeladeira = () => {
                 <p className="text-[10px] text-slate-500 mt-4 leading-relaxed italic">
                   * O sistema apenas adiciona leitos faltantes. Se reduzir a capacidade, os leitos existentes não são deletados para proteger os prontuários; utilize o botão "Bloqueado" para inativá-los.
                 </p>
+              </div>
+
+              {/* ============================================== */}
+              {/* BACKUP E RECUPERAÇÃO DE LEITOS (por horário)   */}
+              {/* ============================================== */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
+                  <Database className="text-blue-500" size={20} /> Backup de Leitos
+                </h3>
+
+                <button
+                  onClick={gerarBackupAgora}
+                  disabled={isBackingUp}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                >
+                  {isBackingUp ? <Loader2 className="animate-spin" size={18} /> : <Database size={18} />}
+                  {isBackingUp ? "A Gerar Backup..." : "Gerar Backup Agora"}
+                </button>
+                <p className="text-[10px] text-slate-500 mt-2 leading-relaxed italic">
+                  Copia o estado atual de todos os leitos para a coleção backup_leitos. Faça antes de qualquer operação arriscada.
+                </p>
+
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+                      <Clock size={14} className="text-slate-400" /> Restaurar de
+                    </label>
+                    <button onClick={carregarSnapshots} className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                      <RefreshCw size={11} /> Atualizar lista
+                    </button>
+                  </div>
+                  <select
+                    value={snapshotSelecionado}
+                    onChange={(e) => setSnapshotSelecionado(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700"
+                  >
+                    {snapshotsLista.length === 0 && <option value="">Nenhum backup encontrado</option>}
+                    {snapshotsLista.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {formatarDataHoraBR(s.criadoEm)}{s.rotulo ? `  (${s.rotulo})` : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="mt-3 space-y-1.5">
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
+                      <input type="radio" checked={restaurarModo === 'vazios'} onChange={() => setRestaurarModo('vazios')} className="w-3.5 h-3.5 text-blue-600" />
+                      Só preencher o que está vazio/faltando (recomendado)
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
+                      <input type="radio" checked={restaurarModo === 'sobrescrever'} onChange={() => setRestaurarModo('sobrescrever')} className="w-3.5 h-3.5 text-blue-600" />
+                      Sobrescrever os leitos com o backup
+                    </label>
+                  </div>
+
+                  <button
+                    onClick={restaurarBackup}
+                    disabled={isRestoring || !snapshotSelecionado}
+                    className="w-full mt-3 bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white p-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                  >
+                    {isRestoring ? <Loader2 className="animate-spin" size={18} /> : <RotateCcw size={18} />}
+                    {isRestoring ? "A Restaurar..." : "Restaurar Backup"}
+                  </button>
+
+                  {msgBackup && (
+                    <p className="text-xs font-bold text-slate-700 mt-3 bg-slate-50 border border-slate-200 rounded-lg p-2">
+                      {msgBackup}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
 

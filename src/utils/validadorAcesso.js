@@ -19,7 +19,7 @@ const PERFIL_SLUGS = {
   'Médico': 'medico',
   'Médico Plantonista': 'medico',
   'Enfermeiro': 'enfermeiro',
-  'Téc. Enfermagem': 'tec-enfermagem',
+  'Téc. em Enf.': 'tec-enfermagem',
   'Téc. Hemodiálise': 'tec-hemodialise',
   'Fisioterapeuta': 'fisioterapeuta',
   'Fonoaudiólogo': 'fonoaudiologo',
