@@ -1028,15 +1028,18 @@ useEffect(() => {
 
       const docId = `bed_${numeroFinal}`;
       
-      // Grava no Prontuário Físico (Leito Atual) — só os campos que mudaram, com merge
-      await setDoc(doc(db, "leitos_uti", docId), {
-        ...pacienteSeguro,
-        // garante que os blocos críticos sempre sejam persistidos juntos
-        bh: pacienteSeguro.bh,
-        vitals: pacienteSeguro.bh?.vitals,
-        historico_bh: pacienteSeguro.historico_bh,
-        bh_previous: pacienteSeguro.bh_previous
-      }, { merge: true });
+      // Grava no Prontuário Físico (Leito Atual) — só os campos DEFINIDOS, com merge.
+      // Paciente novo (admissão) pode não ter historico_bh/bh_previous ainda — incluir
+      // essas chaves com valor undefined faz o Firestore rejeitar a escrita.
+      const payloadBH = { ...pacienteSeguro };
+      if (pacienteSeguro.bh !== undefined) {
+        payloadBH.bh = pacienteSeguro.bh;
+        if (pacienteSeguro.bh.vitals !== undefined) payloadBH.vitals = pacienteSeguro.bh.vitals;
+      }
+      if (pacienteSeguro.historico_bh !== undefined) payloadBH.historico_bh = pacienteSeguro.historico_bh;
+      if (pacienteSeguro.bh_previous !== undefined) payloadBH.bh_previous = pacienteSeguro.bh_previous;
+
+      await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
       
       // =========================================================
       // 🚨 O PULO DO GATO: ESPELHAMENTO GLOBAL DE CULTURAS (CCIH)
