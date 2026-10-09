@@ -1056,7 +1056,7 @@ useEffect(() => {
       // Dentro do save(), ANTES do setDoc — mescla o histórico do estado com o do servidor
       if (payloadBH.historico_bh !== undefined && Array.isArray(payloadBH.historico_bh)) {
         try {
-          const snapServidor = await doc(db, "leitos_uti", docId).get();
+          const snapServidor = await getDoc(doc(db, "leitos_uti", docId));
           const historicoServidor = snapServidor.exists() ? snapServidor.data().historico_bh : null;
           if (Array.isArray(historicoServidor) && historicoServidor.length > 0) {
             const datasLocais = new Set(payloadBH.historico_bh.map(h => h && h.date).filter(Boolean));
