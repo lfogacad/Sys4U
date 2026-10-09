@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { doc, setDoc, getDocs, deleteDoc, collection, addDoc, arrayUnion, writeBatch, increment, 
+import { doc, setDoc, getDocs, getDoc, deleteDoc, collection, addDoc, arrayUnion, writeBatch, increment, 
          onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp, FieldPath } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
@@ -126,14 +126,20 @@ const mergePatientData = (base, incoming) => {
 
 // 1. O "Hoje" da UTI vai das 07:00 de um dia até as 06:59 do dia seguinte.
 const getLogicalDate = () => {
-  const now = new Date();
-  if (now.getHours() < 7) {
-    now.setDate(now.getDate() - 1); // Ex: Se for 05:00 do dia 05/05, ainda pertence ao plantão do dia 04/05
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Porto_Velho',
+    hour: '2-digit', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const y = partes.find(p => p.type === 'year').value;
+  const m = partes.find(p => p.type === 'month').value;
+  const d = partes.find(p => p.type === 'day').value;
+  const hora = Number(partes.find(p => p.type === 'hour').value) % 24;
+  if (hora < 7) {
+    const ontem = new Date(`${y}-${m}-${d}T00:00:00`);
+    ontem.setDate(ontem.getDate() - 1);
+    return `${ontem.getFullYear()}-${String(ontem.getMonth() + 1).padStart(2, '0')}-${String(ontem.getDate()).padStart(2, '0')}`;
   }
-  // CORREÇÃO: formata os componentes da data LOCAL (sem passar por UTC)
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 };
 
@@ -898,8 +904,18 @@ useEffect(() => {
       const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
       const leitoRef = doc(db, "leitos_uti", docId);
 
+      // 🔥 VERDADE DO SERVIDOR: nunca confiar no estado para arquivar
+      const leitoSnap = await getDoc(leitoRef);
+      const firestoreHist = leitoSnap.exists() ? leitoSnap.data().historico_bh : null;
+      const historicoServidor = Array.isArray(firestoreHist) ? firestoreHist : [];
+
+      // Evita duplicar o BH atual (outra aba/janela pode já ter arquivado)
+      if (!historicoServidor.some(h => h && h.date === currentPatient.bh.date)) {
+        historicoServidor.push(currentPatient.bh);
+      }
+
       await updateDoc(leitoRef, {
-        historico_bh: [...historicoAntigo, currentPatient.bh],
+        historico_bh: historicoServidor,
         bh_previous: { ...currentPatient.bh },
         bh: novoBHzero
       });
@@ -910,14 +926,13 @@ useEffect(() => {
         if (idx !== -1) {
           novos[idx] = {
             ...novos[idx],
-            historico_bh: [...historicoAntigo, currentPatient.bh],
+            historico_bh: historicoServidor,
             bh_previous: { ...currentPatient.bh },
             bh: novoBHzero
           };
         }
         return novos;
       });
-
       console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso. BH Ant.: ${saldoAnterior}.`);
     } catch (error) {
       console.error("[SYS4U] Erro crítico ao automatizar fechamento do BH:", error);
@@ -1038,7 +1053,18 @@ useEffect(() => {
       }
       if (pacienteSeguro.historico_bh !== undefined) payloadBH.historico_bh = pacienteSeguro.historico_bh;
       if (pacienteSeguro.bh_previous !== undefined) payloadBH.bh_previous = pacienteSeguro.bh_previous;
-
+      // Dentro do save(), ANTES do setDoc — mescla o histórico do estado com o do servidor
+      if (payloadBH.historico_bh !== undefined && Array.isArray(payloadBH.historico_bh)) {
+        try {
+          const snapServidor = await doc(db, "leitos_uti", docId).get();
+          const historicoServidor = snapServidor.exists() ? snapServidor.data().historico_bh : null;
+          if (Array.isArray(historicoServidor) && historicoServidor.length > 0) {
+            const datasLocais = new Set(payloadBH.historico_bh.map(h => h && h.date).filter(Boolean));
+            const soNoServidor = historicoServidor.filter(h => h && h.date && !datasLocais.has(h.date));
+            if (soNoServidor.length > 0) payloadBH.historico_bh = [...payloadBH.historico_bh, ...soNoServidor];
+          }
+        } catch (e) { console.warn("[SYS4U] Não foi possível mesclar historico_bh no save:", e); }
+      }
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
       
       // =========================================================
@@ -4222,10 +4248,14 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
 
       if (isHistorical) {
         // B. Rota do Histórico: Garante que o arquivo morto existe
-        if (!p.historico_bh) p.historico_bh = [];
+        if (!Array.isArray(p.historico_bh)) {
+          p.historico_bh = (p.historico_bh && typeof p.historico_bh === "object")
+            ? Object.values(p.historico_bh).filter(h => h && typeof h === "object" && !Array.isArray(h))
+            : [];
+        }
         
         // Localiza a gaveta exata do dia que foi destravado na Caixa Preta
-        let historyIndex = p.historico_bh.findIndex(h => h.date === selectedBHDate);
+        let historyIndex = p.historico_bh.findIndex(h => h && h.date === selectedBHDate);
         
         // Failsafe de segurança: se a gaveta não existir, cria uma para a data
         if (historyIndex === -1) {
@@ -4261,43 +4291,64 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
   const saveBHCell = async (category, hour, item, value) => {
     if (!db || !currentPatient) return;
 
-    const contagemNoInicio = editCountRef.current; // edições existentes no início
-
+    const contagemNoInicio = editCountRef.current;
     let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
     const apenasNumero = String(idBruto).replace(/bed_/g, "");
     const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
+    const leitoRef = doc(db, "leitos_uti", docId);
 
-    // Roteamento histórico: edição de dia passado vai para historico_bh
     const logicalToday = getLogicalDate();
     const isHistorical = selectedBHDate !== (currentPatient.bh?.date || logicalToday);
 
-    let fieldPath;
-    if (isHistorical) {
-      const idx = (currentPatient.historico_bh || []).findIndex(h => h.date === selectedBHDate);
-      if (idx === -1) return; // gaveta ainda não existe no servidor; o updateBH local cuida
-      fieldPath = category === "irrigation"
-        ? new FieldPath("historico_bh", String(idx), "irrigation", hour)
-        : new FieldPath("historico_bh", String(idx), category, hour, item);
-    } else {
-      fieldPath = category === "irrigation"
+    // ── ROTA DO DIA ATUAL: bh é MAPA, FieldPath é seguro ──
+    if (!isHistorical) {
+      const fieldPath = category === "irrigation"
         ? new FieldPath("bh", "irrigation", hour)
         : new FieldPath("bh", category, hour, item);
+      try {
+        await updateDoc(leitoRef, fieldPath, value);
+        if (editCountRef.current === contagemNoInicio) localEditRef.current = false;
+      } catch (err) {
+        console.error("Erro ao salvar célula do BH:", err);
+        if (editCountRef.current === contagemNoInicio) localEditRef.current = false;
+      }
+      return;
     }
 
+    // ── ROTA HISTÓRICA: NUNCA usar FieldPath(“historico_bh”, String(idx), …)
+    // O Firestore converte o ARRAY em MAPA de chaves numéricas e corrompe o campo.
+    // Correto: ler o array do servidor, alterar a gaveta da data e gravar o array inteiro.
     try {
-      await updateDoc(doc(db, "leitos_uti", docId), fieldPath, value);
+      const leitoSnap = await getDoc(leitoRef);
+      const dadosAtuais = leitoSnap.exists() ? leitoSnap.data() : {};
 
-      // Libera a trava SOMENTE se nada novo foi digitado durante o save.
-      // Se o usuário seguiu digitando, mantém travado e o próximo save libera.
-      if (editCountRef.current === contagemNoInicio) {
-        localEditRef.current = false;
+      // Garante array (e já recupera mapas corrompidos via Object.values)
+      const historico = Array.isArray(dadosAtuais.historico_bh)
+        ? dadosAtuais.historico_bh
+        : (dadosAtuais.historico_bh && typeof dadosAtuais.historico_bh === "object"
+            ? Object.values(dadosAtuais.historico_bh).filter(h => h && typeof h === "object" && !Array.isArray(h))
+            : []);
+
+      // Localiza a gaveta da data selecionada; se não existir, cria
+      let gaveta = historico.find(h => h && h.date === selectedBHDate);
+      if (!gaveta) {
+        gaveta = { date: selectedBHDate, gains: {}, losses: {}, vitals: {}, irrigation: {} };
+        historico.push(gaveta);
       }
+
+      if (!gaveta[category]) gaveta[category] = {};
+      if (category === "irrigation") {
+        gaveta.irrigation[hour] = value;
+      } else {
+        if (!gaveta[category][hour]) gaveta[category][hour] = {};
+        gaveta[category][hour][item] = value;
+      }
+
+      await updateDoc(leitoRef, { historico_bh: historico });
+      if (editCountRef.current === contagemNoInicio) localEditRef.current = false;
     } catch (err) {
-      console.error("Erro ao salvar célula do BH:", err);
-      // Se ainda há edições não salvas, MANTÉM a trava para o listener não apagar a tela.
-      if (editCountRef.current === contagemNoInicio) {
-        localEditRef.current = false;
-      }
+      console.error("Erro ao salvar célula do BH (histórico):", err);
+      if (editCountRef.current === contagemNoInicio) localEditRef.current = false;
     }
   };
 
@@ -6082,7 +6133,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                     // 1. Lógica de triagem: Qual Balanço Hídrico exibir?
                     let currentDisplayedBH = currentPatient.bh; // Por padrão exibe o do plantão atual
                     
-                    if (selectedBHDate !== currentPatient.bh?.date && currentPatient.historico_bh) {
+                    if (selectedBHDate !== currentPatient.bh?.date && Array.isArray(currentPatient.historico_bh)) {
                         // Se a data selecionada for do passado, resgata o documento do arquivo morto (histórico)
                         const historicalRecord = currentPatient.historico_bh.find(h => h.date === selectedBHDate);
                         if (historicalRecord) {

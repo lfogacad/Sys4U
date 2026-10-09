@@ -806,7 +806,7 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   fimJanelaGlic.setHours(6, 0, 0, 0);    // 06h de hoje (08/09) — inclusivo
 
   const hgtOntem = [];
-  (currentPatient?.historico_bh || []).forEach(bhDoc => {
+  (Array.isArray(currentPatient?.historico_bh) ? currentPatient.historico_bh : []).forEach(bhDoc => {
     if (!bhDoc?.date || !bhDoc.vitals) return;
     Object.entries(bhDoc.vitals).forEach(([hora, v]) => {
       const valor = v?.['HGT (mg/dL)'];

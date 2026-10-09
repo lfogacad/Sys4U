@@ -19,10 +19,13 @@ export const safeNumber = (val) => {
 };
 
 export const getManausDateStr = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Porto_Velho',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const y = partes.find(p => p.type === 'year').value;
+  const m = partes.find(p => p.type === 'month').value;
+  const d = partes.find(p => p.type === 'day').value;
   return `${y}-${m}-${d}`;
 };
 
@@ -772,6 +775,13 @@ export const mergePatientData = (def, db) => {
   if (!m.hd_acesso) m.hd_acesso = def.hd_acesso;
   if (!m.hd_anotacoes) m.hd_anotacoes = def.hd_anotacoes;
   if (!m.hd_insumos) m.hd_insumos = def.hd_insumos;
+  // historico_bh sempre como ARRAY: corrige silenciosamente qualquer corrupção na carga.
+  // Se veio como mapa (ex.: {0:{...}} ou {"2026-10-07":{...}}), recupera os itens por Object.values.
+  if (m.historico_bh !== undefined && !Array.isArray(m.historico_bh)) {
+    m.historico_bh = (m.historico_bh && typeof m.historico_bh === "object")
+      ? Object.values(m.historico_bh).filter(h => h && typeof h === "object" && !Array.isArray(h))
+      : [];
+  }  
   return m;
 };
 

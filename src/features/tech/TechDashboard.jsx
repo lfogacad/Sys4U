@@ -607,7 +607,7 @@ const salvarFralda = () => {
   };
 
   const reportarCalafrios = () => {
-    const hoje = new Date().toISOString().slice(0, 10); // AAAA-MM-DD
+    const hoje = getManausDateStr();
     const up = [...patients];
     const p = JSON.parse(JSON.stringify(up[activeTab]));
 
