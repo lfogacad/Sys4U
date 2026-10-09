@@ -924,9 +924,17 @@ useEffect(() => {
     return { score, prob, details };
   };
 
-  const formatarDataHoraBR = (iso) => {
-    if (!iso) return '';
-    const d = new Date(iso);
+  const formatarDataHoraBR = (valor) => {
+    let d;
+    if (valor && typeof valor.toDate === 'function') {
+      d = valor.toDate();            // Firestore Timestamp → Date
+    } else if (valor instanceof Date) {
+      d = valor;
+    } else if (typeof valor === 'string' || typeof valor === 'number') {
+      d = new Date(valor);
+    } else {
+      return '';
+    }
     if (isNaN(d.getTime())) return '';
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');

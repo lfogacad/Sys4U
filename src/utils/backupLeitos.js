@@ -22,15 +22,15 @@ export const gerarSnapshotLeitos = async (rotulo = 'manual') => {
 
 // 2) LISTAR SNAPSHOTS (mais recente primeiro) — alimenta o seletor de horário
 export const listarSnapshots = async () => {
-  const snap = await getDocs(collection(db, 'backup_leitos'));
-  return snap.docs
-    .map(d => ({
-      id: d.id,
-      rotulo: d.data().rotulo,
-      criadoEm: d.data().criadoEm
-    }))
-    .sort((a, b) => (a.criadoEm < b.criadoEm ? 1 : -1));
-};
+    const snap = await getDocs(collection(db, 'backup_leitos'));
+    const toMillis = (v) =>
+      v && typeof v.toMillis === 'function' ? v.toMillis()
+      : v instanceof Date ? v.getTime()
+      : v ? new Date(v).getTime() : 0;
+    return snap.docs
+      .map(d => ({ id: d.id, rotulo: d.data().rotulo, criadoEm: d.data().criadoEm }))
+      .sort((a, b) => toMillis(b.criadoEm) - toMillis(a.criadoEm));
+  };
 
 // 3) RESTAURAR: sobrescreve OU só preenche campos que estão vazios/faltando
 export const restaurarSnapshot = async (snapshotId, { apenasCamposVazios = true } = {}) => {
