@@ -1,21 +1,26 @@
 // =====================================================
 // BACKUP DE LEITOS — snapshots por horário
 // =====================================================
-import { collection, doc, getDocs, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 // 1) GERAR SNAPSHOT: lê todos os leitos e salva em backup_leitos/{timestamp}
 export const gerarSnapshotLeitos = async (rotulo = 'manual') => {
   const ts = new Date();
-  const snapshotId = ts.toISOString(); // ex.: "2026-10-08T19:00:00.000Z"
+  const snapshotId = ts.toISOString(); // ex.: "2026-10-08T19:00:00.000Z" — mantém ID único (não colide com o automático)
   const snap = await getDocs(collection(db, 'leitos_uti'));
-  const leitos = {};
-  snap.forEach(d => { leitos[d.id] = d.data(); });
-  await setDoc(doc(db, 'backup_leitos', snapshotId), {
-    criadoEm: ts,
-    rotulo,
-    leitos
+
+  // Documento "cabeçalho" do snapshot (o seletor continua listando por aqui)
+  const snapRef = doc(db, 'backup_leitos', snapshotId);
+  const batch = writeBatch(db);
+  batch.set(snapRef, { criadoEm: ts, rotulo });
+
+  // 1 documento por leito na subcoleção — evita o limite de 1 MiB por documento
+  snap.forEach(d => {
+    batch.set(doc(snapRef, 'leitos', d.id), d.data());
   });
+
+  await batch.commit();
   console.log(`[BACKUP] Snapshot ${snapshotId} salvo com ${snap.size} leitos`);
   return snapshotId;
 };
@@ -36,7 +41,17 @@ export const listarSnapshots = async () => {
 export const restaurarSnapshot = async (snapshotId, { apenasCamposVazios = true } = {}) => {
   const snap = await getDoc(doc(db, 'backup_leitos', snapshotId));
   if (!snap.exists()) throw new Error('Snapshot não encontrado');
-  const leitos = snap.data().leitos || {};
+
+  // NOVO formato: leitos ficam na subcoleção (1 doc por leito)
+  let leitos = {};
+  const leitosSnap = await getDocs(collection(db, 'backup_leitos', snapshotId, 'leitos'));
+  if (leitosSnap.size > 0) {
+    leitosSnap.forEach(d => { leitos[d.id] = d.data(); });
+  } else {
+    // Fallback: snapshots ANTIGOS ainda têm o campo `leitos` no próprio documento
+    leitos = snap.data().leitos || {};
+  }
+
   const restaurados = [];
   for (const [leitoId, dadosBackup] of Object.entries(leitos)) {
     const atualRef = doc(db, 'leitos_uti', leitoId);
@@ -59,6 +74,28 @@ const estaVazio = (v) =>
 const mesclarPreenchendoVazios = (atual, backup) => {
   const saida = { ...atual };
   for (const [chave, vBackup] of Object.entries(backup || {})) {
+
+    // 🛡️ BH: só mescla se for o MESMO dia — nunca mistura ontem no hoje
+    if (chave === 'bh') {
+      if (!saida.bh || !saida.bh.date) {
+        saida.bh = vBackup;                       // sem bh atual → pode copiar
+      } else if (saida.bh.date === vBackup?.date) {
+        saida.bh = mesclarPreenchendoVazios(saida.bh, vBackup); // mesmo dia
+      }
+      // datas diferentes → NÃO mescla (evita jogar ontem no hoje)
+      continue;
+    }
+
+    // 🛡️ historico_bh: mescla por DATA (array) — recupera dias que faltam
+    if (chave === 'historico_bh' && Array.isArray(vBackup)) {
+      const atuais = Array.isArray(saida.historico_bh) ? saida.historico_bh : [];
+      const datasExistentes = new Set(atuais.map(h => h && h.date).filter(Boolean));
+      const novos = vBackup.filter(h => h && h.date && !datasExistentes.has(h.date));
+      if (novos.length > 0) saida.historico_bh = [...atuais, ...novos];
+      continue;
+    }
+
+    // ... lógica genérica original (inalterada) ...
     if (saida[chave] === undefined) {
       saida[chave] = vBackup;
     } else if (

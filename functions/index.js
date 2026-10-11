@@ -6,6 +6,16 @@ if (admin.apps.length === 0) {
 }
 const db = admin.firestore();
 
+function formatManausHour(d) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Porto_Velho',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', hour12: false
+  }).formatToParts(d);
+  const get = (t) => partes.find(p => p.type === t).value;
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}`;
+}
+
 /**
  * Coleta todos os dispositivos invasivos de um paciente, buscando em múltiplos
  * locais possíveis do objeto: p.dispositivos, p.medical.dispositivos,
@@ -665,19 +675,28 @@ exports.gerarCensoUTI = onSchedule({
  * (1 documento por hora) — mesma coleção que o seletor da tela lê.
  */
 exports.backupLeitosHorario = onSchedule({
-  schedule: "0 * * * *",              // minuto 0 de cada hora
-  timeZone: "America/Porto_Velho",   // mesmo fuso do gerarCensoUTI
+  schedule: "0 * * * *",
+  timeZone: "America/Porto_Velho",
   memory: "512MiB"
 }, async () => {
-  const snapshotId = new Date().toISOString().slice(0, 13); // ex.: "2026-10-08T19"
+  const snapshotId = formatManausHour(new Date()); // ex.: "2026-10-11T07" (Manaus)
   const snap = await db.collection("leitos_uti").get();
-  const leitos = {};
-  snap.forEach(d => { leitos[d.id] = d.data(); });
-  await db.collection("backup_leitos").doc(snapshotId).set({
+
+  // Documento "cabeçalho" do snapshot (o seletor lista por aqui)
+  const snapRef = db.collection("backup_leitos").doc(snapshotId);
+  const batch = db.batch();
+  batch.set(snapRef, {
     criadoEm: admin.firestore.Timestamp.now(),
-    tipo: "automatico",
-    leitos
+    tipo: "automatico"
   });
+
+  // 1 documento por leito em subcoleção — evita o limite de 1 MiB por documento
+  snap.forEach(d => {
+    const leitoRef = snapRef.collection("leitos").doc(d.id);
+    batch.set(leitoRef, d.data());
+  });
+
+  await batch.commit();
   console.log(`[BACKUP] ${snapshotId} salvo com ${snap.size} leitos`);
 });
 
@@ -688,16 +707,52 @@ exports.limparBackupsAntigos = onSchedule({
   schedule: "0 3 * * *",
   timeZone: "America/Porto_Velho"
 }, async () => {
-  const limite = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const agora = Date.now();
+  const DIA = 24 * 60 * 60 * 1000;
+  const limite30 = agora - 30 * DIA; // > 30 dias: apaga tudo
+  const limite7  = agora - 7  * DIA; // dias 8 a 30: mantém só o das 07h
+
   const snap = await db.collection("backup_leitos").get();
-  const apagar = [];
-  snap.forEach(d => {
+
+  for (const d of snap.docs) {
     const criado = d.data().criadoEm;
     const t = criado && typeof criado.toMillis === "function"
       ? criado.toMillis()
       : (criado && criado.toDate ? criado.toDate().getTime() : NaN);
-    if (t && t < limite) apagar.push(d.ref);
-  });
-  await Promise.all(apagar.map(ref => ref.delete()));
-  console.log(`[BACKUP] Limpeza: ${apagar.length} snapshots antigos removidos`);
+    if (!t) continue;
+
+    // > 30 dias: apaga o snapshot inteiro (doc + subcoleção)
+    if (t < limite30) {
+      await apagarSnapshot(d.ref);
+      continue;
+    }
+
+    // dias 8 a 30: mantém só o das 07h (Manaus), apaga os demais horários
+    if (t < limite7) {
+      const hora = horaManaus(t);
+      if (hora !== 7) {
+        await apagarSnapshot(d.ref);
+      }
+    }
+  }
+  console.log("[BACKUP] Limpeza concluída");
 });
+
+// Apaga o documento do snapshot E todos os leitos da subcoleção
+async function apagarSnapshot(snapshotRef) {
+  const leitosSub = await snapshotRef.collection("leitos").get();
+  const batch = db.batch();
+  leitosSub.forEach(l => batch.delete(l.ref));
+  batch.delete(snapshotRef);
+  await batch.commit();
+}
+
+// Hora local de Manaus (UTC-4) a partir de um timestamp em ms — usada para
+// preservar só o backup das 07h na janela 8–30 dias, independente do formato do ID.
+function horaManaus(ms) {
+  const partes = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Porto_Velho',
+    hour: '2-digit', hour12: false
+  }).formatToParts(new Date(ms));
+  return Number(partes.find(p => p.type === 'hour').value) % 24;
+}
