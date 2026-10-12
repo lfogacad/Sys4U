@@ -35,5 +35,5 @@ export {
   app, auth, db, firebaseError, 
   signInWithEmailAndPassword, createUserWithEmailAndPassword, 
   updatePassword, signOut, onAuthStateChanged, sendPasswordResetEmail, 
-  collection, doc, setDoc, getDoc, onSnapshot, enableIndexedDbPersistence 
+  collection, doc, setDoc, getDoc, onSnapshot 
 };
