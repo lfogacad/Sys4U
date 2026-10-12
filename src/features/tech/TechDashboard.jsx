@@ -5,7 +5,7 @@ import { Bone, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusC
          FileText, Copy, Syringe, Scissors, Snowflake, TestTube, ChevronDown, ChevronRight } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber, getHoraRealKey, } from '../../utils/core';
-import { doc, updateDoc, getDoc, collection, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, getDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import CVCInsercaoModal from './CVCInsercaoModal';
 import SVDInsercaoModal from './SVDInsercaoModal';
