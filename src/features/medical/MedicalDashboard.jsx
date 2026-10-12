@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { setDoc, doc } from 'firebase/firestore';
 import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, Plus, FileText, Activity, ChevronDown, 
          ChevronRight, HeartPulse, Brain, Clock, Pill, CheckCircle, CheckCircle2 } from 'lucide-react';
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
@@ -74,11 +75,22 @@ const MedicalDashboard = ({
     }, 800);
   };
 
-  const handleHistoriaBlur = () => {
-    clearTimeout(historiaTimer.current);       // flush imediato ao sair do campo
-    updateP("historiaClinica", historiaLocal);
-    handleBlurSave("Médico: Editou História Clínica");
-  };
+const handleHistoriaBlur = () => {
+  clearTimeout(historiaTimer.current);       // flush imediato ao sair do campo
+  updateP("historiaClinica", historiaLocal);
+
+  // 🛡️ Grava SÓ o historiaClinica (merge), para não depender do save() do
+  // paciente inteiro — e para não ser sobrescrito por um save() de outra aba
+  // com estado antigo.
+  let idBruto = historiaPacienteRef.current;
+  const apenasNumero = String(idBruto).replace(/bed_/g, "");
+  const numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
+  const docId = `bed_${numeroFinal}`;
+  setDoc(doc(db, "leitos_uti", docId), { historiaClinica: historiaLocal }, { merge: true })
+    .catch(err => console.warn("[SYS4U] Erro ao salvar história clínica:", err));
+
+  handleBlurSave("Médico: Editou História Clínica");
+};
 
   const salvarImagemTorax = () => {
     if (!modalImagemTorax.data || !modalImagemTorax.novoInfiltrado) return;

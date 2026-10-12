@@ -1095,6 +1095,9 @@ useEffect(() => {
       // Paciente novo (admissão) pode não ter historico_bh/bh_previous ainda — incluir
       // essas chaves com valor undefined faz o Firestore rejeitar a escrita.
       const payloadBH = { ...pacienteSeguro };
+      delete payloadBH.admissionData;
+      delete payloadBH.admissaoMedica;
+      delete payloadBH.historiaClinica;
       if (pacienteSeguro.bh !== undefined) {
         payloadBH.bh = pacienteSeguro.bh;
         if (pacienteSeguro.bh.vitals !== undefined) payloadBH.vitals = pacienteSeguro.bh.vitals;
@@ -2089,6 +2092,18 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     up[activeTab] = r;
     setPatients(up);
     save(r, "Médico: Realizou a Admissão Completa do Paciente (Pré-UTI, SAPS 3 e Exame Físico)");
+
+    // PARTE 2 — Persiste os campos de admissão de forma autoritativa
+    // (o save() agora não os grava mais, para não sobrescrever edições via Firebase)
+    let idBruto = r.id !== undefined ? r.id : r.leito;
+    const apenasNumero = String(idBruto).replace(/bed_/g, "");
+    const numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
+    const docId = `bed_${numeroFinal}`;
+    await setDoc(doc(db, "leitos_uti", docId), {
+      admissionData: r.admissionData || {},
+      admissaoMedica: r.admissaoMedica || {},
+      historiaClinica: r.historiaClinica || ""
+    }, { merge: true });
 
     // =========================================================================
     // 💡 AUDITORIA: Registo da Admissão Médica
