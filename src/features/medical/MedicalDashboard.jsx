@@ -42,7 +42,8 @@ const MedicalDashboard = ({
   removeAntibiotic,
   handleEditAdmission,
   handleNeuroSwitch,
-  savePaciente
+  savePaciente,
+  salvarHistoriaClinica
 }) => {
   
   // 👇 INJETAMOS O "CÉREBRO" DO BOTÃO AQUI DENTRO:
@@ -75,22 +76,18 @@ const MedicalDashboard = ({
     }, 800);
   };
 
-const handleHistoriaBlur = () => {
-  clearTimeout(historiaTimer.current);       // flush imediato ao sair do campo
-  updateP("historiaClinica", historiaLocal);
+  const handleHistoriaBlur = () => {
+    clearTimeout(historiaTimer.current);       // flush imediato ao sair do campo
+    updateP("historiaClinica", historiaLocal);
 
-  // 🛡️ Grava SÓ o historiaClinica (merge), para não depender do save() do
-  // paciente inteiro — e para não ser sobrescrito por um save() de outra aba
-  // com estado antigo.
-  let idBruto = historiaPacienteRef.current;
-  const apenasNumero = String(idBruto).replace(/bed_/g, "");
-  const numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
-  const docId = `bed_${numeroFinal}`;
-  setDoc(doc(db, "leitos_uti", docId), { historiaClinica: historiaLocal }, { merge: true })
-    .catch(err => console.warn("[SYS4U] Erro ao salvar história clínica:", err));
+    // 🛡️ Grava SÓ o historiaClinica (merge), via função do ModuloUTI
+    // (que tem acesso ao db) — sem depender do save() do paciente inteiro.
+    if (typeof salvarHistoriaClinica === "function") {
+      salvarHistoriaClinica(historiaLocal);
+    }
 
-  handleBlurSave("Médico: Editou História Clínica");
-};
+    handleBlurSave("Médico: Editou História Clínica");
+  };
 
   const salvarImagemTorax = () => {
     if (!modalImagemTorax.data || !modalImagemTorax.novoInfiltrado) return;

@@ -1184,6 +1184,16 @@ useEffect(() => {
     }
   };
 
+  const salvarHistoriaClinica = (valor) => {
+    if (!db) return;
+    let idBruto = currentPatient?.id !== undefined ? currentPatient.id : currentPatient?.leito;
+    const apenasNumero = String(idBruto).replace(/bed_/g, "");
+    const numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
+    const docId = `bed_${numeroFinal}`;
+    setDoc(doc(db, "leitos_uti", docId), { historiaClinica: valor }, { merge: true })
+      .catch(err => console.warn("[SYS4U] Erro ao salvar história clínica:", err));
+  };
+
   // 🛡️ Limpa COMPLETAMENTE um leito no Firestore (substitui o documento inteiro, SEM merge)
   const limparLeito = async (index, objetoVazio) => {
     const empty = objetoVazio || defaultPatient(index);
@@ -6121,6 +6131,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         setAiEvolution={setAiEvolution}
                         copyToClipboardFallback={copyToClipboardFallback}
                         handleNeuroSwitch={handleNeuroSwitch}
+                        salvarHistoriaClinica={salvarHistoriaClinica}
                       />
                     )
                   )}
