@@ -122,6 +122,31 @@ const mergePatientData = (base, incoming) => {
   };
 };
 
+// Une o BH local com o do servidor: para cada categoria, mantém as horas/células
+// do servidor que faltam no local; o que existe no local vence por item.
+const unirMapasBH = (localBH, serverBH) => {
+  const saida = { ...localBH };
+  ["gains", "losses", "vitals", "irrigation"].forEach(cat => {
+    const localCat = localBH[cat];
+    const serverCat = serverBH[cat];
+    if (!localCat && serverCat && typeof serverCat === 'object') { saida[cat] = { ...serverCat }; return; }
+    if (!localCat || !serverCat || typeof serverCat !== 'object') return;
+    const catOut = { ...localCat };
+    Object.keys(serverCat).forEach(hora => {
+      const localHora = localCat[hora];
+      const serverHora = serverCat[hora];
+      if (localHora === undefined) { catOut[hora] = serverHora; return; }
+      if (localHora && serverHora &&
+          typeof localHora === 'object' && typeof serverHora === 'object' &&
+          !Array.isArray(localHora) && !Array.isArray(serverHora)) {
+        catOut[hora] = { ...serverHora, ...localHora }; // local vence por item
+      }
+    });
+    saida[cat] = catOut;
+  });
+  return saida;
+};
+
 // --- MOTOR DE TEMPO DA UTI ---
 
 // 1. O "Hoje" da UTI vai das 07:00 de um dia até as 06:59 do dia seguinte.
@@ -527,7 +552,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         const date = json.date || getManausDateStr();
         let matchIdx = -1;
 
-        patients.forEach((p, idx) => {
+        patientsRef.current.forEach((p, idx) => {
           const bedName = normalizeName(p.nome);
           if (bedName.length > 3 && extName.length > 3) {
             if (extName.includes(bedName) || bedName.includes(extName)) {
@@ -546,32 +571,34 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         });
 
         if (matchIdx !== -1) {
+          // 1. Calcula o paciente alterado FORA do updater (a partir do ref mais recente)
+          const listAtual = [...patientsRef.current];
+          const target = JSON.parse(JSON.stringify(listAtual[matchIdx]));
+
+          if (!target.examHistory) target.examHistory = {};
+          if (!target.examHistory[date]) target.examHistory[date] = {};
+
+          Object.keys(json.results || {}).forEach((k) => {
+            if (json.results[k]) target.examHistory[date][k] = json.results[k];
+          });
+
+          const finalTarget = syncLabsFromHistory(target);
+
+          // 2. Atualiza o estado (updater puro, sem efeito colateral)
           setPatients((curr) => {
             const list = [...curr];
-            // Fazemos uma cópia profunda para não mutar o estado diretamente
-            const target = JSON.parse(JSON.stringify(list[matchIdx]));
-            
-            // 🔥 CORREÇÃO PRINCIPAL: Cria a gaveta principal se ela não existir
-            if (!target.examHistory) target.examHistory = {}; 
-            if (!target.examHistory[date]) target.examHistory[date] = {};
-
-            Object.keys(json.results || {}).forEach((k) => {
-              if (json.results[k]) {
-                target.examHistory[date][k] = json.results[k];
-              }
-            });
-
-            const finalTarget = syncLabsFromHistory(target);
             list[matchIdx] = finalTarget;
-
-            // Salva no banco de dados com proteção no ID
-            if (typeof user !== 'undefined' && typeof db !== 'undefined') {
-              const docId = String(finalTarget.id).startsWith("bed_") ? finalTarget.id : `bed_${finalTarget.id}`;
-              setDoc(doc(db, "leitos_uti", docId), finalTarget);
-            }
-
             return list;
           });
+
+          // 3. Salva DEPOIS, uma vez por chamada — fora do updater
+          if (typeof user !== 'undefined' && typeof db !== 'undefined') {
+            const docId = String(finalTarget.id).startsWith("bed_") ? finalTarget.id : `bed_${finalTarget.id}`;
+            await setDoc(doc(db, "leitos_uti", docId), {
+              examHistory: finalTarget.examHistory || {},
+              labs: finalTarget.labs || {}
+            }, { merge: true });
+          }
 
           setBulkUploadLogs((prev) => {
             const n = [...prev];
@@ -582,7 +609,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
             };
             return n;
           });
-
         } else {
           setBulkUploadLogs((prev) => {
             const n = [...prev];
@@ -1065,6 +1091,20 @@ useEffect(() => {
           }
         } catch (e) { console.warn("[SYS4U] Não foi possível mesclar historico_bh no save:", e); }
       }
+
+      // 🛡️ UNIÃO DO BH COM O SERVIDOR: impede que um estado obsoleto apague
+      // horas/células gravadas por outra aba/dispositivo.
+      if (payloadBH.bh && typeof payloadBH.bh === 'object') {
+        try {
+          const snapServidor = await getDoc(doc(db, "leitos_uti", docId));
+          const bhServidor = snapServidor.exists() ? snapServidor.data().bh : null;
+          if (bhServidor && typeof bhServidor === 'object') {
+            payloadBH.bh = unirMapasBH(payloadBH.bh, bhServidor);
+            if (payloadBH.bh.vitals !== undefined) payloadBH.vitals = payloadBH.bh.vitals;
+          }
+        } catch (e) { console.warn("[SYS4U] Não foi possível unir bh no save:", e); }
+      }
+
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
       
       // =========================================================
