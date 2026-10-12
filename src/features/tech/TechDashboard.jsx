@@ -1709,18 +1709,38 @@ const salvarFralda = () => {
                           <span>{item}</span>
                           {displayedBH.customGains?.includes(item) && isEditable && !viewingPreviousBH && (
                             <button
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.preventDefault();
-                                if (window.confirm(`Excluir a linha de ganho "${item}"?`)) {
-                                  const up = [...patients];
-                                  up[activeTab].bh.customGains = up[activeTab].bh.customGains.filter((g) => g !== item);
-                                  if (up[activeTab].bh.gains) {
-                                    Object.keys(up[activeTab].bh.gains).forEach((hour) => {
-                                      if (up[activeTab].bh.gains[hour]) delete up[activeTab].bh.gains[hour][item];
-                                    });
+                                if (!window.confirm(`Excluir a linha de ganho "${item}"?`)) return;
+
+                                const up = [...patients];
+                                up[activeTab].bh.customGains = up[activeTab].bh.customGains.filter((g) => g !== item);
+                                if (up[activeTab].bh.gains) {
+                                  Object.keys(up[activeTab].bh.gains).forEach((hour) => {
+                                    if (up[activeTab].bh.gains[hour]) delete up[activeTab].bh.gains[hour][item];
+                                  });
+                                }
+                                setPatients(up);
+
+                                // Remove a linha TAMBÉM no servidor, para o merge não recriá-la
+                                try {
+                                  const docId = String(up[activeTab].id).startsWith("bed_") ? up[activeTab].id : `bed_${up[activeTab].id}`;
+                                  const snap = await getDoc(doc(db, "leitos_uti", docId));
+                                  if (snap.exists()) {
+                                    const bhServidor = snap.data().bh || {};
+                                    if (Array.isArray(bhServidor.customGains)) {
+                                      bhServidor.customGains = bhServidor.customGains.filter((g) => g !== item);
+                                    }
+                                    if (bhServidor.gains) {
+                                      Object.keys(bhServidor.gains).forEach((hour) => {
+                                        if (bhServidor.gains[hour]) delete bhServidor.gains[hour][item];
+                                      });
+                                    }
+                                    auditarEscrita("excluir-linha-gains", docId, { bh: bhServidor }, { merge: true, nota: `linha=${item} gainsHoras=${Object.keys(bhServidor.gains || {}).length}` });
+                                    await setDoc(doc(db, "leitos_uti", docId), { bh: bhServidor }, { merge: true });
                                   }
-                                  setPatients(up);
-                                  save(up[activeTab], `BH: Excluiu linha customizada de Ganho (${item})`);
+                                } catch (err) {
+                                  console.warn("[SYS4U] Não foi possível remover a linha no servidor:", err);
                                 }
                               }}
                               className="text-slate-400 hover:text-red-500 print:hidden" title="Excluir Ganho"

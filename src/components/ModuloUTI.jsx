@@ -122,6 +122,26 @@ const mergePatientData = (base, incoming) => {
   };
 };
 
+// AUDITORIA DE ESCRITA — registra no console toda gravação em leitos_uti,
+// para identificar QUAL caminho apaga dados quando o sumiço voltar.
+const auditarEscrita = (origem, docId, payload, extra = {}) => {
+  const bh = payload && payload.bh;
+  const vitalsHoras = bh && bh.vitals && typeof bh.vitals === 'object'
+    ? Object.keys(bh.vitals).length : 0;
+  const gainsHoras = bh && bh.gains && typeof bh.gains === 'object'
+    ? Object.keys(bh.gains).length : 0;
+  const hist = payload && payload.historico_bh;
+  console.log(
+    `[AUDITORIA-ESCRITA] ${new Date().toISOString()} | origem: ${origem} | doc: ${docId}`,
+    `| campos: ${Object.keys(payload || {}).join(",")}`,
+    `| bh.vitals horas: ${vitalsHoras}`,
+    `| bh.gains horas: ${gainsHoras}`,
+    `| historico_bh: ${Array.isArray(hist) ? hist.length + " itens" : "NÃO-ARRAY"}`,
+    extra.merge ? "| MERGE=sim" : "| MERGE=NÃO ⚠️",
+    extra.nota ? `| ${extra.nota}` : ""
+  );
+};
+
 // Une o BH local com o do servidor: para cada categoria, mantém as horas/células
 // do servidor que faltam no local; o que existe no local vence por item.
 const unirMapasBH = (localBH, serverBH) => {
@@ -135,11 +155,13 @@ const unirMapasBH = (localBH, serverBH) => {
     Object.keys(serverCat).forEach(hora => {
       const localHora = localCat[hora];
       const serverHora = serverCat[hora];
+      // Hora AUSENTE no local → herda do servidor (protege contra perda de outra aba)
       if (localHora === undefined) { catOut[hora] = serverHora; return; }
-      if (localHora && serverHora &&
-          typeof localHora === 'object' && typeof serverHora === 'object' &&
-          !Array.isArray(localHora) && !Array.isArray(serverHora)) {
-        catOut[hora] = { ...serverHora, ...localHora }; // local vence por item
+      // Hora JÁ EXISTE no local → o local manda. NÃO mescla itens do servidor,
+      // senão recria itens que o usuário acabou de excluir.
+      // (só garante que a hora seja um objeto)
+      if (localHora && typeof localHora === 'object' && !Array.isArray(localHora)) {
+        catOut[hora] = { ...localHora };
       }
     });
     saida[cat] = catOut;
@@ -594,12 +616,12 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           // 3. Salva DEPOIS, uma vez por chamada — fora do updater
           if (typeof user !== 'undefined' && typeof db !== 'undefined') {
             const docId = String(finalTarget.id).startsWith("bed_") ? finalTarget.id : `bed_${finalTarget.id}`;
+            auditarEscrita("uploader-exames", docId, { examHistory: finalTarget.examHistory, labs: finalTarget.labs }, { merge: true, nota: `paciente=${json.patientName || "?"} data=${date}` });
             await setDoc(doc(db, "leitos_uti", docId), {
               examHistory: finalTarget.examHistory || {},
               labs: finalTarget.labs || {}
             }, { merge: true });
           }
-
           setBulkUploadLogs((prev) => {
             const n = [...prev];
             n[fileIndex] = {
@@ -1104,7 +1126,7 @@ useEffect(() => {
           }
         } catch (e) { console.warn("[SYS4U] Não foi possível unir bh no save:", e); }
       }
-
+      auditarEscrita("save()", docId, payloadBH, { merge: true });
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
       
       // =========================================================
@@ -4346,6 +4368,7 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
         ? new FieldPath("bh", "irrigation", hour)
         : new FieldPath("bh", category, hour, item);
       try {
+        auditarEscrita("saveBHCell-dia-atual", docId, { bh: { [category]: { [hour]: item ? { [item]: value } : value } } }, { merge: true, nota: `cat=${category} hora=${hour} item=${item || "-"}` });
         await updateDoc(leitoRef, fieldPath, value);
         if (editCountRef.current === contagemNoInicio) localEditRef.current = false;
       } catch (err) {
@@ -4384,6 +4407,7 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
         gaveta[category][hour][item] = value;
       }
 
+      auditarEscrita("saveBHCell-historico", docId, { historico_bh: historico }, { merge: true, nota: `cat=${category} hora=${hour} item=${item || "-"} datas=${historico.length}` });
       await updateDoc(leitoRef, { historico_bh: historico });
       if (editCountRef.current === contagemNoInicio) localEditRef.current = false;
     } catch (err) {
