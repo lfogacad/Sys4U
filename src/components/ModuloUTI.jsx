@@ -6263,6 +6263,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                         setShowNoraModal={setShowNoraModal} 
                         handleBlurSave={handleBlurSave}
                         saveBHCell={saveBHCell}
+                        auditarEscrita={auditarEscrita}
                       />
                     );
                   })()}

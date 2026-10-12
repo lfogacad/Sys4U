@@ -35,7 +35,8 @@ const TechDashboard = ({
   setCurrentNoraRate,
   setShowNoraModal,
   saveBHCell,
-  handleBlurSave
+  handleBlurSave,
+  auditarEscrita,
 }) => {
 
   const [showUnlockModal, setShowUnlockModal] = useState(false);
