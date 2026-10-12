@@ -2942,7 +2942,7 @@ useEffect(() => {
             bloqueado: false,
             isIsolamento: false 
           };
-          await setDoc(doc(db, 'leitos_uti', bedId), novoLeito);
+          await setDoc(doc(db, 'leitos_uti', bedId), novoLeito, { merge: true });
           novosLeitos.push({ id: bedId, ...novoLeito });
         }
       }
