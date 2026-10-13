@@ -1281,41 +1281,54 @@ useEffect(() => {
     editCountRef.current += 1;
     localEditRef.current = true;
 
-    let pacienteAlvo;
-    setPatients(prev => {
-      const novosPacientes = [...prev];
-      pacienteAlvo = JSON.parse(JSON.stringify(novosPacientes[activeTab]));
-
-      if (!pacienteAlvo[categoria]) pacienteAlvo[categoria] = {};
-      pacienteAlvo[categoria][campo] = valor;
+    // Helper interno: aplica o campo + as sincronizações Shiley <-> Hemodiálise
+    // em uma cópia do paciente. É a ÚNICA fonte da lógica de atualização.
+    const aplicar = (pac) => {
+      const alvo = JSON.parse(JSON.stringify(pac || {}));
+      if (!alvo[categoria]) alvo[categoria] = {};
+      alvo[categoria][campo] = valor;
 
       // 🔄 SINCRONIZAÇÃO DE MÃO DUPLA (SHILEY <-> HEMODIÁLISE)
 
       // 1. Sincroniza a Data de Inserção
       if (categoria === "enfermagem" && campo === "shileyData") {
-        if (!pacienteAlvo["hd_acesso"]) pacienteAlvo["hd_acesso"] = {};
-        pacienteAlvo["hd_acesso"]["insercao"] = valor;
+        if (!alvo["hd_acesso"]) alvo["hd_acesso"] = {};
+        alvo["hd_acesso"]["insercao"] = valor;
       } else if (categoria === "hd_acesso" && campo === "insercao") {
-        if (!pacienteAlvo["enfermagem"]) pacienteAlvo["enfermagem"] = {};
-        pacienteAlvo["enfermagem"]["shileyData"] = valor;
+        if (!alvo["enfermagem"]) alvo["enfermagem"] = {};
+        alvo["enfermagem"]["shileyData"] = valor;
       }
 
       // 2. Sincroniza o Local do Catéter
       if (categoria === "enfermagem" && campo === "shileyLocal") {
-        if (!pacienteAlvo["hd_acesso"]) pacienteAlvo["hd_acesso"] = {};
-        pacienteAlvo["hd_acesso"]["cateter_local"] = valor;
+        if (!alvo["hd_acesso"]) alvo["hd_acesso"] = {};
+        alvo["hd_acesso"]["cateter_local"] = valor;
       } else if (categoria === "hd_acesso" && campo === "cateter_local") {
-        if (!pacienteAlvo["enfermagem"]) pacienteAlvo["enfermagem"] = {};
-        pacienteAlvo["enfermagem"]["shileyLocal"] = valor;
+        if (!alvo["enfermagem"]) alvo["enfermagem"] = {};
+        alvo["enfermagem"]["shileyLocal"] = valor;
       }
 
-      novosPacientes[activeTab] = pacienteAlvo;
+      return alvo;
+    };
+
+    // 1. Base SÍNCRONA a partir do REF (fonte do que vai ser persistido).
+    //    Atualizado na hora → o save()/handleBlurSave subsequente lê o dado NOVO.
+    const base = aplicar(patientsRef.current[activeTab]);
+    patientsRef.current[activeTab] = base;
+
+    // 2. Estado: mantém o UPDATER FUNCIONAL (encadeia updates pendentes de terceiros,
+    //    ex.: listener/bulk upload) — comportamento original preservado.
+    setPatients(prev => {
+      const novosPacientes = [...prev];
+      const alvo = aplicar(novosPacientes[activeTab]);
+      novosPacientes[activeTab] = alvo;
+      patientsRef.current[activeTab] = alvo; // trunca para ficar consistente com o estado
       return novosPacientes;
     });
 
-    // SAVE FORA DO setPatients: roda UMA vez por chamada (não duplica no StrictMode)
-    if (pacienteAlvo && typeof save === 'function') {
-      save(pacienteAlvo, `Atualização Automática: ${categoria} > ${campo}`);
+    // 3. SAVE FORA DO setPatients: roda UMA vez por chamada (não duplica no StrictMode)
+    if (base && typeof save === 'function') {
+      save(base, `Atualização Automática: ${categoria} > ${campo}`);
     }
   };
 
@@ -4161,41 +4174,49 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
     // 🧠 7. CONDUTAS E PROCEDIMENTOS DIÁRIOS (NOVO)
     // ==============================================================
     let condutasTexto = phy.condutas || "Não registrado.";
-    
-    // Filtra os procedimentos registrados apenas no dia de HOJE
-    const procedimentosDeHoje = (phy.procedimentosDiarios || []).filter(proc => {
-      if (!proc.data) return false;
-      const dataProc = new Date(proc.data).toLocaleDateString('pt-BR');
-      return dataProc === hoje;
-    });
 
-    if (procedimentosDeHoje.length > 0) {
-      const listaProcedimentos = procedimentosDeHoje.map(proc => `• [${proc.horario}] ${proc.textoFormatado}`);
+    // Helper: chave DD/MM/AAAA do DIA LÓGICO (07h às 06h, mesmo critério do BH).
+    // Suporta ISO completo, YYYY-MM-DD, DD/MM/AAAA e DD-MM-AAAA.
+    const getLogicalDayBR = (dataStr, horario) => {
+      if (!dataStr) return null;
+      let d;
+      if (dataStr.includes('T')) {
+        d = new Date(dataStr);
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(dataStr)) {
+        const h = (horario || '00:00').split(':');
+        d = new Date(`${dataStr}T${h[0] || '00'}:${h[1] || '00'}:00`);
+      } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(dataStr)) {
+        const [dia, mes, ano] = dataStr.split('/');
+        const h = (horario || '00:00').split(':');
+        d = new Date(`${ano}-${mes}-${dia}T${h[0] || '00'}:${h[1] || '00'}:00`);
+      } else if (/^\d{2}-\d{2}-\d{4}$/.test(dataStr)) {
+        const [dia, mes, ano] = dataStr.split('-');
+        const h = (horario || '00:00').split(':');
+        d = new Date(`${ano}-${mes}-${dia}T${h[0] || '00'}:${h[1] || '00'}:00`);
+      } else {
+        return null;
+      }
+      if (isNaN(d.getTime())) return null;
+      if (d.getHours() < 7) d.setDate(d.getDate() - 1);
+      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+    };
+
+    // DIA LÓGICO ATUAL (07h às 06h) — referência do filtro
+    const hojeLogico = getLogicalDayBR(new Date().toISOString());
+
+    // Junta TODOS os registros do DIA LÓGICO: procedimentos diários + IOT + trocas de via aérea + titulação de PEEP
+    const registrosDoDia = [
+      ...(phy.procedimentosDiarios || []),
+      ...(phy.historicoIOT || []),
+      ...(phy.historicoTrocaVA || []),
+      ...(phy.historicoTitulacaoPeep || []),
+    ]
+      .filter(r => r && r.data && getLogicalDayBR(r.data, r.horario) === hojeLogico)
+      .sort((a, b) => (a.horario || "").localeCompare(b.horario || ""));
+
+    if (registrosDoDia.length > 0) {
+      const listaProcedimentos = registrosDoDia.map(proc => `• [${proc.horario}] ${proc.textoFormatado || proc.tipo}`);
       condutasTexto += `\n\nProcedimentos registrados no plantão:\n${listaProcedimentos.join("\n")}`;
-    }
-
-    // ==============================================================
-    // 🧠 7b. TITULAÇÃO DE PEEP DO DIA (NOVO)
-    // ==============================================================
-    let titulacaoPeepTexto = "";
-    const titulacoesHoje = (phy.historicoTitulacaoPeep || []).filter(t => {
-      if (!t.data) return false;
-      const dataReg = String(t.data).replace(/-/g, "/");
-      return dataReg === hoje;
-    });
-    if (titulacoesHoje.length > 0) {
-      titulacoesHoje.forEach(t => {
-        const horario = t.pos?.hora || "";
-        const peepFinal = t.peepUtilizada || "N/I";
-        // DP, Pplato e Cest da linha da PEEP utilizada na tabela de titulação
-        const linhaUtilizada = (t.tabela || []).find(l => String(l.peep) === String(peepFinal));
-        const pplatoFinal = (linhaUtilizada?.pplato !== undefined && linhaUtilizada?.pplato !== '') ? linhaUtilizada.pplato : "N/I";
-        const dpFinal = (linhaUtilizada?.dp !== undefined && linhaUtilizada?.dp !== '') ? linhaUtilizada.dp : "N/I";
-        const cestFinal = (linhaUtilizada?.complacencia !== undefined && linhaUtilizada?.complacencia !== '') ? linhaUtilizada.complacencia : "N/I";
-        const spo2Final = t.pos?.spo2 || "N/I";
-        titulacaoPeepTexto += `[${horario}] Titulação de PEEP: PEEP final: ${peepFinal}, Pplato final: ${pplatoFinal}, DP final: ${dpFinal}, Cest final: ${cestFinal}, SpO2 final: ${spo2Final}`;
-        titulacaoPeepTexto += `\n`;
-      });
     }
 
     // ==============================================================
@@ -4237,11 +4258,6 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
 
     evo += `--- GASOMETRIA ---\n`;
     evo += `${gasoTxt}\n`;
-
-    if (titulacaoPeepTexto) {
-      evo += `--- TITULAÇÃO DE PEEP ---\n`;
-      evo += `${titulacaoPeepTexto}\n`;
-    }
 
     if (phy.dataHMEF) {
       evo += `Filtro HMEF:\nData de instalação: ${formatDt(phy.dataHMEF)}\n\n`;

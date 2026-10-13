@@ -22,6 +22,7 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
 
   const [listaMedicos, setListaMedicos] = useState([]);
 
+  const [showRegistrosFisio, setShowRegistrosFisio] = useState(false);
   const [showEvolucaoModal, setShowEvolucaoModal] = useState(false);
   const [evolucaoData, setEvolucaoData] = useState({
     estadoGeral: "",
@@ -212,6 +213,12 @@ const LISTAS_MOBILIZACAO = {
       ? (modalTrocaTOT.motivoOutro || 'Infecção local / outro')
       : modalTrocaTOT.motivo;
 
+    // Monta o texto descritivo que irá para o histórico/visualização
+    const intercorrenciasTexto = (modalTrocaTOT.intercorrencias || []).length > 0
+      ? ` Intercorrências: ${modalTrocaTOT.intercorrencias.join(', ')}.`
+      : ' Sem intercorrências.';
+    const textoProcedimento = `Realizada troca de ${modalTrocaTOT.tipo} (cânula nº ${modalTrocaTOT.numeroCannula || 'N/I'}). Motivo: ${motivoFinal || 'N/I'}.${intercorrenciasTexto}${modalTrocaTOT.observacao ? ` Observação: ${modalTrocaTOT.observacao}` : ''}`;
+   
     const registro = {
       id: `troca_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       data: dataRegistro,
@@ -220,7 +227,8 @@ const LISTAS_MOBILIZACAO = {
       numeroCannula: modalTrocaTOT.numeroCannula || '',
       motivo: motivoFinal || '',
       intercorrencias: modalTrocaTOT.intercorrencias || [],
-      observacao: modalTrocaTOT.observacao || ''
+      observacao: modalTrocaTOT.observacao || '',
+      textoFormatado: textoProcedimento
     };
 
     const historico = Array.isArray(currentPatient?.physio?.historicoTrocaVA) ? currentPatient.physio.historicoTrocaVA : [];
@@ -281,16 +289,21 @@ const LISTAS_MOBILIZACAO = {
 
     const tabelaCompleta = modalTitularPeep.linhas.map(calcularLinhaTitulacao);
 
+    // Monta o texto descritivo que irá para o histórico/visualização
+    const textoProcedimento = `Titulação de PEEP — PEEP inicial pós-recrutamento: ${modalTitularPeep.peepInicialPos || 'N/I'} cmH₂O. PEEP utilizada: ${modalTitularPeep.peepUtilizada} cmH₂O. SpO₂ pré: ${modalTitularPeep.pre.spo2 || 'N/I'}% → SpO₂ pós: ${modalTitularPeep.pos.spo2 || 'N/I'}%. FiO₂ pré: ${modalTitularPeep.pre.fio2 || 'N/I'}% → FiO₂ pós: ${modalTitularPeep.pos.fio2 || 'N/I'}%.`;
+
     const registro = {
       id: `peep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'TitulacaoPEEP',
       data: dataBr,
+      horario: modalTitularPeep.pos.hora || modalTitularPeep.pre.hora || '',
       pre: modalTitularPeep.pre,
       peepInicialPos: modalTitularPeep.peepInicialPos,
       tabela: tabelaCompleta,
       peepUtilizada: modalTitularPeep.peepUtilizada,
       pos: modalTitularPeep.pos,
-      registradoEm: new Date().toISOString()
+      registradoEm: new Date().toISOString(),
+      textoFormatado: textoProcedimento
     };
 
     const historico = Array.isArray(currentPatient?.physio?.historicoTitulacaoPeep)
@@ -1083,12 +1096,20 @@ const TRE_CHECKLIST = [
         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
           <Wind className="text-cyan-600" /> Fisioterapia
         </h3>
-        <button
-          onClick={(e) => { e.preventDefault(); handleViewPhysioAdmission(); }}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold shadow-sm transition-colors"
-        >
-          <ClipboardSignature size={16} /> Ver Admissão Fisioterapêutica
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => { e.preventDefault(); setShowRegistrosFisio(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-cyan-50 hover:border-cyan-300 rounded-lg text-sm font-bold shadow-sm transition-colors"
+          >
+            <ClipboardList size={16} /> Ver Registros do Dia
+          </button>
+          <button
+            onClick={(e) => { e.preventDefault(); handleViewPhysioAdmission(); }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold shadow-sm transition-colors"
+          >
+            <ClipboardSignature size={16} /> Ver Admissão Fisioterapêutica
+          </button>
+        </div>
       </div>
 
       {/* ======================================================== */}
@@ -3482,6 +3503,116 @@ const TRE_CHECKLIST = [
                 className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white font-black rounded-xl shadow-lg transition-all flex justify-center items-center uppercase tracking-wider text-xs"
               >
                 {modalExtubacao.procedimentoRealizado === "Adiado" ? "Registrar Adiamento" : "Salvar Protocolo"}
+              </button>
+            </div>
+
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/* MODAL: REGISTROS DO DIA */}
+      {showRegistrosFisio && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
+
+            {/* CABEÇALHO */}
+            <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><ClipboardList size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">Registros do Dia</h2>
+              </div>
+              <button onClick={() => setShowRegistrosFisio(false)} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* CORPO */}
+            <div className="p-5 bg-slate-50 overflow-y-auto space-y-3">
+              {(() => {
+                // DIA LÓGICO (07h às 06h) — mesmo critério do BH.
+                // Suporta 4 formatos de data nos registros:
+                //  - ISO completo        (ex.: VNI/Aspiração: "2026-10-12T14:30:00.000Z")
+                //  - YYYY-MM-DD          (ex.: Checklist IOT: data="2026-10-12", horario="14:30")
+                //  - DD/MM/AAAA          (ex.: Troca TOT/TQT: data="12/10/2026", horario="14:30")
+                //  - DD-MM-AAAA          (ex.: Titulação PEEP: data="12-10-2026", horario="14:30")
+                const getLogicalDayKey = (dataStr, horario) => {
+                  let d;
+                  if (dataStr && dataStr.includes('T')) {
+                    d = new Date(dataStr);
+                  } else if (dataStr && /^\d{4}-\d{2}-\d{2}$/.test(dataStr)) {
+                    const h = (horario || '00:00').split(':');
+                    d = new Date(`${dataStr}T${h[0] || '00'}:${h[1] || '00'}:00`);
+                  } else if (dataStr && /^\d{2}\/\d{2}\/\d{4}$/.test(dataStr)) {
+                    const [dia, mes, ano] = dataStr.split('/');
+                    const h = (horario || '00:00').split(':');
+                    d = new Date(`${ano}-${mes}-${dia}T${h[0] || '00'}:${h[1] || '00'}:00`);
+                  } else if (dataStr && /^\d{2}-\d{2}-\d{4}$/.test(dataStr)) {
+                    const [dia, mes, ano] = dataStr.split('-');
+                    const h = (horario || '00:00').split(':');
+                    d = new Date(`${ano}-${mes}-${dia}T${h[0] || '00'}:${h[1] || '00'}:00`);
+                  } else {
+                    return null;
+                  }
+                  if (isNaN(d.getTime())) return null;
+                  if (d.getHours() < 7) d.setDate(d.getDate() - 1);
+                  const ano = d.getFullYear();
+                  const mes = String(d.getMonth() + 1).padStart(2, '0');
+                  const dia = String(d.getDate()).padStart(2, '0');
+                  return `${ano}-${mes}-${dia}`;
+                };
+
+                const hojeKey = getLogicalDayKey(new Date().toISOString());
+
+                // Junta os registros diários + IOT + trocas de via aérea + titulação de PEEP
+                const registros = [
+                  ...(currentPatient.physio?.procedimentosDiarios || []),
+                  ...(currentPatient.physio?.historicoIOT || []),
+                  ...(currentPatient.physio?.historicoTrocaVA || []),
+                  ...(currentPatient.physio?.historicoTitulacaoPeep || []),
+                ]
+                  .filter(r => r && r.data && getLogicalDayKey(r.data, r.horario) === hojeKey)
+                  .sort((a, b) => (a.horario || "").localeCompare(b.horario || ""));
+
+                if (registros.length === 0) {
+                  return (
+                    <div className="text-center py-10 text-slate-400">
+                      <ClipboardList size={40} className="mx-auto mb-3 opacity-40" />
+                      <p className="font-bold">Nenhum registro fisioterapêutico hoje.</p>
+                    </div>
+                  );
+                }
+
+                return registros.map((r, idx) => {
+                  // Monta o texto de exibição: usa textoFormatado se existir,
+                  // senão monta a partir dos campos (caso da Troca TOT/TQT)
+                  let texto = r.textoFormatado || "";
+                  if (!texto && r.tipo === "Troca de TOT/TQT") {
+                    const inter = (r.intercorrencias || []).length
+                      ? ` Intercorrências: ${r.intercorrencias.join(', ')}.`
+                      : "";
+                    texto = `Troca de ${r.tipo} (cânula nº ${r.numeroCannula || '-'}). Motivo: ${r.motivo || 'N/I'}.${inter}${r.observacao ? ` Observação: ${r.observacao}` : ''}`;
+                  }
+                  return (
+                    <div key={idx} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-black text-cyan-700 text-sm uppercase">
+                          {r.tipo === "TitulacaoPEEP" ? "Titulação de PEEP" : r.tipo}
+                        </span>
+                        <span className="text-xs font-bold text-slate-400">{r.horario}</span>
+                      </div>
+                      <p className="text-sm text-slate-600 whitespace-pre-wrap">{texto || "—"}</p>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* RODAPÉ */}
+            <div className="p-4 bg-white border-t border-slate-200 shrink-0">
+              <button type="button" onClick={() => setShowRegistrosFisio(false)} className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-black rounded-xl shadow-lg transition-all uppercase tracking-wider">
+                Fechar
               </button>
             </div>
 

@@ -150,6 +150,18 @@ const PhysioEvoModal = ({
     setEvolucaoData(prev => ({ ...prev, [field]: value }));
   };
 
+  // Salva um campo do Bloco 4 no Firebase quando o usuário sai do campo (onBlur).
+  // Usa e.target.value (valor real do textarea no momento do blur) para garantir
+  // que exatamente o que está digitado seja persistido, sem risco de closure defasado.
+  const handleCampoBlur = (field, value) => {
+    if (typeof updateNested === 'function') {
+      updateNested("physio", field, value);
+    }
+    if (typeof handleBlurSave === 'function') {
+      handleBlurSave(`Fisioterapia: Evolução — ${field} salvo automaticamente`);
+    }
+  };
+
   const toggleSinalDesconforto = (sinal) => {
     setEvolucaoData(prev => {
       const current = Array.isArray(prev.sinaisDesconforto) ? [...prev.sinaisDesconforto] : [];
@@ -471,6 +483,7 @@ const PhysioEvoModal = ({
                 className="w-full p-3 border border-teal-200 rounded-lg bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-teal-200 resize-y h-28 leading-relaxed"
                 value={evolucaoData.condutas || ""}
                 onChange={(e) => updateField('condutas', e.target.value)}
+                onBlur={(e) => handleCampoBlur('condutas', e.target.value)}
                 placeholder="• Monitorização contínua de sinais vitais e vigilância respiratória;..."
               />
             </div>
@@ -483,6 +496,7 @@ const PhysioEvoModal = ({
                 className="w-full p-3 border border-green-200 rounded-lg bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-green-200 resize-y h-24 leading-relaxed"
                 value={evolucaoData.planoMetas || ""}
                 onChange={(e) => updateField('planoMetas', e.target.value)}
+                onBlur={(e) => handleCampoBlur('planoMetas', e.target.value)}
                 placeholder="Ex: Manter desmame ventilatório, progredir sedestação beira-leito..."
               />
             </div>
@@ -495,6 +509,7 @@ const PhysioEvoModal = ({
                 className="w-full p-3 border border-orange-200 rounded-lg bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-orange-200 resize-y h-24 leading-relaxed"
                 value={evolucaoData.observacoes || ""}
                 onChange={(e) => updateField('observacoes', e.target.value)}
+                onBlur={(e) => handleCampoBlur('observacoes', e.target.value)}
                 placeholder="Ex: Paciente apresentou agitação psicomotora à noite, necessitou contenção..."
               />
             </div>
@@ -507,6 +522,7 @@ const PhysioEvoModal = ({
                 className="w-full p-3 border border-red-200 rounded-lg bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-red-200 resize-y h-20 leading-relaxed"
                 value={evolucaoData.intercorrencias || ""}
                 onChange={(e) => updateField('intercorrencias', e.target.value)}
+                onBlur={(e) => handleCampoBlur('intercorrencias', e.target.value)}
                 placeholder="Relate intercorrências ocorridas durante o plantão..."
               />
             </div>
