@@ -3246,18 +3246,29 @@ ${conduta}
   const handleNutriAdmission = () => {
     // CAMPO ESTÉRIL ABSOLUTO: Prancheta 100% vazia para não puxar lixo de memória
     setNutriAdmissionData({
-      peso: "",
-      tipoMedicaoPeso: "",
-      metaCalTotal: "",
-      metaCalDiaria: "",
-      metaProtTotal: "",
-      risco_nutricional: "",
-      via: "",
-      caracteristicasDieta: [],
-      viasMistas: [],
-      tipoDietaEnteral: "",
-      vazaoEnteral: "",
-      vazaoParenteral: "",
+      // ===== DADOS BÁSICOS =====
+      peso: cofre.peso || "",
+      tipoMedicaoPeso: cofre.tipoMedicaoPeso || "",
+      // ===== ANTROPOMETRIA (alimentam o cálculo do IMC / braço / sarcopenia) =====
+      altura: cofre.altura || "",
+      alturaJoelho: cofre.alturaJoelho || "",
+      circBraco: cofre.circBraco || "",
+      pct: cofre.pct || "",
+      circPanturrilha: cofre.circPanturrilha || "",
+      amputacoes: Array.isArray(cofre.amputacoes) ? [...cofre.amputacoes] : [],
+      aumentarPeso: !!cofre.aumentarPeso,
+      // ===== NRS 2002 =====
+      nrsInicial: Array.isArray(cofre.nrsInicial) ? [...cofre.nrsInicial] : [],
+      nrsEstado: cofre.nrsEstado || "",
+      nrsGravidade: cofre.nrsGravidade || "",
+      // ===== METAS E VIA =====
+      metaCalTotal: cofre.metaCalTotal || "",
+      metaCalDiaria: cofre.metaCalDiaria || "",
+      metaProtTotal: cofre.metaProtTotal || "",
+      metaProtDiaria: cofre.metaProtDiaria || "",
+      risco_nutricional: cofre.risco_nutricional || "",
+      via: cofre.via || "",
+      caracteristicasDieta: Array.isArray(cofre.caracteristicasDieta) ? [...cofre.caracteristicasDieta] : []
     });
 
     setShowNutriAdmissionModal(true);
