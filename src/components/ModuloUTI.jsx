@@ -3244,10 +3244,56 @@ ${conduta}
 
   // --- 1. INICIAR ADMISSÃO DA NUTRIÇÃO (Campo Estéril) ---
   const handleNutriAdmission = () => {
-    // CAMPO ESTÉRIL ABSOLUTO: Prancheta 100% vazia para não puxar lixo de memória
+    // CAMPO ESTÉRIL ABSOLUTO: Prancheta 100% vazia para não puxar lixo de memória.
+    // ÚNICA exceção: o peso referido preenchido na ADMISSÃO MÉDICA (se houver).
+    const pesoReferidoMedico = currentPatient?.medical?.pesoReferido || "";
+
+    setNutriAdmissionData({
+      // ===== DADOS BÁSICOS =====
+      peso: pesoReferidoMedico ? String(pesoReferidoMedico) : "",
+      tipoMedicaoPeso: pesoReferidoMedico ? "Referido" : "",
+      etnia: currentPatient?.etnia || "",
+      // ===== ANTROPOMETRIA (alimentam o cálculo do IMC / braço / sarcopenia) =====
+      altura: "",
+      alturaJoelho: "",
+      circBraco: "",
+      pct: "",
+      circPanturrilha: "",
+      amputacoes: [],
+      aumentarPeso: false,
+      // ===== NRS 2002 =====
+      nrsInicial: [],
+      nrsEstado: "",
+      nrsGravidade: "",
+      // ===== METAS E VIA =====
+      metaCalTotal: "",
+      metaCalDiaria: "",
+      metaProtTotal: "",
+      metaProtDiaria: "",
+      risco_nutricional: "",
+      via: "",
+      tipoDietaEnteral: "",
+      vazaoEnteral: "",
+      vazaoParenteral: "",
+      viasMistas: [],      
+      caracteristicasDieta: []
+    });
+
+    setShowNutriAdmissionModal(true);
+  };
+
+  // --- 2. VER ADMISSÃO DA NUTRIÇÃO (Leitura do Cofre) ---
+  const handleViewNutriAdmission = () => {
+    const p = currentPatient;
+    if (!p) return;
+
+    // Procura na gaveta correta (priorizando o cofre imutável)
+    const cofre = p.admissaoNutricao || p.nutri || {};
+
     setNutriAdmissionData({
       // ===== DADOS BÁSICOS =====
       peso: cofre.peso || "",
+      etnia: cofre.etnia || currentPatient?.etnia || "",
       tipoMedicaoPeso: cofre.tipoMedicaoPeso || "",
       // ===== ANTROPOMETRIA (alimentam o cálculo do IMC / braço / sarcopenia) =====
       altura: cofre.altura || "",
@@ -3268,30 +3314,12 @@ ${conduta}
       metaProtDiaria: cofre.metaProtDiaria || "",
       risco_nutricional: cofre.risco_nutricional || "",
       via: cofre.via || "",
+      // ===== VIA DE ADMINISTRAÇÃO — subopções =====
+      tipoDietaEnteral: cofre.tipoDietaEnteral || "",
+      vazaoEnteral: cofre.vazaoEnteral || "",
+      vazaoParenteral: cofre.vazaoParenteral || "",
+      viasMistas: Array.isArray(cofre.viasMistas) ? [...cofre.viasMistas] : [],      
       caracteristicasDieta: Array.isArray(cofre.caracteristicasDieta) ? [...cofre.caracteristicasDieta] : []
-    });
-
-    setShowNutriAdmissionModal(true);
-  };
-
-  // --- 2. VER ADMISSÃO DA NUTRIÇÃO (Leitura do Cofre) ---
-  const handleViewNutriAdmission = () => {
-    const p = currentPatient;
-    if (!p) return;
-
-    // Procura na gaveta correta (priorizando o cofre imutável)
-    const cofre = p.admissaoNutricao || p.nutri || {};
-
-    setNutriAdmissionData({
-      peso: cofre.peso || "",
-      tipoMedicaoPeso: cofre.tipoMedicaoPeso || "",
-      metaCalTotal: cofre.metaCalTotal || "",
-      metaCalDiaria: cofre.metaCalDiaria || "",
-      metaProtTotal: cofre.metaProtTotal || "",
-      metaProtDiaria: cofre.metaProtDiaria || "", // 👈 O CAMPO NOVO ADICIONADO AQUI!
-      risco_nutricional: cofre.risco_nutricional || "",
-      via: cofre.via || "",
-      caracteristicasDieta: cofre.caracteristicasDieta || []
     });
 
     setShowNutriAdmissionModal(true);
@@ -3350,6 +3378,11 @@ ${conduta}
       ...calculados,
       admitido: true
     };
+
+    // Persiste a etnia na RAIZ do paciente (campo novo no Firestore)
+    if (nutriAdmissionData.etnia) {
+      r.etnia = nutriAdmissionData.etnia;
+    }
 
     const up = [...patients];
     up[activeTab] = r;

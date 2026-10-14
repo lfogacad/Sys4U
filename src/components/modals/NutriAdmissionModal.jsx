@@ -162,6 +162,25 @@ const NutriAdmissionModal = ({
                     <option value="Estimado">Estimado</option>
                   </select>
                 </div>
+                {/* ETNIA — usada na equação de estimativa de peso */}
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-2 block text-center">Etnia</label>
+                  <select
+                    disabled={isReadOnly}
+                    className="w-full p-2.5 border-2 border-lime-200 rounded-lg text-sm bg-white font-bold outline-none disabled:bg-slate-100 disabled:text-slate-500 text-center"
+                    value={nutriData.etnia || ""}
+                    onChange={(e) => setNutriData({ ...nutriData, etnia: e.target.value })}
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="branco">Branco</option>
+                    <option value="pardo">Pardo</option>
+                    <option value="negro">Negro</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 font-bold mt-1 text-center">
+                    Pardo → calculado como Negro · Outro → calculado como Branco
+                  </p>
+                </div>                
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Altura (cm)</label>

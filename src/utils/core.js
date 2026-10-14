@@ -230,6 +230,11 @@ export const calcularNutricaoDerivada = (entrada, paciente) => {
   const isFem = sexoPaciente === 'F' || sexoPaciente === 'FEM' || sexoPaciente === 'FEMININO';
   const idadePaciente = calcularIdade(paciente?.dataNascimento);
 
+  // Etnia — usada na equação de estimativa de peso (lê do modal ou da raiz do paciente)
+  const etnia = String(entrada.etnia || paciente?.etnia || '').trim().toLowerCase();
+  const isNegro = ['pardo', 'parda', 'negro', 'negra', 'preto', 'preta'].includes(etnia);
+  // 'branco', 'outro', ou vazio → trata como branco (grupo default)
+
   // Estatura — Chumlea (1985)
   const alturaJoelho = safeNum(entrada.alturaJoelho);
   const estaturaEstimada = (alturaJoelho > 0 && idadePaciente !== null)
@@ -237,12 +242,28 @@ export const calcularNutricaoDerivada = (entrada, paciente) => {
              : 64.19 - (0.04 * idadePaciente) + (2.02 * alturaJoelho))
     : null;
 
-  // Peso estimado — Chumlea (1988): AJ + CB
+  // ===== PESO ESTIMADO — por faixa etária, sexo e etnia =====
+  // 19–59 anos → Ross Laboratories | 60–80 anos → tabelas clínicas
+  // Fora de 19–80 anos ou idade desconhecida → fallback Chumlea (1988)
   const circBraco = safeNum(entrada.circBraco);
+  const calcularPesoEstimado = (idade, fem, negro, aj, cb) => {
+    // Faixa 19–59 anos — Ross Laboratories
+    if (idade !== null && idade >= 19 && idade <= 59) {
+      if (fem) return negro ? (1.24 * aj) + (2.81 * cb) - 82.48 : (1.01 * aj) + (2.81 * cb) - 66.04;
+      return negro ? (1.09 * aj) + (3.14 * cb) - 83.72 : (1.19 * aj) + (3.21 * cb) - 86.82;
+    }
+    // Faixa 60–80 anos — equações de tabelas clínicas
+    if (idade !== null && idade >= 60 && idade <= 80) {
+      if (fem) return negro ? (1.50 * aj) + (2.58 * cb) - 84.22 : (1.09 * aj) + (2.68 * cb) - 65.51;
+      return negro ? (0.44 * aj) + (2.86 * cb) - 39.21 : (1.10 * aj) + (3.07 * cb) - 75.81;
+    }
+    // Fallback: fora de 19–80 anos ou idade desconhecida — Chumlea (1988)
+    return fem
+      ? (1.86 * aj) + (2.37 * cb) - 65.51
+      : (2.02 * aj) + (2.68 * cb) - 78.56;
+  };
   const pesoEstimado = (alturaJoelho > 0 && circBraco > 0)
-    ? (isFem
-        ? (1.86 * alturaJoelho) + (2.37 * circBraco) - 65.51
-        : (2.02 * alturaJoelho) + (2.68 * circBraco) - 78.56)
+    ? calcularPesoEstimado(idadePaciente, isFem, isNegro, alturaJoelho, circBraco)
     : null;
 
   // Correção por amputação
