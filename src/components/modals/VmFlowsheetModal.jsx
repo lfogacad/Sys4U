@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Activity, X, Printer, Plus, Wind } from 'lucide-react';
+
+
 
 const VmFlowsheetModal = ({
   showVmFlowsheet,
@@ -14,11 +16,93 @@ const VmFlowsheetModal = ({
 }) => {
   if (!showVmFlowsheet) return null;
 
+  const [vmDraft, setVmDraft] = useState({}); // { "realIndex:key": "valor" } — células em edição
+
   const getEntryTime = (entry) => entry?.dataHora || "Horário Indefinido";
   // Determina o tipo de suporte atual
   const suporteAtual = currentPatient?.physio?.suporte || "Ar Ambiente"; 
 
   const displayVmEntries = [...(currentPatient.physio?.vmFlowsheet || [])].reverse();
+
+  // ===== HELPERS DE INPUT COM RASCUNHO LOCAL =====
+  // O que está sendo digitado tem precedência sobre snapshots → nada "apaga" durante a escrita.
+  // A gravação acontece APENAS no onBlur (via updateVmEntry + handleBlurSave).
+
+  const draftInput = (realIndex, entry, key, label, extra = {}) => {
+    const k = `${realIndex}:${key}`;
+    const draftVal = vmDraft[k];
+    return (
+      <input
+        type={extra.type || "text"}
+        inputMode={extra.inputMode}
+        className={extra.className || "w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400"}
+        placeholder={extra.placeholder || ""}
+        value={draftVal !== undefined ? draftVal : (entry[key] || "")}
+        onChange={(e) => setVmDraft(prev => ({ ...prev, [k]: e.target.value }))}
+        onBlur={(e) => {
+          const val = e.target.value;
+          if (val !== (entry[key] || "")) {
+            updateVmEntry(realIndex, key, val);
+            if (extra.onBlurExtra) extra.onBlurExtra(val);
+            handleBlurSave(`Mapa SV: Editou ${label} - Coluna ${getEntryTime(entry)}`);
+          }
+          setVmDraft(prev => { const n = { ...prev }; delete n[k]; return n; });
+        }}
+      />
+    );
+  };
+
+  const draftCheckbox = (realIndex, entry, key, label, text) => {
+    const k = `${realIndex}:${key}`;
+    const draftVal = vmDraft[k];
+    return (
+      <label className="flex items-center gap-1 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={draftVal !== undefined ? draftVal : !!entry[key]}
+          onChange={(e) => setVmDraft(prev => ({ ...prev, [k]: e.target.checked }))}
+          onBlur={(e) => {
+            const val = e.target.checked;
+            if (val !== !!entry[key]) {
+              updateVmEntry(realIndex, key, val);
+              handleBlurSave(`Mapa SV: Avaliou ${label} - Coluna ${getEntryTime(entry)}`);
+            }
+            setVmDraft(prev => { const n = { ...prev }; delete n[k]; return n; });
+          }}
+        /> {text}
+      </label>
+    );
+  };
+
+  const draftTextarea = (realIndex, entry, key, label, extra = {}) => {
+    const k = `${realIndex}:${key}`;
+    const draftVal = vmDraft[k];
+    return (
+      <textarea
+        className={extra.className || "w-full p-1 border rounded text-[10px] outline-none focus:ring-1 focus:ring-cyan-400 resize-none overflow-hidden min-h-[28px] leading-tight"}
+        value={draftVal !== undefined ? draftVal : (entry[key] || "")}
+        onChange={(e) => {
+          setVmDraft(prev => ({ ...prev, [k]: e.target.value }));
+          e.target.style.height = 'auto';
+          e.target.style.height = e.target.scrollHeight + 'px';
+        }}
+        onBlur={(e) => {
+          const val = e.target.value;
+          if (val !== (entry[key] || "")) {
+            updateVmEntry(realIndex, key, val);
+            handleBlurSave(`Mapa SV: Editou ${label} - Coluna ${getEntryTime(entry)}`);
+          }
+          setVmDraft(prev => { const n = { ...prev }; delete n[k]; return n; });
+        }}
+        placeholder={extra.placeholder || ""}
+        rows={1}
+        onInput={(e) => {
+          e.target.style.height = 'auto';
+          e.target.style.height = e.target.scrollHeight + 'px';
+        }}
+      />
+    );
+  };
 
   // ==============================================================
   // DEFINIÇÃO DAS LINHAS POR TIPO DE SUPORTE
@@ -218,53 +302,58 @@ const getRowsBySuporte = () => {
                         <td key={entry.id || displayIndex} className={`p-1 border-r border-slate-200 ${rowDef.key === 'ajustesDia' ? 'min-w-[250px]' : 'min-w-[120px]'}`}>
                           {rowDef.key === 'cuff_row' ? (
                             <div className="flex gap-1 justify-center">
-                              <input type="text" inputMode="numeric" className="w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400" placeholder="M" value={entry.cuffM || ""} onChange={(e) => updateVmEntry(realIndex, 'cuffM', e.target.value)} onBlur={(e) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffM", e.target.value); handleBlurSave(`Mapa SV: Editou Pressão Cuff (Manhã) - Coluna ${getEntryTime(entry)}`); }} />
-                              <input type="text" inputMode="numeric" className="w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400" placeholder="T" value={entry.cuffT || ""} onChange={(e) => updateVmEntry(realIndex, 'cuffT', e.target.value)} onBlur={(e) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffT", e.target.value); handleBlurSave(`Mapa SV: Editou Pressão Cuff (Tarde) - Coluna ${getEntryTime(entry)}`); }} />
-                              <input type="text" inputMode="numeric" className="w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400" placeholder="N" value={entry.cuffN || ""} onChange={(e) => updateVmEntry(realIndex, 'cuffN', e.target.value)} onBlur={(e) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffN", e.target.value); handleBlurSave(`Mapa SV: Editou Pressão Cuff (Noite) - Coluna ${getEntryTime(entry)}`); }} />
+                              {draftInput(realIndex, entry, 'cuffM', 'Pressão Cuff (Manhã)', {
+                                type: 'text', inputMode: 'numeric', placeholder: 'M',
+                                className: 'w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400',
+                                onBlurExtra: (val) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffM", val); }
+                              })}
+                              {draftInput(realIndex, entry, 'cuffT', 'Pressão Cuff (Tarde)', {
+                                type: 'text', inputMode: 'numeric', placeholder: 'T',
+                                className: 'w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400',
+                                onBlurExtra: (val) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffT", val); }
+                              })}
+                              {draftInput(realIndex, entry, 'cuffN', 'Pressão Cuff (Noite)', {
+                                type: 'text', inputMode: 'numeric', placeholder: 'N',
+                                className: 'w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400',
+                                onBlurExtra: (val) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffN", val); }
+                              })}
                             </div>
                           ) : rowDef.key === 'diasUti' ? (
-                            <input type="text" className="w-full p-1 border rounded text-center text-[11px] outline-none bg-blue-50/50 font-bold text-slate-700 focus:ring-1 focus:ring-cyan-400" value={entry.diasUti || ""} onChange={(e) => updateVmEntry(realIndex, rowDef.key, e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou Dias UTI - Coluna ${getEntryTime(entry)}`)} />
+                            draftInput(realIndex, entry, 'diasUti', 'Dias UTI', {
+                              className: 'w-full p-1 border rounded text-center text-[11px] outline-none bg-blue-50/50 font-bold text-slate-700 focus:ring-1 focus:ring-cyan-400'
+                            })
                           ) : rowDef.key === 'suporte' ? (
-                            <input type="text" className="w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 bg-purple-50 font-bold text-purple-800" value={entry.suporte || ""} onChange={(e) => updateVmEntry(realIndex, 'suporte', e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou Suporte Ventilatório - Coluna ${getEntryTime(entry)}`)} placeholder="VM / VNI / CN / Venturi..." />
+                            draftInput(realIndex, entry, 'suporte', 'Suporte Ventilatório', {
+                              placeholder: 'VM / VNI / CN / Venturi...',
+                              className: 'w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 bg-purple-50 font-bold text-purple-800'
+                            })
                           ) : rowDef.key === 'diasVm' ? (
-                            <input type="text" className="w-full p-1 border rounded text-center text-[11px] outline-none bg-cyan-50/50 font-bold text-slate-700 focus:ring-1 focus:ring-cyan-400" value={entry.diasVm || ""} onChange={(e) => updateVmEntry(realIndex, rowDef.key, e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou Dias Suporte Vent. - Coluna ${getEntryTime(entry)}`)} />
+                            draftInput(realIndex, entry, 'diasVm', 'Dias Suporte Vent.', {
+                              className: 'w-full p-1 border rounded text-center text-[11px] outline-none bg-cyan-50/50 font-bold text-slate-700 focus:ring-1 focus:ring-cyan-400'
+                            })
                           ) : rowDef.key === 'despertar_row' ? (
                             <div className="flex gap-2 justify-center font-bold text-[9px]">
-                              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={entry.despertarS || false} onChange={(e) => updateVmEntry(realIndex, 'despertarS', e.target.checked)} onBlur={() => handleBlurSave(`Mapa SV: Avaliou Despertar Diário (Sim) - Coluna ${getEntryTime(entry)}`)} /> S</label>
-                              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={entry.despertarN || false} onChange={(e) => updateVmEntry(realIndex, 'despertarN', e.target.checked)} onBlur={() => handleBlurSave(`Mapa SV: Avaliou Despertar Diário (Não) - Coluna ${getEntryTime(entry)}`)} /> N</label>
+                              {draftCheckbox(realIndex, entry, 'despertarS', 'Despertar Diário (Sim)', 'S')}
+                              {draftCheckbox(realIndex, entry, 'despertarN', 'Despertar Diário (Não)', 'N')}
                             </div>
                           ) : rowDef.key === 'fr_row' ? (
                             <div className="flex gap-1 justify-center items-center">
-                              <input className="w-10 p-1 border rounded text-center text-[10px]" placeholder="Set" value={entry.frSet || ""} onChange={(e) => updateVmEntry(realIndex, 'frSet', e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou FR Setada - Coluna ${getEntryTime(entry)}`)} />
+                              {draftInput(realIndex, entry, 'frSet', 'FR Setada', { placeholder: 'Set', className: 'w-10 p-1 border rounded text-center text-[10px]' })}
                               <span>/</span>
-                              <input className="w-10 p-1 border rounded text-center text-[10px]" placeholder="Tot" value={entry.frTotal || ""} onChange={(e) => updateVmEntry(realIndex, 'frTotal', e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou FR Total - Coluna ${getEntryTime(entry)}`)} />
+                              {draftInput(realIndex, entry, 'frTotal', 'FR Total', { placeholder: 'Tot', className: 'w-10 p-1 border rounded text-center text-[10px]' })}
                             </div>
                           ) : rowDef.key === 'fluxo' ? (
-                            <input type="text" className="w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400" value={entry.fluxo || ""} onChange={(e) => updateVmEntry(realIndex, 'fluxo', e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou Fluxo - Coluna ${getEntryTime(entry)}`)} placeholder="L/min" />
+                            draftInput(realIndex, entry, 'fluxo', 'Fluxo', { placeholder: 'L/min' })
                           ) : rowDef.key === 'dispositivo' ? (
-                            <input type="text" className="w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400" value={entry.dispositivo || ""} onChange={(e) => updateVmEntry(realIndex, 'dispositivo', e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou Dispositivo - Coluna ${getEntryTime(entry)}`)} placeholder="Tipo..." />
+                            draftInput(realIndex, entry, 'dispositivo', 'Dispositivo', { placeholder: 'Tipo...' })
                           ) : rowDef.key === 'satO2' ? (
-                            <input type="text" className="w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400" value={entry.satO2 || ""} onChange={(e) => updateVmEntry(realIndex, 'satO2', e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou SatO2 - Coluna ${getEntryTime(entry)}`)} placeholder="%" />
+                            draftInput(realIndex, entry, 'satO2', 'SatO2', { placeholder: '%' })
                           ) : rowDef.key === 'ajustesDia' ? (
-                            <textarea
-                              className="w-full p-1 border rounded text-[10px] outline-none focus:ring-1 focus:ring-cyan-400 resize-none overflow-hidden min-h-[28px] leading-tight"
-                              value={entry.ajustesDia || ""}
-                              onChange={(e) => {
-                                updateVmEntry(realIndex, 'ajustesDia', e.target.value);
-                                // Auto-grow: ajusta a altura conforme o conteúdo
-                                e.target.style.height = 'auto';
-                                e.target.style.height = e.target.scrollHeight + 'px';
-                              }}
-                              onBlur={() => handleBlurSave(`Mapa SV: Editou Ajustes do Dia - Coluna ${getEntryTime(entry)}`)}
-                              placeholder="Digite os ajustes..."
-                              rows={1}
-                              onInput={(e) => {
-                                e.target.style.height = 'auto';
-                                e.target.style.height = e.target.scrollHeight + 'px';
-                              }}
-                            />
+                            draftTextarea(realIndex, entry, 'ajustesDia', 'Ajustes do Dia', { placeholder: 'Digite os ajustes...' })
                           ) : (
-                            <input type="text" className={`w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 ${rowDef.key === 'dp' ? 'bg-amber-100 font-bold text-amber-900' : ''} ${rowDef.key === 'cst' || rowDef.key === 'cdin' ? 'bg-blue-50 font-bold' : ''}`} value={entry[rowDef.key] || ""} onChange={(e) => updateVmEntry(realIndex, rowDef.key, e.target.value)} onBlur={() => handleBlurSave(`Mapa SV: Editou ${rowDef.label} - Coluna ${getEntryTime(entry)}`)} />
+                            draftInput(realIndex, entry, rowDef.key, rowDef.label, {
+                              className: `w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 ${rowDef.key === 'dp' ? 'bg-amber-100 font-bold text-amber-900' : ''} ${rowDef.key === 'cst' || rowDef.key === 'cdin' ? 'bg-blue-50 font-bold' : ''}`
+                            })
                           )}
                         </td>
                       );
