@@ -22,6 +22,8 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
 
   const [listaMedicos, setListaMedicos] = useState([]);
 
+  const [gasoDraft, setGasoDraft] = useState({});
+  
   const [showRegistrosFisio, setShowRegistrosFisio] = useState(false);
   const [showEvolucaoModal, setShowEvolucaoModal] = useState(false);
   const [evolucaoData, setEvolucaoData] = useState({
@@ -1899,7 +1901,63 @@ const TRE_CHECKLIST = [
                       {isEditable && <td className="bg-slate-50 border-r border-slate-200"></td>}
                       {sortedGasoCols.map((col, colIndex) => (
                         <td key={col} className="p-0 border-l border-slate-200">
-                          <input type="text" data-gaso-row={rowIndex} data-gaso-col={colIndex} className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5 transition-colors" value={currentPatient.gasometriaHistory?.[col]?.[param] || ""} onKeyDown={(e) => handleGasoKeyDown(e, rowIndex, colIndex)} onChange={(e) => { const val = e.target.value; setPatients(prev => { const up = [...prev]; const p = JSON.parse(JSON.stringify(up[activeTab])); if (!p.gasometriaHistory) p.gasometriaHistory = {}; if (!p.gasometriaHistory[col]) p.gasometriaHistory[col] = {}; p.gasometriaHistory[col][param] = val; const pao2Str = p.gasometriaHistory[col]["PaO2"]; const fio2Str = p.gasometriaHistory[col]["FiO2"]; if (pao2Str && fio2Str) { const pao2 = parseFloat(pao2Str.toString().replace(',', '.')); let fio2 = parseFloat(fio2Str.toString().replace(',', '.')); if (!isNaN(pao2) && !isNaN(fio2) && fio2 > 0) { const decimalFio2 = fio2 >= 1 ? fio2 / 100 : fio2; const pf = (pao2 / decimalFio2).toFixed(0); p.gasometriaHistory[col]["P/F"] = pf; } } else if (p.gasometriaHistory[col]["Relação P/F"]) { p.gasometriaHistory[col]["P/F"] = ""; } up[activeTab] = p; return up; }); }} onBlur={() => handleBlurSave(`Gasometria: Editou ${param} (Ref: ${col})`)} />
+                          <input
+                            type="text"
+                            data-gaso-row={rowIndex}
+                            data-gaso-col={colIndex}
+                            className="w-full h-full text-center outline-none bg-transparent focus:bg-blue-50 p-1.5 transition-colors"
+                            value={gasoDraft[col]?.[param] ?? currentPatient.gasometriaHistory?.[col]?.[param] ?? ""}
+                            onChange={(e) => {
+                              // SÓ atualiza o rascunho local — o input fica estável e nada apaga durante a digitação
+                              const val = e.target.value;
+                              setGasoDraft(prev => ({
+                                ...prev,
+                                [col]: { ...(prev[col] || {}), [param]: val }
+                              }));
+                            }}
+                            onKeyDown={(e) => handleGasoKeyDown(e, rowIndex, colIndex)}
+                            onBlur={() => {
+                              const draftCell = gasoDraft[col]?.[param];
+                              // Sem edição pendente nesta célula → não faz nada (evita save "vazio")
+                              if (draftCell === undefined) return;
+
+                              // Monta a versão MAIS RECENTE do paciente a partir do estado atual
+                              setPatients(prev => {
+                                const up = [...prev];
+                                const p = JSON.parse(JSON.stringify(up[activeTab] || {}));
+                                if (!p.gasometriaHistory) p.gasometriaHistory = {};
+                                if (!p.gasometriaHistory[col]) p.gasometriaHistory[col] = {};
+                                p.gasometriaHistory[col][param] = draftCell;
+
+                                // Recalcula P/F (mesma lógica de antes, agora só no blur)
+                                const pao2Str = p.gasometriaHistory[col]["PaO2"];
+                                const fio2Str = p.gasometriaHistory[col]["FiO2"];
+                                if (pao2Str && fio2Str) {
+                                  const pao2 = parseFloat(String(pao2Str).replace(',', '.'));
+                                  let fio2 = parseFloat(String(fio2Str).replace(',', '.'));
+                                  if (!isNaN(pao2) && !isNaN(fio2) && fio2 > 0) {
+                                    const decimalFio2 = fio2 >= 1 ? fio2 / 100 : fio2;
+                                    p.gasometriaHistory[col]["P/F"] = (pao2 / decimalFio2).toFixed(0);
+                                  }
+                                } else if (p.gasometriaHistory[col]["Relação P/F"]) {
+                                  p.gasometriaHistory[col]["P/F"] = "";
+                                }
+
+                                up[activeTab] = p;
+                                // ÚNICA gravação: no blur, com a versão fresca que contém a digitação
+                                save(p, `Gasometria: Editou ${param} (Ref: ${col})`);
+                                return up;
+                              });
+
+                              // Limpa o rascunho desta célula
+                              setGasoDraft(prev => {
+                                const next = { ...prev, [col]: { ...(prev[col] || {}) } };
+                                delete next[col][param];
+                                if (!Object.keys(next[col]).length) delete next[col];
+                                return next;
+                              });
+                            }}
+                          />
                         </td>
                       ))}
                     </tr>
