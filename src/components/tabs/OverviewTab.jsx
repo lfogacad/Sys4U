@@ -177,10 +177,15 @@ const OverviewTab = ({
           <h4 className="font-bold text-lime-800 mb-2 flex items-center gap-2"><Utensils size={16} /> Nutrição</h4>
           <p className="text-sm">Via: <b>{currentPatient.nutri?.via || "Aguarda Avaliação"}</b></p>
           {currentPatient.nutri?.via === "Oral" && <p className="text-xs text-lime-600 mt-1">Consistência: <b>{currentPatient.fono?.consistencia || "-"}</b></p>}
-          {(currentPatient.nutri?.via === "Enteral" || currentPatient.nutri?.via === "Parenteral") && (
-            <div className="text-xs text-lime-600 mt-1">
-              <p>Fórmula: <b>{currentPatient.nutri?.tipoDieta || "-"}</b></p>
-              <p>Vazão: <b>{currentPatient.nutri?.vazao || "-"} ml/h</b></p>
+          {currentPatient.nutri?.via === "Enteral" && (
+            <div className="text-xs text-lime-600 mt-1 space-y-0.5">
+              <p>Fórmula: <b>{currentPatient.nutri?.tipoDietaEnteral || currentPatient.nutri?.tipoDieta || "-"}</b></p>
+              <p>Vazão: <b>{currentPatient.nutri?.vazaoEnteral || "-"} ml/h</b></p>
+            </div>
+          )}
+          {currentPatient.nutri?.via === "Parenteral" && (
+            <div className="text-xs text-lime-600 mt-1 space-y-0.5">
+              <p>Vazão: <b>{currentPatient.nutri?.vazaoParenteral || "-"} ml/h</b></p>
             </div>
           )}
           {currentPatient.nutri?.via === "Mista" && (
