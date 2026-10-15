@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { doc, setDoc, getDocs, getDoc, deleteDoc, collection, addDoc, arrayUnion, writeBatch, increment, 
+import { doc, setDoc, getDocs, getDoc, deleteDoc, collection, addDoc, arrayUnion, writeBatch, increment,
          onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp, FieldPath } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
@@ -235,7 +235,9 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const localEditRef = useRef(false);
   const editCountRef = useRef(0);
   const currentPatientRef = useRef(null);
-  const bhViradaRef = useRef({}); // chave: leito, valor: última data arquivada
+  const bhViradaGlobalRef = useRef(null); // data lógica da última virada executada
+  const localEditTimeoutRef = useRef(null);
+
 
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
   const [showNursingModal, setShowNursingModal] = useState(false);
@@ -389,7 +391,17 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
   // State para guardar quais dias foram destravados nesta sessão
   const [unlockedBHDates, setUnlockedBHDates] = useState([]);
-  
+
+  // Função para programar o destravamento: cada edição RENOVIA o timer.
+  // Após 5 segundos SEM novas edições, o listener volta a receber snapshots.
+  const scheduleLocalEditRelease = () => {
+    if (localEditTimeoutRef.current) clearTimeout(localEditTimeoutRef.current);
+    localEditTimeoutRef.current = setTimeout(() => {
+      localEditRef.current = false;
+      console.log('[SYS4U] Trava de edição local liberada (5s de inatividade). Listener reativado.');
+    }, 5000);
+  };
+
   // A Função do Auditor (Botão de Destravar)
   const handleUnlockHistoricalBH = async (dateStr, reason) => {
     // 1. Libera visualmente na tela instantaneamente
@@ -914,82 +926,97 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   }, [currentPatient?.cpf]);
 
   // ==============================================================
-  // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" das 07h00)
+  // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" — virada GLOBAL, 1x/dia)
   // ==============================================================
-useEffect(() => {
-  const automatizarFechamentoBH = async () => {
-    if (!db || !currentPatient || !currentPatient.bh || !currentPatient.bh.date) return;
+  useEffect(() => {
+    if (!db) return;
 
-    const logicalToday = getLogicalDate();
-    const currentBHDate = currentPatient.bh.date;
-    if (currentBHDate >= logicalToday) return; // nada a fazer
+    const automatizarFechamentoBH = async () => {
+      const logicalToday = getLogicalDate();
+      // Guarda global: 1 execução por dia por dispositivo (ref em useRef)
+      if (bhViradaGlobalRef.current === logicalToday) return;
+      bhViradaGlobalRef.current = logicalToday;
 
-    // 🛡️ SÓ roda uma vez por leito por dia — nunca por snapshot/edição repetida
-    const chaveLeito = currentPatient.id ?? currentPatient.leito ?? 'desconhecido';
-    if (bhViradaRef.current[chaveLeito] === logicalToday) return;
-    bhViradaRef.current[chaveLeito] = logicalToday;
+      console.log(`[SYS4U] Verificando virada de BH para ${logicalToday} (todos os leitos)`);
 
-    console.log(`[SYS4U] Virada de plantão detectada. Arquivando BH do dia ${currentBHDate} para o Leito ${currentPatient.leito}`);
+      try {
+        // 1) Lê TODOS os leitos de uma vez — verdade do servidor
+        const snap = await getDocs(collection(db, "leitos_uti"));
+        const batchWrites = [];
 
-    const historicoAntigo = currentPatient.historico_bh || [];
-    const { accumulated: saldoAnterior } = calculateTotals(currentPatient.bh, currentPatient.nutri?.peso);
+        snap.forEach((docSnap) => {
+          const dados = docSnap.data();
+          const bhServidor = dados.bh || null;
 
-    const novoBHzero = {
-      date: logicalToday,
-      gains: {},
-      losses: {},
-      vitals: {},
-      irrigation: {},
-      customGains: currentPatient.bh.customGains || [],
-      customLosses: currentPatient.bh.customLosses || [],
-      accumulated: saldoAnterior || 0,
-      insensibleLoss: 0
+          // Sem BH ou BH já do dia lógico de hoje → nada a fazer neste leito
+          if (!bhServidor || !bhServidor.date || bhServidor.date >= logicalToday) return;
+
+          // RE-CHECAGEM de segurança: só arquivar se ainda não existe cópia deste dia no histórico
+          const historicoServidor = Array.isArray(dados.historico_bh) ? dados.historico_bh : [];
+          if (historicoServidor.some(h => h && h.date === bhServidor.date)) {
+            // Histórico já tem o dia mas o bh não foi zerado (crash anterior) → só zera
+            batchWrites.push({
+              ref: docSnap.ref,
+              dados: {
+                bh_previous: { ...bhServidor },
+                bh: construirBHzero(logicalToday, bhServidor, dados)
+              }
+            });
+            return;
+          }
+
+          historicoServidor.push(bhServidor);
+          batchWrites.push({
+            ref: docSnap.ref,
+            dados: {
+              historico_bh: historicoServidor,
+              bh_previous: { ...bhServidor },
+              bh: construirBHzero(logicalToday, bhServidor, dados)
+            }
+          });
+        });
+
+        if (batchWrites.length === 0) {
+          console.log(`[SYS4U] Nenhum leito pendente de virada para ${logicalToday}.`);
+          return;
+        }
+
+        // 2) Executa tudo atomicamente em batch (máx. 500 ops — você tem 11 leitos, ok)
+        const batch = writeBatch(db);
+        batchWrites.forEach(w => batch.set(w.ref, w.dados, { merge: true }));
+        await batch.commit();
+
+        console.log(`[SYS4U] Virada concluída: ${batchWrites.length} leito(s) — BHs arquivados e zerados.`);
+
+        // 3) Reflete no estado local (merge por id, sem substituir campos alheios)
+        setPatients(prev => prev.map(p => {
+          const w = batchWrites.find(b => b.ref.id === p.id);
+          return w ? { ...p, ...w.dados } : p;
+        }));
+      } catch (error) {
+        console.error("[SYS4U] Erro crítico na virada global do BH:", error);
+        bhViradaGlobalRef.current = null; // permite nova tentativa
+      }
     };
 
-    try {
-      let idBruto = currentPatient.id !== undefined ? currentPatient.id : currentPatient.leito;
-      const apenasNumero = String(idBruto).replace(/bed_/g, "");
-      const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
-      const leitoRef = doc(db, "leitos_uti", docId);
+    // Helper local: monta o BH zerado preservando custom fields e saldo
+    const construirBHzero = (logicalToday, bhServidor, dados) => {
+      const { accumulated: saldoAnterior } = calculateTotals(bhServidor, dados?.nutri?.peso);
+      return {
+        date: logicalToday,
+        gains: {},
+        losses: {},
+        vitals: {},
+        irrigation: {},
+        customGains: bhServidor.customGains || [],
+        customLosses: bhServidor.customLosses || [],
+        accumulated: saldoAnterior || 0,
+        insensibleLoss: 0
+      };
+    };
 
-      // 🔥 VERDADE DO SERVIDOR: nunca confiar no estado para arquivar
-      const leitoSnap = await getDoc(leitoRef);
-      const firestoreHist = leitoSnap.exists() ? leitoSnap.data().historico_bh : null;
-      const historicoServidor = Array.isArray(firestoreHist) ? firestoreHist : [];
-
-      // Evita duplicar o BH atual (outra aba/janela pode já ter arquivado)
-      if (!historicoServidor.some(h => h && h.date === currentPatient.bh.date)) {
-        historicoServidor.push(currentPatient.bh);
-      }
-
-      await updateDoc(leitoRef, {
-        historico_bh: historicoServidor,
-        bh_previous: { ...currentPatient.bh },
-        bh: novoBHzero
-      });
-
-      setPatients(prev => {
-        const novos = [...prev];
-        const idx = novos.findIndex(p => p.id === currentPatient.id || p.leito === currentPatient.leito);
-        if (idx !== -1) {
-          novos[idx] = {
-            ...novos[idx],
-            historico_bh: historicoServidor,
-            bh_previous: { ...currentPatient.bh },
-            bh: novoBHzero
-          };
-        }
-        return novos;
-      });
-      console.log(`[SYS4U] BH do leito ${currentPatient.leito} virado para ${logicalToday} com sucesso. BH Ant.: ${saldoAnterior}.`);
-    } catch (error) {
-      console.error("[SYS4U] Erro crítico ao automatizar fechamento do BH:", error);
-      delete bhViradaRef.current[chaveLeito]; // permite nova tentativa na próxima mudança
-    }
-  };
-
-  automatizarFechamentoBH();
-}, [currentPatient, db]);
+    automatizarFechamentoBH();
+  }, [db]);
 
   // Efeito para buscar a fila de espera da UTI em tempo real
   useEffect(() => {
@@ -1131,6 +1158,11 @@ useEffect(() => {
       }
       auditarEscrita("save()", docId, payloadBH, { merge: true });
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
+      // 🔓 DESTRAVAMENTO PÓS-COMMIT: o Firestore confirmou a gravação —
+      // o próximo snapshot que voltar já contém este próprio dado, então
+      // é seguro liberar o listener IMEDIATAMENTE (não espera os espelhamentos).
+      localEditRef.current = false;
+      if (localEditTimeoutRef.current) clearTimeout(localEditTimeoutRef.current);      
       
       // =========================================================
       // 🚨 O PULO DO GATO: ESPELHAMENTO GLOBAL DE CULTURAS (CCIH)
@@ -1280,6 +1312,7 @@ useEffect(() => {
     // MARCA EDIÇÃO LOCAL: impede o listener unificado de sobrescrever a digitação
     editCountRef.current += 1;
     localEditRef.current = true;
+    scheduleLocalEditRelease();
 
     // Helper interno: aplica o campo + as sincronizações Shiley <-> Hemodiálise
     // em uma cópia do paciente. É a ÚNICA fonte da lógica de atualização.
@@ -1336,6 +1369,7 @@ useEffect(() => {
     // MARCA EDIÇÃO LOCAL: impede o listener unificado de sobrescrever a digitação
     editCountRef.current += 1;
     localEditRef.current = true;
+    scheduleLocalEditRelease();
 
     const up = [...patients];
     up[activeTab] = { ...up[activeTab], [field]: value };
@@ -2129,7 +2163,7 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
     }, { merge: true });
 
     // =========================================================================
-    // 💡 AUDITORIA: Registo da Admissão Médica
+    // 💡 AUDITORIA: Registro da Admissão Médica
     // =========================================================================
     if (typeof registarLogAuditoria === "function" || typeof registrarLogAuditoria === "function") {
       const auditoriaFn = typeof registrarLogAuditoria === "function" ? registrarLogAuditoria : registarLogAuditoria;
@@ -4382,6 +4416,7 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
     // MARCA EDIÇÃO LOCAL: impede o listener unificado de sobrescrever a digitação
     editCountRef.current += 1;
     localEditRef.current = true;
+    scheduleLocalEditRelease();
 
     setPatients(prev => {
       const up = [...prev];
@@ -4839,6 +4874,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
   const updateVmEntry = (index, field, value) => {
     // 🛡️ Mesmo padrão de updateP/updateNested: trava o listener enquanto edita
     if (localEditRef) localEditRef.current = true;
+    scheduleLocalEditRelease();
     setPatients(prev => {
       const up = [...prev];
       const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda segura
