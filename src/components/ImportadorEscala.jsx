@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, FileSpreadsheet, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { writeBatch, doc } from 'firebase/firestore';
@@ -44,14 +44,49 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [previewData, setPreviewData] = useState([]);
   const [status, setStatus] = useState("idle");
-  const dicionarioTurnos = {
-    'D': { nome: 'Plantão Dia', inicio: '07:00', fim: '19:00', horas: 12, tipo: 'plantonista' },
-    'N': { nome: 'Plantão Noite', inicio: '19:00', fim: '07:00', horas: 12, tipo: 'plantonista' },
-    'DN': { nome: 'Plantão 24h', inicio: '07:00', fim: '07:00', horas: 24, tipo: 'plantonista' },
-    'M': { nome: 'Plantão Manhã', inicio: '07:00', fim: '13:00', horas: 6, tipo: 'plantonista' },
-    'T': { nome: 'Plantão Tarde', inicio: '13:00', fim: '19:00', horas: 6, tipo: 'plantonista' },
-    'V': { nome: 'Visita Médica', inicio: '07:00', fim: '13:00', horas: 6, tipo: 'visita' },
+  const [categoriasPorAba, setCategoriasPorAba] = useState({});
+  // ===== DICIONÁRIO DE TURNOS (base + todas as combinações de 2 siglas) =====
+  const siglasBase = {
+    'D': { nome: 'Plantão Dia',    inicio: '07:00', fim: '19:00', horas: 12, tipo: 'plantonista' },
+    'N': { nome: 'Plantão Noite',  inicio: '19:00', fim: '07:00', horas: 12, tipo: 'plantonista' },
+    'M': { nome: 'Plantão Manhã',  inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'plantonista' },
+    'T': { nome: 'Plantão Tarde',  inicio: '13:00', fim: '19:00', horas: 6,  tipo: 'plantonista' },
+    'V': { nome: 'Visita Médica',  inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'visita' },
   };
+
+  const dicionarioTurnos = {
+    ...siglasBase,
+    'DN': { nome: 'Plantão 24h', inicio: '07:00', fim: '07:00', horas: 24, tipo: 'plantonista' },
+  };
+
+  // Gera automaticamente todas as permutações de pares distintos:
+  // DV, DT, DM, DN(mantém manual), ND, NM, NT, NV, MD, MN, MT, MV,
+  // TD, TN, TM, TV, VD, VN, VM, VT — 20 combinações no total.
+  Object.keys(siglasBase).forEach(a => {
+    Object.keys(siglasBase).forEach(b => {
+      if (a === b) return;
+      const chave = a + b;
+      if (dicionarioTurnos[chave]) return; // não sobrescreve manuais (ex.: DN)
+
+      // D+N e N+D = dia completo de 24h (mesma semântica do DN)
+      if ((a === 'D' && b === 'N') || (a === 'N' && b === 'D')) {
+        dicionarioTurnos[chave] = { nome: 'Plantão 24h', inicio: '07:00', fim: '07:00', horas: 24, tipo: 'plantonista' };
+        return;
+      }
+
+      // Agregação: ordena componentes por hora de início, soma horas,
+      // horário = do início mais cedo ao fim mais tarde
+      const partes = [siglasBase[a], siglasBase[b]].sort((x, y) => x.inicio.localeCompare(y.inicio));
+      dicionarioTurnos[chave] = {
+        nome: partes.map(p => p.nome).join(' + '),
+        inicio: partes[0].inicio,
+        fim: partes[partes.length - 1].fim,
+        horas: siglasBase[a].horas + siglasBase[b].horas,
+        tipo: (siglasBase[a].tipo === 'visita' && siglasBase[b].tipo === 'visita') ? 'visita' : 'plantonista'
+      };
+    });
+  });
+
   const handleFileUpload = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
@@ -71,24 +106,34 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const plantoesExtraidos = [];
         // 1. Função inteligente para adivinhar a categoria pelo nome da aba do Excel
+        // Adivinha a categoria pelo nome da aba — normaliza acentos para bater sempre
         const getCategoriaBySheetName = (sheetName) => {
-            const lowerName = sheetName.toLowerCase();
-            // 🆕 FISIOTERAPIA PRIMEIRO — o nome da aba pode conter "enfermeiras" junto
-            // (ex.: "fisioterapia_outubro_enfermeiras"), então precisa vencer o check de enfermagem
-            if (lowerName.includes('fisio')) return 'Fisioterapeuta';
-            if (lowerName.includes('hd') || lowerName.includes('hemodiálise')) return 'Téc. Hemodiálise';
-            if (lowerName.includes('téc') || lowerName.includes('tec')) return 'Téc. Enfermagem';
-            if (lowerName.includes('enferm')) return 'Enfermeiro';
-            return categoria; // Fallback para a prop se for aba de médicos, por exemplo
+          const lowerName = String(sheetName || '')
+            .toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          // Ordem importa: checks mais específicos primeiro
+          if (lowerName.includes('fisio')) return 'Fisioterapeuta';
+          if (lowerName.includes('hemodialise') || lowerName.includes('hemodiálise')) return 'Téc. Hemodiálise';
+          if (lowerName.includes('motorista')) return 'Motorista';
+          if (lowerName.includes('recep')) return 'Recepção';
+          if (lowerName.includes('fono')) return 'Fonoaudiólogo';
+          if (lowerName.includes('nutri')) return 'Nutricionista';
+          if (lowerName.includes('psico')) return 'Psicólogo';
+          if (lowerName.includes('tec')) return 'Téc. Enfermagem';
+          if (lowerName.includes('enferm')) return 'Enfermeiro';
+          if (lowerName.includes('medic') || lowerName.includes('planton')) return 'Médico Plantonista';
+          return categoria; // Fallback para a prop (abas genéricas tipo "outros")
         };
         // 2. O Loop que varre TODAS as abas do arquivo
         wb.SheetNames.forEach(wsname => {
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-            const catAtual = getCategoriaBySheetName(wsname); // Define se é Enf, Téc, ou HD
+            const catAtual = getCategoriaBySheetName(wsname); // Define se é Enf, Téc, HD, Motorista, etc.
             let indexLinhaDias = -1;
             let colunasDias = {}; 
             let lendoNefrologia = false;
+            let modoExtra = false; // 🚩 reinicia a cada aba — o marcador EXTRA é por aba
+
             // Encontrar onde começam os dias
             for (let i = 0; i < data.length; i++) {
               const row = data[i];
@@ -113,6 +158,17 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
             // Varrer os nomes e extrair as letrinhas
             for (let i = indexLinhaDias + 1; i < data.length; i++) {
               const row = data[i];
+
+              // ===== MARCADOR DE PLANTÕES EXTRAS =====
+              // Analisa as 3 primeiras colunas (células mescladas podem começar em B ou C).
+              // Aceita "EXTRA", "EXTRAS", "PLANTÕES EXTRAS" etc. Roda ANTES do guard de nome vazio.
+              const celulasLinha = [row?.[0], row?.[1], row?.[2]]
+                .map(c => String(c ?? '').trim().toUpperCase()
+                  .normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+                .filter(c => c.length > 0);
+              if (celulasLinha.some(c => c.includes('EXTRA'))) { modoExtra = true; continue; }
+              if (celulasLinha.some(c => c.includes('REGULAR') || c.includes('NORMAL') || c.includes('FIXO'))) { modoExtra = false; continue; }
+
               const nomeServidor = row[0];
               if (!nomeServidor) continue; 
               if (typeof nomeServidor === 'string' && nomeServidor.includes("MÉDICO NEFROLOGISTA")) {
@@ -121,6 +177,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
               }
               if (typeof nomeServidor === 'string' && nomeServidor.includes("LEGENDA")) break; 
               if (lendoNefrologia) continue; 
+
               const nomeLimpo = String(nomeServidor).trim();
               Object.keys(colunasDias).forEach(colIndex => {
                 const dia = colunasDias[colIndex];
@@ -132,8 +189,10 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
                     const dataFormatada = `${ano}-${mes}-${dia}`; 
                     plantoesExtraidos.push({
                       nome: nomeLimpo,
+                      aba: wsname,
                       categoria: catAtual, // 🛡️ Salva a categoria correta desta aba
                       data: dataFormatada,
+                      extra: modoExtra, // 🚩 Flag herdada do marcador EXTRA
                       sigla: siglaLimpa,
                       turno: turnoObj.nome,
                       horario: `${turnoObj.inicio} às ${turnoObj.fim}`,
@@ -148,6 +207,12 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
            throw new Error("Nenhum plantão válido foi encontrado no arquivo.");
         }
         setPreviewData(plantoesExtraidos);
+        // Inicializa o seletor de categoria com o palpite automático por aba
+        const inicial = {};
+        [...new Set(plantoesExtraidos.map(p => p.aba))].forEach(a => {
+          inicial[a] = getCategoriaBySheetName(a);
+        });
+        setCategoriasPorAba(inicial);
         setStatus("success");
       } catch (error) {
         console.error("Erro ao ler planilha:", error);
@@ -158,6 +223,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
     };
     reader.readAsBinaryString(file);
   };
+
   const salvarNoFirebase = async () => {
     if (previewData.length === 0) return;
     setIsProcessing(true); 
@@ -167,17 +233,19 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
       const seqPorDia = {}; // contador de ordem de exibição por dia
 
       previewData.forEach(plantao => {
+        const nomeSalvo = plantao.extra ? `${plantao.nome} [EXTRA]` : plantao.nome; // 👈 SEMPRE primeiro
+        const categoriaFinal = categoriasPorAba[plantao.aba] || plantao.categoria;
         const partesData = String(plantao.data || '').split('-');
         if (partesData.length !== 3) return; // guard: pula linhas sem ano/mês válidos
 
         const [isAno, isMes, isDia] = partesData;
-        const anoMes = `${isAno}-${isMes}`;
+        const anoMes = `${isAno}-${String(isMes).padStart(2, '0')}`; // 🛡️ mês sempre 2 dígitos (2026-10, não 2026-9)
         const dia = String(isDia).padStart(2, '0');
-        const slug = getSlug(plantao.categoria);
+        const slug = getSlug(categoriaFinal);
         const chave = `${slug}__${anoMes}`;
 
         if (!porMes[chave]) {
-          porMes[chave] = { slug, anoMes, categoria: plantao.categoria, dias: {} };
+          porMes[chave] = { slug, anoMes, categoria: categoriaFinal, dias: {} }; // 👈 usa a categoria CORRIGIDA no seletor
         }
         const bloco = porMes[chave];
         if (!bloco.dias[dia]) {
@@ -186,20 +254,22 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
         }
         seqPorDia[`${chave}__${dia}`] += 1;
 
-        // ID estável por (nome + turno + dia): reimportar sobrescreve o mesmo slot, sem duplicar
-        const idTurno = `${normalizarBusca(plantao.nome)}_${plantao.sigla}`;
+        // ID estável por (nome + turno + dia): reimportar sobrescreve o mesmo slot, sem duplicar.
+        // Usa nomeSalvo → extra cai em slot DISTINTO do regular (ex.: UALASBARCELOSEXTRA_DN).
+        const idTurno = `${normalizarBusca(nomeSalvo)}_${plantao.sigla}`;
 
         bloco.dias[dia][idTurno] = {
           id: idTurno,
           seq: seqPorDia[`${chave}__${dia}`],
           uid: "",                     // preenchido depois pelo perfil do usuário (match do login)
-          nome: plantao.nome,
-          busca: normalizarBusca(plantao.nome),
+          nome: nomeSalvo,             // com sufixo [EXTRA] — decodificado pelo GestorDashboard
+          busca: normalizarBusca(plantao.nome), // sem o sufixo — busca permanece limpa
           sigla: plantao.sigla,
           turno: plantao.turno,
           horario: plantao.horario,
           tipo: plantao.tipo,
-          categoria: plantao.categoria,
+          categoria: categoriaFinal,
+          extra: !!plantao.extra,
           status: "Confirmado",
           observacao: "",              // nº de atestado / motivo de falta, preenchido depois
           data: plantao.data,          // ISO (ex.: 2026-10-05)
@@ -241,6 +311,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
       setIsProcessing(false);
     }
   };
+
   const formatarDataBR = (dataISO) => {
     const [a, m, d] = String(dataISO || '').split('-');
     return (a && m && d) ? `${d}-${m}-${a}` : dataISO;
@@ -298,6 +369,23 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
             </button>
           </div>
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-h-60 overflow-y-auto">
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+            <p className="text-xs font-bold text-blue-800 mb-2">Confirme a profissão de cada aba:</p>
+            {[...new Set(previewData.map(p => p.aba))].map(aba => (
+              <div key={aba} className="flex items-center gap-2 mb-1.5">
+                <span className="text-xs font-bold text-slate-600 w-56 truncate" title={aba}>Aba: {aba}</span>
+                <select
+                  value={categoriasPorAba[aba] || ""}
+                  onChange={(e) => setCategoriasPorAba(prev => ({ ...prev, [aba]: e.target.value }))}
+                  className="p-1.5 border border-blue-300 rounded text-xs font-bold bg-white outline-none focus:border-blue-500"
+                >
+                  {Object.keys(CATEGORIA_SLUGS).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>            
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="text-slate-400 font-bold border-b border-slate-200">

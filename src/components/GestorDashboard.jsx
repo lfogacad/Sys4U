@@ -94,6 +94,7 @@ const GestorDashboard = ({ userProfile }) => {
   const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
   const [extraTurno, setExtraTurno] = useState('DN');
   const [extraNome, setExtraNome] = useState('');
+  const [extrasDoMes, setExtrasDoMes] = useState({});
 
   const [modalRelatorioEscalas, setModalRelatorioEscalas] = useState({ isOpen: false, texto: '' });
 
@@ -4937,7 +4938,7 @@ const imprimirRelatorioGeladeira = () => {
     buscarDados();
   }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
 
-  // Efeito: Buscar Grade Mensal — NOVA ESTRUTURA
+  // Efeito: Buscar Grade Mensal — NOVA ESTRUTURA (com separação de EXTRAS para a planilha)
   useEffect(() => {
     if (subViewEquipe !== 'escalas' || modoVisao !== 'mes') return;
     const buscarPlantoesMes = async () => {
@@ -4947,7 +4948,8 @@ const imprimirRelatorioGeladeira = () => {
         const slug = getSlugCategoria(categoriaAtiva);
         const mesRef = doc(db, "escalas", slug, "meses", anoMesAlvo);
         const snap = await getDoc(mesRef);
-        const dadosAgrupados = {};
+        const dadosAgrupados = {}; // Grade mensal completa (regulares + extras) — visual, como hoje
+        const dadosExtras = {};    // Somente plantões EXTRA — alimenta a aba "Extras" da planilha
         if (snap.exists()) {
           const dias = snap.data().dias || {};
           Object.keys(dias)
@@ -4955,14 +4957,16 @@ const imprimirRelatorioGeladeira = () => {
             .forEach((dia) => {
               Object.values(dias[dia] || {}).forEach((p) => {
                 let atribuicoes = [];
+                let isExtra = false;
                 let strNome = p.nome || "";
                 let siglaOriginal = p.sigla;
                 // ================================================
                 // DECODIFICADOR DE SUBSTITUIÇÕES E OCORRÊNCIAS
-                // (idêntico ao código original, agora por turno)
+                // (agora reconhece EXTRAS por sufixo OU flag)
                 // ================================================
-                if (strNome.includes('[EXTRA]')) {
+                if (strNome.includes('[EXTRA]') || p.extra === true) {
                   atribuicoes.push({ nome: strNome.replace('[EXTRA]', '').trim(), sigla: siglaOriginal });
+                  isExtra = true;
                 } else if (strNome.includes(' / ')) {
                   let partes = strNome.split(' / ');
                   partes.forEach(parte => {
@@ -4988,6 +4992,15 @@ const imprimirRelatorioGeladeira = () => {
                 atribuicoes.forEach(attr => {
                   const nomeFinal = attr.nome.toUpperCase();
                   const siglaFinal = attr.sigla;
+                  // 🚩 Extra → vai SOMENTE para a tabela separada
+                  if (isExtra) {
+                    if (!dadosExtras[nomeFinal]) dadosExtras[nomeFinal] = {};
+                    if (!dadosExtras[nomeFinal][dia]) dadosExtras[nomeFinal][dia] = [];
+                    if (!dadosExtras[nomeFinal][dia].includes(siglaFinal)) {
+                      dadosExtras[nomeFinal][dia].push(siglaFinal);
+                    }
+                    return; // não entra na grade regular
+                  }
                   if (!dadosAgrupados[nomeFinal]) dadosAgrupados[nomeFinal] = {};
                   if (!dadosAgrupados[nomeFinal][dia]) dadosAgrupados[nomeFinal][dia] = [];
                   if (!dadosAgrupados[nomeFinal][dia].includes(siglaFinal)) {
@@ -4997,20 +5010,21 @@ const imprimirRelatorioGeladeira = () => {
               });
             });
         }
-        // Ordena os turnos dentro do dia (mesma regra de antes)
-        const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6 };
-        Object.keys(dadosAgrupados).forEach(nome => {
-          Object.keys(dadosAgrupados[nome]).forEach(d => {
-            dadosAgrupados[nome][d] = dadosAgrupados[nome][d]
-              .sort((a, b) => (ordemTurnos[a] || 99) - (ordemTurnos[b] || 99))
-              .join('');
+        // Ordena turnos dentro do dia + nomes alfabéticos (mesma regra para as duas estruturas)
+        const ordenarEstrutura = (dados) => {
+          const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6 };
+          Object.keys(dados).forEach(nome => {
+            Object.keys(dados[nome]).forEach(d => {
+              dados[nome][d] = dados[nome][d]
+                .sort((a, b) => (ordemTurnos[a] || 99) - (ordemTurnos[b] || 99))
+                .join('');
+            });
           });
-        });
-        // Ordena os nomes em ordem alfabética
-        const dadosOrdenados = Object.keys(dadosAgrupados)
-          .sort()
-          .reduce((acc, key) => { acc[key] = dadosAgrupados[key]; return acc; }, {});
-        setPlantoesDoMes(dadosOrdenados);
+          return Object.keys(dados).sort()
+            .reduce((acc, key) => { acc[key] = dados[key]; return acc; }, {});
+        };
+        setPlantoesDoMes(ordenarEstrutura(dadosAgrupados));
+        setExtrasDoMes(ordenarEstrutura(dadosExtras));
       } catch (error) {
         console.error("Erro ao buscar a escala do mês:", error);
       } finally {
@@ -5019,6 +5033,7 @@ const imprimirRelatorioGeladeira = () => {
     };
     buscarPlantoesMes();
   }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
+
 
   const abrirModalTroca = (plantaoId, dia, turnoEHorario, nomeAtual, sigla) => {
     setPlantaoEditado({ 
@@ -12017,6 +12032,7 @@ const imprimirRelatorioGeladeira = () => {
                    </div>
                  </div>
 
+                 {/* ===== ESCALA REGULAR ===== */}
                  <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-50">
@@ -12054,8 +12070,55 @@ const imprimirRelatorioGeladeira = () => {
                     </tbody>
                  </table>
                  <p className="text-right text-[10px] text-slate-400 mt-4 font-bold uppercase">
-                   Total de {Object.keys(plantoesDoMes).length} profissionais com plantões ativos em {dataSelecionada.substring(0,7)}
+                   Total de {Object.keys(plantoesDoMes).length} profissionais com plantões regulares em {dataSelecionada.substring(0,7)}
                  </p>
+
+                 {/* ===== ESCALA DE EXTRAS (seção separada) ===== */}
+                 {!isLoadingMes && Object.keys(extrasDoMes).length > 0 && (
+                   <div className="mt-8">
+                     <div className="flex justify-between items-center mb-3 pb-2 border-b-2 border-amber-300">
+                       <h4 className="font-bold text-amber-700 text-sm flex items-center gap-1">
+                         🚩 Plantões Extras — {categoriaAtiva}
+                       </h4>
+                       <span className="text-xs font-bold text-amber-600 uppercase">
+                         {Object.keys(extrasDoMes).length} profissional(is) com extras
+                       </span>
+                     </div>
+                     <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-amber-50">
+                            <th className="p-2 border border-amber-200 font-bold text-amber-700 text-left">Profissional</th>
+                            {[...Array(31)].map((_, i) => <th key={i} className="p-1 border border-amber-200 font-bold text-amber-600 text-center w-8">{(i + 1).toString().padStart(2, '0')}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(extrasDoMes).map(([nome, dias]) => (
+                            <tr key={nome} className="hover:bg-amber-50/60 border-b border-amber-100 transition-colors">
+                              <td className="p-2 border-r border-amber-200 font-bold text-amber-800 whitespace-nowrap text-[10px] uppercase">{nome}</td>
+                              {[...Array(31)].map((_, i) => {
+                                const diaStr = (i + 1).toString().padStart(2, '0');
+                                const sigla = dias[diaStr]; 
+                                let corLetra = 'text-slate-300'; let corFundo = '';
+                                
+                                if (sigla) {
+                                  if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; } 
+                                  else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; } 
+                                  else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; } 
+                                  else { corLetra = 'text-slate-700'; corFundo = 'bg-slate-50'; }
+                                }
+                                
+                                return (
+                                  <td key={i} className={`p-1 border-r border-amber-100 text-center font-black ${corLetra} ${corFundo}`}>
+                                    {sigla || '-'}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                     </table>
+                   </div>
+                 )}
               </div>
             )}
           </div>
