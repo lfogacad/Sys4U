@@ -4958,8 +4958,8 @@ const imprimirRelatorioGeladeira = () => {
               Object.values(dias[dia] || {}).forEach((p) => {
                 let atribuicoes = [];
                 let isExtra = false;
-                let strNome = p.nome || "";
-                let siglaOriginal = p.sigla;
+                let strNome = String(p.nome ?? '');   // 🛡️ nunca undefined, mesmo em slots antigos
+                let siglaOriginal = String(p.sigla ?? '');
                 // ================================================
                 // DECODIFICADOR DE SUBSTITUIÇÕES E OCORRÊNCIAS
                 // (agora reconhece EXTRAS por sufixo OU flag)
@@ -11968,6 +11968,11 @@ const imprimirRelatorioGeladeira = () => {
                     {isLoadingPlantoes && <div className="p-8 text-center text-slate-400 font-bold animate-pulse bg-slate-50 rounded-xl border border-dashed border-slate-200"><Loader2 className="animate-spin inline mr-2" size={20} /> A carregar a escala da base de dados...</div>}
                     {!isLoadingPlantoes && plantoesDoDia.length === 0 && <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">Nenhum profissional escalado para este dia nesta categoria.</div>}
                     {!isLoadingPlantoes && plantoesDoDia.map((plantao) => {
+                      // 🛡️ Blindagem: slots sem nome (formato antigo/criação manual) não podem quebrar o render
+                      if (!plantao || !plantao.nome) {
+                        console.warn('[SYS4U] Slot sem nome ignorado na vista diária:', plantao);
+                        return null;
+                      }
                       let corBg = 'bg-slate-50'; let corBorder = 'border-slate-100'; let corText = 'text-slate-600';
                       
                       // Ajuste de cores baseado na sigla ou se for EXTRA/FALTA/ATESTADO
