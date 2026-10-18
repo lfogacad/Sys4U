@@ -4957,18 +4957,20 @@ const imprimirRelatorioGeladeira = () => {
             .forEach((dia) => {
               Object.values(dias[dia] || {}).forEach((p) => {
                 let atribuicoes = [];
-                let isExtra = false;
-                let strNome = String(p.nome ?? '');   // 🛡️ nunca undefined, mesmo em slots antigos
+                let strNome = String(p.nome ?? '');
                 let siglaOriginal = String(p.sigla ?? '');
+
                 // ================================================
-                // DECODIFICADOR DE SUBSTITUIÇÕES E OCORRÊNCIAS
-                // (agora reconhece EXTRAS por sufixo OU flag)
+                // DECODIFICADOR DE SUBSTITUIÇÕES, OCORRÊNCIAS E EXTRAS
+                // 🚩 Extra = flag (p.extra) OU tag [EXTRA]. A tag é removida
+                // ANTES do parse — assim nomes compostos de extras
+                // ("X (D) / Y (N)") continuam decodificáveis parte a parte.
                 // ================================================
-                if (strNome.includes('[EXTRA]') || p.extra === true) {
-                  atribuicoes.push({ nome: strNome.replace('[EXTRA]', '').trim(), sigla: siglaOriginal });
-                  isExtra = true;
-                } else if (strNome.includes(' / ')) {
-                  let partes = strNome.split(' / ');
+                const ehExtraSlot = p.extra === true || strNome.includes('[EXTRA]');
+                const nomeBase = strNome.replace('[EXTRA]', '').trim();
+
+                if (nomeBase.includes(' / ')) {
+                  let partes = nomeBase.split(' / ');
                   partes.forEach(parte => {
                     let match = parte.match(/(.+?)\s*\((D|N)\)/);
                     if (match) {
@@ -4979,16 +4981,18 @@ const imprimirRelatorioGeladeira = () => {
                       }
                     }
                   });
-                } else if (strNome.includes('(Cobrindo:')) {
-                  let match = strNome.match(/(.+?)\s*\(Cobrindo:/);
+                } else if (nomeBase.includes('(Cobrindo:')) {
+                  let match = nomeBase.match(/(.+?)\s*\(Cobrindo:/);
                   if (match) atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
-                } else if (strNome.includes('[EXCLUÍDO]')) {
+                } else if (nomeBase.includes('[EXCLUÍDO]')) {
                   // buraco vazio — só fica no relatório
-                } else if (strNome.includes('[FALTOU]') || strNome.includes('[ATESTADO]')) {
+                } else if (nomeBase.includes('[FALTOU]') || nomeBase.includes('[ATESTADO]')) {
                   // buraco vazio
                 } else {
-                  atribuicoes.push({ nome: strNome.trim(), sigla: siglaOriginal });
+                  atribuicoes.push({ nome: nomeBase, sigla: siglaOriginal });
                 }
+
+                const isExtra = ehExtraSlot;
                 atribuicoes.forEach(attr => {
                   const nomeFinal = attr.nome.toUpperCase();
                   const siglaFinal = attr.sigla;
@@ -5034,91 +5038,126 @@ const imprimirRelatorioGeladeira = () => {
     buscarPlantoesMes();
   }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
 
+  // ======================================================
+  // 🧼 LAVA JATO COMPLETO DE TAGS
+  // Remove TODAS as tags de ocorrências/trocas anteriores,
+  // inclusive [EXTRA] (que antes ficava preso no nome).
+  // ======================================================
+  const limparNomeTags = (nome) =>
+    String(nome || '')
+      .replace(/\[FALTOU\]/g, '')
+      .replace(/\[ATESTADO\]/g, '')
+      .replace(/\[EXCLUÍDO\]/g, '')
+      .replace(/\[EXTRA\]/g, '')
+      .replace(/\(D\)/g, '')
+      .replace(/\(N\)/g, '')
+      .split('/')[0]
+      .trim();
 
-  const abrirModalTroca = (plantaoId, dia, turnoEHorario, nomeAtual, sigla) => {
-    setPlantaoEditado({ 
+  const abrirModalTroca = (plantaoId, dia, turnoEHorario, nomeAtual, sigla, extra = false) => {
+    setPlantaoEditado({
       id: plantaoId,
       dia,
-      turno: turnoEHorario, 
+      turno: turnoEHorario,
       nomeAtual: nomeAtual,
-      sigla: sigla
+      sigla: sigla,
+      // 🚩 Detecção dupla: flag do slot OU tag [EXTRA] legada no nome
+      extra: extra === true || String(nomeAtual || '').includes('[EXTRA]')
     });
-    
+
     setNovoPlantonista("");
     setTipoTrocaPlantao('Total'); 
-    setStatusPlantonista('Normal'); // Reseta para Normal ao abrir
+    setStatusPlantonista('Normal'); 
     setIsEditModalOpen(true);
   };
 
   const salvarTrocaPlantao = async () => {
-    // Validação da Troca Normal
     console.log("RAIO-X DO PLANTAO:", plantaoEditado);
+    if (!plantaoEditado?.id) return;
     if (statusPlantonista === 'Normal' && !novoPlantonista.trim()) {
       alert("Por favor, selecione o nome do novo plantonista.");
       return;
     }
 
+    // 🚩 Este slot é EXTRA? (flag nova OU tag legada no nome)
+    const ehExtra = plantaoEditado.extra === true || String(plantaoEditado.nomeAtual || '').includes('[EXTRA]');
+
     // ======================================================
-    // 1. LAVA JATO DE TAGS (Evita o acúmulo de [FALTOU] [ATESTADO])
-    // Pega o nome atual e arranca qualquer tag ou barra anterior
+    // 1. LAVA JATO COMPLETO — agora remove também [EXTRA]
     // ======================================================
-    let nomeLimpo = plantaoEditado.nomeAtual
-      .replace(/\[FALTOU\]/g, '')
-      .replace(/\[ATESTADO\]/g, '')
-      .replace(/\(D\)/g, '')
-      .replace(/\(N\)/g, '')
-      .split('/')[0] // Se for uma troca antiga fatiada (Ex: João / Maria), pega só o primeiro para resetar
-      .trim();
+    const nomeLimpo = limparNomeTags(plantaoEditado.nomeAtual);
 
     let nomeFinal = "";
 
     // ======================================================
-    // 2. APLICA A NOVA REGRA SIMPLIFICADA
+    // 2. REGRA SIMPLIFICADA
     // ======================================================
     if (statusPlantonista === 'Falta') {
-      // Falta é irreversível para o plantão todo na visão desse bloco
-      nomeFinal = `${nomeLimpo} [FALTOU]`; 
+      nomeFinal = `${nomeLimpo} [FALTOU]`;
     } 
     else if (statusPlantonista === 'Atestado') {
-      // Atestado pode ser parcial
       if (tipoTrocaPlantao === 'Dia') nomeFinal = `${nomeLimpo} [ATESTADO] (D) / ${nomeLimpo} (N)`;
       else if (tipoTrocaPlantao === 'Noite') nomeFinal = `${nomeLimpo} (D) / ${nomeLimpo} [ATESTADO] (N)`;
-      else nomeFinal = `${nomeLimpo} [ATESTADO]`; // Total
+      else nomeFinal = `${nomeLimpo} [ATESTADO]`;
     } 
-    else if (statusPlantonista === 'Normal') {
-      // Troca simples de nomes
+    else {
       const novo = novoPlantonista.trim();
       if (tipoTrocaPlantao === 'Dia') nomeFinal = `${novo} (D) / ${nomeLimpo} (N)`;
       else if (tipoTrocaPlantao === 'Noite') nomeFinal = `${nomeLimpo} (D) / ${novo} (N)`;
       else nomeFinal = novo; // Total
     }
 
+    // 🚩 EXTRA pós-troca:
+    //   • Total (nome simples) → mantém o sufixo [EXTRA] visível
+    //   • Parcial (nome composto) → SEM tag no nome (quebraria o parse " / ");
+    //     a classificação fica garantida pela flag `extra` gravada abaixo
+    if (ehExtra && statusPlantonista === 'Normal' && tipoTrocaPlantao === 'Total') {
+      nomeFinal = `${nomeFinal} [EXTRA]`;
+    }
+
     // ======================================================
-    // 3. ATUALIZA A TELA E O BANCO
+    // 3. ATUALIZA A TELA
     // ======================================================
     setPlantoesDoDia(listaAnterior => 
       listaAnterior.map(plantao => {
-        if (plantao.id === plantaoEditado.id) return { ...plantao, nome: nomeFinal };
+        if (plantao.id === plantaoEditado.id) return { ...plantao, nome: nomeFinal, extra: ehExtra };
         return plantao;
       })
     );
 
+    // ======================================================
+    // 4. GRAVA SÓ OS CAMPOS AFETADOS (setDoc + merge profundo)
+    // updateDoc com caminho pontilhado ("dias.05.ID.nome") quebra se o ID
+    // contiver [ ] . etc. — o setDoc com merge grava apenas este slot,
+    // preservando todo o resto do documento mensal.
+    // ======================================================
     try {
       const anoMes = dataSelecionada.substring(0, 7);
       const dia = plantaoEditado.dia || dataSelecionada.split('-')[2];
       const slug = getSlugCategoria(categoriaAtiva);
       const mesRef = doc(db, "escalas", slug, "meses", anoMes);
       const idTurno = plantaoEditado.id;
-      // Grava SÓ os campos do turno afetado — nenhum outro dia/turno é tocado
-      await updateDoc(mesRef, {
-        [`dias.${dia}.${idTurno}.nome`]: nomeFinal,
-        [`dias.${dia}.${idTurno}.nomeOriginal`]: plantaoEditado.nomeAtual,
-        [`dias.${dia}.${idTurno}.statusAlteracao`]: statusPlantonista,
-        [`dias.${dia}.${idTurno}.modificadoEm`]: new Date().toISOString()
-      });
+
+      const camposSlot = {
+        nome: nomeFinal,
+        nomeOriginal: plantaoEditado.nomeAtual,
+        statusAlteracao: statusPlantonista,
+        modificadoEm: new Date().toISOString(),
+        extra: ehExtra
+      };
+      // Troca Total "Normal": o slot passa a pertencer ao novo plantonista
+      if (statusPlantonista === 'Normal' && tipoTrocaPlantao === 'Total') {
+        camposSlot.busca = normalizarBuscaEscala(novoPlantonista.trim());
+        camposSlot.uid = ""; // libera o rematch do login para o novo plantonista
+      }
+
+      await setDoc(mesRef, {
+        dias: { [dia]: { [idTurno]: camposSlot } }
+      }, { merge: true });
       console.log("✅ Atualização salva no Firebase com sucesso!");
     } catch (error) {
       console.error("❌ Erro ao salvar troca no Firebase:", error);
+      alert("Erro ao salvar a troca. Verifique o console e tente novamente.");
     }
 
     setIsEditModalOpen(false);
@@ -5133,7 +5172,11 @@ const imprimirRelatorioGeladeira = () => {
     let horario = extraTurno === 'DN' ? '07:00 às 07:00' : extraTurno === 'D' ? '07:00 às 19:00' : '19:00 às 07:00';
     let turnoFormatado = extraTurno === 'DN' ? 'Plantão 24h' : extraTurno === 'D' ? 'Plantão Dia' : 'Plantão Noite';
 
-    const novoId = `${normalizarBuscaEscala(extraNome.trim())}_EXTRA_${Date.now()}`;
+    const nomeBase = extraNome.trim().toUpperCase();
+    const novoId = `${normalizarBuscaEscala(nomeBase)}_EXTRA_${Date.now()}`;
+
+    // 🆕 Ordena o extra como último card do dia
+    const proximoSeq = plantoesDoDia.reduce((m, p) => Math.max(m, p.seq || 0), 0) + 1;
 
     const novoPlantaoDB = {
       id: novoId,
@@ -5143,18 +5186,20 @@ const imprimirRelatorioGeladeira = () => {
       categoria: categoriaAtiva,
       data: dataSelecionada,
       horario: horario,
-      nome: `${extraNome.trim().toUpperCase()} [EXTRA]`,
+      nome: `${nomeBase} [EXTRA]`,
       sigla: extraTurno,
       status: "Confirmado",
       tipo: "plantao_extra",
-      turno: turnoFormatado
+      extra: true,        // 🚩 flag — classificação independe da tag no nome
+      seq: proximoSeq,    // 🆕 ordem de exibição dentro do dia
+      observacao: ""
     };
 
     // 1. ATUALIZA A TELA INSTANTANEAMENTE
     const diaExtra = dataSelecionada.split('-')[2];
     setPlantoesDoDia([...plantoesDoDia, { id: novoId, dia: diaExtra, ...novoPlantaoDB }]);
 
-    // 2. GRAVA SÓ O TURNO EXTRA no documento do mês (merge preserva os demais dias)
+    // 2. GRAVA SÓ O TURNO EXTRA (merge profundo preserva os demais dias/turnos)
     try {
       const anoMes = dataSelecionada.substring(0, 7);
       const slug = getSlugCategoria(categoriaAtiva);
@@ -5165,10 +5210,11 @@ const imprimirRelatorioGeladeira = () => {
         mes: parseInt(anoMes.split('-')[1], 10),
         ultimaAtualizacao: new Date().toISOString(),
         dias: { [diaExtra]: { [novoId]: novoPlantaoDB } }
-      }, { merge: true }); // merge:true funde o mapa dias — só adiciona este turno
+      }, { merge: true });
       console.log("✅ Plantonista Extra gravado no documento mensal!");
     } catch (error) {
       console.error("❌ Erro ao criar Extra no Firebase:", error);
+      alert("Erro ao gravar o extra. Verifique o console e tente novamente.");
     }
     setIsExtraModalOpen(false);
     setExtraNome("");
@@ -5179,18 +5225,13 @@ const imprimirRelatorioGeladeira = () => {
     console.log("RAIO-X EXCLUSÃO:", { id: plantaoEditado?.id, sigla: plantaoEditado?.sigla, turno: plantaoEditado?.turno, tipoExclusao: tipoExclusaoPlantao });
     if (!plantaoEditado?.id) return;
 
-    // Limpa o nome atual (remove tags e desmembramentos anteriores)
-    let nomeLimpo = plantaoEditado.nomeAtual
-      .replace(/\[FALTOU\]/g, '')
-      .replace(/\[ATESTADO\]/g, '')
-      .replace(/\[EXCLUÍDO\]/g, '')
-      .replace(/\(D\)/g, '')
-      .replace(/\(N\)/g, '')
-      .split('/')[0]
-      .trim();
-
-    // Monta o nome final conforme o período escolhido no seletor INDEPENDENTE de exclusão
+    const ehExtra = plantaoEditado.extra === true || String(plantaoEditado.nomeAtual || '').includes('[EXTRA]');
     const ehDN = plantaoEditado.sigla === 'DN';
+
+    // 🧼 Lava jato completo (remove [FALTOU] [ATESTADO] [EXCLUÍDO] [EXTRA] e desmembramentos)
+    const nomeLimpo = limparNomeTags(plantaoEditado.nomeAtual);
+
+    // Monta o nome final conforme o período escolhido no seletor
     let nomeFinal;
     if (ehDN && tipoExclusaoPlantao === 'Dia') {
       nomeFinal = `${nomeLimpo} [EXCLUÍDO] (D) / ${nomeLimpo} (N)`;
@@ -5211,14 +5252,19 @@ const imprimirRelatorioGeladeira = () => {
       const slug = getSlugCategoria(categoriaAtiva);
       const mesRef = doc(db, "escalas", slug, "meses", anoMes);
       const idTurno = plantaoEditado.id;
-      await updateDoc(mesRef, {
-        [`dias.${dia}.${idTurno}.nome`]: nomeFinal,
-        [`dias.${dia}.${idTurno}.nomeOriginal`]: plantaoEditado.nomeAtual,
-        [`dias.${dia}.${idTurno}.statusAlteracao`]: 'Excluído',
-        [`dias.${dia}.${idTurno}.modificadoEm`]: new Date().toISOString()
-      });
+
+      await setDoc(mesRef, {
+        dias: { [dia]: { [idTurno]: {
+          nome: nomeFinal,
+          nomeOriginal: plantaoEditado.nomeAtual,
+          statusAlteracao: 'Excluído',
+          modificadoEm: new Date().toISOString(),
+          extra: ehExtra
+        } } }
+      }, { merge: true });
+
       // Exclusão TOTAL: remove o card da escala do dia
-      // Exclusão PARCIAL: atualiza o nome e MANTÉM o card (mostra D excluído, N ativo)
+      // Exclusão PARCIAL (DN): mantém o card mostrando o período excluído
       if (ehDN && tipoExclusaoPlantao !== 'Total') {
         setPlantoesDoDia(listaAnterior =>
           listaAnterior.map(plantao =>
@@ -11978,7 +12024,7 @@ const imprimirRelatorioGeladeira = () => {
                       // Ajuste de cores baseado na sigla ou se for EXTRA/FALTA/ATESTADO
                       if (plantao.nome.includes('[FALTOU]')) { corBg = 'bg-red-50'; corBorder = 'border-red-200'; corText = 'text-red-600'; }
                       else if (plantao.nome.includes('[ATESTADO]')) { corBg = 'bg-orange-50'; corBorder = 'border-orange-200'; corText = 'text-orange-600'; }
-                      else if (plantao.nome.includes('[EXTRA]') || plantao.sigla === 'V') { corBg = 'bg-emerald-50'; corBorder = 'border-emerald-100'; corText = 'text-emerald-600'; }
+                      else if (plantao.nome.includes('[EXTRA]') || plantao.extra === true || plantao.sigla === 'V') { corBg = 'bg-emerald-50'; corBorder = 'border-emerald-100'; corText = 'text-emerald-600'; }
                       else if (plantao.sigla === 'N') { corBg = 'bg-indigo-50'; corBorder = 'border-indigo-100'; corText = 'text-indigo-600'; }
                       else if (plantao.sigla?.includes('D') || plantao.sigla?.includes('M') || plantao.sigla?.includes('T')) { corBg = 'bg-blue-50'; corBorder = 'border-blue-100'; corText = 'text-blue-600'; }
 
@@ -11986,7 +12032,7 @@ const imprimirRelatorioGeladeira = () => {
                         <div key={plantao.id} className={`p-4 ${corBg} border ${corBorder} rounded-xl relative group`}>
                           <span className={`text-[10px] font-bold ${corText} uppercase`}>{plantao.turno} ({plantao.horario})</span>
                           <div className="text-lg font-black text-slate-800 mt-1">{plantao.nome}</div>
-                          <button onClick={() => abrirModalTroca(plantao.id, plantao.dia, `${plantao.turno} (${plantao.horario})`, plantao.nome, plantao.sigla)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Gerenciar Plantonista">
+                          <button onClick={() => abrirModalTroca(plantao.id, plantao.dia, `${plantao.turno} (${plantao.horario})`, plantao.nome, plantao.sigla, plantao.extra)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Gerenciar Plantonista">
                             <Settings size={16} />
                           </button>
                         </div>

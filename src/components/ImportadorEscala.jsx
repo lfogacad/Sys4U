@@ -256,7 +256,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
 
         // ID estável por (nome + turno + dia): reimportar sobrescreve o mesmo slot, sem duplicar.
         // Usa nomeSalvo → extra cai em slot DISTINTO do regular (ex.: UALASBARCELOSEXTRA_DN).
-        const idTurno = `${normalizarBusca(nomeSalvo)}_${plantao.sigla}`;
+        const idTurno = `${normalizarBusca(plantao.nome)}${plantao.extra ? '_EX' : ''}_${plantao.sigla}`;
 
         bloco.dias[dia][idTurno] = {
           id: idTurno,
