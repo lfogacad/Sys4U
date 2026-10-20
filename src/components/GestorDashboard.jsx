@@ -15,7 +15,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ReferenceLine, Label  
 } from 'recharts';
-import { collection, onSnapshot, getDocs, getDoc, doc, deleteDoc, setDoc, orderBy, limit, updateDoc, query, where } from "firebase/firestore";
+import { collection, onSnapshot, getDocs, getDoc, doc, deleteDoc, setDoc, orderBy, limit, updateDoc, 
+         query, where, deleteField } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { gerarSnapshotLeitos, listarSnapshots, restaurarSnapshot } from '../utils/backupLeitos';
 
@@ -63,6 +64,67 @@ const normalizarBuscaEscala = (nome) =>
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, '');
 
+// ===== HELPERS DE CALENDÁRIO DA GRADE MENSAL =====
+// Nº real de dias do mês: nov=30, dez=31, fev=28 (29 em bissexto)
+const getDiasNoMes = (anoMes) => {
+  const [ano, mes] = String(anoMes).split('-').map(Number);
+  return new Date(ano, mes, 0).getDate(); // dia 0 do mês seguinte = último dia do mês atual
+};
+
+// Sigla do dia da semana (DOM..SÁB) para um dia do mês
+const getDiaSemana = (anoMes, diaStr) => {
+  const [ano, mes] = String(anoMes).split('-').map(Number);
+  const d = new Date(ano, mes - 1, parseInt(diaStr, 10));
+  return ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'][d.getDay()];
+};
+
+// ===== SOMA DE HORAS DE PLANTÃO DO MÊS =====
+// Correspondência: D, N = 12h · DN = 24h · M, T, V = 6h
+// Combinações somam as partes (VT=12h, VN=18h, TN=18h) — valores
+// já calculados no DICIONARIO_SIGLAS_DASH.horas. Célula vazia não soma.
+const somarHorasMes = (dias) => {
+  let total = 0;
+  Object.values(dias || {}).forEach(sigla => {
+    if (!sigla) return;
+    const turno = DICIONARIO_SIGLAS_DASH[sigla];
+    if (turno) total += turno.horas;
+  });
+  return total;
+};
+
+// ===== DICIONÁRIO DE SIGLAS PARA EDIÇÃO NA GRADE (mesma lógica do importador) =====
+const DICIONARIO_SIGLAS_DASH = (() => {
+  const base = {
+    'D': { nome: 'Plantão Dia',   inicio: '07:00', fim: '19:00', horas: 12, tipo: 'plantonista' },
+    'N': { nome: 'Plantão Noite', inicio: '19:00', fim: '07:00', horas: 12, tipo: 'plantonista' },
+    'M': { nome: 'Plantão Manhã', inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'plantonista' },
+    'T': { nome: 'Plantão Tarde', inicio: '13:00', fim: '19:00', horas: 6,  tipo: 'plantonista' },
+    'V': { nome: 'Visita Médica', inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'visita' },
+  };
+  const dic = {
+    ...base,
+    'DN': { nome: 'Plantão 24h', inicio: '07:00', fim: '07:00', horas: 24, tipo: 'plantonista' },
+    'ND': { nome: 'Plantão 24h', inicio: '07:00', fim: '07:00', horas: 24, tipo: 'plantonista' },
+  };
+  // Gera automaticamente todas as permutações de pares (TV, VT, TN, MT, DV...)
+  Object.keys(base).forEach(a => Object.keys(base).forEach(b => {
+    if (a === b || dic[a + b]) return;
+    const partes = [base[a], base[b]].sort((x, y) => x.inicio.localeCompare(y.inicio));
+    dic[a + b] = {
+      nome: partes.map(p => p.nome).join(' + '),
+      inicio: partes[0].inicio,
+      fim: partes[partes.length - 1].fim,
+      horas: base[a].horas + base[b].horas,
+      tipo: (base[a].tipo === 'visita' && base[b].tipo === 'visita') ? 'visita' : 'plantonista'
+    };
+  }));
+  return dic;
+})();
+
+// Opções do select de célula — apenas as siglas operacionais (o dicionário completo
+// permanece para lookup de horário/turno ao gravar VT, VN, TN etc.)
+const OPCOES_SIGLA_DASH = ['D', 'N', 'DN', 'V', 'M', 'T', 'VT', 'VN', 'MN', 'TN'];
+
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
   // Controle de navegação principal (hub, indicadores, tendencias, qualidade, auditoria, equipe)
@@ -95,6 +157,10 @@ const GestorDashboard = ({ userProfile }) => {
   const [extraTurno, setExtraTurno] = useState('DN');
   const [extraNome, setExtraNome] = useState('');
   const [extrasDoMes, setExtrasDoMes] = useState({});
+  const [slotsCruPorDia, setSlotsCruPorDia] = useState({});   // slots crus por dia — base da edição de célula
+  const [refreshChave, setRefreshChave] = useState(0);        // 🔄 dispara re-busca mensal + diária após edição
+  const [isGerarEscalaModalOpen, setIsGerarEscalaModalOpen] = useState(false);
+  const [servidoresGerados, setServidoresGerados] = useState([]);  
 
   const [modalRelatorioEscalas, setModalRelatorioEscalas] = useState({ isOpen: false, texto: '' });
 
@@ -4915,6 +4981,8 @@ const imprimirRelatorioGeladeira = () => {
               ...turno,
               categoria: categoriaCanonica
             };
+            // 🛡️ Placeholder de linha gerada do zero (sigla vazia) não vira card na vista diária
+            if (!dados.sigla) return;
             // 🚫 PULA exclusão TOTAL (sem desmembramento Dia/Noite) — mesma regra de antes
             const nomeEscala = dados.nome || "";
             const ehExclusaoTotal =
@@ -4936,7 +5004,7 @@ const imprimirRelatorioGeladeira = () => {
       }
     };
     buscarDados();
-  }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
+  }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao, refreshChave]);
 
   // Efeito: Buscar Grade Mensal — NOVA ESTRUTURA (com separação de EXTRAS para a planilha)
   useEffect(() => {
@@ -4948,6 +5016,7 @@ const imprimirRelatorioGeladeira = () => {
         const slug = getSlugCategoria(categoriaAtiva);
         const mesRef = doc(db, "escalas", slug, "meses", anoMesAlvo);
         const snap = await getDoc(mesRef);
+        const slotsCru = {}; // 🆕 mapa cru { dia: { idTurno: slot } } — base para editar células (regulares E extras)
         const dadosAgrupados = {}; // Grade mensal completa (regulares + extras) — visual, como hoje
         const dadosExtras = {};    // Somente plantões EXTRA — alimenta a aba "Extras" da planilha
         if (snap.exists()) {
@@ -4955,6 +5024,7 @@ const imprimirRelatorioGeladeira = () => {
           Object.keys(dias)
             .sort((a, b) => parseInt(a, 10) - parseInt(b, 10)) // 01..31
             .forEach((dia) => {
+              slotsCru[dia] = dias[dia] || {}; // 🆕 guarda os slots crus deste dia
               Object.values(dias[dia] || {}).forEach((p) => {
                 let atribuicoes = [];
                 let strNome = String(p.nome ?? '');
@@ -5029,6 +5099,7 @@ const imprimirRelatorioGeladeira = () => {
         };
         setPlantoesDoMes(ordenarEstrutura(dadosAgrupados));
         setExtrasDoMes(ordenarEstrutura(dadosExtras));
+        setSlotsCruPorDia(slotsCru); // 🆕 alimenta a edição de células (regular e extras)
       } catch (error) {
         console.error("Erro ao buscar a escala do mês:", error);
       } finally {
@@ -5036,7 +5107,7 @@ const imprimirRelatorioGeladeira = () => {
       }
     };
     buscarPlantoesMes();
-  }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao]);
+  }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao, refreshChave]); // 🆕 refreshChave
 
   // ======================================================
   // 🧼 LAVA JATO COMPLETO DE TAGS
@@ -5069,6 +5140,392 @@ const imprimirRelatorioGeladeira = () => {
     setTipoTrocaPlantao('Total'); 
     setStatusPlantonista('Normal'); 
     setIsEditModalOpen(true);
+  };
+
+  // ===== GERAR ESCALA DO ZERO (merge: nomes entram com células vazias) =====
+  const gerarEscalaZero = async () => {
+    const nomes = servidoresGerados.map(n => String(n || '').trim()).filter(Boolean);
+    if (nomes.length === 0) { alert("Adicione pelo menos um servidor."); return; }
+    if (!window.confirm(`Gerar escala de ${categoriaAtiva} para ${dataSelecionada.substring(0, 7)}?\n\nOs nomes selecionados entrarão na grade com células vazias. Os dias já gravados NÃO são alterados (mesclagem).`)) return;
+
+    setIsLoadingMes(true);
+    try {
+      const anoMes = dataSelecionada.substring(0, 7);
+      const dia01 = `${anoMes}-01`;
+      const slug = getSlugCategoria(categoriaAtiva);
+      const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+
+      const novosSlots = {};
+      nomes.forEach(nome => {
+        const nomeUpper = nome.toUpperCase();
+        if (plantoesDoMes[nomeUpper]) return; // já está na grade → merge não duplica
+        const buscaP = normalizarBuscaEscala(nome);
+        const idPlaceholder = `${buscaP}_GERADO`;
+        novosSlots[idPlaceholder] = {
+          id: idPlaceholder,
+          seq: 0,
+          uid: "",
+          busca: buscaP,
+          cadastradoEm: new Date().toISOString(),
+          categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+          data: dia01,
+          horario: "",
+          nome: nomeUpper,
+          sigla: "",       // célula vazia — a linha existe, os dias ficam a preencher
+          status: "Confirmado",
+          tipo: "plantonista",
+          turno: "",
+          extra: false,
+          gerado: true,    // marcador do placeholder que sustenta a linha na grade
+          observacao: ""
+        };
+      });
+
+      if (Object.keys(novosSlots).length === 0) {
+        alert("Todos os servidores selecionados já estão na grade deste mês.");
+        setIsLoadingMes(false);
+        return;
+      }
+
+      await setDoc(mesRef, {
+        categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+        ano: parseInt(anoMes.split('-')[0], 10),
+        mes: parseInt(anoMes.split('-')[1], 10),
+        ultimaAtualizacao: new Date().toISOString(),
+        dias: { "01": novosSlots } // merge profundo: adiciona aos slots do dia 01 sem apagar nada
+      }, { merge: true });
+
+      setIsGerarEscalaModalOpen(false);
+      setServidoresGerados([]);
+      setRefreshChave(k => k + 1);
+    } catch (error) {
+      console.error("Erro ao gerar escala do zero:", error);
+      alert("Erro ao gerar a escala. Verifique o console.");
+    } finally {
+      setIsLoadingMes(false);
+    }
+  };
+
+  // Verifica se um slot cru pertence a uma pessoa (nome normalizado), tolerando no
+  // resíduo apenas tags/períodos conhecidos. Slots compostos ("X (D) / Y (N)") e
+  // "(Cobrindo:)" ficam de fora — o nome da outra pessoa sobra no resíduo.
+  const slotPertenceAPessoa = (slot, buscaP) => {
+    const norm = normalizarBuscaEscala(slot?.nome || '');
+    if (!buscaP || !norm.includes(buscaP)) return false;
+    const residuo = norm.split(buscaP).join('')
+      .replace(/\(D\)/g, '').replace(/\(N\)/g, '')
+      .replace(/\[FALTOU\]/g, '').replace(/\[ATESTADO\]/g, '')
+      .replace(/\[EXCLU[IÍ]DO\]/g, '').replace(/\[EXTRA\]/g, '')
+      .replace(/\(COBRINDO:/g, '')
+      .replace(/[()/:.\-\s]/g, '');
+    return residuo.length === 0;
+  };
+
+  // 🚩 Predicado: o slot é EXTRA? (flag nova OU tag legada no nome)
+  const isSlotExtra = (s) =>
+    s?.extra === true || String(s?.nome || '').includes('[EXTRA]');
+
+  // ===== SALVAR EDIÇÃO DIRETA DE CÉLULA NA TABELA DE EXTRAS =====
+  const salvarEdicaoCelulaExtra = async (nomeProfissional, dia, siglasAtuais, novaSigla) => {
+    if (novaSigla === siglasAtuais) return;
+
+    const buscaP = normalizarBuscaEscala(nomeProfissional);
+    const slotsDia = slotsCruPorDia[dia] || {};
+
+    // Slots extras da pessoa com sigla REAL — o placeholder gerado (sigla '')
+    // NUNCA é apagado: é ele que mantém a linha viva com células vazias.
+    const slotsAfetados = Object.entries(slotsDia)
+      .filter(([, s]) => slotPertenceAPessoa(s, buscaP))
+      .filter(([, s]) => isSlotExtra(s))
+      .filter(([, s]) => String(s?.sigla || '') !== '');
+
+    if (siglasAtuais && slotsAfetados.length === 0) {
+      alert("Este extra tem substituições/ocorrências manuais. Use a vista 'Dia' para editá-lo com segurança.");
+      setRefreshChave(k => k + 1);
+      return;
+    }
+
+    setIsLoadingMes(true);
+    try {
+      const anoMes = dataSelecionada.substring(0, 7);
+      const slug = getSlugCategoria(categoriaAtiva);
+      const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+
+      const dadosGravacao = {};
+      // 1. Remove os slots extras antigos que formavam o valor atual da célula
+      slotsAfetados.forEach(([id]) => { dadosGravacao[id] = deleteField(); });
+
+      // 2. Grava o novo slot EXTRA determinístico {nome}_EX_{sigla}
+      if (novaSigla) {
+        const t = DICIONARIO_SIGLAS_DASH[novaSigla] || { nome: novaSigla, inicio: '', fim: '', tipo: 'plantonista' };
+        const idNovo = `${buscaP}_EX_${novaSigla}`;
+        dadosGravacao[idNovo] = {
+          id: idNovo,
+          seq: Object.keys(slotsDia).length + 1,
+          uid: "",
+          busca: buscaP,
+          cadastradoEm: new Date().toISOString(),
+          categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+          data: `${anoMes}-${dia}`,
+          horario: `${t.inicio} às ${t.fim}`,
+          nome: `${nomeProfissional.toUpperCase()} [EXTRA]`,
+          sigla: novaSigla,
+          status: "Confirmado",
+          tipo: t.tipo,
+          turno: t.nome,
+          extra: true,
+          observacao: "",
+          editadoNaGrade: true,
+          modificadoEm: new Date().toISOString()
+        };
+      }
+
+      await setDoc(mesRef, {
+        ultimaAtualizacao: new Date().toISOString(),
+        dias: { [dia]: dadosGravacao }
+      }, { merge: true });
+
+      setRefreshChave(k => k + 1); // 🔄 re-busca mensal + diária automaticamente
+    } catch (error) {
+      console.error("Erro ao editar célula da tabela de extras:", error);
+      alert("Erro ao salvar a edição. Verifique o console.");
+      setRefreshChave(k => k + 1);
+    } finally {
+      setIsLoadingMes(false);
+    }
+  };
+
+  // ===== CRIAR LINHA NA TABELA PRINCIPAL (placeholder com células vazias) =====
+  const adicionarLinhaRegular = async (nomeProfissional) => {
+    if (!nomeProfissional) return;
+    const buscaP = normalizarBuscaEscala(nomeProfissional);
+    const anoMes = dataSelecionada.substring(0, 7);
+    const slug = getSlugCategoria(categoriaAtiva);
+    const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+    const idPlaceholder = `${buscaP}_GERADO`;
+
+    try {
+      await setDoc(mesRef, {
+        categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+        ano: parseInt(anoMes.split('-')[0], 10),
+        mes: parseInt(anoMes.split('-')[1], 10),
+        ultimaAtualizacao: new Date().toISOString(),
+        dias: { "01": { [idPlaceholder]: {
+          id: idPlaceholder,
+          seq: 0,
+          uid: "",
+          busca: buscaP,
+          cadastradoEm: new Date().toISOString(),
+          categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+          data: `${anoMes}-01`,
+          horario: "",
+          nome: nomeProfissional.toUpperCase(),
+          sigla: "",       // célula vazia — a linha existe, os dias ficam a preencher
+          status: "Confirmado",
+          tipo: "plantonista",
+          turno: "",
+          extra: false,
+          gerado: true,    // marcador do placeholder que sustenta a linha
+          observacao: ""
+        } } }
+      }, { merge: true });
+      setRefreshChave(k => k + 1);
+    } catch (error) {
+      console.error("Erro ao criar linha na grade principal:", error);
+      alert("Erro ao criar a linha. Verifique o console.");
+    }
+  };
+
+  // ===== EXCLUIR LINHA NA TABELA PRINCIPAL (apaga TODOS os regulares da pessoa no mês) =====
+  const excluirLinhaRegular = async (nomeProfissional) => {
+    if (!nomeProfissional) return;
+
+    const buscaP = normalizarBuscaEscala(nomeProfissional);
+    const anoMes = dataSelecionada.substring(0, 7);
+    const slug = getSlugCategoria(categoriaAtiva);
+    const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+
+    // Slots REGULARES da pessoa (não-extras) — placeholders gerados incluídos
+    const deletions = {};
+    let totalSlots = 0;
+    Object.entries(slotsCruPorDia).forEach(([dia, slotsDia]) => {
+      Object.entries(slotsDia || {}).forEach(([id, s]) => {
+        if (slotPertenceAPessoa(s, buscaP) && !isSlotExtra(s)) {
+          if (!deletions[dia]) deletions[dia] = {};
+          deletions[dia][id] = deleteField();
+          totalSlots += 1;
+        }
+      });
+    });
+
+    if (totalSlots === 0) {
+      alert(`Nenhum plantão regular de ${nomeProfissional} encontrado neste mês.`);
+      return;
+    }
+
+    if (!window.confirm(`Remover ${nomeProfissional} da grade mensal de ${dataSelecionada.substring(0, 7)}?\n\n${totalSlots} slot(s) regular(is) serão apagados no mês.\n\n⚠️ Slots com trocas compostas ("X (D) / Y (N)") não são removidos aqui — trate-os pela vista "Dia".`)) return;
+
+    setIsLoadingMes(true);
+    try {
+      await setDoc(mesRef, { dias: deletions }, { merge: true });
+      setRefreshChave(k => k + 1);
+    } catch (error) {
+      console.error("Erro ao excluir linha da grade principal:", error);
+      alert("Erro ao excluir a linha. Verifique o console.");
+    } finally {
+      setIsLoadingMes(false);
+    }
+  };
+
+  // ===== CRIAR LINHA NA TABELA DE EXTRAS (placeholder com células vazias) =====
+  const adicionarLinhaExtra = async (nomeProfissional) => {
+    if (!nomeProfissional) return;
+    const buscaP = normalizarBuscaEscala(nomeProfissional);
+    const anoMes = dataSelecionada.substring(0, 7);
+    const slug = getSlugCategoria(categoriaAtiva);
+    const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+    const idPlaceholder = `${buscaP}_EX_GERADO`;
+
+    try {
+      await setDoc(mesRef, {
+        categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+        ano: parseInt(anoMes.split('-')[0], 10),
+        mes: parseInt(anoMes.split('-')[1], 10),
+        ultimaAtualizacao: new Date().toISOString(),
+        dias: { "01": { [idPlaceholder]: {
+          id: idPlaceholder,
+          seq: 0,
+          uid: "",
+          busca: buscaP,
+          cadastradoEm: new Date().toISOString(),
+          categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+          data: `${anoMes}-01`,
+          horario: "",
+          nome: `${nomeProfissional.toUpperCase()} [EXTRA]`,
+          sigla: "",       // célula vazia — a linha existe, os dias ficam a preencher
+          status: "Confirmado",
+          tipo: "plantonista",
+          turno: "",
+          extra: true,     // 🚩 linha da tabela de EXTRAS
+          gerado: true,    // marcador do placeholder que sustenta a linha
+          observacao: ""
+        } } }
+      }, { merge: true });
+      setRefreshChave(k => k + 1);
+    } catch (error) {
+      console.error("Erro ao criar linha extra:", error);
+      alert("Erro ao criar a linha. Verifique o console.");
+    }
+  };
+
+  // ===== EXCLUIR LINHA NA TABELA DE EXTRAS (apaga TODOS os extras da pessoa no mês) =====
+  const excluirLinhaExtra = async (nomeProfissional) => {
+    if (!nomeProfissional) return;
+    if (!window.confirm(`Remover ${nomeProfissional} da tabela de extras de ${dataSelecionada.substring(0, 7)}?\n\nTodos os plantões extras deste servidor no mês serão apagados.`)) return;
+
+    const buscaP = normalizarBuscaEscala(nomeProfissional);
+    const anoMes = dataSelecionada.substring(0, 7);
+    const slug = getSlugCategoria(categoriaAtiva);
+    const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+
+    const deletions = {}; // { dia: { id: deleteField() } }
+    Object.entries(slotsCruPorDia).forEach(([dia, slotsDia]) => {
+      Object.entries(slotsDia || {}).forEach(([id, s]) => {
+        if (slotPertenceAPessoa(s, buscaP) && isSlotExtra(s)) {
+          if (!deletions[dia]) deletions[dia] = {};
+          deletions[dia][id] = deleteField();
+        }
+      });
+    });
+
+    if (Object.keys(deletions).length === 0) {
+      alert("Nenhum extra encontrado para este servidor neste mês.");
+      return;
+    }
+
+    setIsLoadingMes(true);
+    try {
+      await setDoc(mesRef, { dias: deletions }, { merge: true });
+      setRefreshChave(k => k + 1);
+    } catch (error) {
+      console.error("Erro ao excluir linha de extras:", error);
+      alert("Erro ao excluir a linha. Verifique o console.");
+    } finally {
+      setIsLoadingMes(false);
+    }
+  };
+
+  // ===== SALVAR EDIÇÃO DIRETA DE CÉLULA NA GRADE MENSAL (estilo Excel) =====
+  const salvarEdicaoCelula = async (nomeProfissional, dia, siglasAtuais, novaSigla) => {
+    if (novaSigla === siglasAtuais) return;
+
+    const buscaP = normalizarBuscaEscala(nomeProfissional);
+    const slotsDia = slotsCruPorDia[dia] || {};
+
+    // Slots crus que produzem o valor DESTA célula: da pessoa, sem ser extra,
+    // sem ser placeholder (sigla vazia sustenta a linha gerada)
+    const slotsAfetados = Object.entries(slotsDia)
+      .filter(([, s]) => slotPertenceAPessoa(s, buscaP))
+      .filter(([, s]) => !(s?.extra === true || String(s?.nome || '').includes('[EXTRA]')))
+      .filter(([, s]) => !(String(s?.sigla || '') === '' && !String(s?.nome || '').includes('[')));
+
+    // Caso complexo (substituições parciais / cobrindo): o valor vem de slot composto,
+    // que não é seguro editar inline → orienta para a vista diária e reverte o select
+    if (siglasAtuais && slotsAfetados.length === 0) {
+      alert("Este plantão tem substituições/ocorrências manuais. Use a vista 'Dia' para editá-lo com segurança.");
+      setRefreshChave(k => k + 1);
+      return;
+    }
+
+    setIsLoadingMes(true);
+    try {
+      const anoMes = dataSelecionada.substring(0, 7);
+      const slug = getSlugCategoria(categoriaAtiva);
+      const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+
+      const dadosGravacao = {};
+      // 1. Remove os slots antigos que formavam o valor atual da célula
+      //    (inclusive buracos [FALTOU]/[EXCLUÍDO] — sobrescrever a célula limpa o histórico dela)
+      slotsAfetados.forEach(([id]) => { dadosGravacao[id] = deleteField(); });
+
+      // 2. Grava o novo slot determinístico {nome}_{sigla} (célula não-vazia)
+      if (novaSigla) {
+        const t = DICIONARIO_SIGLAS_DASH[novaSigla] || { nome: novaSigla, inicio: '', fim: '', tipo: 'plantonista' };
+        const idNovo = `${buscaP}_${novaSigla}`;
+        dadosGravacao[idNovo] = {
+          id: idNovo,
+          seq: Object.keys(slotsDia).length + 1,
+          uid: "",
+          busca: buscaP,
+          cadastradoEm: new Date().toISOString(),
+          categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+          data: `${anoMes}-${dia}`,
+          horario: `${t.inicio} às ${t.fim}`,
+          nome: nomeProfissional.toUpperCase(),
+          sigla: novaSigla,
+          status: "Confirmado",
+          tipo: t.tipo,
+          turno: t.nome,
+          extra: false,
+          observacao: "",
+          editadoNaGrade: true,
+          modificadoEm: new Date().toISOString()
+        };
+      }
+
+      await setDoc(mesRef, {
+        ultimaAtualizacao: new Date().toISOString(),
+        dias: { [dia]: dadosGravacao }
+      }, { merge: true });
+
+      setRefreshChave(k => k + 1); // 🔄 re-busca mensal + diária automaticamente
+    } catch (error) {
+      console.error("Erro ao editar célula da grade:", error);
+      alert("Erro ao salvar a edição. Verifique o console.");
+      setRefreshChave(k => k + 1);
+    } finally {
+      setIsLoadingMes(false);
+    }
   };
 
   const salvarTrocaPlantao = async () => {
@@ -11999,15 +12456,14 @@ const imprimirRelatorioGeladeira = () => {
                   
                   {/* CABEÇALHO DA SEÇÃO DE ESCALA COM BOTÃO DE EXTRA */}
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-800 flex justify-between items-center">
-                      Escala de {categoriaAtiva} <span className="ml-2 text-xs text-slate-400 font-normal">Dia {dataSelecionada.split('-')[2]}</span>
-                    </h3>
-                    <button 
-                      onClick={() => setIsExtraModalOpen(true)}
-                      className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-200 transition-colors flex items-center gap-1"
-                    >
-                      + Adicionar Extra
-                    </button>
+                    <h3 className="font-bold text-slate-800">Grade Mensal - {categoriaAtiva}</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-500 uppercase">Mês de Referência:</span>
+                      <input type="month" value={dataSelecionada.substring(0, 7)} onChange={(e) => setDataSelecionada(e.target.value + "-01")} className="p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500" />
+                      <button onClick={() => { setServidoresGerados([]); setIsGerarEscalaModalOpen(true); }} className="text-xs bg-blue-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors" title="Gerar escala do zero para este mês">
+                        ⚡ Gerar Escala
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
@@ -12080,6 +12536,32 @@ const imprimirRelatorioGeladeira = () => {
                    <div className="flex items-center gap-2">
                      <span className="text-xs font-bold text-slate-500 uppercase">Mês de Referência:</span>
                      <input type="month" value={dataSelecionada.substring(0, 7)} onChange={(e) => setDataSelecionada(e.target.value + "-01")} className="p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500" />
+                     <select
+                       value=""
+                       onChange={(e) => adicionarLinhaRegular(e.target.value)}
+                       className="p-1.5 border border-slate-300 bg-white rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
+                       title="Adicionar um servidor à grade (linha com células vazias)"
+                     >
+                       <option value="">＋ Adicionar servidor</option>
+                       {listaProfissionais
+                         .filter(prof => prof.categoria === categoriaAtiva)
+                         .filter(prof => !plantoesDoMes[prof.nome.toUpperCase()])
+                         .map((prof) => (
+                           <option key={prof.id} value={prof.nome}>{prof.nome}</option>
+                         ))}
+                     </select>
+                      <button onClick={() => {
+                       // 🚀 Inicia com TODOS os servidores da profissão ativa pré-selecionados
+                       const nomesServidores = [...new Set(
+                         listaProfissionais
+                           .filter(prof => prof.categoria === categoriaAtiva && prof.nome)
+                           .map(prof => prof.nome)
+                       )];
+                       setServidoresGerados(nomesServidores);
+                       setIsGerarEscalaModalOpen(true);
+                     }} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-700 transition-colors" title="Gerar escala do zero para este mês">
+                       ⚡ Gerar Escala
+                     </button>
                    </div>
                  </div>
 
@@ -12088,84 +12570,211 @@ const imprimirRelatorioGeladeira = () => {
                     <thead>
                       <tr className="bg-slate-50">
                         <th className="p-2 border border-slate-200 font-bold text-slate-500 text-left">Profissional</th>
-                        {[...Array(31)].map((_, i) => <th key={i} className="p-1 border border-slate-200 font-bold text-slate-500 text-center w-8">{(i + 1).toString().padStart(2, '0')}</th>)}
+                        {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
+                          const diaStr = (i + 1).toString().padStart(2, '0');
+                          const sem = getDiaSemana(dataSelecionada.substring(0, 7), diaStr);
+                          const fimSemana = sem === 'SÁB' || sem === 'DOM';
+                          return (
+                            <th key={i} className={`p-1 border border-slate-200 text-center w-8 ${fimSemana ? 'bg-slate-100' : ''}`}>
+                              <div className={`text-[7px] font-bold uppercase leading-none ${fimSemana ? 'text-red-400' : 'text-slate-400'}`}>{sem}</div>
+                              <div className="text-[10px] font-bold text-slate-500 leading-tight">{diaStr}</div>
+                            </th>
+                          );
+                        })}
+                        <th className="p-1 border border-slate-200 text-center bg-slate-200 min-w-[44px]">
+                          <div className="text-[7px] font-bold uppercase leading-none text-slate-500">Total</div>
+                          <div className="text-[10px] font-bold text-slate-700 leading-tight">Horas</div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {isLoadingMes && <tr><td colSpan="32" className="p-8 text-center text-slate-400 font-bold animate-pulse">A carregar e compilar o mês completo...</td></tr>}
-                      {!isLoadingMes && Object.keys(plantoesDoMes).length === 0 && <tr><td colSpan="32" className="p-8 text-center text-slate-400">Nenhum plantão processado para {dataSelecionada.substring(0,7)}.</td></tr>}
-                      
-                      {!isLoadingMes && Object.entries(plantoesDoMes).map(([nome, dias]) => (
-                        <tr key={nome} className="hover:bg-slate-50 border-b border-slate-100 transition-colors">
-                          <td className="p-2 border-r border-slate-200 font-bold text-slate-700 whitespace-nowrap text-[10px] uppercase">{nome}</td>
-                          {[...Array(31)].map((_, i) => {
+                      {isLoadingMes && <tr><td colSpan={getDiasNoMes(dataSelecionada.substring(0, 7)) + 2} className="p-8 text-center text-slate-400 font-bold animate-pulse">A carregar e compilar o mês completo...</td></tr>}
+                      {!isLoadingMes && Object.keys(plantoesDoMes).length === 0 && <tr><td colSpan={getDiasNoMes(dataSelecionada.substring(0, 7)) + 2} className="p-8 text-center text-slate-400">Nenhum plantão processado para {dataSelecionada.substring(0,7)}.</td></tr>}
+
+                      {!isLoadingMes && Object.entries(plantoesDoMes).map(([nome, dias]) => {
+                        const totalHoras = somarHorasMes(dias);
+                        return (
+                        <tr key={nome} className="group hover:bg-slate-50/60 border-b border-slate-100 transition-colors">
+                          <td className="p-2 border-r border-slate-200 font-bold text-slate-700 whitespace-nowrap text-[10px] uppercase">
+                            <div className="flex items-center gap-1">
+                              {nome}
+                              <button onClick={() => excluirLinhaRegular(nome)} className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover esta linha e todos os plantões regulares do mês">
+                                <X size={12} />
+                              </button>
+                            </div>
+                          </td>
+                          {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
                             const diaStr = (i + 1).toString().padStart(2, '0');
-                            const sigla = dias[diaStr]; 
+                            const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
+                            const sigla = dias[diaStr];
                             let corLetra = 'text-slate-300'; let corFundo = '';
-                            
                             if (sigla) {
-                              if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; } 
-                              else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; } 
-                              else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; } 
+                              if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; }
+                              else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; }
+                              else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; }
                               else { corLetra = 'text-slate-700'; corFundo = 'bg-slate-50'; }
                             }
-                            
+                            // 🌒 Fim de semana: toda a coluna um tom mais escuro
+                            if (fimSemana) {
+                              corFundo = corFundo
+                                .replace('emerald-50', 'emerald-100')
+                                .replace('indigo-50', 'indigo-100')
+                                .replace('blue-50', 'blue-100')
+                                .replace('slate-50', 'slate-100');
+                              if (!corFundo) corFundo = 'bg-slate-100';
+                            }
                             return (
-                              <td key={i} className={`p-1 border-r border-slate-200 text-center font-black ${corLetra} ${corFundo}`}>
-                                {sigla || '-'}
+                              <td key={i} className={`p-0 border-r border-slate-200 text-center ${corFundo}`}>
+                                <input
+                                  type="text"
+                                  key={`${nome}-${diaStr}-${sigla || 'vazio'}-${refreshChave}`}
+                                  defaultValue={sigla || ''}
+                                  maxLength={3}
+                                  onBlur={(e) => {
+                                    const digitado = String(e.target.value || '').trim().toUpperCase();
+                                    if (digitado && !DICIONARIO_SIGLAS_DASH[digitado]) {
+                                      alert(`Sigla "${digitado}" inválida. Use: D, N, DN, V, M, T ou combinações de 2 (VT, VN, TN...).`);
+                                      setRefreshChave(k => k + 1);
+                                      return;
+                                    }
+                                    salvarEdicaoCelula(nome, diaStr, sigla, digitado);
+                                  }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                  placeholder="—"
+                                  className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${corLetra}`}
+                                  title="Digite a sigla (D, N, DN, V, M, T, VT...) e clique fora para salvar"
+                                />
                               </td>
                             );
                           })}
+                          <td className="p-1 border-l-2 border-l-slate-300 border-r border-slate-200 text-center bg-slate-100">
+                            <span className={`font-black text-sm ${totalHoras === 144 ? 'text-emerald-600' : totalHoras > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
+                              {totalHoras}h
+                            </span>
+                          </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                  </table>
                  <p className="text-right text-[10px] text-slate-400 mt-4 font-bold uppercase">
                    Total de {Object.keys(plantoesDoMes).length} profissionais com plantões regulares em {dataSelecionada.substring(0,7)}
                  </p>
-
-                 {/* ===== ESCALA DE EXTRAS (seção separada) ===== */}
-                 {!isLoadingMes && Object.keys(extrasDoMes).length > 0 && (
+                 {/* ===== ESCALA DE EXTRAS (seção separada, editável) ===== */}
+                 {!isLoadingMes && (
                    <div className="mt-8">
                      <div className="flex justify-between items-center mb-3 pb-2 border-b-2 border-amber-300">
                        <h4 className="font-bold text-amber-700 text-sm flex items-center gap-1">
                          🚩 Plantões Extras — {categoriaAtiva}
                        </h4>
-                       <span className="text-xs font-bold text-amber-600 uppercase">
-                         {Object.keys(extrasDoMes).length} profissional(is) com extras
-                       </span>
+                       <div className="flex items-center gap-2">
+                         <span className="text-xs font-bold text-amber-600 uppercase">
+                           {Object.keys(extrasDoMes).length} profissional(is) com extras
+                         </span>
+                         <select
+                           value=""
+                           onChange={(e) => adicionarLinhaExtra(e.target.value)}
+                           className="p-1.5 border border-amber-300 bg-amber-50 rounded-lg text-xs font-bold text-amber-700 outline-none focus:border-amber-500"
+                           title="Adicionar um servidor à tabela de extras (linha com células vazias)"
+                         >
+                           <option value="">＋ Adicionar servidor ao extras</option>
+                           {listaProfissionais
+                             .filter(prof => prof.categoria === categoriaAtiva)
+                             .filter(prof => !extrasDoMes[prof.nome.toUpperCase()])
+                             .map((prof) => (
+                               <option key={prof.id} value={prof.nome}>{prof.nome}</option>
+                             ))}
+                         </select>
+                       </div>
                      </div>
                      <table className="w-full text-xs border-collapse">
                         <thead>
                           <tr className="bg-amber-50">
                             <th className="p-2 border border-amber-200 font-bold text-amber-700 text-left">Profissional</th>
-                            {[...Array(31)].map((_, i) => <th key={i} className="p-1 border border-amber-200 font-bold text-amber-600 text-center w-8">{(i + 1).toString().padStart(2, '0')}</th>)}
+                            {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
+                              const diaStr = (i + 1).toString().padStart(2, '0');
+                              const sem = getDiaSemana(dataSelecionada.substring(0, 7), diaStr);
+                              const fimSemana = sem === 'SÁB' || sem === 'DOM';
+                              return (
+                                <th key={i} className={`p-1 border border-amber-200 text-center w-8 ${fimSemana ? 'bg-amber-100' : ''}`}>
+                                  <div className={`text-[7px] font-bold uppercase leading-none ${fimSemana ? 'text-red-400' : 'text-amber-400'}`}>{sem}</div>
+                                  <div className="text-[10px] font-bold text-amber-600 leading-tight">{diaStr}</div>
+                                </th>
+                              );
+                            })}
+                            <th className="p-1 border border-amber-200 text-center bg-amber-200 min-w-[44px]">
+                              <div className="text-[7px] font-bold uppercase leading-none text-amber-700">Total</div>
+                              <div className="text-[10px] font-bold text-amber-800 leading-tight">Horas</div>
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
-                          {Object.entries(extrasDoMes).map(([nome, dias]) => (
-                            <tr key={nome} className="hover:bg-amber-50/60 border-b border-amber-100 transition-colors">
-                              <td className="p-2 border-r border-amber-200 font-bold text-amber-800 whitespace-nowrap text-[10px] uppercase">{nome}</td>
-                              {[...Array(31)].map((_, i) => {
+                          {Object.keys(extrasDoMes).length === 0 && <tr><td colSpan={getDiasNoMes(dataSelecionada.substring(0, 7)) + 2} className="p-4 text-center text-amber-500 text-xs">Nenhum plantão extra neste mês. Use "＋ Adicionar servidor ao extras" ou importe pela planilha (linha EXTRA).</td></tr>}
+                          {Object.entries(extrasDoMes).map(([nome, dias]) => {
+                            const totalHoras = somarHorasMes(dias);
+                            return (
+                            <tr key={nome} className="group hover:bg-amber-50/60 border-b border-amber-100 transition-colors">
+                              <td className="p-2 border-r border-amber-200 font-bold text-amber-800 whitespace-nowrap text-[10px] uppercase">
+                                <div className="flex items-center gap-1">
+                                  {nome}
+                                  <button onClick={() => excluirLinhaExtra(nome)} className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover esta linha e todos os extras do mês">
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              </td>
+                              {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
                                 const diaStr = (i + 1).toString().padStart(2, '0');
-                                const sigla = dias[diaStr]; 
+                                const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
+                                const sigla = dias[diaStr];
                                 let corLetra = 'text-slate-300'; let corFundo = '';
-                                
                                 if (sigla) {
-                                  if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; } 
-                                  else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; } 
-                                  else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; } 
-                                  else { corLetra = 'text-slate-700'; corFundo = 'bg-slate-50'; }
+                                  if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; }
+                                  else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; }
+                                  else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; }
+                                  else { corLetra = 'text-amber-700'; corFundo = 'bg-amber-50'; }
                                 }
-                                
+                                // 🌒 Fim de semana: toda a coluna um tom mais escuro
+                                if (fimSemana) {
+                                  corFundo = corFundo
+                                    .replace('emerald-50', 'emerald-100')
+                                    .replace('indigo-50', 'indigo-100')
+                                    .replace('blue-50', 'blue-100')
+                                    .replace('amber-50', 'amber-100')
+                                    .replace('slate-50', 'slate-100');
+                                  if (!corFundo) corFundo = 'bg-amber-100';
+                                }
                                 return (
-                                  <td key={i} className={`p-1 border-r border-amber-100 text-center font-black ${corLetra} ${corFundo}`}>
-                                    {sigla || '-'}
+                                  <td key={i} className={`p-0 border-r border-amber-100 text-center ${corFundo}`}>
+                                    <input
+                                      type="text"
+                                      key={`${nome}-${diaStr}-${sigla || 'vazio'}-${refreshChave}`}
+                                      defaultValue={sigla || ''}
+                                      maxLength={3}
+                                      onBlur={(e) => {
+                                        const digitado = String(e.target.value || '').trim().toUpperCase();
+                                        if (digitado && !DICIONARIO_SIGLAS_DASH[digitado]) {
+                                          alert(`Sigla "${digitado}" inválida. Use: D, N, DN, V, M, T ou combinações de 2 (VT, VN, TN...).`);
+                                          setRefreshChave(k => k + 1);
+                                          return;
+                                        }
+                                        salvarEdicaoCelulaExtra(nome, diaStr, sigla, digitado);
+                                      }}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                      placeholder="—"
+                                      className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${corLetra}`}
+                                      title="Digite a sigla extra (D, N, DN, V, M, T, VT...) e clique fora para salvar"
+                                    />
                                   </td>
                                 );
                               })}
+                              <td className="p-1 border-l-2 border-l-amber-300 border-r border-amber-100 text-center bg-amber-100">
+                                <span className={`font-black text-sm ${totalHoras > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
+                                  {totalHoras}h
+                                </span>
+                              </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                      </table>
                    </div>
@@ -12777,6 +13386,47 @@ const imprimirRelatorioGeladeira = () => {
                   </div>
                 </div>
               )}
+
+                  {/* MODAL DE GERAÇÃO DE ESCALA */}
+                  {isGerarEscalaModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setIsGerarEscalaModalOpen(false)}>
+                      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="font-bold text-slate-800 text-lg mb-1">⚡ Gerar Escala do Zero</h3>
+                        <p className="text-xs text-slate-500 mb-4">{categoriaAtiva} — {dataSelecionada.substring(0, 7)} · Os nomes entram com células vazias; os dias já gravados não são alterados.</p>
+                        <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                          {servidoresGerados.length === 0 && (
+                            <div className="p-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">Nenhum servidor na lista. Clique em "+ Adicionar servidor".</div>
+                          )}
+                          {servidoresGerados.map((nome, idx) => (
+                            <div key={idx} className="flex items-center gap-2 group">
+                              <select
+                                value={nome}
+                                onChange={(e) => setServidoresGerados(prev => prev.map((n, i) => i === idx ? e.target.value : n))}
+                                className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-slate-800"
+                              >
+                                <option value="">Selecione o servidor...</option>
+                                {listaProfissionais
+                                  .filter(prof => prof.categoria === categoriaAtiva)
+                                  .map((prof) => (
+                                    <option key={prof.id} value={prof.nome} disabled={servidoresGerados.includes(prof.nome)}>{prof.nome}</option>
+                                  ))}
+                              </select>
+                              <button onClick={() => setServidoresGerados(prev => prev.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100" title="Remover servidor">
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <button onClick={() => setServidoresGerados(prev => [...prev, ''])} className="text-xs bg-slate-100 text-slate-600 px-3 py-2 rounded-lg font-bold hover:bg-slate-200">+ Adicionar servidor</button>
+                          <div className="flex gap-2">
+                            <button onClick={() => setIsGerarEscalaModalOpen(false)} className="text-xs px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100">Cancelar</button>
+                            <button onClick={gerarEscalaZero} className="text-xs bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700">Gerar Escala</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
       {/* MODAL DE HISTÓRICO DE ESCALAS DIÁRIAS (BUSCANDO DO FIREBASE) */}
       {modalHistorico.isOpen && modalHistorico.paciente && (

@@ -133,12 +133,23 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
             let colunasDias = {}; 
             let lendoNefrologia = false;
             let modoExtra = false; // 🚩 reinicia a cada aba — o marcador EXTRA é por aba
-
+            let colMatricula = -1; // 🆕 coluna da MATRÍCULA nesta aba (-1 = não existe)
             // Encontrar onde começam os dias
             for (let i = 0; i < data.length; i++) {
               const row = data[i];
               if (row.length > 0 && typeof row[0] === 'string' && row[0].includes("NOME DO SERVIDOR")) {
                 indexLinhaDias = i + 1;
+                // 🆕 Localiza a coluna de MATRÍCULA: procura o texto no cabeçalho
+                // (linha do "NOME DO SERVIDOR") e na linha dos dias — tolerante a acentos
+                [row, data[indexLinhaDias] || []].forEach(linhaCabecalho => {
+                  linhaCabecalho.forEach((val, colIndex) => {
+                    if (colMatricula === -1 && typeof val === 'string' &&
+                        val.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('MATRICULA')) {
+                      colMatricula = colIndex;
+                    }
+                  });
+                });
+                if (colMatricula >= 0) console.log(`[Importador] Aba "${wsname}": matrícula detectada na coluna ${colMatricula}`);
                 const linhaDias = data[indexLinhaDias];
                 if (linhaDias) {
                   linhaDias.forEach((val, colIndex) => {
@@ -178,7 +189,12 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
               if (typeof nomeServidor === 'string' && nomeServidor.includes("LEGENDA")) break; 
               if (lendoNefrologia) continue; 
 
-              const nomeLimpo = String(nomeServidor).trim();
+              // 🆕 Anexa a matrícula (coluna separada) ao nome do servidor
+              // Ex.: "LUCIANO FOGAÇA DIAS" + "108278" → "LUCIANO FOGAÇA DIAS 108278"
+              const matricula = colMatricula >= 0 ? String(row[colMatricula] ?? '').trim() : '';
+              const nomeLimpo = matricula
+                ? `${String(nomeServidor).trim()} ${matricula}`
+                : String(nomeServidor).trim();
               Object.keys(colunasDias).forEach(colIndex => {
                 const dia = colunasDias[colIndex];
                 const siglaTurno = row[colIndex];
