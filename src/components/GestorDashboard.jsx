@@ -163,6 +163,9 @@ const GestorDashboard = ({ userProfile }) => {
   const [servidoresGerados, setServidoresGerados] = useState([]);  
   const [visitadorMes, setVisitadorMes] = useState(null);                   // 🆕 { nome, dias } — escala médica
   const [responsavelTecnicoMes, setResponsavelTecnicoMes] = useState(null); // 🆕 { nome, dias } — escala médica  
+  const [feriasMes, setFeriasMes] = useState([]);              // 🆕 [{ nome, inicio: 'AAAA-MM-DD', dias: n, criadoEm }]
+  const [modalFerias, setModalFerias] = useState(false);       // 🆕 modal de cadastro de férias
+  const [formFerias, setFormFerias] = useState({ nome: '', inicio: '', qtdDias: 30 });  
 
   const [modalRelatorioEscalas, setModalRelatorioEscalas] = useState({ isOpen: false, texto: '' });
 
@@ -5022,6 +5025,7 @@ const imprimirRelatorioGeladeira = () => {
         // Visitador e Responsável Técnico (somente a escala médica grava estes campos)
         setVisitadorMes(dadosMes?.visitador ?? null);
         setResponsavelTecnicoMes(dadosMes?.responsavelTecnico ?? null);
+        setFeriasMes(Array.isArray(dadosMes?.ferias) ? dadosMes.ferias : []);        
 
         // Mapa cru { dia: { idTurno: slot } } — base para editar células (regulares E extras)
         const slotsCru = {};
@@ -5159,8 +5163,10 @@ const imprimirRelatorioGeladeira = () => {
     return residuo.length === 0;
   };
 
-  // 🆕 Horas COMBINADAS de uma pessoa: tabela regular + Visitador + RT,
+  // Horas COMBINADAS de uma pessoa: tabela regular + Visitador + RT,
   // casando pelo nome+matrícula normalizado. Extras NÃO entram na soma.
+  // 🌴 Dias de férias do Visitador/RT não contam horas — a marca fica oculta
+  // pelo período; ao remover as férias ela reaparece e volta a somar.
   const horasCombinadasPessoa = (nomeExibido) => {
     const buscaP = normalizarBuscaEscala(nomeExibido);
     if (!buscaP) return 0;
@@ -5169,10 +5175,20 @@ const imprimirRelatorioGeladeira = () => {
       if (normalizarBuscaEscala(nome) === buscaP) total += somarHorasMes(dias);
     });
     if (visitadorMes?.nome && normalizarBuscaEscala(visitadorMes.nome) === buscaP) {
-      total += somarHorasMes(visitadorMes.dias || {});
+      const feriasVis = diasDeFerias(visitadorMes.nome);
+      const diasValidos = {};
+      Object.entries(visitadorMes.dias || {}).forEach(([dia, val]) => {
+        if (!feriasVis[dia]) diasValidos[dia] = val;
+      });
+      total += somarHorasMes(diasValidos);
     }
     if (responsavelTecnicoMes?.nome && normalizarBuscaEscala(responsavelTecnicoMes.nome) === buscaP) {
-      total += somarHorasMes(responsavelTecnicoMes.dias || {});
+      const feriasRT = diasDeFerias(responsavelTecnicoMes.nome);
+      const diasValidos = {};
+      Object.entries(responsavelTecnicoMes.dias || {}).forEach(([dia, val]) => {
+        if (!feriasRT[dia]) diasValidos[dia] = val;
+      });
+      total += somarHorasMes(diasValidos);
     }
     return total;
   };
@@ -5180,6 +5196,102 @@ const imprimirRelatorioGeladeira = () => {
   // 🚩 Predicado: o slot é EXTRA? (flag nova OU tag legada no nome)
   const isSlotExtra = (s) =>
     s?.extra === true || String(s?.nome || '').includes('[EXTRA]');
+
+  // ===== SALVAR PERÍODO DE FÉRIAS =====
+  // Grava o array de férias no documento do mês E limpa (deleteField) todos os
+  // slots da pessoa nos dias cobertos pelo período dentro deste mês
+  const salvarFeriasMes = async (novoArray, pessoaAnteriorParaLimpeza) => {
+    try {
+      const anoMes = dataSelecionada.substring(0, 7);
+      const slug = getSlugCategoria(categoriaAtiva);
+      const mesRef = doc(db, "escalas", slug, "meses", anoMes);
+
+      // === Limpeza de plantões: qual período aplicar? ===
+      // Ao REGISTRAR/ALTERAR: o período da própria pessoa no novoArray.
+      // Ao REMOVER (x da lista): pessoaAnteriorParaLimpeza (o período que estava antes).
+      const periodoLimpeza = pessoaAnteriorParaLimpeza
+        || novoArray.find(f => f.nome);
+      const limparDe = pessoaAnteriorParaLimpeza
+        ? pessoaAnteriorParaLimpeza.nome
+        : (periodoLimpeza?.nome || '');
+
+      const dadosLimpeza = {}; // { 'dia': { idSlot: deleteField } } por dia afetado
+      if (limparDe) {
+        const periodoAlvo = pessoaAnteriorParaLimpeza
+          || feriasMes.find(f => f.nome === limparDe)
+          || novoArray.find(f => f.nome === limparDe);
+        if (periodoAlvo?.inicio && periodoAlvo?.dias) {
+          const buscaP = normalizarBuscaEscala(limparDe);
+          const [ano, mes, diaIni] = periodoAlvo.inicio.split('-').map(Number);
+          const diasAfetados = new Set();
+          for (let i = 0; i < periodoAlvo.dias; i++) {
+            const d = new Date(Date.UTC(ano, mes - 1, diaIni + i));
+            const anoMesDia = String(d.getUTCFullYear()).padStart(4, '0') + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+            if (anoMesDia === anoMes) diasAfetados.add(String(d.getUTCDate()).padStart(2, '0'));
+          }
+          diasAfetados.forEach(dia => {
+            const slotsDia = slotsCruPorDia[dia] || {};
+            const slotsDaPessoa = Object.entries(slotsDia)
+              .filter(([, s]) => slotPertenceAPessoa(s, buscaP))
+              .filter(([, s]) => String(s?.sigla || '') !== ''); // placeholder vazio fica (sustenta a linha)
+            if (slotsDaPessoa.length > 0) {
+              dadosLimpeza[dia] = {};
+              slotsDaPessoa.forEach(([id]) => { dadosLimpeza[dia][id] = deleteField(); });
+            }
+          });
+        }
+      }
+
+      // Payload único: férias + limpeza de slots (merge preserva o resto do doc)
+      const payload = {
+        categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+        ano: parseInt(anoMes.split('-')[0], 10),
+        mes: parseInt(anoMes.split('-')[1], 10),
+        ferias: novoArray,
+        ultimaAtualizacao: new Date().toISOString()
+      };
+      Object.entries(dadosLimpeza).forEach(([dia, slots]) => {
+        payload.dias = payload.dias || {};
+        payload.dias[dia] = { ...(payload.dias[dia] || {}), ...slots };
+      });
+      await setDoc(mesRef, payload, { merge: true });
+
+      // === Atualização local (sem flash) ===
+      setFeriasMes(novoArray);
+      if (Object.keys(dadosLimpeza).length > 0) {
+        const sentinel = deleteField();
+        const slotsCruNovo = { ...slotsCruPorDia };
+        Object.entries(dadosLimpeza).forEach(([dia, slots]) => {
+          slotsCruNovo[dia] = { ...(slotsCruNovo[dia] || {}), ...slots };
+          Object.keys(slotsCruNovo[dia]).forEach(id => {
+            if (slotsCruNovo[dia][id] === sentinel) delete slotsCruNovo[dia][id];
+          });
+        });
+        setSlotsCruPorDia(slotsCruNovo);
+        const { regulares, extras } = processarSlotsCru(slotsCruNovo);
+        setPlantoesDoMes(regulares);
+        setExtrasDoMes(extras);
+      }
+    } catch (error) {
+      console.error("Erro ao salvar férias:", error);
+      alert("Erro ao salvar férias. Verifique o console.");
+    }
+  };
+
+  // Dias de férias de uma pessoa no mês — para colorir/bloquear a grade
+  const diasDeFerias = (nomeProfissional) => {
+    const periodo = feriasMes.find(f => f.nome === nomeProfissional);
+    if (!periodo || !periodo.inicio || !periodo.dias) return {};
+    const [ano, mes, diaIni] = periodo.inicio.split('-').map(Number);
+    const mapa = {};
+    for (let i = 0; i < periodo.dias; i++) {
+      const d = new Date(Date.UTC(ano, mes - 1, diaIni + i));
+      const anoMesDia = String(d.getUTCFullYear()).padStart(4, '0') + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+      if (anoMesDia !== dataSelecionada.substring(0, 7)) continue;
+      mapa[String(d.getUTCDate()).padStart(2, '0')] = true;
+    }
+    return mapa;
+  };
 
   // ===== SALVAR VISITADOR / RESPONSÁVEL TÉCNICO (somente escala médica) =====
   // ⚠️ setDoc com merge faz MERGE PROFUNDO: chaves ausentes no payload NÃO são
@@ -5251,33 +5363,54 @@ const imprimirRelatorioGeladeira = () => {
     }
   };
 
-  // ===== NAVEGAÇÃO POR SETAS NA GRADE (estilo Excel) =====
-  // ←/→: células vizinhas · ↑/↓: mesma coluna, linha acima/abaixo · Enter: desce
+  // ===== NAVEGAÇÃO POR SETAS NA GRADE (estilo Excel, ciente de colSpan) =====
   const moverFocoGrade = (e) => {
     const direcoes = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
     const dir = direcoes[e.key];
     if (!dir && e.key !== 'Enter') return;
-    if (dir || e.key === 'Enter') {
-      const tdAtual = e.currentTarget.closest('td');
-      if (!tdAtual) return;
-      e.preventDefault();
-      const trAtual = tdAtual.parentElement;
-      const tbody = trAtual.closest('tbody');
-      if (!tbody) return;
-      const linhas = Array.from(tbody.querySelectorAll('tr'));
-      const idxLinha = linhas.indexOf(trAtual);
-      const celulas = Array.from(trAtual.children);
-      const idxCol = celulas.indexOf(tdAtual);
-      let tdAlvo = null;
-      if (dir === 'left') tdAlvo = celulas[idxCol - 1];
-      else if (dir === 'right') tdAlvo = celulas[idxCol + 1];
-      else {
-        const novaLinha = linhas[dir === 'down' || !dir ? idxLinha + 1 : idxLinha - 1];
-        if (novaLinha) tdAlvo = novaLinha.children[idxCol];
-      }
-      const campo = tdAlvo?.querySelector('input, select');
-      if (campo) { campo.focus(); if (campo.select) campo.select(); }
+    const tdAtual = e.currentTarget.closest('td');
+    if (!tdAtual) return;
+    e.preventDefault();
+    const trAtual = tdAtual.parentElement;
+    const tbody = trAtual.closest('tbody');
+    if (!tbody) return;
+    const linhas = Array.from(tbody.querySelectorAll('tr'));
+    const idxLinha = linhas.indexOf(trAtual);
+    // posição de coluna "pesada": soma o colSpan das células anteriores à atual
+    let colPos = 0;
+    for (const td of trAtual.children) {
+      if (td === tdAtual) break;
+      colPos += td.colSpan || 1;
     }
+    let tdAlvo = null;
+    if (dir === 'left' || dir === 'right') {
+      const celulas = Array.from(trAtual.children);
+      const idx = celulas.indexOf(tdAtual);
+      const passo = dir === 'right' ? 1 : -1;
+      for (let j = idx + passo; j >= 0 && j < celulas.length; j += passo) {
+        if (celulas[j].querySelector('input, select')) { tdAlvo = celulas[j]; break; }
+      }
+    } else {
+      const novaLinha = linhas[dir === 'down' || !dir ? idxLinha + 1 : idxLinha - 1];
+      if (novaLinha) {
+        let acc = 0;
+        for (const td of novaLinha.children) {
+          const largura = td.colSpan || 1;
+          if (colPos >= acc && colPos < acc + largura) { tdAlvo = td; break; }
+          acc += largura;
+        }
+        // se caiu numa célula mesclada de férias (sem campo), segue na direção do movimento
+        if (tdAlvo && !tdAlvo.querySelector('input, select')) {
+          const irmaos = Array.from(novaLinha.children);
+          const i0 = irmaos.indexOf(tdAlvo);
+          tdAlvo = dir === 'down' || !dir
+            ? irmaos.slice(i0 + 1).find(t => t.querySelector('input, select'))
+            : irmaos.slice(0, i0).reverse().find(t => t.querySelector('input, select'));
+        }
+      }
+    }
+    const campo = tdAlvo?.querySelector('input, select');
+    if (campo) { campo.focus(); if (campo.select) campo.select(); }
   };
 
   // 🆕 Decodifica os slots crus em { regulares, extras } — usada pelo carregamento
@@ -5683,6 +5816,26 @@ const imprimirRelatorioGeladeira = () => {
       alert("Erro ao salvar a edição. Verifique o console.");
       setRefreshChave(k => k + 1); // erro → re-sincroniza com o banco
     }
+  };
+
+  // 🌴 Constrói os segmentos da linha: dias normais + períodos de férias contíguos.
+  // Cada trecho de férias vira UM segmento → renderiza como UMA célula com colSpan
+  const construirSegmentos = (feriasMap, totalDias) => {
+    const segs = [];
+    let i = 0;
+    while (i < totalDias) {
+      const diaStr = (i + 1).toString().padStart(2, '0');
+      if (feriasMap[diaStr]) {
+        let len = 1;
+        while (i + len < totalDias && feriasMap[(i + len + 1).toString().padStart(2, '0')]) len++;
+        segs.push({ tipo: 'ferias', inicio: i, len });
+        i += len;
+      } else {
+        segs.push({ tipo: 'dia', i });
+        i++;
+      }
+    }
+    return segs;
   };
 
   const salvarTrocaPlantao = async () => {
@@ -12719,6 +12872,13 @@ const imprimirRelatorioGeladeira = () => {
                      }} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-700 transition-colors" title="Gerar escala do zero para este mês">
                        ⚡ Gerar Escala
                      </button>
+                         <button
+                           onClick={() => { setFormFerias({ nome: '', inicio: dataSelecionada + '-01', qtdDias: 30 }); setModalFerias(true); }}
+                           className="p-1.5 border border-sky-300 bg-sky-50 rounded-lg text-xs font-bold text-sky-700 hover:bg-sky-100"
+                           title="Registrar período de férias de um servidor"
+                         >
+                           🌴 Adicionar Férias
+                         </button>                            
                    </div>
                  </div>
 
@@ -12750,6 +12910,7 @@ const imprimirRelatorioGeladeira = () => {
 
                       {!isLoadingMes && Object.entries(plantoesDoMes).map(([nome, dias]) => {
                         const totalHoras = horasCombinadasPessoa(nome);
+                        const feriasDias = diasDeFerias(nome);                        
                         return (
                         <tr key={nome} className="group hover:bg-slate-50/60 border-b border-slate-100 transition-colors">
                           <td className="p-2 border-r border-slate-200 font-bold text-slate-700 whitespace-nowrap text-[10px] uppercase">
@@ -12760,7 +12921,18 @@ const imprimirRelatorioGeladeira = () => {
                               </button>
                             </div>
                           </td>
-                          {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
+                          {construirSegmentos(feriasDias, getDiasNoMes(dataSelecionada.substring(0, 7))).map((seg) => {
+                            // 🌴 Férias: UMA célula mesclada cobrindo o período
+                            if (seg.tipo === 'ferias') {
+                              return (
+                                <td key={`ferias-${seg.inicio}`} colSpan={seg.len}
+                                    className="p-0 border-r border-slate-200 text-center bg-sky-100 align-middle"
+                                    title={`${seg.len} dia(s) de férias — remova o período na lista de férias para editar estes dias`}>
+                                  <span className="font-black text-[7px] tracking-tight text-sky-700 select-none">FÉRIAS</span>
+                                </td>
+                              );
+                            }
+                            const i = seg.i;
                             const diaStr = (i + 1).toString().padStart(2, '0');
                             const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
                             const sigla = dias[diaStr];
@@ -12792,8 +12964,6 @@ const imprimirRelatorioGeladeira = () => {
                                   }}
                                   onBlur={(e) => {
                                     const digitado = String(e.target.value || '').trim().toUpperCase();
-                                    // Grava SOMENTE se o valor mudou desde o foco —
-                                    // comparação com o valor original elimina o problema da prop defasada
                                     if (digitado === e.target.dataset.original) return;
                                     salvarEdicaoCelula(nome, diaStr, sigla, digitado);
                                   }}
@@ -12834,7 +13004,7 @@ const imprimirRelatorioGeladeira = () => {
                            onChange={(e) => adicionarLinhaExtra(e.target.value)}
                            className="p-1.5 border border-amber-300 bg-amber-50 rounded-lg text-xs font-bold text-amber-700 outline-none focus:border-amber-500"
                            title="Adicionar um servidor à tabela de extras (linha com células vazias)"
-                         >
+                         >                          
                            <option value="">＋ Adicionar servidor ao extras</option>
                            {listaProfissionais
                              .filter(prof => prof.categoria === categoriaAtiva)
@@ -12842,7 +13012,7 @@ const imprimirRelatorioGeladeira = () => {
                              .map((prof) => (
                                <option key={prof.id} value={prof.nome}>{prof.nome}</option>
                              ))}
-                         </select>
+                         </select>                  
                        </div>
                      </div>
                      <table className="w-full text-xs border-collapse">
@@ -12934,6 +13104,30 @@ const imprimirRelatorioGeladeira = () => {
                           })}
                         </tbody>
                      </table>
+                    {feriasMes.length > 0 && (
+                      <div className="mt-4 p-3 bg-sky-50 border border-sky-200 rounded-lg">
+                        <h5 className="text-xs font-bold text-sky-700 uppercase mb-2">🌴 Férias registradas neste mês — os plantões dos dias cobertos foram removidos da grade</h5>
+                        <ul className="space-y-1">
+                          {feriasMes.map((f) => (
+                            <li key={f.nome} className="flex items-center justify-between text-xs text-slate-600 group">
+                              <span>
+                                <b>{f.nome}</b> — {f.inicio.split('-')[2]}/{f.inicio.split('-')[1]}/{f.inicio.split('-')[0]}, {f.dias} dias
+                              </span>
+                              <button
+                                onClick={() => {
+                                  if (!window.confirm(`Remover as férias de ${f.nome}?\n\nOs plantões já apagados pelos dias de férias NÃO serão restaurados automaticamente.`)) return;
+                                  salvarFeriasMes(feriasMes.filter(x => x.nome !== f.nome), f);
+                                }}
+                                className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Remover este período de férias"
+                              >
+                                <X size={12} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}                     
                    </div>
                  )}
 
@@ -12949,6 +13143,7 @@ const imprimirRelatorioGeladeira = () => {
                          bgTotalHead: 'bg-violet-200', txtTotal: 'text-violet-500', txtTotalDark: 'text-violet-700', bgTotalCell: 'bg-violet-50', bordaLTotal: 'border-l-violet-300' }
                      ].map(cfg => {
                        const totalEsp = horasCombinadasPessoa(cfg.dados?.nome || '');
+                       const feriasEsp = diasDeFerias(cfg.dados?.nome || '');
                        return (
                        <div key={cfg.campo}>
                          <div className={`flex justify-between items-center mb-2 pb-2 border-b-2 ${cfg.borda}`}>
@@ -13018,7 +13213,18 @@ const imprimirRelatorioGeladeira = () => {
                                    </button>
                                  </div>
                                </td>
-                               {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
+                               {construirSegmentos(feriasEsp, getDiasNoMes(dataSelecionada.substring(0, 7))).map((seg) => {
+                                 // 🌴 Férias: UMA célula mesclada cobrindo o período
+                                 if (seg.tipo === 'ferias') {
+                                   return (
+                                     <td key={`ferias-${seg.inicio}`} colSpan={seg.len}
+                                         className="p-0 border-r border-slate-200 text-center bg-sky-100 align-middle"
+                                         title={`${seg.len} dia(s) de férias — remova o período na lista de férias para editar estes dias`}>
+                                       <span className="font-black text-[7px] tracking-tight text-sky-700 select-none">FÉRIAS</span>
+                                     </td>
+                                   );
+                                 }
+                                 const i = seg.i;
                                  const diaStr = (i + 1).toString().padStart(2, '0');
                                  const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
                                  const marca = cfg.dados?.dias?.[diaStr] || '';
@@ -13034,7 +13240,6 @@ const imprimirRelatorioGeladeira = () => {
                                        }}
                                        onBlur={(e) => {
                                          const digitado = String(e.target.value || '').trim().toUpperCase();
-                                         // grava SOMENTE se mudou desde o foco (evita gravação redundante)
                                          if (digitado === e.target.dataset.original) return;
                                          if (digitado && digitado !== cfg.letra) {
                                            alert(`Nesta tabela use apenas "${cfg.letra}" ou deixe vazio.`);
@@ -13772,6 +13977,72 @@ const imprimirRelatorioGeladeira = () => {
           </div>
         </div>
       )}
+
+                 {/* MODAL DE FÉRIAS */}
+                 {modalFerias && (
+                   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setModalFerias(false)}>
+                     <div className="bg-white rounded-xl p-6 w-[420px] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                       <h4 className="font-bold text-sky-700 mb-4">🌴 Registrar Férias</h4>
+                       <div className="space-y-3">
+                         <div>
+                           <label className="text-xs font-bold text-slate-500 uppercase">Servidor (nome + matrícula)</label>
+                           <select
+                             value={formFerias.nome}
+                             onChange={(e) => setFormFerias(f => ({ ...f, nome: e.target.value }))}
+                             className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                           >
+                             <option value="">— Selecione —</option>
+                             {listaProfissionais
+                               .filter(prof => prof.categoria === categoriaAtiva && prof.nome)
+                               .map((prof) => (
+                                 <option key={prof.id} value={prof.nome.toUpperCase()}>{prof.nome.toUpperCase()}</option>
+                               ))}
+                           </select>
+                         </div>
+                         <div>
+                           <label className="text-xs font-bold text-slate-500 uppercase">Data de início</label>
+                           <input
+                             type="date"
+                             value={formFerias.inicio}
+                             onChange={(e) => setFormFerias(f => ({ ...f, inicio: e.target.value }))}
+                             className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                           />
+                         </div>
+                         <div>
+                           <label className="text-xs font-bold text-slate-500 uppercase">Quantidade de dias</label>
+                           <input
+                             type="number"
+                             min="1"
+                             max="90"
+                             value={formFerias.qtdDias}
+                             onChange={(e) => setFormFerias(f => ({ ...f, qtdDias: parseInt(e.target.value, 10) || 0 }))}
+                             className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                           />
+                         </div>
+                       </div>
+                       <div className="flex justify-end gap-2 mt-5">
+                         <button onClick={() => setModalFerias(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                         <button
+                           onClick={() => {
+                             if (!formFerias.nome || !formFerias.inicio || !formFerias.qtdDias) { alert("Preencha servidor, data de início e dias."); return; }
+                             // Uma linha de férias por servidor — substitui se já existir.
+                             // O salvarFeriasMes limpa os plantões da pessoa nos dias do período.
+                             const anterior = feriasMes.find(f => f.nome === formFerias.nome);
+                             const novoArray = feriasMes.filter(f => f.nome !== formFerias.nome).concat({
+                               nome: formFerias.nome, inicio: formFerias.inicio, dias: formFerias.qtdDias,
+                               criadoEm: anterior?.criadoEm || new Date().toISOString()
+                             });
+                             salvarFeriasMes(novoArray);
+                             setModalFerias(false);
+                           }}
+                           className="px-4 py-2 bg-sky-600 text-white text-sm font-bold rounded-lg hover:bg-sky-700"
+                         >
+                           Salvar Férias
+                         </button>
+                       </div>
+                     </div>
+                   </div>
+                 )}
 
     </div>
   );
