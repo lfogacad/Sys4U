@@ -5434,11 +5434,14 @@ const imprimirRelatorioGeladeira = () => {
             partes.forEach(parte => {
               let match = parte.match(/(.+?)\s*\((D|N)\)/);
               if (match) {
-                let nomeExt = match[1].trim();
-                let siglaExt = match[2];
-                if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]') && !nomeExt.includes('[EXCLUÍDO]')) {
-                  atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
-                }
+              let nomeExt = match[1].trim();
+              let siglaExt = match[2];
+              if (nomeExt.includes('[ATESTADO]')) {
+              // 🆕 Atestado parcial → ATM no período correspondente
+               atribuicoes.push({ nome: nomeExt.replace('[ATESTADO]', '').trim(), sigla: 'ATM' });
+              } else if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[EXCLUÍDO]')) {
+              atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
+              }
               }
             });
           } else if (nomeBase.includes('(Cobrindo:')) {
@@ -5446,9 +5449,12 @@ const imprimirRelatorioGeladeira = () => {
             if (match) atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
           } else if (nomeBase.includes('[EXCLUÍDO]')) {
             // buraco vazio
-          } else if (nomeBase.includes('[FALTOU]') || nomeBase.includes('[ATESTADO]')) {
-            // buraco vazio
-          } else {
+                  } else if (nomeBase.includes('[ATESTADO]')) {
+                    // 🆕 Atestado total → ATM na célula inteira
+                    atribuicoes.push({ nome: nomeBase.replace('[ATESTADO]', '').trim(), sigla: 'ATM' });
+                  } else if (nomeBase.includes('[FALTOU]')) {
+                    // buraco vazio — só fica no relatório
+                  } else {
             atribuicoes.push({ nome: nomeBase, sigla: siglaOriginal });
           }
 
@@ -12932,11 +12938,19 @@ const imprimirRelatorioGeladeira = () => {
                                 </td>
                               );
                             }
+                       
                             const i = seg.i;
                             const diaStr = (i + 1).toString().padStart(2, '0');
                             const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
                             const sigla = dias[diaStr];
                             let corLetra = 'text-slate-300'; let corFundo = '';
+                            if (sigla) {
+                              if (sigla === 'ATM') { corLetra = 'text-orange-600'; corFundo = 'bg-orange-50'; }
+                              else if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; }
+                              else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; }
+                              else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; }
+                              else { corLetra = 'text-slate-700'; corFundo = 'bg-slate-50'; }
+                            }   
                             if (sigla) {
                               if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; }
                               else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; }
@@ -13118,7 +13132,7 @@ const imprimirRelatorioGeladeira = () => {
                                   if (!window.confirm(`Remover as férias de ${f.nome}?\n\nOs plantões já apagados pelos dias de férias NÃO serão restaurados automaticamente.`)) return;
                                   salvarFeriasMes(feriasMes.filter(x => x.nome !== f.nome), f);
                                 }}
-                                className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 transition-colors"
                                 title="Remover este período de férias"
                               >
                                 <X size={12} />
