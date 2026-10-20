@@ -161,6 +161,8 @@ const GestorDashboard = ({ userProfile }) => {
   const [refreshChave, setRefreshChave] = useState(0);        // 🔄 dispara re-busca mensal + diária após edição
   const [isGerarEscalaModalOpen, setIsGerarEscalaModalOpen] = useState(false);
   const [servidoresGerados, setServidoresGerados] = useState([]);  
+  const [visitadorMes, setVisitadorMes] = useState(null);                   // 🆕 { nome, dias } — escala médica
+  const [responsavelTecnicoMes, setResponsavelTecnicoMes] = useState(null); // 🆕 { nome, dias } — escala médica  
 
   const [modalRelatorioEscalas, setModalRelatorioEscalas] = useState({ isOpen: false, texto: '' });
 
@@ -5016,90 +5018,26 @@ const imprimirRelatorioGeladeira = () => {
         const slug = getSlugCategoria(categoriaAtiva);
         const mesRef = doc(db, "escalas", slug, "meses", anoMesAlvo);
         const snap = await getDoc(mesRef);
-        const slotsCru = {}; // 🆕 mapa cru { dia: { idTurno: slot } } — base para editar células (regulares E extras)
-        const dadosAgrupados = {}; // Grade mensal completa (regulares + extras) — visual, como hoje
-        const dadosExtras = {};    // Somente plantões EXTRA — alimenta a aba "Extras" da planilha
+        const dadosMes = snap.exists() ? snap.data() : null;
+        // Visitador e Responsável Técnico (somente a escala médica grava estes campos)
+        setVisitadorMes(dadosMes?.visitador ?? null);
+        setResponsavelTecnicoMes(dadosMes?.responsavelTecnico ?? null);
+
+        // Mapa cru { dia: { idTurno: slot } } — base para editar células (regulares E extras)
+        const slotsCru = {};
         if (snap.exists()) {
-          const dias = snap.data().dias || {};
+          const dias = dadosMes?.dias || {};
           Object.keys(dias)
-            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10)) // 01..31
+            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
             .forEach((dia) => {
-              slotsCru[dia] = dias[dia] || {}; // 🆕 guarda os slots crus deste dia
-              Object.values(dias[dia] || {}).forEach((p) => {
-                let atribuicoes = [];
-                let strNome = String(p.nome ?? '');
-                let siglaOriginal = String(p.sigla ?? '');
-
-                // ================================================
-                // DECODIFICADOR DE SUBSTITUIÇÕES, OCORRÊNCIAS E EXTRAS
-                // 🚩 Extra = flag (p.extra) OU tag [EXTRA]. A tag é removida
-                // ANTES do parse — assim nomes compostos de extras
-                // ("X (D) / Y (N)") continuam decodificáveis parte a parte.
-                // ================================================
-                const ehExtraSlot = p.extra === true || strNome.includes('[EXTRA]');
-                const nomeBase = strNome.replace('[EXTRA]', '').trim();
-
-                if (nomeBase.includes(' / ')) {
-                  let partes = nomeBase.split(' / ');
-                  partes.forEach(parte => {
-                    let match = parte.match(/(.+?)\s*\((D|N)\)/);
-                    if (match) {
-                      let nomeExt = match[1].trim();
-                      let siglaExt = match[2];
-                      if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]') && !nomeExt.includes('[EXCLUÍDO]')) {
-                        atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
-                      }
-                    }
-                  });
-                } else if (nomeBase.includes('(Cobrindo:')) {
-                  let match = nomeBase.match(/(.+?)\s*\(Cobrindo:/);
-                  if (match) atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
-                } else if (nomeBase.includes('[EXCLUÍDO]')) {
-                  // buraco vazio — só fica no relatório
-                } else if (nomeBase.includes('[FALTOU]') || nomeBase.includes('[ATESTADO]')) {
-                  // buraco vazio
-                } else {
-                  atribuicoes.push({ nome: nomeBase, sigla: siglaOriginal });
-                }
-
-                const isExtra = ehExtraSlot;
-                atribuicoes.forEach(attr => {
-                  const nomeFinal = attr.nome.toUpperCase();
-                  const siglaFinal = attr.sigla;
-                  // 🚩 Extra → vai SOMENTE para a tabela separada
-                  if (isExtra) {
-                    if (!dadosExtras[nomeFinal]) dadosExtras[nomeFinal] = {};
-                    if (!dadosExtras[nomeFinal][dia]) dadosExtras[nomeFinal][dia] = [];
-                    if (!dadosExtras[nomeFinal][dia].includes(siglaFinal)) {
-                      dadosExtras[nomeFinal][dia].push(siglaFinal);
-                    }
-                    return; // não entra na grade regular
-                  }
-                  if (!dadosAgrupados[nomeFinal]) dadosAgrupados[nomeFinal] = {};
-                  if (!dadosAgrupados[nomeFinal][dia]) dadosAgrupados[nomeFinal][dia] = [];
-                  if (!dadosAgrupados[nomeFinal][dia].includes(siglaFinal)) {
-                    dadosAgrupados[nomeFinal][dia].push(siglaFinal);
-                  }
-                });
-              });
+              slotsCru[dia] = dias[dia] || {};
             });
         }
-        // Ordena turnos dentro do dia + nomes alfabéticos (mesma regra para as duas estruturas)
-        const ordenarEstrutura = (dados) => {
-          const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6 };
-          Object.keys(dados).forEach(nome => {
-            Object.keys(dados[nome]).forEach(d => {
-              dados[nome][d] = dados[nome][d]
-                .sort((a, b) => (ordemTurnos[a] || 99) - (ordemTurnos[b] || 99))
-                .join('');
-            });
-          });
-          return Object.keys(dados).sort()
-            .reduce((acc, key) => { acc[key] = dados[key]; return acc; }, {});
-        };
-        setPlantoesDoMes(ordenarEstrutura(dadosAgrupados));
-        setExtrasDoMes(ordenarEstrutura(dadosExtras));
-        setSlotsCruPorDia(slotsCru); // 🆕 alimenta a edição de células (regular e extras)
+        setSlotsCruPorDia(slotsCru);
+        // Decodificação única e centralizada (também usada pelas edições de célula)
+        const { regulares, extras } = processarSlotsCru(slotsCru);
+        setPlantoesDoMes(regulares);
+        setExtrasDoMes(extras);
       } catch (error) {
         console.error("Erro ao buscar a escala do mês:", error);
       } finally {
@@ -5107,7 +5045,7 @@ const imprimirRelatorioGeladeira = () => {
       }
     };
     buscarPlantoesMes();
-  }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao, refreshChave]); // 🆕 refreshChave
+  }, [dataSelecionada, categoriaAtiva, subViewEquipe, modoVisao, refreshChave]);
 
   // ======================================================
   // 🧼 LAVA JATO COMPLETO DE TAGS
@@ -5221,11 +5159,198 @@ const imprimirRelatorioGeladeira = () => {
     return residuo.length === 0;
   };
 
+  // 🆕 Horas COMBINADAS de uma pessoa: tabela regular + Visitador + RT,
+  // casando pelo nome+matrícula normalizado. Extras NÃO entram na soma.
+  const horasCombinadasPessoa = (nomeExibido) => {
+    const buscaP = normalizarBuscaEscala(nomeExibido);
+    if (!buscaP) return 0;
+    let total = 0;
+    Object.entries(plantoesDoMes).forEach(([nome, dias]) => {
+      if (normalizarBuscaEscala(nome) === buscaP) total += somarHorasMes(dias);
+    });
+    if (visitadorMes?.nome && normalizarBuscaEscala(visitadorMes.nome) === buscaP) {
+      total += somarHorasMes(visitadorMes.dias || {});
+    }
+    if (responsavelTecnicoMes?.nome && normalizarBuscaEscala(responsavelTecnicoMes.nome) === buscaP) {
+      total += somarHorasMes(responsavelTecnicoMes.dias || {});
+    }
+    return total;
+  };
+
   // 🚩 Predicado: o slot é EXTRA? (flag nova OU tag legada no nome)
   const isSlotExtra = (s) =>
     s?.extra === true || String(s?.nome || '').includes('[EXTRA]');
 
-  // ===== SALVAR EDIÇÃO DIRETA DE CÉLULA NA TABELA DE EXTRAS =====
+  // ===== SALVAR VISITADOR / RESPONSÁVEL TÉCNICO (somente escala médica) =====
+  // ⚠️ setDoc com merge faz MERGE PROFUNDO: chaves ausentes no payload NÃO são
+  // apagadas do servidor. Para remover um dia (ou limpar tudo) é obrigatório
+  // usar deleteField() explicitamente — delete em objeto local não basta.
+  const salvarEspecial = async (campo, { nome, dia, valor } = {}) => {
+    const atual = campo === 'visitador' ? visitadorMes : responsavelTecnicoMes;
+
+    // Apagar o nome limpa o registro inteiro deste campo.
+    // merge profundo preservaria os dias antigos → deleteField() em cada um deles.
+    if (nome !== undefined && !String(nome).trim()) {
+      const diasLimpos = {};
+      Object.keys(atual?.dias || {}).forEach(d => { diasLimpos[d] = deleteField(); });
+      const limpo = { nome: '', dias: diasLimpos, atualizadoEm: new Date().toISOString() };
+      try {
+        const anoMes = dataSelecionada.substring(0, 7);
+        const slug = getSlugCategoria(categoriaAtiva);
+        await setDoc(doc(db, "escalas", slug, "meses", anoMes), {
+          categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+          ano: parseInt(anoMes.split('-')[0], 10),
+          mes: parseInt(anoMes.split('-')[1], 10),
+          [campo]: limpo
+        }, { merge: true });
+        if (campo === 'visitador') setVisitadorMes({ nome: '', dias: {} });
+        else setResponsavelTecnicoMes({ nome: '', dias: {} });
+      } catch (error) {
+        console.error(`Erro ao limpar ${campo}:`, error);
+        alert("Erro ao limpar. Verifique o console.");
+      }
+      return;
+    }
+
+    // Novos dados: cópia dos dias existentes + a alteração do dia
+    const diasNovos = { ...(atual?.dias || {}) };
+    if (dia !== undefined) {
+      if (valor) diasNovos[dia] = String(valor).toUpperCase();
+      else diasNovos[dia] = deleteField(); // 🛠️ remove do SERVIDOR, não só do objeto
+    }
+
+    const dados = {
+      nome: nome !== undefined ? String(nome).trim().toUpperCase() : String(atual?.nome || ''),
+      dias: diasNovos,
+      atualizadoEm: new Date().toISOString()
+    };
+    if (!dados.nome) { alert("Digite o nome do profissional antes de marcar os dias."); return; }
+
+    // Estado local limpo (sem a chave deleteField, que não pode viver no estado)
+    const estadoLocal = { nome: dados.nome, dias: { ...(atual?.dias || {}) } };
+    if (dia !== undefined) {
+      if (valor) estadoLocal.dias[dia] = String(valor).toUpperCase();
+      else delete estadoLocal.dias[dia];
+    }
+
+    try {
+      const anoMes = dataSelecionada.substring(0, 7);
+      const slug = getSlugCategoria(categoriaAtiva);
+      await setDoc(doc(db, "escalas", slug, "meses", anoMes), {
+        categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
+        ano: parseInt(anoMes.split('-')[0], 10),
+        mes: parseInt(anoMes.split('-')[1], 10),
+        [campo]: dados
+      }, { merge: true });
+      if (campo === 'visitador') setVisitadorMes(estadoLocal);
+      else setResponsavelTecnicoMes(estadoLocal);
+      console.log(`✅ ${campo} atualizado no Firebase!`);
+    } catch (error) {
+      console.error(`Erro ao salvar ${campo}:`, error);
+      alert("Erro ao salvar. Verifique o console.");
+    }
+  };
+
+  // ===== NAVEGAÇÃO POR SETAS NA GRADE (estilo Excel) =====
+  // ←/→: células vizinhas · ↑/↓: mesma coluna, linha acima/abaixo · Enter: desce
+  const moverFocoGrade = (e) => {
+    const direcoes = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+    const dir = direcoes[e.key];
+    if (!dir && e.key !== 'Enter') return;
+    if (dir || e.key === 'Enter') {
+      const tdAtual = e.currentTarget.closest('td');
+      if (!tdAtual) return;
+      e.preventDefault();
+      const trAtual = tdAtual.parentElement;
+      const tbody = trAtual.closest('tbody');
+      if (!tbody) return;
+      const linhas = Array.from(tbody.querySelectorAll('tr'));
+      const idxLinha = linhas.indexOf(trAtual);
+      const celulas = Array.from(trAtual.children);
+      const idxCol = celulas.indexOf(tdAtual);
+      let tdAlvo = null;
+      if (dir === 'left') tdAlvo = celulas[idxCol - 1];
+      else if (dir === 'right') tdAlvo = celulas[idxCol + 1];
+      else {
+        const novaLinha = linhas[dir === 'down' || !dir ? idxLinha + 1 : idxLinha - 1];
+        if (novaLinha) tdAlvo = novaLinha.children[idxCol];
+      }
+      const campo = tdAlvo?.querySelector('input, select');
+      if (campo) { campo.focus(); if (campo.select) campo.select(); }
+    }
+  };
+
+  // 🆕 Decodifica os slots crus em { regulares, extras } — usada pelo carregamento
+  // mensal E pelas edições de célula (atualização local sem piscar a tela)
+  const processarSlotsCru = (slotsCru) => {
+    const dadosAgrupados = {};
+    const dadosExtras = {};
+    Object.keys(slotsCru)
+      .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+      .forEach((dia) => {
+        Object.values(slotsCru[dia] || {}).forEach((p) => {
+          let atribuicoes = [];
+          let strNome = String(p.nome ?? '');
+          let siglaOriginal = String(p.sigla ?? '');
+
+          const ehExtraSlot = p.extra === true || strNome.includes('[EXTRA]');
+          const nomeBase = strNome.replace('[EXTRA]', '').trim();
+
+          if (nomeBase.includes(' / ')) {
+            let partes = nomeBase.split(' / ');
+            partes.forEach(parte => {
+              let match = parte.match(/(.+?)\s*\((D|N)\)/);
+              if (match) {
+                let nomeExt = match[1].trim();
+                let siglaExt = match[2];
+                if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]') && !nomeExt.includes('[EXCLUÍDO]')) {
+                  atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
+                }
+              }
+            });
+          } else if (nomeBase.includes('(Cobrindo:')) {
+            let match = nomeBase.match(/(.+?)\s*\(Cobrindo:/);
+            if (match) atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
+          } else if (nomeBase.includes('[EXCLUÍDO]')) {
+            // buraco vazio
+          } else if (nomeBase.includes('[FALTOU]') || nomeBase.includes('[ATESTADO]')) {
+            // buraco vazio
+          } else {
+            atribuicoes.push({ nome: nomeBase, sigla: siglaOriginal });
+          }
+
+          const isExtra = ehExtraSlot;
+          atribuicoes.forEach(attr => {
+            const nomeFinal = attr.nome.toUpperCase();
+            if (!nomeFinal) return; // 🛡️ ignora slots órfãos (nome vazio) — não geram linha fantasma            
+            const siglaFinal = attr.sigla;
+            if (isExtra) {
+              if (!dadosExtras[nomeFinal]) dadosExtras[nomeFinal] = {};
+              if (!dadosExtras[nomeFinal][dia]) dadosExtras[nomeFinal][dia] = [];
+              if (!dadosExtras[nomeFinal][dia].includes(siglaFinal)) dadosExtras[nomeFinal][dia].push(siglaFinal);
+              return;
+            }
+            if (!dadosAgrupados[nomeFinal]) dadosAgrupados[nomeFinal] = {};
+            if (!dadosAgrupados[nomeFinal][dia]) dadosAgrupados[nomeFinal][dia] = [];
+            if (!dadosAgrupados[nomeFinal][dia].includes(siglaFinal)) dadosAgrupados[nomeFinal][dia].push(siglaFinal);
+          });
+        });
+      });
+    const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6 };
+    const ordenar = (dados) => {
+      Object.keys(dados).forEach(nome => {
+        Object.keys(dados[nome]).forEach(d => {
+          dados[nome][d] = dados[nome][d]
+            .sort((a, b) => (ordemTurnos[a] || 99) - (ordemTurnos[b] || 99))
+            .join('');
+        });
+      });
+      return Object.keys(dados).sort().reduce((acc, k) => { acc[k] = dados[k]; return acc; }, {});
+    };
+    return { regulares: ordenar(dadosAgrupados), extras: ordenar(dadosExtras) };
+  };
+    
+  // ===== SALVAR EDIÇÃO DIRETA DE CÉLULA NA TABELA DE EXTRAS (sem flash) =====
   const salvarEdicaoCelulaExtra = async (nomeProfissional, dia, siglasAtuais, novaSigla) => {
     if (novaSigla === siglasAtuais) return;
 
@@ -5245,7 +5370,6 @@ const imprimirRelatorioGeladeira = () => {
       return;
     }
 
-    setIsLoadingMes(true);
     try {
       const anoMes = dataSelecionada.substring(0, 7);
       const slug = getSlugCategoria(categoriaAtiva);
@@ -5280,18 +5404,35 @@ const imprimirRelatorioGeladeira = () => {
         };
       }
 
+      // 🧹 Limpeza: slots sem nome são órfãos (não pertencem a ninguém, só geram
+      // linha fantasma) — aproveitam qualquer edição do dia para serem removidos
+      Object.entries(slotsDia).forEach(([id, s]) => {
+        if (String(s?.nome ?? '').trim() === '') dadosGravacao[id] = deleteField();
+      });
+
       await setDoc(mesRef, {
         ultimaAtualizacao: new Date().toISOString(),
         dias: { [dia]: dadosGravacao }
       }, { merge: true });
 
-      setRefreshChave(k => k + 1); // 🔄 re-busca mensal + diária automaticamente
+      // 🔄 Atualização LOCAL (sem flash): aplica o mesmo payload ao estado e
+      // recalcula os agregados — sem loading e sem refetch do mês
+      const sentinel = deleteField();
+      const slotsCruNovo = {
+        ...slotsCruPorDia,
+        [dia]: { ...(slotsCruPorDia[dia] || {}), ...dadosGravacao }
+      };
+      Object.keys(slotsCruNovo[dia]).forEach(id => {
+        if (slotsCruNovo[dia][id] === sentinel) delete slotsCruNovo[dia][id];
+      });
+      setSlotsCruPorDia(slotsCruNovo);
+      const { regulares, extras } = processarSlotsCru(slotsCruNovo);
+      setPlantoesDoMes(regulares);
+      setExtrasDoMes(extras);
     } catch (error) {
       console.error("Erro ao editar célula da tabela de extras:", error);
       alert("Erro ao salvar a edição. Verifique o console.");
-      setRefreshChave(k => k + 1);
-    } finally {
-      setIsLoadingMes(false);
+      setRefreshChave(k => k + 1); // erro → re-sincroniza com o banco
     }
   };
 
@@ -5455,7 +5596,7 @@ const imprimirRelatorioGeladeira = () => {
     }
   };
 
-  // ===== SALVAR EDIÇÃO DIRETA DE CÉLULA NA GRADE MENSAL (estilo Excel) =====
+  // ===== SALVAR EDIÇÃO DIRETA DE CÉLULA NA GRADE MENSAL (estilo Excel, sem flash) =====
   const salvarEdicaoCelula = async (nomeProfissional, dia, siglasAtuais, novaSigla) => {
     if (novaSigla === siglasAtuais) return;
 
@@ -5470,14 +5611,13 @@ const imprimirRelatorioGeladeira = () => {
       .filter(([, s]) => !(String(s?.sigla || '') === '' && !String(s?.nome || '').includes('[')));
 
     // Caso complexo (substituições parciais / cobrindo): o valor vem de slot composto,
-    // que não é seguro editar inline → orienta para a vista diária e reverte o select
+    // que não é seguro editar inline → orienta para a vista diária e reverte o campo
     if (siglasAtuais && slotsAfetados.length === 0) {
       alert("Este plantão tem substituições/ocorrências manuais. Use a vista 'Dia' para editá-lo com segurança.");
       setRefreshChave(k => k + 1);
       return;
     }
 
-    setIsLoadingMes(true);
     try {
       const anoMes = dataSelecionada.substring(0, 7);
       const slug = getSlugCategoria(categoriaAtiva);
@@ -5513,18 +5653,35 @@ const imprimirRelatorioGeladeira = () => {
         };
       }
 
+      // 🧹 Limpeza: slots sem nome são órfãos (não pertencem a ninguém, só geram
+      // linha fantasma) — aproveitam qualquer edição do dia para serem removidos
+      Object.entries(slotsDia).forEach(([id, s]) => {
+        if (String(s?.nome ?? '').trim() === '') dadosGravacao[id] = deleteField();
+      });
+
       await setDoc(mesRef, {
         ultimaAtualizacao: new Date().toISOString(),
         dias: { [dia]: dadosGravacao }
       }, { merge: true });
 
-      setRefreshChave(k => k + 1); // 🔄 re-busca mensal + diária automaticamente
+      // 🔄 Atualização LOCAL (sem flash): aplica o mesmo payload ao estado e
+      // recalcula os agregados — sem loading e sem refetch do mês
+      const sentinel = deleteField();
+      const slotsCruNovo = {
+        ...slotsCruPorDia,
+        [dia]: { ...(slotsCruPorDia[dia] || {}), ...dadosGravacao }
+      };
+      Object.keys(slotsCruNovo[dia]).forEach(id => {
+        if (slotsCruNovo[dia][id] === sentinel) delete slotsCruNovo[dia][id];
+      });
+      setSlotsCruPorDia(slotsCruNovo);
+      const { regulares, extras } = processarSlotsCru(slotsCruNovo);
+      setPlantoesDoMes(regulares);
+      setExtrasDoMes(extras);
     } catch (error) {
       console.error("Erro ao editar célula da grade:", error);
       alert("Erro ao salvar a edição. Verifique o console.");
-      setRefreshChave(k => k + 1);
-    } finally {
-      setIsLoadingMes(false);
+      setRefreshChave(k => k + 1); // erro → re-sincroniza com o banco
     }
   };
 
@@ -12592,7 +12749,7 @@ const imprimirRelatorioGeladeira = () => {
                       {!isLoadingMes && Object.keys(plantoesDoMes).length === 0 && <tr><td colSpan={getDiasNoMes(dataSelecionada.substring(0, 7)) + 2} className="p-8 text-center text-slate-400">Nenhum plantão processado para {dataSelecionada.substring(0,7)}.</td></tr>}
 
                       {!isLoadingMes && Object.entries(plantoesDoMes).map(([nome, dias]) => {
-                        const totalHoras = somarHorasMes(dias);
+                        const totalHoras = horasCombinadasPessoa(nome);
                         return (
                         <tr key={nome} className="group hover:bg-slate-50/60 border-b border-slate-100 transition-colors">
                           <td className="p-2 border-r border-slate-200 font-bold text-slate-700 whitespace-nowrap text-[10px] uppercase">
@@ -12630,19 +12787,20 @@ const imprimirRelatorioGeladeira = () => {
                                   key={`${nome}-${diaStr}-${sigla || 'vazio'}-${refreshChave}`}
                                   defaultValue={sigla || ''}
                                   maxLength={3}
+                                  onFocus={(e) => {
+                                    e.target.dataset.original = String(e.target.value || '').trim().toUpperCase();
+                                  }}
                                   onBlur={(e) => {
                                     const digitado = String(e.target.value || '').trim().toUpperCase();
-                                    if (digitado && !DICIONARIO_SIGLAS_DASH[digitado]) {
-                                      alert(`Sigla "${digitado}" inválida. Use: D, N, DN, V, M, T ou combinações de 2 (VT, VN, TN...).`);
-                                      setRefreshChave(k => k + 1);
-                                      return;
-                                    }
+                                    // Grava SOMENTE se o valor mudou desde o foco —
+                                    // comparação com o valor original elimina o problema da prop defasada
+                                    if (digitado === e.target.dataset.original) return;
                                     salvarEdicaoCelula(nome, diaStr, sigla, digitado);
                                   }}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                  onKeyDown={moverFocoGrade}
                                   placeholder="—"
                                   className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${corLetra}`}
-                                  title="Digite a sigla (D, N, DN, V, M, T, VT...) e clique fora para salvar"
+                                  title="Digite a sigla e clique fora ou use as setas para navegar (salva automaticamente)"
                                 />
                               </td>
                             );
@@ -12750,19 +12908,18 @@ const imprimirRelatorioGeladeira = () => {
                                       key={`${nome}-${diaStr}-${sigla || 'vazio'}-${refreshChave}`}
                                       defaultValue={sigla || ''}
                                       maxLength={3}
+                                      onFocus={(e) => {
+                                        e.target.dataset.original = String(e.target.value || '').trim().toUpperCase();
+                                      }}
                                       onBlur={(e) => {
                                         const digitado = String(e.target.value || '').trim().toUpperCase();
-                                        if (digitado && !DICIONARIO_SIGLAS_DASH[digitado]) {
-                                          alert(`Sigla "${digitado}" inválida. Use: D, N, DN, V, M, T ou combinações de 2 (VT, VN, TN...).`);
-                                          setRefreshChave(k => k + 1);
-                                          return;
-                                        }
+                                        if (digitado === e.target.dataset.original) return;
                                         salvarEdicaoCelulaExtra(nome, diaStr, sigla, digitado);
                                       }}
-                                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                      onKeyDown={moverFocoGrade}
                                       placeholder="—"
                                       className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${corLetra}`}
-                                      title="Digite a sigla extra (D, N, DN, V, M, T, VT...) e clique fora para salvar"
+                                      title="Digite a sigla extra e clique fora ou use as setas para navegar (salva automaticamente)"
                                     />
                                   </td>
                                 );
@@ -12777,6 +12934,134 @@ const imprimirRelatorioGeladeira = () => {
                           })}
                         </tbody>
                      </table>
+                   </div>
+                 )}
+
+                 {/* ===== VISITADOR E RESPONSÁVEL TÉCNICO (somente escala médica) ===== */}
+                 {categoriaAtiva === 'Médico' && !isLoadingMes && (
+                   <div className="mt-8 space-y-6">
+                     {[
+                       { campo: 'visitador', titulo: 'Visitador', letra: 'V', dados: visitadorMes,
+                         borda: 'border-sky-300', bgHead: 'bg-sky-50', bordaHead: 'border-sky-200', txtHead: 'text-sky-700', txtDia: 'text-sky-400', bgCell: 'bg-sky-50', bgCellFS: 'bg-sky-100',
+                         bgTotalHead: 'bg-sky-200', txtTotal: 'text-sky-500', txtTotalDark: 'text-sky-700', bgTotalCell: 'bg-sky-50', bordaLTotal: 'border-l-sky-300' },
+                       { campo: 'responsavelTecnico', titulo: 'Responsável Técnico', letra: 'T', dados: responsavelTecnicoMes,
+                         borda: 'border-violet-300', bgHead: 'bg-violet-50', bordaHead: 'border-violet-200', txtHead: 'text-violet-700', txtDia: 'text-violet-400', bgCell: 'bg-violet-50', bgCellFS: 'bg-violet-100',
+                         bgTotalHead: 'bg-violet-200', txtTotal: 'text-violet-500', txtTotalDark: 'text-violet-700', bgTotalCell: 'bg-violet-50', bordaLTotal: 'border-l-violet-300' }
+                     ].map(cfg => {
+                       const totalEsp = horasCombinadasPessoa(cfg.dados?.nome || '');
+                       return (
+                       <div key={cfg.campo}>
+                         <div className={`flex justify-between items-center mb-2 pb-2 border-b-2 ${cfg.borda}`}>
+                           <h4 className={`font-bold text-sm ${cfg.txtHead}`}>{cfg.titulo} — {categoriaAtiva}</h4>
+                           <span className="text-xs font-bold text-slate-400 uppercase">Digite "{cfg.letra}" nos dias correspondentes</span>
+                         </div>
+                         <table className="w-full text-xs border-collapse">
+                           <thead>
+                             <tr className={cfg.bgHead}>
+                               <th className={`p-2 border ${cfg.bordaHead} font-bold ${cfg.txtHead} text-left`}>Profissional</th>
+                               {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
+                                 const diaStr = (i + 1).toString().padStart(2, '0');
+                                 const sem = getDiaSemana(dataSelecionada.substring(0, 7), diaStr);
+                                 const fimSemana = sem === 'SÁB' || sem === 'DOM';
+                                 return (
+                                   <th key={i} className={`p-1 border ${cfg.bordaHead} text-center w-8 ${fimSemana ? cfg.bgCellFS : ''}`}>
+                                     <div className={`text-[7px] font-bold uppercase leading-none ${fimSemana ? 'text-red-400' : cfg.txtDia}`}>{sem}</div>
+                                     <div className={`text-[10px] font-bold ${cfg.txtHead} leading-tight`}>{diaStr}</div>
+                                   </th>
+                                 );
+                               })}
+                               <th className={`p-1 border ${cfg.bordaHead} text-center ${cfg.bgTotalHead} min-w-[44px]`}>
+                                 <div className={`text-[7px] font-bold uppercase leading-none ${cfg.txtTotal}`}>Total</div>
+                                 <div className={`text-[10px] font-bold ${cfg.txtTotalDark} leading-tight`}>Horas</div>
+                               </th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             <tr className="hover:bg-slate-50/60 border-b border-slate-100">
+                               <td className="p-2 border-r border-slate-200 whitespace-nowrap">
+                                 <div className="flex items-center gap-1">
+                                   <select
+                                     value={cfg.dados?.nome || ''}
+                                     onChange={(e) => {
+                                       const novoNome = String(e.target.value || '').trim().toUpperCase();
+                                       if (novoNome === (cfg.dados?.nome || '')) return;
+                                       if (!novoNome && cfg.dados?.dias && Object.keys(cfg.dados.dias).length > 0) {
+                                         if (!window.confirm('Limpar o nome apaga também todas as marcas de dias deste campo. Continuar?')) return;
+                                       }
+                                       salvarEspecial(cfg.campo, { nome: novoNome });
+                                     }}
+                                     className="min-w-[200px] p-1.5 bg-transparent font-bold text-[10px] uppercase text-slate-700 outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded"
+                                     title={`Selecione o ${cfg.titulo.toLowerCase()} (o nome gravado inclui a matrícula para somar com a linha regular)`}
+                                   >
+                                     <option value="">— Selecione o {cfg.titulo.toLowerCase()} —</option>
+                                     {listaProfissionais
+                                       .filter(prof => prof.categoria === categoriaAtiva && prof.nome)
+                                       .map((prof) => (
+                                         <option key={prof.id} value={prof.nome.toUpperCase()}>{prof.nome.toUpperCase()}</option>
+                                       ))}
+                                     {cfg.dados?.nome && !listaProfissionais.some(p => p.nome.toUpperCase() === cfg.dados.nome) && (
+                                       <option value={cfg.dados.nome}>{cfg.dados.nome}</option>
+                                     )}
+                                   </select>
+                                   <button
+                                     onClick={() => {
+                                       if (!cfg.dados?.nome) return;
+                                       if (cfg.dados?.dias && Object.keys(cfg.dados.dias).length > 0) {
+                                         if (!window.confirm(`Limpar a linha do ${cfg.titulo.toLowerCase()}?\n\nO nome e todas as marcas de dias serão apagados.`)) return;
+                                       }
+                                       salvarEspecial(cfg.campo, { nome: '' });
+                                     }}
+                                     className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 transition-colors"
+                                     title="Limpar esta linha (nome e dias)"
+                                   >
+                                     <X size={12} />
+                                   </button>
+                                 </div>
+                               </td>
+                               {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
+                                 const diaStr = (i + 1).toString().padStart(2, '0');
+                                 const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
+                                 const marca = cfg.dados?.dias?.[diaStr] || '';
+                                 return (
+                                   <td key={i} className={`p-0 border-r border-slate-200 text-center ${marca ? cfg.bgCell : fimSemana ? cfg.bgCellFS : ''}`}>
+                                     <input
+                                       type="text"
+                                       key={`${cfg.campo}-${diaStr}-${marca}-${dataSelecionada}`}
+                                       defaultValue={marca}
+                                       maxLength={2}
+                                       onFocus={(e) => {
+                                         e.target.dataset.original = String(e.target.value || '').trim().toUpperCase();
+                                       }}
+                                       onBlur={(e) => {
+                                         const digitado = String(e.target.value || '').trim().toUpperCase();
+                                         // grava SOMENTE se mudou desde o foco (evita gravação redundante)
+                                         if (digitado === e.target.dataset.original) return;
+                                         if (digitado && digitado !== cfg.letra) {
+                                           alert(`Nesta tabela use apenas "${cfg.letra}" ou deixe vazio.`);
+                                           e.target.value = marca;
+                                           return;
+                                         }
+                                         salvarEspecial(cfg.campo, { dia: diaStr, valor: digitado });
+                                       }}
+                                       onKeyDown={moverFocoGrade}
+                                       placeholder="—"
+                                       className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${marca ? 'text-slate-700' : 'text-slate-300'}`}
+                                       title={`Digite "${cfg.letra}" e clique fora ou use as setas para navegar (salva automaticamente)`}
+                                     />
+                                   </td>
+                                 );
+                               })}
+                               <td className={`p-1 border-l-2 ${cfg.bordaLTotal} border-r border-slate-200 text-center ${cfg.bgTotalCell}`} title="Total combinado: tabela regular + Visitador/RT do mesmo nome e matrícula (extras não entram)">
+                                 <span className={`font-black text-sm ${totalEsp === 144 ? 'text-emerald-600' : totalEsp > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
+                                   {totalEsp}h
+                                 </span>
+                               </td>
+                             </tr>
+                           </tbody>
+                         </table>
+                       </div>
+                       );
+                     })}
                    </div>
                  )}
               </div>

@@ -29,6 +29,47 @@ const getSlug = (categoria) => {
     .replace(/^-+|-+$/g, '') || 'outros';
 };
 
+// ======================================================
+// 🆕 EXTRAÇÃO DE VISITADOR E RESPONSÁVEL TÉCNICO
+// Estrutura exclusiva da escala médica: linha-marca mesclada na
+// coluna A ("Visitador" / "Responsável Técnico") seguida da linha
+// com o nome na coluna A e as marcas V/T nas colunas de dias.
+// Não depende de números de linha fixos. Devolve também as linhas
+// que o loop principal deve PULAR (para não virarem plantões regulares).
+// ======================================================
+const extrairVisitadorRT = (data, colunasDias, colMatricula = -1) => {
+  const resultado = { visitador: null, responsavelTecnico: null };
+  const linhasParaPular = new Set();
+  for (let i = 0; i < data.length - 1; i++) {
+    const marca = String(data[i]?.[0] ?? '').trim()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    let campo = null;
+    if (marca === 'VISITADOR') campo = 'visitador';
+    else if (marca === 'RESPONSAVEL TECNICO') campo = 'responsavelTecnico';
+    if (!campo) continue;
+
+    const linhaDados = data[i + 1] || [];
+    const nome = String(linhaDados[0] ?? '').trim();
+    if (!nome) continue;
+
+    // 🆕 Anexa a matrícula (mesma coluna detectada para os regulares) —
+    // assim o nome do Visitador/RT casa com a linha regular do mesmo contrato
+    const matricula = colMatricula >= 0 ? String(linhaDados[colMatricula] ?? '').trim() : '';
+    const nomeFinal = matricula ? `${nome} ${matricula}` : nome;
+
+    const dias = {};
+    Object.entries(colunasDias).forEach(([colIndex, diaStr]) => {
+      const val = String(linhaDados[Number(colIndex)] ?? '').trim().toUpperCase();
+      if (val) dias[diaStr] = val;
+    });
+
+    resultado[campo] = { nome: nomeFinal.toUpperCase(), dias };
+    linhasParaPular.add(i);     // linha-marca (célula mesclada — não é servidor)
+    linhasParaPular.add(i + 1); // linha de dados — vira tabela própria, não regular
+  }
+  return { ...resultado, linhasParaPular };
+};
+
 // Normaliza o nome para busca (sem acento, sem espaço, maiúsculas)
 const normalizarBusca = (nome) => {
   return String(nome || '')
@@ -45,6 +86,8 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
   const [previewData, setPreviewData] = useState([]);
   const [status, setStatus] = useState("idle");
   const [categoriasPorAba, setCategoriasPorAba] = useState({});
+  const [especiaisPreview, setEspeciaisPreview] = useState(null); // 🆕 Visitador/RT extraídos da planilha
+
   // ===== DICIONÁRIO DE TURNOS (base + todas as combinações de 2 siglas) =====
   const siglasBase = {
     'D': { nome: 'Plantão Dia',    inicio: '07:00', fim: '19:00', horas: 12, tipo: 'plantonista' },
@@ -105,6 +148,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
         const bstr = evt.target.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const plantoesExtraidos = [];
+        let especiaisAcumulados = null; // 🆕 acumula Visitador/RT entre as abas (1ª ocorrência vence)
         // 1. Função inteligente para adivinhar a categoria pelo nome da aba do Excel
         // Adivinha a categoria pelo nome da aba — normaliza acentos para bater sempre
         const getCategoriaBySheetName = (sheetName) => {
@@ -166,9 +210,24 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
               console.warn(`Aba ignorada: "${wsname}" (Não possui cabeçalho NOME DO SERVIDOR).`);
               return; 
             }
+            // 🆕 Visitador e Responsável Técnico (somente abas com estes marcadores exatos)
+            const { visitador: visExtraido, responsavelTecnico: rtExtraido, linhasParaPular } =
+              extrairVisitadorRT(data, colunasDias, colMatricula);
+            if ((visExtraido || rtExtraido) && !especiaisAcumulados) {
+              especiaisAcumulados = {
+                anoMes: `${ano}-${String(mes).padStart(2, '0')}`,
+                aba: wsname,
+                visitador: visExtraido,
+                responsavelTecnico: rtExtraido
+              };
+            }            
             // Varrer os nomes e extrair as letrinhas
             for (let i = indexLinhaDias + 1; i < data.length; i++) {
               const row = data[i];
+
+              // 🆕 Linhas do Visitador/RT (marca + dados) não são servidores —
+              // pulam ANTES de qualquer verificação, inclusive do marcador de extras
+              if (linhasParaPular.has(i)) continue;
 
               // ===== MARCADOR DE PLANTÕES EXTRAS =====
               // Analisa as 3 primeiras colunas (células mescladas podem começar em B ou C).
@@ -219,6 +278,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
               });
             }
         });
+        setEspeciaisPreview(especiaisAcumulados); // 🆕 envia Visitador/RT para o preview        
         if (plantoesExtraidos.length === 0) {
            throw new Error("Nenhum plantão válido foi encontrado no arquivo.");
         }
@@ -313,6 +373,31 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
           dias: bloco.dias
         }, { merge: true }); // merge preserva dias/editos manuais que já existem
       });
+
+      // 🆕 Grava Visitador e Responsável Técnico no documento do mês da aba de origem.
+      // Só escreve o campo se a planilha realmente trouxe a seção — editos manuais
+      // feitos no dashboard são preservados quando a aba não tem Visitador/RT.
+      if (especiaisPreview && (especiaisPreview.visitador || especiaisPreview.responsavelTecnico)) {
+        const catEspecial = categoriasPorAba[especiaisPreview.aba] || 'Médico Plantonista';
+        const slugEspecial = getSlug(catEspecial);
+        const payloadEspecial = { ultimaAtualizacao: new Date().toISOString() };
+        if (especiaisPreview.visitador) {
+          payloadEspecial.visitador = {
+            nome: especiaisPreview.visitador.nome,
+            dias: especiaisPreview.visitador.dias || {},
+            atualizadoEm: new Date().toISOString()
+          };
+        }
+        if (especiaisPreview.responsavelTecnico) {
+          payloadEspecial.responsavelTecnico = {
+            nome: especiaisPreview.responsavelTecnico.nome,
+            dias: especiaisPreview.responsavelTecnico.dias || {},
+            atualizadoEm: new Date().toISOString()
+          };
+        }
+        const mesRefEspecial = doc(db, "escalas", slugEspecial, "meses", especiaisPreview.anoMes);
+        batch.set(mesRefEspecial, payloadEspecial, { merge: true });
+      }
 
       await batch.commit();
       alert(`✅ SUCESSO! ${previewData.length} plantões organizados em ${blocos.length} documento(s) mensal(is).`);
