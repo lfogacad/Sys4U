@@ -130,6 +130,39 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
     });
   });
 
+  // 🆕 Extrai a GERÊNCIA DE ENFERMAGEM — tarja mesclada (A, B ou C) e TODAS as
+  // linhas de dados seguintes, até a próxima tarja (EXTRA/REGULAR/LEGENDA).
+  const extrairGerenciaEnfermagem = (data, colunasDias, colMatricula = -1) => {
+    for (let i = 0; i < data.length - 1; i++) {
+      const celulas = [data[i]?.[0], data[i]?.[1], data[i]?.[2]]
+        .map(c => String(c ?? '').trim()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase());
+      if (!celulas.some(c => c.includes('GERENCIA DE ENFERMAGEM'))) continue;
+
+      let resultado = null;
+      for (let j = i + 1; j < data.length; j++) {
+        const linha = data[j] || [];
+        const nomeCel = String(linha[0] ?? '').trim();
+        if (!nomeCel) continue;
+        const nomeU = nomeCel.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+        if (nomeU.includes('LEGENDA') || nomeU.includes('EXTRA') || nomeU.includes('REGULAR') || nomeU.includes('GERENCIA')) break;
+
+        const matricula = colMatricula >= 0 ? String(linha[colMatricula] ?? '').trim() : '';
+        const nomeFinal = matricula ? `${nomeCel} ${matricula}` : nomeCel;
+        const dias = {};
+        Object.entries(colunasDias).forEach(([colIndex, diaStr]) => {
+          const val = String(linha[Number(colIndex)] ?? '').trim().toUpperCase();
+          if (val && dicionarioTurnos[val]) dias[diaStr] = val;
+        });
+        if (Object.keys(dias).length > 0) {
+          resultado = { nome: nomeFinal.toUpperCase(), dias, atualizadoEm: new Date().toISOString() };
+        }
+      }
+      return resultado;
+    }
+    return null;
+  };
+
   const handleFileUpload = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
@@ -138,6 +171,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
       setPreviewData([]);
     }
   };
+
   const processarPlanilha = async () => {
     if (!file) return;
     setIsProcessing(true);
@@ -148,7 +182,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
         const bstr = evt.target.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const plantoesExtraidos = [];
-        let especiaisAcumulados = null; // 🆕 acumula Visitador/RT entre as abas (1ª ocorrência vence)
+        let especiaisAcumulados = null; // 🆕 acumula Visitador/RT/Gerência entre as abas (1ª ocorrência vence)
         // 1. Função inteligente para adivinhar a categoria pelo nome da aba do Excel
         // Adivinha a categoria pelo nome da aba — normaliza acentos para bater sempre
         const getCategoriaBySheetName = (sheetName) => {
@@ -177,6 +211,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
             let colunasDias = {}; 
             let lendoNefrologia = false;
             let modoExtra = false; // 🚩 reinicia a cada aba — o marcador EXTRA é por aba
+            let marcadorGerencia = false; // 🚩 seção GERÊNCIA DE ENFERMAGEM ativa (por aba)
             let colMatricula = -1; // 🆕 coluna da MATRÍCULA nesta aba (-1 = não existe)
             // Encontrar onde começam os dias
             for (let i = 0; i < data.length; i++) {
@@ -213,31 +248,39 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
             // 🆕 Visitador e Responsável Técnico (somente abas com estes marcadores exatos)
             const { visitador: visExtraido, responsavelTecnico: rtExtraido, linhasParaPular } =
               extrairVisitadorRT(data, colunasDias, colMatricula);
-            if ((visExtraido || rtExtraido) && !especiaisAcumulados) {
+            // 🆕 Gerência de Enfermagem (somente aba de enfermeiros) — extrator próprio
+            const gerenciaExtraida = extrairGerenciaEnfermagem(data, colunasDias, colMatricula);
+            console.log(`[Importador] Aba "${wsname}": gerência =`, gerenciaExtraida); // 🔍 temporário
+            if ((visExtraido || rtExtraido || gerenciaExtraida) && !especiaisAcumulados) {
               especiaisAcumulados = {
                 anoMes: `${ano}-${String(mes).padStart(2, '0')}`,
                 aba: wsname,
                 visitador: visExtraido,
-                responsavelTecnico: rtExtraido
+                responsavelTecnico: rtExtraido,
+                gerenciaEnfermagem: gerenciaExtraida
               };
-            }            
+            }
             // Varrer os nomes e extrair as letrinhas
             for (let i = indexLinhaDias + 1; i < data.length; i++) {
               const row = data[i];
-
               // 🆕 Linhas do Visitador/RT (marca + dados) não são servidores —
               // pulam ANTES de qualquer verificação, inclusive do marcador de extras
               if (linhasParaPular.has(i)) continue;
 
-              // ===== MARCADOR DE PLANTÕES EXTRAS =====
+              // ===== MARCADORES DE SEÇÃO (ordem importa) =====
               // Analisa as 3 primeiras colunas (células mescladas podem começar em B ou C).
-              // Aceita "EXTRA", "EXTRAS", "PLANTÕES EXTRAS" etc. Roda ANTES do guard de nome vazio.
               const celulasLinha = [row?.[0], row?.[1], row?.[2]]
                 .map(c => String(c ?? '').trim().toUpperCase()
                   .normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
                 .filter(c => c.length > 0);
-              if (celulasLinha.some(c => c.includes('EXTRA'))) { modoExtra = true; continue; }
-              if (celulasLinha.some(c => c.includes('REGULAR') || c.includes('NORMAL') || c.includes('FIXO'))) { modoExtra = false; continue; }
+              // 🚩 EXTRAS liga o modo e SEMPRE desliga o modo gerência
+              if (celulasLinha.some(c => c.includes('EXTRA'))) { modoExtra = true; marcadorGerencia = false; continue; }
+              if (celulasLinha.some(c => c.includes('REGULAR') || c.includes('NORMAL') || c.includes('FIXO'))) { modoExtra = false; marcadorGerencia = false; continue; }
+              // 🆕 Tarja da gerência: ativa o modo e NÃO é servidor
+              if (catAtual === 'Enfermeiro' && celulasLinha.some(c => c.includes('GERENCIA DE ENFERMAGEM'))) { marcadorGerencia = true; continue; }
+              // 🆕 Dentro da seção da gerência: pula TODAS as linhas (não viram
+              // regular nem extra — a extração delas é feita pelo extrator próprio)
+              if (marcadorGerencia) continue;
 
               const nomeServidor = row[0];
               if (!nomeServidor) continue; 
@@ -278,7 +321,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
               });
             }
         });
-        setEspeciaisPreview(especiaisAcumulados); // 🆕 envia Visitador/RT para o preview        
+        setEspeciaisPreview(especiaisAcumulados); // 🆕 envia Visitador/RT/Gerência para o preview        
         if (plantoesExtraidos.length === 0) {
            throw new Error("Nenhum plantão válido foi encontrado no arquivo.");
         }
@@ -374,10 +417,10 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
         }, { merge: true }); // merge preserva dias/editos manuais que já existem
       });
 
-      // 🆕 Grava Visitador e Responsável Técnico no documento do mês da aba de origem.
-      // Só escreve o campo se a planilha realmente trouxe a seção — editos manuais
-      // feitos no dashboard são preservados quando a aba não tem Visitador/RT.
-      if (especiaisPreview && (especiaisPreview.visitador || especiaisPreview.responsavelTecnico)) {
+      // 🆕 Grava Visitador, RT e Gerência de Enfermagem no documento do mês da aba de origem.
+      // Só escreve cada campo se a planilha realmente trouxe a seção — editos manuais
+      // feitos no dashboard são preservados quando a aba não tem a seção.
+      if (especiaisPreview && (especiaisPreview.visitador || especiaisPreview.responsavelTecnico || especiaisPreview.gerenciaEnfermagem)) {
         const catEspecial = categoriasPorAba[especiaisPreview.aba] || 'Médico Plantonista';
         const slugEspecial = getSlug(catEspecial);
         const payloadEspecial = { ultimaAtualizacao: new Date().toISOString() };
@@ -392,6 +435,14 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
           payloadEspecial.responsavelTecnico = {
             nome: especiaisPreview.responsavelTecnico.nome,
             dias: especiaisPreview.responsavelTecnico.dias || {},
+            atualizadoEm: new Date().toISOString()
+          };
+        }
+        // 🆕 Gerência de Enfermagem
+        if (especiaisPreview.gerenciaEnfermagem) {
+          payloadEspecial.gerenciaEnfermagem = {
+            nome: especiaisPreview.gerenciaEnfermagem.nome,
+            dias: especiaisPreview.gerenciaEnfermagem.dias || {},
             atualizadoEm: new Date().toISOString()
           };
         }

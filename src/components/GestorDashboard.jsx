@@ -165,7 +165,8 @@ const GestorDashboard = ({ userProfile }) => {
   const [responsavelTecnicoMes, setResponsavelTecnicoMes] = useState(null); // 🆕 { nome, dias } — escala médica  
   const [feriasMes, setFeriasMes] = useState([]);              // 🆕 [{ nome, inicio: 'AAAA-MM-DD', dias: n, criadoEm }]
   const [modalFerias, setModalFerias] = useState(false);       // 🆕 modal de cadastro de férias
-  const [formFerias, setFormFerias] = useState({ nome: '', inicio: '', qtdDias: 30 });  
+  const [formFerias, setFormFerias] = useState({ nome: '', inicio: '', qtdDias: 30 });
+  const [gerenciaEnfermagemMes, setGerenciaEnfermagemMes] = useState(null); // 🆕 Gerência de Enfermagem (somente escala de enfermeiros)    
 
   const [modalRelatorioEscalas, setModalRelatorioEscalas] = useState({ isOpen: false, texto: '' });
 
@@ -5025,7 +5026,8 @@ const imprimirRelatorioGeladeira = () => {
         // Visitador e Responsável Técnico (somente a escala médica grava estes campos)
         setVisitadorMes(dadosMes?.visitador ?? null);
         setResponsavelTecnicoMes(dadosMes?.responsavelTecnico ?? null);
-        setFeriasMes(Array.isArray(dadosMes?.ferias) ? dadosMes.ferias : []);        
+        setFeriasMes(Array.isArray(dadosMes?.ferias) ? dadosMes.ferias : []);
+        setGerenciaEnfermagemMes(dadosMes?.gerenciaEnfermagem ?? null);
 
         // Mapa cru { dia: { idTurno: slot } } — base para editar células (regulares E extras)
         const slotsCru = {};
@@ -5163,17 +5165,30 @@ const imprimirRelatorioGeladeira = () => {
     return residuo.length === 0;
   };
 
-  // Horas COMBINADAS de uma pessoa: tabela regular + Visitador + RT,
-  // casando pelo nome+matrícula normalizado. Extras NÃO entram na soma.
-  // 🌴 Dias de férias do Visitador/RT não contam horas — a marca fica oculta
-  // pelo período; ao remover as férias ela reaparece e volta a somar.
+  // Horas COMBINADAS: tabela regular (via slots crus) + Visitador + RT.
+  // 🆕 ATM mantém a carga do plantão original (resolvida por siglaOriginal);
+  //    F zera o plantão; extras não contam.
   const horasCombinadasPessoa = (nomeExibido) => {
     const buscaP = normalizarBuscaEscala(nomeExibido);
     if (!buscaP) return 0;
     let total = 0;
-    Object.entries(plantoesDoMes).forEach(([nome, dias]) => {
-      if (normalizarBuscaEscala(nome) === buscaP) total += somarHorasMes(dias);
+    // Tabela regular — soma direto dos slots crus (fonte da verdade)
+    Object.values(slotsCruPorDia).forEach(slots => {
+      Object.values(slots || {}).forEach(s => {
+        if (!s || s.extra === true || String(s?.nome || '').includes('[EXTRA]')) return;
+        if (s.busca !== buscaP) return;
+        const nomeStr = String(s?.nome || '');
+        const siglaSlot = String(s?.sigla || '');
+        if (!siglaSlot && !nomeStr) return;               // placeholder vazio
+        if (nomeStr.includes('[FALTOU]') || siglaSlot === 'F') return;   // 🆕 falta zera
+        if (nomeStr.includes('[ATESTADO]') || siglaSlot === 'ATM') {     // 🆕 atestado mantém carga
+          total += calcularHorasSigla(s.siglaOriginal || siglaSlot);
+          return;
+        }
+        total += calcularHorasSigla(siglaSlot);
+      });
     });
+    // Visitador e RT — dias de férias não contam (regra mantida)
     if (visitadorMes?.nome && normalizarBuscaEscala(visitadorMes.nome) === buscaP) {
       const feriasVis = diasDeFerias(visitadorMes.nome);
       const diasValidos = {};
@@ -5189,6 +5204,15 @@ const imprimirRelatorioGeladeira = () => {
         if (!feriasRT[dia]) diasValidos[dia] = val;
       });
       total += somarHorasMes(diasValidos);
+    }
+    // 🆕 Gerência de Enfermagem — mesma regra do Visitador/RT (férias não contam)
+    if (gerenciaEnfermagemMes?.nome && normalizarBuscaEscala(gerenciaEnfermagemMes.nome) === buscaP) {
+      const feriasGer = diasDeFerias(gerenciaEnfermagemMes.nome);
+      const diasValidosGer = {};
+      Object.entries(gerenciaEnfermagemMes.dias || {}).forEach(([dia, val]) => {
+        if (!feriasGer[dia]) diasValidosGer[dia] = val;
+      });
+      total += somarHorasMes(diasValidosGer);
     }
     return total;
   };
@@ -5293,15 +5317,23 @@ const imprimirRelatorioGeladeira = () => {
     return mapa;
   };
 
-  // ===== SALVAR VISITADOR / RESPONSÁVEL TÉCNICO (somente escala médica) =====
-  // ⚠️ setDoc com merge faz MERGE PROFUNDO: chaves ausentes no payload NÃO são
-  // apagadas do servidor. Para remover um dia (ou limpar tudo) é obrigatório
-  // usar deleteField() explicitamente — delete em objeto local não basta.
-  const salvarEspecial = async (campo, { nome, dia, valor } = {}) => {
-    const atual = campo === 'visitador' ? visitadorMes : responsavelTecnicoMes;
+  // ===== SALVAR CAMPOS ESPECIAIS (Visitador / RT / Gerência de Enfermagem) =====
+  // ⚠️ setDoc com merge faz MERGE PROFUNDO: chaves ausentes NÃO são apagadas do
+  // servidor. Para remover dia/limpar tudo é obrigatório deleteField() explícito.
+  const SETTERS_ESPECIAIS = {
+    visitador: setVisitadorMes,
+    responsavelTecnico: setResponsavelTecnicoMes,
+    gerenciaEnfermagem: setGerenciaEnfermagemMes // 🆕
+  };
 
-    // Apagar o nome limpa o registro inteiro deste campo.
-    // merge profundo preservaria os dias antigos → deleteField() em cada um deles.
+  const salvarEspecial = async (campo, { nome, dia, valor } = {}) => {
+    const atual = campo === 'visitador' ? visitadorMes
+      : campo === 'responsavelTecnico' ? responsavelTecnicoMes
+      : gerenciaEnfermagemMes; // 🆕
+    const setEstado = SETTERS_ESPECIAIS[campo];
+    if (!setEstado) return;
+
+    // Apagar o nome limpa o registro inteiro deste campo (deleteField em cada dia)
     if (nome !== undefined && !String(nome).trim()) {
       const diasLimpos = {};
       Object.keys(atual?.dias || {}).forEach(d => { diasLimpos[d] = deleteField(); });
@@ -5315,8 +5347,7 @@ const imprimirRelatorioGeladeira = () => {
           mes: parseInt(anoMes.split('-')[1], 10),
           [campo]: limpo
         }, { merge: true });
-        if (campo === 'visitador') setVisitadorMes({ nome: '', dias: {} });
-        else setResponsavelTecnicoMes({ nome: '', dias: {} });
+        setEstado({ nome: '', dias: {} });
       } catch (error) {
         console.error(`Erro ao limpar ${campo}:`, error);
         alert("Erro ao limpar. Verifique o console.");
@@ -5324,11 +5355,10 @@ const imprimirRelatorioGeladeira = () => {
       return;
     }
 
-    // Novos dados: cópia dos dias existentes + a alteração do dia
     const diasNovos = { ...(atual?.dias || {}) };
     if (dia !== undefined) {
       if (valor) diasNovos[dia] = String(valor).toUpperCase();
-      else diasNovos[dia] = deleteField(); // 🛠️ remove do SERVIDOR, não só do objeto
+      else diasNovos[dia] = deleteField(); // remove do SERVIDOR
     }
 
     const dados = {
@@ -5338,7 +5368,7 @@ const imprimirRelatorioGeladeira = () => {
     };
     if (!dados.nome) { alert("Digite o nome do profissional antes de marcar os dias."); return; }
 
-    // Estado local limpo (sem a chave deleteField, que não pode viver no estado)
+    // Estado local limpo (sentinel não pode viver no estado)
     const estadoLocal = { nome: dados.nome, dias: { ...(atual?.dias || {}) } };
     if (dia !== undefined) {
       if (valor) estadoLocal.dias[dia] = String(valor).toUpperCase();
@@ -5354,8 +5384,7 @@ const imprimirRelatorioGeladeira = () => {
         mes: parseInt(anoMes.split('-')[1], 10),
         [campo]: dados
       }, { merge: true });
-      if (campo === 'visitador') setVisitadorMes(estadoLocal);
-      else setResponsavelTecnicoMes(estadoLocal);
+      setEstado(estadoLocal);
       console.log(`✅ ${campo} atualizado no Firebase!`);
     } catch (error) {
       console.error(`Erro ao salvar ${campo}:`, error);
@@ -5434,14 +5463,16 @@ const imprimirRelatorioGeladeira = () => {
             partes.forEach(parte => {
               let match = parte.match(/(.+?)\s*\((D|N)\)/);
               if (match) {
-              let nomeExt = match[1].trim();
-              let siglaExt = match[2];
-              if (nomeExt.includes('[ATESTADO]')) {
-              // 🆕 Atestado parcial → ATM no período correspondente
-               atribuicoes.push({ nome: nomeExt.replace('[ATESTADO]', '').trim(), sigla: 'ATM' });
-              } else if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[EXCLUÍDO]')) {
-              atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
-              }
+                let nomeExt = match[1].trim();
+                let siglaExt = match[2];
+                if (nomeExt.includes('[ATESTADO]')) {
+                  atribuicoes.push({ nome: nomeExt.replace('[ATESTADO]', '').trim(), sigla: 'ATM' });
+                } else if (nomeExt.includes('[FALTOU]')) {
+                  // 🆕 Falta parcial → F no período correspondente
+                  atribuicoes.push({ nome: nomeExt.replace('[FALTOU]', '').trim(), sigla: 'F' });
+                } else if (!nomeExt.includes('[EXCLUÍDO]')) {
+                  atribuicoes.push({ nome: nomeExt, sigla: siglaExt });
+                }
               }
             });
           } else if (nomeBase.includes('(Cobrindo:')) {
@@ -5449,12 +5480,12 @@ const imprimirRelatorioGeladeira = () => {
             if (match) atribuicoes.push({ nome: match[1].trim(), sigla: siglaOriginal });
           } else if (nomeBase.includes('[EXCLUÍDO]')) {
             // buraco vazio
-                  } else if (nomeBase.includes('[ATESTADO]')) {
-                    // 🆕 Atestado total → ATM na célula inteira
-                    atribuicoes.push({ nome: nomeBase.replace('[ATESTADO]', '').trim(), sigla: 'ATM' });
-                  } else if (nomeBase.includes('[FALTOU]')) {
-                    // buraco vazio — só fica no relatório
-                  } else {
+            } else if (nomeBase.includes('[ATESTADO]')) {
+              atribuicoes.push({ nome: nomeBase.replace('[ATESTADO]', '').trim(), sigla: 'ATM' });
+            } else if (nomeBase.includes('[FALTOU]')) {
+              // 🆕 Falta total → F na célula inteira
+              atribuicoes.push({ nome: nomeBase.replace('[FALTOU]', '').trim(), sigla: 'F' });
+            } else {
             atribuicoes.push({ nome: nomeBase, sigla: siglaOriginal });
           }
 
@@ -5475,7 +5506,7 @@ const imprimirRelatorioGeladeira = () => {
           });
         });
       });
-    const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6 };
+    const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6, 'ATM': 7, 'F': 8 };
     const ordenar = (dados) => {
       Object.keys(dados).forEach(nome => {
         Object.keys(dados[nome]).forEach(d => {
@@ -5735,7 +5766,22 @@ const imprimirRelatorioGeladeira = () => {
     }
   };
 
+  // Duração em horas de uma sigla, pelo dicionário (trata virada de dia, ex. 19:00 às 07:00 = 12h)
+  const calcularHorasSigla = (sigla) => {
+    if (!sigla) return 0;
+    const t = DICIONARIO_SIGLAS_DASH[sigla];
+    if (!t?.inicio || !t?.fim) return 0;
+    const [hi, mi] = t.inicio.split(':').map(Number);
+    const [hf, mf] = t.fim.split(':').map(Number);
+    let mins = (hf * 60 + mf) - (hi * 60 + mi);
+    if (mins <= 0) mins += 24 * 60;
+    return mins / 60;
+  };
+
   // ===== SALVAR EDIÇÃO DIRETA DE CÉLULA NA GRADE MENSAL (estilo Excel, sem flash) =====
+  // 🆕 ATM: digitar ATM grava o slot no MESMO formato do modal de ocorrências
+  // (nome com tag [ATESTADO] + herança de turno/horário do slot removido) —
+  // assim o atestado aparece na vista Dia e decodifica como ATM na grade mensal.
   const salvarEdicaoCelula = async (nomeProfissional, dia, siglasAtuais, novaSigla) => {
     if (novaSigla === siglasAtuais) return;
 
@@ -5763,40 +5809,51 @@ const imprimirRelatorioGeladeira = () => {
       const mesRef = doc(db, "escalas", slug, "meses", anoMes);
 
       const dadosGravacao = {};
+      const slotBase = slotsAfetados.length > 0 ? slotsAfetados[0][1] : null; // 🆕 herança p/ ATM
       // 1. Remove os slots antigos que formavam o valor atual da célula
-      //    (inclusive buracos [FALTOU]/[EXCLUÍDO] — sobrescrever a célula limpa o histórico dela)
       slotsAfetados.forEach(([id]) => { dadosGravacao[id] = deleteField(); });
 
-      // 2. Grava o novo slot determinístico {nome}_{sigla} (célula não-vazia)
+      // 🧹 Limpeza de órfãos ANTES do novo slot (garante que o deleteField
+      // nunca sobrescreva o objeto do slot novo no mesmo id)
+      Object.entries(slotsDia).forEach(([id, s]) => {
+        if (String(s?.nome ?? '').trim() === '') dadosGravacao[id] = deleteField();
+      });
+
+      // 2. Grava o novo slot determinístico (célula não-vazia)
       if (novaSigla) {
-        const t = DICIONARIO_SIGLAS_DASH[novaSigla] || { nome: novaSigla, inicio: '', fim: '', tipo: 'plantonista' };
-        const idNovo = `${buscaP}_${novaSigla}`;
-        dadosGravacao[idNovo] = {
+        const ehAtestado = novaSigla === 'ATM';
+        const ehFalta = novaSigla === 'F'; // 🆕
+        const t = DICIONARIO_SIGLAS_DASH[novaSigla]
+          || { nome: ehAtestado ? 'Atestado' : ehFalta ? 'Falta' : novaSigla, inicio: '', fim: '', tipo: 'plantonista' };
+        const idNovo = ehAtestado ? `${buscaP}_ATESTADO` : ehFalta ? `${buscaP}_FALTOU` : `${buscaP}_${novaSigla}`;
+        const slotNovo = {
           id: idNovo,
           seq: Object.keys(slotsDia).length + 1,
-          uid: "",
+          uid: slotBase?.uid || "",
           busca: buscaP,
           cadastradoEm: new Date().toISOString(),
           categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
           data: `${anoMes}-${dia}`,
-          horario: `${t.inicio} às ${t.fim}`,
-          nome: nomeProfissional.toUpperCase(),
-          sigla: novaSigla,
+          sigla: ehAtestado ? (slotBase?.sigla || 'ATM') : ehFalta ? (slotBase?.sigla || 'F') : novaSigla,
+          turno: ehAtestado ? (slotBase?.turno || 'Atestado') : ehFalta ? (slotBase?.turno || 'Falta') : t.nome,
+          horario: ehAtestado ? (slotBase?.horario || 'Atestado') : ehFalta ? (slotBase?.horario || 'Falta') : `${t.inicio} às ${t.fim}`,
+          nome: ehAtestado ? `${nomeProfissional.toUpperCase()} [ATESTADO]`
+              : ehFalta ? `${nomeProfissional.toUpperCase()} [FALTOU]` // 🆕
+              : nomeProfissional.toUpperCase(),
           status: "Confirmado",
-          tipo: t.tipo,
-          turno: t.nome,
+          tipo: (ehAtestado || ehFalta) ? (slotBase?.tipo || t.tipo) : t.tipo,
           extra: false,
           observacao: "",
           editadoNaGrade: true,
           modificadoEm: new Date().toISOString()
         };
+        if (ehAtestado || ehFalta) {
+          slotNovo.nomeOriginal = slotBase?.nome || nomeProfissional.toUpperCase();
+          slotNovo.statusAlteracao = ehAtestado ? 'Atestado' : 'Falta';
+          if (ehAtestado) slotNovo.siglaOriginal = slotBase?.sigla || ''; // 🆕 carga original preservada
+        }
+        dadosGravacao[idNovo] = slotNovo;
       }
-
-      // 🧹 Limpeza: slots sem nome são órfãos (não pertencem a ninguém, só geram
-      // linha fantasma) — aproveitam qualquer edição do dia para serem removidos
-      Object.entries(slotsDia).forEach(([id, s]) => {
-        if (String(s?.nome ?? '').trim() === '') dadosGravacao[id] = deleteField();
-      });
 
       await setDoc(mesRef, {
         ultimaAtualizacao: new Date().toISOString(),
@@ -12946,11 +13003,12 @@ const imprimirRelatorioGeladeira = () => {
                             let corLetra = 'text-slate-300'; let corFundo = '';
                             if (sigla) {
                               if (sigla === 'ATM') { corLetra = 'text-orange-600'; corFundo = 'bg-orange-50'; }
+                              else if (sigla === 'F') { corLetra = 'text-red-600'; corFundo = 'bg-red-50'; }
                               else if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; }
                               else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; }
                               else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; }
                               else { corLetra = 'text-slate-700'; corFundo = 'bg-slate-50'; }
-                            }   
+                            } 
                             if (sigla) {
                               if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; }
                               else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; }
@@ -12963,7 +13021,8 @@ const imprimirRelatorioGeladeira = () => {
                                 .replace('emerald-50', 'emerald-100')
                                 .replace('indigo-50', 'indigo-100')
                                 .replace('blue-50', 'blue-100')
-                                .replace('slate-50', 'slate-100');
+                                .replace('slate-50', 'slate-100')
+                                .replace('red-50', 'red-100');
                               if (!corFundo) corFundo = 'bg-slate-100';
                             }
                             return (
@@ -13145,140 +13204,144 @@ const imprimirRelatorioGeladeira = () => {
                    </div>
                  )}
 
-                 {/* ===== VISITADOR E RESPONSÁVEL TÉCNICO (somente escala médica) ===== */}
-                 {categoriaAtiva === 'Médico' && !isLoadingMes && (
-                   <div className="mt-8 space-y-6">
-                     {[
-                       { campo: 'visitador', titulo: 'Visitador', letra: 'V', dados: visitadorMes,
-                         borda: 'border-sky-300', bgHead: 'bg-sky-50', bordaHead: 'border-sky-200', txtHead: 'text-sky-700', txtDia: 'text-sky-400', bgCell: 'bg-sky-50', bgCellFS: 'bg-sky-100',
-                         bgTotalHead: 'bg-sky-200', txtTotal: 'text-sky-500', txtTotalDark: 'text-sky-700', bgTotalCell: 'bg-sky-50', bordaLTotal: 'border-l-sky-300' },
-                       { campo: 'responsavelTecnico', titulo: 'Responsável Técnico', letra: 'T', dados: responsavelTecnicoMes,
-                         borda: 'border-violet-300', bgHead: 'bg-violet-50', bordaHead: 'border-violet-200', txtHead: 'text-violet-700', txtDia: 'text-violet-400', bgCell: 'bg-violet-50', bgCellFS: 'bg-violet-100',
-                         bgTotalHead: 'bg-violet-200', txtTotal: 'text-violet-500', txtTotalDark: 'text-violet-700', bgTotalCell: 'bg-violet-50', bordaLTotal: 'border-l-violet-300' }
-                     ].map(cfg => {
+                 {/* ===== TABELAS ESPECIAIS: VISITADOR/RT (médicos) e GERÊNCIA DE ENFERMAGEM (enfermeiros) ===== */}
+                 {(categoriaAtiva === 'Médico' || categoriaAtiva === 'Enfermeiro') && !isLoadingMes && (
+                   <div className="mt-8">
+                     <h4 className="font-bold text-slate-600 uppercase text-xs tracking-wide mb-2">
+                       {categoriaAtiva === 'Médico' ? 'Visitador e Responsável Técnico' : 'Gerência de Enfermagem'}
+                     </h4>
+
+                     {/* Lista de configs dirigindo a(s) tabela(s) desta categoria */}
+                     {(categoriaAtiva === 'Médico'
+                       ? [
+                           { campo: 'visitador', titulo: 'Visitador', letra: 'V',
+                             dados: visitadorMes, salvar: salvarEspecial,
+                             bgCell: 'bg-emerald-50', bgCellFS: 'bg-emerald-100' },
+                           { campo: 'responsavelTecnico', titulo: 'Responsável Técnico', letra: 'T',
+                             dados: responsavelTecnicoMes, salvar: salvarEspecial,
+                             bgCell: 'bg-emerald-50', bgCellFS: 'bg-emerald-100' }
+                         ]
+                       : [
+                           { campo: 'gerenciaEnfermagem', titulo: 'Gerência de Enfermagem', letra: 'G',
+                             dados: gerenciaEnfermagemMes, salvar: salvarEspecial,
+                             bgCell: 'bg-teal-50', bgCellFS: 'bg-teal-100' }
+                         ]
+                     ).map(cfg => {
                        const totalEsp = horasCombinadasPessoa(cfg.dados?.nome || '');
                        const feriasEsp = diasDeFerias(cfg.dados?.nome || '');
                        return (
-                       <div key={cfg.campo}>
-                         <div className={`flex justify-between items-center mb-2 pb-2 border-b-2 ${cfg.borda}`}>
-                           <h4 className={`font-bold text-sm ${cfg.txtHead}`}>{cfg.titulo} — {categoriaAtiva}</h4>
-                           <span className="text-xs font-bold text-slate-400 uppercase">Digite "{cfg.letra}" nos dias correspondentes</span>
-                         </div>
-                         <table className="w-full text-xs border-collapse">
-                           <thead>
-                             <tr className={cfg.bgHead}>
-                               <th className={`p-2 border ${cfg.bordaHead} font-bold ${cfg.txtHead} text-left`}>Profissional</th>
-                               {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
-                                 const diaStr = (i + 1).toString().padStart(2, '0');
-                                 const sem = getDiaSemana(dataSelecionada.substring(0, 7), diaStr);
-                                 const fimSemana = sem === 'SÁB' || sem === 'DOM';
-                                 return (
-                                   <th key={i} className={`p-1 border ${cfg.bordaHead} text-center w-8 ${fimSemana ? cfg.bgCellFS : ''}`}>
-                                     <div className={`text-[7px] font-bold uppercase leading-none ${fimSemana ? 'text-red-400' : cfg.txtDia}`}>{sem}</div>
-                                     <div className={`text-[10px] font-bold ${cfg.txtHead} leading-tight`}>{diaStr}</div>
-                                   </th>
-                                 );
-                               })}
-                               <th className={`p-1 border ${cfg.bordaHead} text-center ${cfg.bgTotalHead} min-w-[44px]`}>
-                                 <div className={`text-[7px] font-bold uppercase leading-none ${cfg.txtTotal}`}>Total</div>
-                                 <div className={`text-[10px] font-bold ${cfg.txtTotalDark} leading-tight`}>Horas</div>
-                               </th>
-                             </tr>
-                           </thead>
-                           <tbody>
-                             <tr className="hover:bg-slate-50/60 border-b border-slate-100">
-                               <td className="p-2 border-r border-slate-200 whitespace-nowrap">
-                                 <div className="flex items-center gap-1">
-                                   <select
-                                     value={cfg.dados?.nome || ''}
-                                     onChange={(e) => {
-                                       const novoNome = String(e.target.value || '').trim().toUpperCase();
-                                       if (novoNome === (cfg.dados?.nome || '')) return;
-                                       if (!novoNome && cfg.dados?.dias && Object.keys(cfg.dados.dias).length > 0) {
-                                         if (!window.confirm('Limpar o nome apaga também todas as marcas de dias deste campo. Continuar?')) return;
-                                       }
-                                       salvarEspecial(cfg.campo, { nome: novoNome });
-                                     }}
-                                     className="min-w-[200px] p-1.5 bg-transparent font-bold text-[10px] uppercase text-slate-700 outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded"
-                                     title={`Selecione o ${cfg.titulo.toLowerCase()} (o nome gravado inclui a matrícula para somar com a linha regular)`}
-                                   >
-                                     <option value="">— Selecione o {cfg.titulo.toLowerCase()} —</option>
-                                     {listaProfissionais
-                                       .filter(prof => prof.categoria === categoriaAtiva && prof.nome)
-                                       .map((prof) => (
-                                         <option key={prof.id} value={prof.nome.toUpperCase()}>{prof.nome.toUpperCase()}</option>
-                                       ))}
-                                     {cfg.dados?.nome && !listaProfissionais.some(p => p.nome.toUpperCase() === cfg.dados.nome) && (
-                                       <option value={cfg.dados.nome}>{cfg.dados.nome}</option>
-                                     )}
-                                   </select>
-                                   <button
-                                     onClick={() => {
-                                       if (!cfg.dados?.nome) return;
-                                       if (cfg.dados?.dias && Object.keys(cfg.dados.dias).length > 0) {
-                                         if (!window.confirm(`Limpar a linha do ${cfg.titulo.toLowerCase()}?\n\nO nome e todas as marcas de dias serão apagados.`)) return;
-                                       }
-                                       salvarEspecial(cfg.campo, { nome: '' });
-                                     }}
-                                     className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 transition-colors"
-                                     title="Limpar esta linha (nome e dias)"
-                                   >
-                                     <X size={12} />
-                                   </button>
-                                 </div>
-                               </td>
-                               {construirSegmentos(feriasEsp, getDiasNoMes(dataSelecionada.substring(0, 7))).map((seg) => {
-                                 // 🌴 Férias: UMA célula mesclada cobrindo o período
-                                 if (seg.tipo === 'ferias') {
+                         <div key={cfg.campo} className="mb-6">
+                           <table className="w-full text-xs border-collapse table-fixed">
+                             <thead>
+                               <tr className="bg-slate-100">
+                                 <th className="p-2 border border-slate-200 w-[240px] text-left text-[10px] uppercase text-slate-500">{cfg.titulo}</th>
+                                 {[...Array(getDiasNoMes(dataSelecionada.substring(0, 7)))].map((_, i) => {
+                                   const diaStr = (i + 1).toString().padStart(2, '0');
+                                   const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
                                    return (
-                                     <td key={`ferias-${seg.inicio}`} colSpan={seg.len}
-                                         className="p-0 border-r border-slate-200 text-center bg-sky-100 align-middle"
-                                         title={`${seg.len} dia(s) de férias — remova o período na lista de férias para editar estes dias`}>
-                                       <span className="font-black text-[7px] tracking-tight text-sky-700 select-none">FÉRIAS</span>
+                                     <th key={i} className={`p-1 border border-slate-200 text-center text-[10px] ${fimSemana ? 'bg-slate-200 text-slate-600' : 'text-slate-500'}`}>{i + 1}</th>
+                                   );
+                                 })}
+                                 <th className="p-2 border border-slate-200 w-16 text-center text-[10px] uppercase text-slate-500">Horas</th>
+                               </tr>
+                             </thead>
+                             <tbody>
+                               <tr>
+                                 {/* Nome: select + X */}
+                                 <td className="p-2 border-r border-slate-200 whitespace-nowrap">
+                                   <div className="flex items-center gap-1">
+                                     <select
+                                       value={cfg.dados?.nome || ''}
+                                       onChange={(e) => {
+                                         const novoNome = String(e.target.value || '').trim().toUpperCase();
+                                         if (novoNome === (cfg.dados?.nome || '')) return;
+                                         if (!novoNome && cfg.dados?.dias && Object.keys(cfg.dados.dias).length > 0) {
+                                           if (!window.confirm('Limpar o nome apaga também todas as marcas de dias deste campo. Continuar?')) return;
+                                         }
+                                         salvarEspecial(cfg.campo, { nome: novoNome });
+                                       }}
+                                       className="min-w-[200px] p-1.5 bg-transparent font-bold text-[10px] uppercase text-slate-700 outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded"
+                                       title={`Selecione o ${cfg.titulo.toLowerCase()} (o nome gravado inclui a matrícula para somar com a linha regular)`}
+                                     >
+                                       <option value="">— Selecione o {cfg.titulo.toLowerCase()} —</option>
+                                       {listaProfissionais
+                                         .filter(prof => prof.categoria === categoriaAtiva && prof.nome)
+                                         .map((prof) => (
+                                           <option key={prof.id} value={prof.nome.toUpperCase()}>{prof.nome.toUpperCase()}</option>
+                                         ))}
+                                       {cfg.dados?.nome && !listaProfissionais.some(p => p.nome.toUpperCase() === cfg.dados.nome) && (
+                                         <option value={cfg.dados.nome}>{cfg.dados.nome}</option>
+                                       )}
+                                     </select>
+                                     <button
+                                       onClick={() => {
+                                         if (!cfg.dados?.nome) return;
+                                         if (cfg.dados?.dias && Object.keys(cfg.dados.dias).length > 0) {
+                                           if (!window.confirm(`Limpar a linha do ${cfg.titulo.toLowerCase()}?\n\nO nome e todas as marcas de dias serão apagados.`)) return;
+                                         }
+                                         salvarEspecial(cfg.campo, { nome: '' });
+                                       }}
+                                       className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 transition-colors"
+                                       title="Limpar esta linha (nome e dias)"
+                                     >
+                                       <X size={12} />
+                                     </button>
+                                   </div>
+                                 </td>
+
+                                 {/* Células de dia — com férias mescladas */}
+                                 {construirSegmentos(feriasEsp, getDiasNoMes(dataSelecionada.substring(0, 7))).map((seg) => {
+                                   if (seg.tipo === 'ferias') {
+                                     return (
+                                       <td key={`ferias-${seg.inicio}`} colSpan={seg.len}
+                                           className="p-0 border-r border-slate-200 text-center bg-sky-100 align-middle"
+                                           title={`${seg.len} dia(s) de férias — remova o período na lista de férias para editar estes dias`}>
+                                         <span className="font-black text-[7px] tracking-tight text-sky-700 select-none">FÉRIAS</span>
+                                       </td>
+                                     );
+                                   }
+                                   const i = seg.i;
+                                   const diaStr = (i + 1).toString().padStart(2, '0');
+                                   const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
+                                   const marca = cfg.dados?.dias?.[diaStr] || '';
+                                   return (
+                                     <td key={i} className={`p-0 border-r border-slate-200 text-center ${marca ? cfg.bgCell : fimSemana ? cfg.bgCellFS : ''}`}>
+                                       <input
+                                         type="text"
+                                         key={`${cfg.campo}-${diaStr}-${marca}-${dataSelecionada}`}
+                                         defaultValue={marca}
+                                         maxLength={2}
+                                         onFocus={(e) => {
+                                           e.target.dataset.original = String(e.target.value || '').trim().toUpperCase();
+                                         }}
+                                         onBlur={(e) => {
+                                           const digitado = String(e.target.value || '').trim().toUpperCase();
+                                           if (digitado === e.target.dataset.original) return;
+                                           // 🆕 Aceita qualquer sigla válida (D, N, M, T, DN...) — a soma de horas resolve pelo dicionário
+                                           if (digitado && !DICIONARIO_SIGLAS_DASH[digitado]) {
+                                             alert(`Sigla "${digitado}" inválida. Use: ${Object.keys(DICIONARIO_SIGLAS_DASH).join(', ')}.`);
+                                             e.target.value = marca;
+                                             return;
+                                           }
+                                           salvarEspecial(cfg.campo, { dia: diaStr, valor: digitado });
+                                         }}
+                                         onKeyDown={moverFocoGrade}
+                                         placeholder="—"
+                                         className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${marca ? 'text-slate-700' : 'text-slate-300'}`}
+                                         title={`Digite "${cfg.letra}" e clique fora ou use as setas para navegar (salva automaticamente)`}
+                                       />
                                      </td>
                                    );
-                                 }
-                                 const i = seg.i;
-                                 const diaStr = (i + 1).toString().padStart(2, '0');
-                                 const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
-                                 const marca = cfg.dados?.dias?.[diaStr] || '';
-                                 return (
-                                   <td key={i} className={`p-0 border-r border-slate-200 text-center ${marca ? cfg.bgCell : fimSemana ? cfg.bgCellFS : ''}`}>
-                                     <input
-                                       type="text"
-                                       key={`${cfg.campo}-${diaStr}-${marca}-${dataSelecionada}`}
-                                       defaultValue={marca}
-                                       maxLength={2}
-                                       onFocus={(e) => {
-                                         e.target.dataset.original = String(e.target.value || '').trim().toUpperCase();
-                                       }}
-                                       onBlur={(e) => {
-                                         const digitado = String(e.target.value || '').trim().toUpperCase();
-                                         if (digitado === e.target.dataset.original) return;
-                                         if (digitado && digitado !== cfg.letra) {
-                                           alert(`Nesta tabela use apenas "${cfg.letra}" ou deixe vazio.`);
-                                           e.target.value = marca;
-                                           return;
-                                         }
-                                         salvarEspecial(cfg.campo, { dia: diaStr, valor: digitado });
-                                       }}
-                                       onKeyDown={moverFocoGrade}
-                                       placeholder="—"
-                                       className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${marca ? 'text-slate-700' : 'text-slate-300'}`}
-                                       title={`Digite "${cfg.letra}" e clique fora ou use as setas para navegar (salva automaticamente)`}
-                                     />
-                                   </td>
-                                 );
-                               })}
-                               <td className={`p-1 border-l-2 ${cfg.bordaLTotal} border-r border-slate-200 text-center ${cfg.bgTotalCell}`} title="Total combinado: tabela regular + Visitador/RT do mesmo nome e matrícula (extras não entram)">
-                                 <span className={`font-black text-sm ${totalEsp === 144 ? 'text-emerald-600' : totalEsp > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
-                                   {totalEsp}h
-                                 </span>
-                               </td>
-                             </tr>
-                           </tbody>
-                         </table>
-                       </div>
+                                 })}
+
+                                 {/* Total de horas combinadas (regular + este campo) */}
+                                 <td className={`p-0 border-l border-slate-200 text-center font-black text-xs ${totalEsp === 144 ? 'text-green-600 bg-green-50' : 'text-slate-700'}`}>
+                                   <div className="h-8 flex items-center justify-center">{totalEsp}h</div>
+                                 </td>
+                               </tr>
+                             </tbody>
+                           </table>
+                         </div>
                        );
                      })}
                    </div>
