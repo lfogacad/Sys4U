@@ -176,6 +176,7 @@ const GestorDashboard = ({ userProfile }) => {
   const [modalFerias, setModalFerias] = useState(false);       // 🆕 modal de cadastro de férias
   const [formFerias, setFormFerias] = useState({ nome: '', inicio: '', qtdDias: 30 });
   const [gerenciaEnfermagemMes, setGerenciaEnfermagemMes] = useState(null); // 🆕 Gerência de Enfermagem (somente escala de enfermeiros)    
+  const [gerenciaFarmaciaMes, setGerenciaFarmaciaMes] = useState(null);
 
   const [modalRelatorioEscalas, setModalRelatorioEscalas] = useState({ isOpen: false, texto: '' });
 
@@ -5037,6 +5038,7 @@ const imprimirRelatorioGeladeira = () => {
         setResponsavelTecnicoMes(dadosMes?.responsavelTecnico ?? null);
         setFeriasMes(Array.isArray(dadosMes?.ferias) ? dadosMes.ferias : []);
         setGerenciaEnfermagemMes(dadosMes?.gerenciaEnfermagem ?? null);
+        setGerenciaFarmaciaMes(dadosMes?.gerenciaFarmacia ?? null);
 
         // Mapa cru { dia: { idTurno: slot } } — base para editar células (regulares E extras)
         const slotsCru = {};
@@ -5332,13 +5334,15 @@ const imprimirRelatorioGeladeira = () => {
   const SETTERS_ESPECIAIS = {
     visitador: setVisitadorMes,
     responsavelTecnico: setResponsavelTecnicoMes,
-    gerenciaEnfermagem: setGerenciaEnfermagemMes // 🆕
+    gerenciaEnfermagem: setGerenciaEnfermagemMes,
+    gerenciaFarmacia: setGerenciaFarmaciaMes
   };
 
   const salvarEspecial = async (campo, { nome, dia, valor } = {}) => {
     const atual = campo === 'visitador' ? visitadorMes
       : campo === 'responsavelTecnico' ? responsavelTecnicoMes
-      : gerenciaEnfermagemMes; // 🆕
+      : campo === 'gerenciaFarmacia' ? gerenciaFarmaciaMes // 🆕
+      : gerenciaEnfermagemMes;
     const setEstado = SETTERS_ESPECIAIS[campo];
     if (!setEstado) return;
 
@@ -12707,7 +12711,6 @@ const imprimirRelatorioGeladeira = () => {
         { id: 'Administrativo', icon: <ClipboardList size={16} /> },
         { id: 'Recepção', icon: <Users size={16} /> },
         { id: 'Farmácia', icon: <Pill size={16} /> },
-        { id: 'Gerência de Farmácia', icon: <FlaskConical size={16} /> },
       ];
 
       return (
@@ -13218,10 +13221,10 @@ const imprimirRelatorioGeladeira = () => {
                  )}
 
                  {/* ===== TABELAS ESPECIAIS: VISITADOR/RT (médicos) e GERÊNCIA DE ENFERMAGEM (enfermeiros) ===== */}
-                 {['Médico', 'Enfermeiro', 'Fisioterapeuta'].includes(categoriaAtiva) && !isLoadingMes && (
+                 {['Médico', 'Enfermeiro', 'Fisioterapeuta', 'Farmácia'].includes(categoriaAtiva) && !isLoadingMes && (
                    <div className="mt-8">
                      <h4 className="font-bold text-slate-600 uppercase text-xs tracking-wide mb-2">
-                       {categoriaAtiva === 'Médico' ? 'Visitador e Responsável Técnico' : categoriaAtiva === 'Fisioterapeuta' ? 'RT da Fisioterapia' : 'Gerência de Enfermagem'}
+                       {categoriaAtiva === 'Médico' ? 'Visitador e Responsável Técnico' : categoriaAtiva === 'Fisioterapeuta' ? 'RT da Fisioterapia' : categoriaAtiva === 'Farmácia' ? 'Gerência de Farmácia' : 'Gerência de Enfermagem'}
                      </h4>
 
                      {/* Lista de configs dirigindo a(s) tabela(s) desta categoria */}
@@ -13239,6 +13242,12 @@ const imprimirRelatorioGeladeira = () => {
                            { campo: 'responsavelTecnico', titulo: 'RT da Fisioterapia', letra: 'T',
                              dados: responsavelTecnicoMes, salvar: salvarEspecial,
                              bgCell: 'bg-sky-50', bgCellFS: 'bg-sky-100' }
+                         ]
+                       : categoriaAtiva === 'Farmácia'
+                       ? [
+                           { campo: 'gerenciaFarmacia', titulo: 'Gerência de Farmácia', letra: 'G',
+                             dados: gerenciaFarmaciaMes, salvar: salvarEspecial,
+                             bgCell: 'bg-teal-50', bgCellFS: 'bg-teal-100' }
                          ]
                        : [
                            { campo: 'gerenciaEnfermagem', titulo: 'Gerência de Enfermagem', letra: 'G',
@@ -13284,7 +13293,9 @@ const imprimirRelatorioGeladeira = () => {
                                      >
                                        <option value="">— Selecione o {cfg.titulo.toLowerCase()} —</option>
                                        {listaProfissionais
-                                         .filter(prof => prof.categoria === categoriaAtiva && prof.nome)
+                                         .filter(prof => (prof.categoria === categoriaAtiva
+                                           || (categoriaAtiva === 'Farmácia' && prof.categoria === 'Gerência de Farmácia'))
+                                           && prof.nome)
                                          .map((prof) => (
                                            <option key={prof.id} value={prof.nome.toUpperCase()}>{prof.nome.toUpperCase()}</option>
                                          ))}
@@ -14089,7 +14100,9 @@ const imprimirRelatorioGeladeira = () => {
                            >
                              <option value="">— Selecione —</option>
                              {listaProfissionais
-                               .filter(prof => prof.categoria === categoriaAtiva && prof.nome)
+                               .filter(prof => (prof.categoria === categoriaAtiva
+                                 || (categoriaAtiva === 'Farmácia' && prof.categoria === 'Gerência de Farmácia'))
+                                 && prof.nome)
                                .map((prof) => (
                                  <option key={prof.id} value={prof.nome.toUpperCase()}>{prof.nome.toUpperCase()}</option>
                                ))}

@@ -20,7 +20,6 @@ const CATEGORIA_SLUGS = {
   'Central de Nutrição': 'central-nutricao',
   'Administrativo': 'administrativo',
   'Farmácia': 'farmacia',
-  'Gerência de Farmácia': 'gerencia-farmacia',
 };
 
 // Fallback seguro: normaliza qualquer nome desconhecido
@@ -137,14 +136,16 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
     });
   });
 
-  // 🆕 Extrai a GERÊNCIA DE ENFERMAGEM — tarja mesclada (A, B ou C) e TODAS as
-  // linhas de dados seguintes, até a próxima tarja (EXTRA/REGULAR/LEGENDA).
-  const extrairGerenciaEnfermagem = (data, colunasDias, colMatricula = -1) => {
+  // 🆕 Extrator genérico de seção "GERÊNCIA DE <área>" — tarja mesclada (A, B ou C)
+  // e TODAS as linhas de dados seguintes, até a próxima tarja (EXTRA/REGULAR/LEGENDA
+  // ou outra GERÊNCIA). `palavraTarja` = 'ENFERMAGEM' ou 'FARMACIA'.
+  const extrairGerenciaSecao = (data, colunasDias, colMatricula = -1, palavraTarja = 'ENFERMAGEM') => {
     for (let i = 0; i < data.length - 1; i++) {
       const celulas = [data[i]?.[0], data[i]?.[1], data[i]?.[2]]
         .map(c => String(c ?? '').trim()
           .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase());
-      if (!celulas.some(c => c.includes('GERENCIA DE ENFERMAGEM'))) continue;
+      const ehTarja = celulas.some(c => c.includes('GERENCIA') && c.includes(palavraTarja));
+      if (!ehTarja) continue;
 
       let resultado = null;
       for (let j = i + 1; j < data.length; j++) {
@@ -152,7 +153,9 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
         const nomeCel = String(linha[0] ?? '').trim();
         if (!nomeCel) continue;
         const nomeU = nomeCel.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-        if (nomeU.includes('LEGENDA') || nomeU.includes('EXTRA') || nomeU.includes('REGULAR') || nomeU.includes('GERENCIA')) break;
+        if (nomeU.includes('LEGENDA') || nomeU.includes('EXTRA') || nomeU.includes('REGULAR')) break;
+        // outra tarja de gerência (ex.: farmácia e enfermagem na mesma aba) encerra a seção
+        if (nomeU.includes('GERENCIA')) break;
 
         const matricula = colMatricula >= 0 ? String(linha[colMatricula] ?? '').trim() : '';
         const nomeFinal = matricula ? `${nomeCel} ${matricula}` : nomeCel;
@@ -201,9 +204,9 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
           // Ordem importa: checks mais específicos primeiro
           if (lowerName.includes('central nutri') || lowerName.includes('central de nutri')) return 'Central de Nutrição';
           if (lowerName.includes('administrativ') || lowerName.includes('adm')) return 'Administrativo';
-          if (lowerName.includes('farm')) return 'Farmácia'; // 🆕 nov_26_farmacia
+          if (lowerName.includes('farm')) return 'Farmácia';
           if (lowerName.includes('fisio')) return 'Fisioterapeuta';
-          if (lowerName.includes('hemodialise') || lowerName.includes('hemodiálise') || /\bhd\b/.test(lowerName)) return 'Téc. Hemodiálise'; // 🆕 casa "tec_hd"
+          if (lowerName.includes('hemodialise') || lowerName.includes('hemodiálise') || /\bhd\b/.test(lowerName)) return 'Téc. Hemodiálise';
           if (lowerName.includes('motorista')) return 'Motorista';
           if (lowerName.includes('recep')) return 'Recepção';
           if (lowerName.includes('fono')) return 'Fonoaudiólogo';
@@ -224,7 +227,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
             let lendoNefrologia = false;
             let modoExtra = false; // 🚩 reinicia a cada aba — o marcador EXTRA é por aba
             let marcadorGerencia = false; // 🚩 seção GERÊNCIA DE ENFERMAGEM ativa (por aba)
-            let modoGerenciaFarmacia = false; // 🚩 seção GERÊNCIA DE FARMÁCIA → categoria própria
+            let marcadorGerenciaFarmacia = false; // 🚩 seção GERÊNCIA DE FARMÁCIA ativa (por aba)
             let colMatricula = -1; // 🆕 coluna da MATRÍCULA nesta aba (-1 = não existe)
             // Encontrar onde começam os dias
             for (let i = 0; i < data.length; i++) {
@@ -262,15 +265,24 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
             const { visitador: visExtraido, responsavelTecnico: rtExtraido, linhasParaPular } =
               extrairVisitadorRT(data, colunasDias, colMatricula);
             // 🆕 Gerência de Enfermagem (somente aba de enfermeiros) — extrator próprio
-            const gerenciaExtraida = extrairGerenciaEnfermagem(data, colunasDias, colMatricula);
-            console.log(`[Importador] Aba "${wsname}": gerência =`, gerenciaExtraida); // 🔍 temporário
-            if (visExtraido || rtExtraido || gerenciaExtraida) {
+            // 🆕 Gerências como TABELAS ESPECIAIS: enfermagem (aba de enfermeiros)
+            // e farmácia (aba de farmácia) — cada uma em seu campo do doc do mês
+            const gerenciaExtraida = (catAtual === 'Enfermeiro')
+              ? extrairGerenciaSecao(data, colunasDias, colMatricula, 'ENFERMAGEM')
+              : null;
+            const gerenciaFarmExtraida = (catAtual === 'Farmácia')
+              ? extrairGerenciaSecao(data, colunasDias, colMatricula, 'FARMACIA')
+              : null;
+            if (gerenciaExtraida) console.log(`[Importador] Aba "${wsname}": gerência enf. =`, gerenciaExtraida);
+            if (gerenciaFarmExtraida) console.log(`[Importador] Aba "${wsname}": gerência farm. =`, gerenciaFarmExtraida);
+            if (visExtraido || rtExtraido || gerenciaExtraida || gerenciaFarmExtraida) {
               especiaisPorCategoria[catAtual] = {
                 anoMes: `${ano}-${String(mes).padStart(2, '0')}`,
                 aba: wsname,
                 ...(visExtraido ? { visitador: visExtraido } : {}),
                 ...(rtExtraido ? { responsavelTecnico: rtExtraido } : {}),
-                ...(gerenciaExtraida ? { gerenciaEnfermagem: gerenciaExtraida } : {})
+                ...(gerenciaExtraida ? { gerenciaEnfermagem: gerenciaExtraida } : {}),
+                ...(gerenciaFarmExtraida ? { gerenciaFarmacia: gerenciaFarmExtraida } : {})
               };
             }
             // Varrer os nomes e extrair as letrinhas
@@ -286,19 +298,16 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
                 .map(c => String(c ?? '').trim().toUpperCase()
                   .normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
                 .filter(c => c.length > 0);
-              // 🚩 EXTRAS liga o modo e SEMPRE desliga o modo gerência
-              if (celulasLinha.some(c => c.includes('EXTRA'))) { modoExtra = true; marcadorGerencia = false; modoGerenciaFarmacia = false; continue; }
-              if (celulasLinha.some(c => c.includes('REGULAR') || c.includes('NORMAL') || c.includes('FIXO'))) { modoExtra = false; marcadorGerencia = false; modoGerenciaFarmacia = false; continue; }
-              // 🆕 Tarja da gerência: ativa o modo e NÃO é servidor
+              // 🚩 EXTRAS liga o modo extra e desliga TODAS as seções de gerência
+              if (celulasLinha.some(c => c.includes('EXTRA'))) { modoExtra = true; marcadorGerencia = false; marcadorGerenciaFarmacia = false; continue; }
+              if (celulasLinha.some(c => c.includes('REGULAR') || c.includes('NORMAL') || c.includes('FIXO'))) { modoExtra = false; marcadorGerencia = false; marcadorGerenciaFarmacia = false; continue; }
+              // 🆕 Tarjas de gerência: ativam o modo e NÃO são servidores
               if (catAtual === 'Enfermeiro' && celulasLinha.some(c => c.includes('GERENCIA DE ENFERMAGEM'))) { marcadorGerencia = true; continue; }
-              // 🆕 Tarja da gerência de farmácia: liga override de categoria — as linhas
-              // seguintes são IMPORTADAS como 'Gerência de Farmácia' (não são puladas).
-              // Exige as duas palavras na mesma célula → não dispara na LEGENDA
-              // ("...a critério da gerência..." contém GERENCIA, mas não FARMACIA).
-              if (catAtual === 'Farmácia' && celulasLinha.some(c => c.includes('GERENCIA') && c.includes('FARMACIA'))) { modoGerenciaFarmacia = true; continue; }
-              // 🆕 Dentro da seção da gerência: pula TODAS as linhas (não viram
-              // regular nem extra — a extração delas é feita pelo extrator próprio)
+              if (catAtual === 'Farmácia' && celulasLinha.some(c => c.includes('GERENCIA') && c.includes('FARMACIA'))) { marcadorGerenciaFarmacia = true; continue; }
+              // 🆕 Dentro de qualquer seção de gerência: pula TODAS as linhas — a
+              // extração delas é feita pelo extrator próprio
               if (marcadorGerencia) continue;
+              if (marcadorGerenciaFarmacia) continue;
 
               const nomeServidor = row[0];
               if (!nomeServidor) continue; 
@@ -326,7 +335,7 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
                     plantoesExtraidos.push({
                       nome: nomeLimpo,
                       aba: wsname,
-                      categoria: modoGerenciaFarmacia ? 'Gerência de Farmácia' : catAtual, // 🛡️ categoria da aba (ou override da seção da gerência)
+                      categoria: catAtual,
                       data: dataFormatada,
                       extra: modoExtra, // 🚩 Flag herdada do marcador EXTRA
                       sigla: siglaLimpa,
@@ -461,6 +470,14 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
           payloadEspecial.gerenciaEnfermagem = {
             nome: esp.gerenciaEnfermagem.nome,
             dias: esp.gerenciaEnfermagem.dias || {},
+            atualizadoEm: new Date().toISOString()
+          };
+        }
+        // 🆕 Gerência de Farmácia
+        if (esp.gerenciaFarmacia) {
+          payloadEspecial.gerenciaFarmacia = {
+            nome: esp.gerenciaFarmacia.nome,
+            dias: esp.gerenciaFarmacia.dias || {},
             atualizadoEm: new Date().toISOString()
           };
         }
