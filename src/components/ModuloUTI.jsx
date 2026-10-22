@@ -5431,6 +5431,21 @@ const ROLE_PERMISSIONS = {
     views: ["overview", "medical", "nursing", "physio", "nutri", "speech", "psychology", "tech", "hemodialysis"],
     edits: ["hemodialysis"],
     canSeeLeito11: false
+  },
+  "Motorista": {
+    views: [],
+    edits: [],
+    canSeeLeito11: false
+  },
+  "Central de Nutrição": {
+    views: [],
+    edits: [],
+    canSeeLeito11: false
+  },
+  "Administrativo": {
+    views: [],
+    edits: [],
+    canSeeLeito11: false
   }
 };
 

@@ -53,6 +53,8 @@ const TelaCadastro = ({
                 <option value="Nutricionista">Nutricionista</option>
                 <option value="Fonoaudiólogo">Fonoaudiólogo</option>
                 <option value="Psicólogo">Psicólogo</option>
+                <option value="Farmácia">Farmácia</option>
+                <option value="Gerência de Farmácia">Gerência de Farmácia</option>
                 {/* Chefias e Coordenações */}
                 <option value="Gerente de Enfermagem">Gerente de Enfermagem</option>
                 <option value="RT da Fisioterapia">RT da Fisioterapia</option>
@@ -61,6 +63,9 @@ const TelaCadastro = ({
                 {/* Gestão e Administrativo */}
                 <option value="Diretor Administrativo">Diretor Administrativo</option>
                 <option value="Recepção">Recepção</option>
+                <option value="Motorista">Motorista</option>
+                <option value="Central de Nutrição">Central de Nutrição</option>
+                <option value="Administrativo">Administrativo</option>
                 {/* TI / Suporte */}
                 <option value="Desenvolvedor">Desenvolvedor</option>
               </select>

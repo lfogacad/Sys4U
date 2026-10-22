@@ -20,6 +20,10 @@ const ModuloAdmin = ({ userProfile }) => {
   const [erroConselho, setErroConselho] = useState('');
   const [isSalvandoProfissional, setIsSalvandoProfissional] = useState(false);
 
+  // 🆕 Categorias sem conselho profissional — o campo serve como matrícula
+  const SEM_CONSELHO = ['Motorista', 'Central de Nutrição', 'Administrativo'];
+  const exigeConselho = !SEM_CONSELHO.includes(novoProfissional.categoria);
+
   // Estados para o Modal de Vínculo
   const [selectedUser, setSelectedUser] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -75,15 +79,30 @@ const ModuloAdmin = ({ userProfile }) => {
   };
 
   const handleBlurConselho = async () => {
+    // Matrícula opcional nas categorias sem conselho: valor vazio → sem verificação
     if (!novoProfissional.numeroConselho) {
       setErroConselho('');
       return;
     }
+
+    const semConselho = SEM_CONSELHO.includes(novoProfissional.categoria);
+
     try {
-      const q = query(collection(db, "profissionais"), where("numeroConselho", "==", novoProfissional.numeroConselho));
+      // 🆕 Matrícula: duplicidade verificada APENAS dentro da mesma categoria.
+      // Evita falso positivo quando uma matrícula coincide com o número do
+      // conselho de outra área (ex.: matrícula 12345 vs CRM 12345 de um médico).
+      const q = semConselho
+        ? query(collection(db, "profissionais"),
+            where("numeroConselho", "==", novoProfissional.numeroConselho),
+            where("categoria", "==", novoProfissional.categoria))
+        : query(collection(db, "profissionais"),
+            where("numeroConselho", "==", novoProfissional.numeroConselho));
+
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {
-        setErroConselho(`Este ${novoProfissional.conselho} já está cadastrado!`);
+        setErroConselho(semConselho
+          ? 'Esta matrícula já está cadastrada nesta área!'
+          : `Este ${novoProfissional.conselho} já está cadastrado!`);
       } else {
         setErroConselho('');
       }
@@ -343,18 +362,20 @@ const handleAtribuirVinculo = async (e) => {
                 
                 {/* Apoio */}
                 <option value="Administrativo">Administrativo</option>
+                <option value="Motorista">Motorista</option>
+                <option value="Central de Nutrição">Central de Nutrição</option>
               </select>
             </div>
 
             {/* Campo: Registro */}
             <div className="relative">
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{novoProfissional.conselho || 'Registro'}</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">  {exigeConselho ? (novoProfissional.conselho || 'Registro') : 'Matrícula'}</label>
               <input 
-                type="number" required value={novoProfissional.numeroConselho}
-                onChange={(e) => setNovoProfissional({...novoProfissional, numeroConselho: e.target.value})}
+                type="text" required={exigeConselho} value={novoProfissional.numeroConselho}
+                onChange={(e) => setNovoProfissional({...novoProfissional, numeroConselho: e.target.value.replace(/\D/g, '')})}
                 onBlur={handleBlurConselho}
                 className={`w-full p-3 bg-slate-50 border ${erroConselho ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-emerald-500'} rounded-xl text-sm font-bold outline-none transition-colors`}
-                placeholder="Somente Números"
+                placeholder={exigeConselho ? "Somente Números" : "Matrícula (opcional)"}
               />
               {erroConselho && (
                 <p className="absolute -bottom-5 left-0 text-[10px] font-bold text-red-500 flex items-center gap-1">
@@ -608,7 +629,10 @@ const handleAtribuirVinculo = async (e) => {
                   
                   {/* Gestão e Administrativo */}
                   <option value="Diretor Administrativo">Diretor Administrativo</option>
-                  <option value="Recepção">Recepção / Faturamento</option>
+                  <option value="Recepção">Recepção</option>
+                  <option value="Motorista">Motorista</option>
+                  <option value="Central de Nutrição">Central de Nutrição</option>
+                  <option value="Administrativo">Administrativo</option>
                   
                   {/* TI / Suporte */}
                   <option value="Desenvolvedor">Desenvolvedor do Sistema</option>

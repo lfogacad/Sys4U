@@ -9,7 +9,7 @@ import {
   Bed, Save, Bell, Calculator, Loader2, ArrowRight, Search, XCircle, Filter, ClipboardCopy, ClipboardList, Wind,
   FileText, Edit3, MapPin, Printer, Download, History, HistoryIcon, Syringe, ShieldCheck, Ambulance, Truck,
   LayoutDashboard, Stethoscope, UserRound, Thermometer, Mic, Leaf, Brain, Droplets, Refrigerator, CalendarRange,
-  Database, RefreshCw, RotateCcw
+  Database, RefreshCw, RotateCcw, UtensilsCrossed, Pill, FlaskConical
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, Tooltip,
@@ -44,6 +44,10 @@ const CATEGORIA_SLUGS = {
   'Psicólogo': 'psicologo',
   'Motorista': 'motorista',
   'Recepção': 'recepcao',
+  'Central de Nutrição': 'central-nutricao',
+  'Administrativo': 'administrativo',
+  'Farmácia': 'farmacia',
+  'Gerência de Farmácia': 'gerencia-farmacia',
 };
 // SLUG → categoria canônica (usada na Visão Geral e na leitura)
 const SLUG_CATEGORIA = {
@@ -57,7 +61,12 @@ const SLUG_CATEGORIA = {
   psicologo: 'Psicólogo',
   motorista: 'Motorista',
   recepcao: 'Recepção',
+  farmacia: 'Farmácia',
+  'gerencia-farmacia': 'Gerência de Farmácia',
+  'central-nutricao': 'Central de Nutrição',
+  administrativo: 'Administrativo',
 };
+
 const getSlugCategoria = (categoria) => CATEGORIA_SLUGS[categoria] || 'outros';
 const normalizarBuscaEscala = (nome) =>
   String(nome || '').toUpperCase()
@@ -12694,7 +12703,11 @@ const imprimirRelatorioGeladeira = () => {
         { id: 'Nutricionista', icon: <Leaf size={16} /> },
         { id: 'Psicólogo', icon: <Brain size={16} /> },
         { id: 'Motorista', icon: <Truck size={16} /> },
-        { id: 'Recepção', icon: <Users size={16} /> }, 
+        { id: 'Central de Nutrição', icon: <UtensilsCrossed size={16} /> },
+        { id: 'Administrativo', icon: <ClipboardList size={16} /> },
+        { id: 'Recepção', icon: <Users size={16} /> },
+        { id: 'Farmácia', icon: <Pill size={16} /> },
+        { id: 'Gerência de Farmácia', icon: <FlaskConical size={16} /> },
       ];
 
       return (
@@ -13205,10 +13218,10 @@ const imprimirRelatorioGeladeira = () => {
                  )}
 
                  {/* ===== TABELAS ESPECIAIS: VISITADOR/RT (médicos) e GERÊNCIA DE ENFERMAGEM (enfermeiros) ===== */}
-                 {(categoriaAtiva === 'Médico' || categoriaAtiva === 'Enfermeiro') && !isLoadingMes && (
+                 {['Médico', 'Enfermeiro', 'Fisioterapeuta'].includes(categoriaAtiva) && !isLoadingMes && (
                    <div className="mt-8">
                      <h4 className="font-bold text-slate-600 uppercase text-xs tracking-wide mb-2">
-                       {categoriaAtiva === 'Médico' ? 'Visitador e Responsável Técnico' : 'Gerência de Enfermagem'}
+                       {categoriaAtiva === 'Médico' ? 'Visitador e Responsável Técnico' : categoriaAtiva === 'Fisioterapeuta' ? 'RT da Fisioterapia' : 'Gerência de Enfermagem'}
                      </h4>
 
                      {/* Lista de configs dirigindo a(s) tabela(s) desta categoria */}
@@ -13220,6 +13233,12 @@ const imprimirRelatorioGeladeira = () => {
                            { campo: 'responsavelTecnico', titulo: 'Responsável Técnico', letra: 'T',
                              dados: responsavelTecnicoMes, salvar: salvarEspecial,
                              bgCell: 'bg-emerald-50', bgCellFS: 'bg-emerald-100' }
+                         ]
+                       : categoriaAtiva === 'Fisioterapeuta'
+                       ? [
+                           { campo: 'responsavelTecnico', titulo: 'RT da Fisioterapia', letra: 'T',
+                             dados: responsavelTecnicoMes, salvar: salvarEspecial,
+                             bgCell: 'bg-sky-50', bgCellFS: 'bg-sky-100' }
                          ]
                        : [
                            { campo: 'gerenciaEnfermagem', titulo: 'Gerência de Enfermagem', letra: 'G',
