@@ -73,6 +73,7 @@ const ModuloAdmin = ({ userProfile }) => {
     if (cat === 'Nutricionista') conselhoPadrao = 'CRN';
     if (cat === 'Fonoaudiólogo') conselhoPadrao = 'CREFA';
     if (cat === 'Psicólogo') conselhoPadrao = 'CRP';
+    if (cat === 'Farmácia' || cat === 'Gerência de Farmácia') conselhoPadrao = 'CRF';
     if (cat === 'Administrativo') conselhoPadrao = 'CPF';
 
     setNovoProfissional({ ...novoProfissional, categoria: cat, conselho: conselhoPadrao });
@@ -360,6 +361,10 @@ const handleAtribuirVinculo = async (e) => {
                 <option value="Fonoaudiólogo">Fonoaudiólogo</option>
                 <option value="Psicólogo">Psicólogo</option>
                 
+                {/* Equipe de Farmácia */}
+                <option value="Farmácia">Farmácia</option>
+                <option value="Gerência de Farmácia">Gerência de Farmácia</option>
+                
                 {/* Apoio */}
                 <option value="Administrativo">Administrativo</option>
                 <option value="Motorista">Motorista</option>
@@ -372,7 +377,7 @@ const handleAtribuirVinculo = async (e) => {
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">  {exigeConselho ? (novoProfissional.conselho || 'Registro') : 'Matrícula'}</label>
               <input 
                 type="text" required={exigeConselho} value={novoProfissional.numeroConselho}
-                onChange={(e) => setNovoProfissional({...novoProfissional, numeroConselho: e.target.value.replace(/\D/g, '')})}
+                onChange={(e) => setNovoProfissional({...novoProfissional, numeroConselho: e.target.value.replace(/[^0-9A-Za-z/-]/g, '').toUpperCase()})}
                 onBlur={handleBlurConselho}
                 className={`w-full p-3 bg-slate-50 border ${erroConselho ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-emerald-500'} rounded-xl text-sm font-bold outline-none transition-colors`}
                 placeholder={exigeConselho ? "Somente Números" : "Matrícula (opcional)"}
@@ -633,6 +638,8 @@ const handleAtribuirVinculo = async (e) => {
                   <option value="Motorista">Motorista</option>
                   <option value="Central de Nutrição">Central de Nutrição</option>
                   <option value="Administrativo">Administrativo</option>
+                  <option value="Farmácia">Farmácia</option>
+                  <option value="Gerência de Farmácia">Gerência de Farmácia</option>
                   
                   {/* TI / Suporte */}
                   <option value="Desenvolvedor">Desenvolvedor do Sistema</option>

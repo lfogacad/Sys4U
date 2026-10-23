@@ -5446,6 +5446,16 @@ const ROLE_PERMISSIONS = {
     views: [],
     edits: [],
     canSeeLeito11: false
+  },
+  "Farmácia": {
+    views: [],
+    edits: [],
+    canSeeLeito11: false
+  },
+  "Gerência de Farmácia": {
+    views: [],
+    edits: [],
+    canSeeLeito11: false
   }
 };
 
