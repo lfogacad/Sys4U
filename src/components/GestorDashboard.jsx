@@ -5105,6 +5105,53 @@ const imprimirRelatorioGeladeira = () => {
     setIsEditModalOpen(true);
   };
 
+
+  // ===== CONTAGEM DE PLANTONISTAS POR DIA (D, N, DN) =====
+  // Soma regular + extras do mesmo dia. DN conta 1 dia e 1 noite.
+  // FE/FA/ATM/F/V e demais siglas são ignorados.
+  const contarPlantonistasDia = (diaStr) => {
+    const slots = slotsCruPorDia[diaStr] || {};
+    let d = 0, n = 0;
+    const vistos = new Set();
+    Object.values(slots).forEach(s => {
+      if (!s) return;
+      const sigla = String(s.sigla || '').toUpperCase();
+      const nomeStr = String(s.nome || '');
+      if (!sigla && !nomeStr) return;
+
+      const chave = s.id || `${s.busca || ''}_${sigla}_${nomeStr}`;
+      if (vistos.has(chave)) return;
+      vistos.add(chave);
+
+      // Slots com nome composto "FULANO (D) / BELTRANO (N)" — DN desmembrado
+      if (nomeStr.includes(' / ')) {
+        if (nomeStr.includes('(D)')) d += 1;
+        if (nomeStr.includes('(N)')) n += 1;
+        return;
+      }
+      if (sigla === 'DN') { d += 1; n += 1; }
+      else if (sigla === 'D') { d += 1; }
+      else if (sigla === 'N') { n += 1; }
+      // D, N e DN contam; qualquer outra sigla (F, ATM, FE, FA, V, M, T...) ignora
+    });
+    return { d, n };
+  };
+
+  // Texto do cabeçalho: "6D5N" — e verde quando a especialidade é
+  // Técnicos em Enfermagem e o dia bate exatamente 6D5N.
+  const META_DIA_ESPECIALIDADE = {};
+  // (inicialização tolerante a variações)
+  const isTecEnfermagem = /t[eé]c.*enfermagem/i.test(categoriaAtiva || '');
+
+  const rotuloPlantonistasDia = (diaStr) => {
+    const { d, n } = contarPlantonistasDia(diaStr);
+    if (d === 0 && n === 0) return { texto: '', verde: false };
+    const texto = `${d}D${n}N`;
+    const meta = META_DIA_ESPECIALIDADE[categoriaAtiva];
+    const verde = isTecEnfermagem && d === 6 && n === 5;
+    return { texto, verde };
+  };
+    
   // ===== GERAR ESCALA DO ZERO (merge: nomes entram com células vazias) =====
   const gerarEscalaZero = async () => {
     const nomes = servidoresGerados.map(n => String(n || '').trim()).filter(Boolean);
@@ -13036,8 +13083,15 @@ const imprimirRelatorioGeladeira = () => {
                           const diaStr = (i + 1).toString().padStart(2, '0');
                           const sem = getDiaSemana(dataSelecionada.substring(0, 7), diaStr);
                           const fimSemana = sem === 'SÁB' || sem === 'DOM';
+                          const { d: qtdD, n: qtdN } = contarPlantonistasDia(diaStr);
+                          const temPlantonista = qtdD > 0 || qtdN > 0;
+                          const metaTecEnf = /t[eé]c.*enfermagem/i.test(categoriaAtiva || '');
+                          const atingiuMeta = metaTecEnf && qtdD === 6 && qtdN === 5;
                           return (
                             <th key={i} className={`p-1 border border-slate-200 text-center w-8 ${fimSemana ? 'bg-slate-100' : ''}`}>
+                              <div className={`text-[7px] font-bold leading-none ${atingiuMeta ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                {temPlantonista ? `${qtdD}D${qtdN}N` : '\u00A0'}
+                              </div>
                               <div className={`text-[7px] font-bold uppercase leading-none ${fimSemana ? 'text-red-400' : 'text-slate-400'}`}>{sem}</div>
                               <div className="text-[10px] font-bold text-slate-500 leading-tight">{diaStr}</div>
                             </th>
