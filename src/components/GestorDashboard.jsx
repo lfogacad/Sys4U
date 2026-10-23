@@ -109,6 +109,10 @@ const DICIONARIO_SIGLAS_DASH = (() => {
     'M': { nome: 'Plantão Manhã', inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'plantonista' },
     'T': { nome: 'Plantão Tarde', inicio: '13:00', fim: '19:00', horas: 6,  tipo: 'plantonista' },
     'V': { nome: 'Visita Médica', inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'visita' },
+    'M4': { nome: 'Manhã 4h',    inicio: '08:00', fim: '12:00', horas: 4,  tipo: 'plantonista' },
+    'T4': { nome: 'Tarde 4h',    inicio: '13:00', fim: '17:00', horas: 4,  tipo: 'plantonista' },
+    'FE': { nome: 'Feriado', inicio: '', fim: '', horas: 0, tipo: 'plantonista' },
+    'FA': { nome: 'Folga Aniversário', inicio: '', fim: '', horas: 0, tipo: 'plantonista' },
   };
   const dic = {
     ...base,
@@ -132,7 +136,7 @@ const DICIONARIO_SIGLAS_DASH = (() => {
 
 // Opções do select de célula — apenas as siglas operacionais (o dicionário completo
 // permanece para lookup de horário/turno ao gravar VT, VN, TN etc.)
-const OPCOES_SIGLA_DASH = ['D', 'N', 'DN', 'V', 'M', 'T', 'VT', 'VN', 'MN', 'TN'];
+const OPCOES_SIGLA_DASH = ['D', 'N', 'DN', 'V', 'M', 'T', 'M4', 'T4', 'VT', 'VN', 'MN', 'TN'];
 
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
@@ -174,7 +178,7 @@ const GestorDashboard = ({ userProfile }) => {
   const [responsavelTecnicoMes, setResponsavelTecnicoMes] = useState(null); // 🆕 { nome, dias } — escala médica  
   const [feriasMes, setFeriasMes] = useState([]);              // 🆕 [{ nome, inicio: 'AAAA-MM-DD', dias: n, criadoEm }]
   const [modalFerias, setModalFerias] = useState(false);       // 🆕 modal de cadastro de férias
-  const [formFerias, setFormFerias] = useState({ nome: '', inicio: '', qtdDias: 30 });
+  const [formFerias, setFormFerias] = useState({ id: '', nome: '', inicio: dataSelecionada + '-01', qtdDias: 30, tipo: 'Férias' });
   const [gerenciaEnfermagemMes, setGerenciaEnfermagemMes] = useState(null); // 🆕 Gerência de Enfermagem (somente escala de enfermeiros)    
   const [gerenciaFarmaciaMes, setGerenciaFarmaciaMes] = useState(null);
 
@@ -5073,6 +5077,8 @@ const imprimirRelatorioGeladeira = () => {
     String(nome || '')
       .replace(/\[FALTOU\]/g, '')
       .replace(/\[ATESTADO\]/g, '')
+      .replace(/\[FERIADO\]/g, '')
+      .replace(/\[FOLGA ANIVERSARIO\]/g, '')
       .replace(/\[EXCLUÍDO\]/g, '')
       .replace(/\[EXTRA\]/g, '')
       .replace(/\(D\)/g, '')
@@ -5235,47 +5241,58 @@ const imprimirRelatorioGeladeira = () => {
   // ===== SALVAR PERÍODO DE FÉRIAS =====
   // Grava o array de férias no documento do mês E limpa (deleteField) todos os
   // slots da pessoa nos dias cobertos pelo período dentro deste mês
-  const salvarFeriasMes = async (novoArray, pessoaAnteriorParaLimpeza) => {
+  const salvarFeriasMes = async (novoArray, pessoaAnteriorParaLimpeza, registroAlvo = null) => {
     try {
       const anoMes = dataSelecionada.substring(0, 7);
       const slug = getSlugCategoria(categoriaAtiva);
       const mesRef = doc(db, "escalas", slug, "meses", anoMes);
 
       // === Limpeza de plantões: qual período aplicar? ===
-      // Ao REGISTRAR/ALTERAR: o período da própria pessoa no novoArray.
-      // Ao REMOVER (x da lista): pessoaAnteriorParaLimpeza (o período que estava antes).
+      // REMOÇÃO (x da lista): pessoaAnteriorParaLimpeza.
+      // REGISTRO/EDIÇÃO: registroAlvo (id exato) ou, na falta dele, o último do novoArray.
       const periodoLimpeza = pessoaAnteriorParaLimpeza
-        || novoArray.find(f => f.nome);
+        || registroAlvo
+        || novoArray[novoArray.length - 1];
       const limparDe = pessoaAnteriorParaLimpeza
         ? pessoaAnteriorParaLimpeza.nome
         : (periodoLimpeza?.nome || '');
 
       const dadosLimpeza = {}; // { 'dia': { idSlot: deleteField } } por dia afetado
-      if (limparDe) {
-        const periodoAlvo = pessoaAnteriorParaLimpeza
-          || feriasMes.find(f => f.nome === limparDe)
-          || novoArray.find(f => f.nome === limparDe);
-        if (periodoAlvo?.inicio && periodoAlvo?.dias) {
-          const buscaP = normalizarBuscaEscala(limparDe);
-          const [ano, mes, diaIni] = periodoAlvo.inicio.split('-').map(Number);
-          const diasAfetados = new Set();
-          for (let i = 0; i < periodoAlvo.dias; i++) {
-            const d = new Date(Date.UTC(ano, mes - 1, diaIni + i));
-            const anoMesDia = String(d.getUTCFullYear()).padStart(4, '0') + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
-            if (anoMesDia === anoMes) diasAfetados.add(String(d.getUTCDate()).padStart(2, '0'));
-          }
-          diasAfetados.forEach(dia => {
-            const slotsDia = slotsCruPorDia[dia] || {};
-            const slotsDaPessoa = Object.entries(slotsDia)
-              .filter(([, s]) => slotPertenceAPessoa(s, buscaP))
-              .filter(([, s]) => String(s?.sigla || '') !== ''); // placeholder vazio fica (sustenta a linha)
-            if (slotsDaPessoa.length > 0) {
-              dadosLimpeza[dia] = {};
-              slotsDaPessoa.forEach(([id]) => { dadosLimpeza[dia][id] = deleteField(); });
-            }
-          });
-        }
+      // 🆕 Ao EDITAR, limpa a UNIÃO do período anterior + o novo (evita buracos).
+      // Sem restauração: dias já vazios simplesmente não geram operação.
+      const periodosParaLimpar = [];
+      if (pessoaAnteriorParaLimpeza) periodosParaLimpar.push(pessoaAnteriorParaLimpeza);
+      if (registroAlvo) {
+        periodosParaLimpar.push(registroAlvo);
+        const anteriorMesmoId = feriasMes.find(f => f.id && f.id === registroAlvo.id);
+        if (anteriorMesmoId) periodosParaLimpar.push(anteriorMesmoId);
       }
+      if (periodosParaLimpar.length === 0) {
+        const ultimo = novoArray[novoArray.length - 1];
+        if (ultimo) periodosParaLimpar.push(ultimo);
+      }
+
+      periodosParaLimpar.forEach(periodoAlvo => {
+        if (!periodoAlvo?.nome || !periodoAlvo?.inicio || !periodoAlvo?.dias) return;
+        const buscaP = normalizarBuscaEscala(periodoAlvo.nome);
+        const [ano, mes, diaIni] = periodoAlvo.inicio.split('-').map(Number);
+        const diasAfetados = new Set();
+        for (let i = 0; i < periodoAlvo.dias; i++) {
+          const d = new Date(Date.UTC(ano, mes - 1, diaIni + i));
+          const anoMesDia = String(d.getUTCFullYear()).padStart(4, '0') + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+          if (anoMesDia === anoMes) diasAfetados.add(String(d.getUTCDate()).padStart(2, '0'));
+        }
+        diasAfetados.forEach(dia => {
+          const slotsDia = slotsCruPorDia[dia] || {};
+          const slotsDaPessoa = Object.entries(slotsDia)
+            .filter(([, s]) => slotPertenceAPessoa(s, buscaP))
+            .filter(([, s]) => String(s?.sigla || '') !== ''); // placeholder vazio fica (sustenta a linha)
+          if (slotsDaPessoa.length > 0) {
+            dadosLimpeza[dia] = dadosLimpeza[dia] || {};
+            slotsDaPessoa.forEach(([id]) => { dadosLimpeza[dia][id] = deleteField(); });
+          }
+        });
+      });
 
       // Payload único: férias + limpeza de slots (merge preserva o resto do doc)
       const payload = {
@@ -5313,18 +5330,21 @@ const imprimirRelatorioGeladeira = () => {
     }
   };
 
-  // Dias de férias de uma pessoa no mês — para colorir/bloquear a grade
   const diasDeFerias = (nomeProfissional) => {
-    const periodo = feriasMes.find(f => f.nome === nomeProfissional);
-    if (!periodo || !periodo.inicio || !periodo.dias) return {};
-    const [ano, mes, diaIni] = periodo.inicio.split('-').map(Number);
+    const alvo = normalizarBuscaEscala(nomeProfissional); // inclui a matrícula
     const mapa = {};
-    for (let i = 0; i < periodo.dias; i++) {
-      const d = new Date(Date.UTC(ano, mes - 1, diaIni + i));
-      const anoMesDia = String(d.getUTCFullYear()).padStart(4, '0') + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
-      if (anoMesDia !== dataSelecionada.substring(0, 7)) continue;
-      mapa[String(d.getUTCDate()).padStart(2, '0')] = true;
-    }
+    feriasMes
+      .filter(f => normalizarBuscaEscala(f.nome) === alvo && f.inicio && f.dias)
+      .forEach(periodo => {
+        const [ano, mes, diaIni] = periodo.inicio.split('-').map(Number);
+        for (let i = 0; i < periodo.dias; i++) {
+          const d = new Date(Date.UTC(ano, mes - 1, diaIni + i));
+          const anoMesDia = String(d.getUTCFullYear()).padStart(4, '0') + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+          if (anoMesDia !== dataSelecionada.substring(0, 7)) continue;
+          const dia = String(d.getUTCDate()).padStart(2, '0');
+          mapa[dia] = periodo.tipo === 'Licença' ? 'licenca' : true;
+        }
+      });
     return mapa;
   };
 
@@ -5836,9 +5856,12 @@ const imprimirRelatorioGeladeira = () => {
       if (novaSigla) {
         const ehAtestado = novaSigla === 'ATM';
         const ehFalta = novaSigla === 'F'; // 🆕
+        const ehFeriado = novaSigla === 'FE';   // 🆕
+        const ehFolgaAniv = novaSigla === 'FA'; // 🆕
+        const ehOcorrencia = ehAtestado || ehFalta || ehFeriado || ehFolgaAniv; // 🆕 agrupa as 4
         const t = DICIONARIO_SIGLAS_DASH[novaSigla]
-          || { nome: ehAtestado ? 'Atestado' : ehFalta ? 'Falta' : novaSigla, inicio: '', fim: '', tipo: 'plantonista' };
-        const idNovo = ehAtestado ? `${buscaP}_ATESTADO` : ehFalta ? `${buscaP}_FALTOU` : `${buscaP}_${novaSigla}`;
+          || { nome: ehAtestado ? 'Atestado' : ehFalta ? 'Falta' : ehFeriado ? 'Feriado' : ehFolgaAniv ? 'Folga Aniversário' : novaSigla, inicio: '', fim: '', tipo: 'plantonista' };
+        const idNovo = ehAtestado ? `${buscaP}_ATESTADO` : ehFalta ? `${buscaP}_FALTOU` : ehFeriado ? `${buscaP}_FERIADO` : ehFolgaAniv ? `${buscaP}_FOLGAANIV` : `${buscaP}_${novaSigla}`;
         const slotNovo = {
           id: idNovo,
           seq: Object.keys(slotsDia).length + 1,
@@ -5847,23 +5870,24 @@ const imprimirRelatorioGeladeira = () => {
           cadastradoEm: new Date().toISOString(),
           categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
           data: `${anoMes}-${dia}`,
-          sigla: ehAtestado ? (slotBase?.sigla || 'ATM') : ehFalta ? (slotBase?.sigla || 'F') : novaSigla,
-          turno: ehAtestado ? (slotBase?.turno || 'Atestado') : ehFalta ? (slotBase?.turno || 'Falta') : t.nome,
-          horario: ehAtestado ? (slotBase?.horario || 'Atestado') : ehFalta ? (slotBase?.horario || 'Falta') : `${t.inicio} às ${t.fim}`,
+          sigla: ehAtestado ? (slotBase?.sigla || 'ATM') : ehFalta ? (slotBase?.sigla || 'F') : ehFeriado ? (slotBase?.sigla || 'FE') : ehFolgaAniv ? (slotBase?.sigla || 'FA') : novaSigla,
+          turno: ehAtestado ? (slotBase?.turno || 'Atestado') : ehFalta ? (slotBase?.turno || 'Falta') : ehFeriado ? (slotBase?.turno || 'Feriado') : ehFolgaAniv ? (slotBase?.turno || 'Folga Aniversário') : t.nome,
+          horario: ehAtestado ? (slotBase?.horario || 'Atestado') : ehFalta ? (slotBase?.horario || 'Falta') : ehFeriado ? (slotBase?.horario || 'Feriado') : ehFolgaAniv ? (slotBase?.horario || 'Folga Aniversário') : `${t.inicio} às ${t.fim}`,
           nome: ehAtestado ? `${nomeProfissional.toUpperCase()} [ATESTADO]`
               : ehFalta ? `${nomeProfissional.toUpperCase()} [FALTOU]` // 🆕
+              : ehFeriado ? `${nomeProfissional.toUpperCase()} [FERIADO]`
+              : ehFolgaAniv ? `${nomeProfissional.toUpperCase()} [FOLGA ANIVERSARIO]`
               : nomeProfissional.toUpperCase(),
-          status: "Confirmado",
-          tipo: (ehAtestado || ehFalta) ? (slotBase?.tipo || t.tipo) : t.tipo,
+          tipo: ehOcorrencia ? (slotBase?.tipo || t.tipo) : t.tipo,
           extra: false,
           observacao: "",
           editadoNaGrade: true,
           modificadoEm: new Date().toISOString()
         };
-        if (ehAtestado || ehFalta) {
+        if (ehOcorrencia) {
           slotNovo.nomeOriginal = slotBase?.nome || nomeProfissional.toUpperCase();
-          slotNovo.statusAlteracao = ehAtestado ? 'Atestado' : 'Falta';
-          if (ehAtestado) slotNovo.siglaOriginal = slotBase?.sigla || ''; // 🆕 carga original preservada
+          slotNovo.statusAlteracao = ehAtestado ? 'Atestado' : ehFalta ? 'Falta' : ehFeriado ? 'Feriado' : 'Folga Aniversário';
+          if (ehAtestado || ehFeriado || ehFolgaAniv) slotNovo.siglaOriginal = slotBase?.sigla || ''; // 🆕 carga original preservada
         }
         dadosGravacao[idNovo] = slotNovo;
       }
@@ -5894,17 +5918,26 @@ const imprimirRelatorioGeladeira = () => {
     }
   };
 
-  // 🌴 Constrói os segmentos da linha: dias normais + períodos de férias contíguos.
-  // Cada trecho de férias vira UM segmento → renderiza como UMA célula com colSpan
+  // 🌴 Constrói os segmentos da linha: dias normais + períodos de afastamento contíguos.
+  // Cada trecho de férias/licença vira UM segmento → renderiza como UMA célula com colSpan.
+  // O mapa pode conter `true` (férias), `'licenca'` (licença) ou `'ferias'`.
+  // Segmentos consecutivos do MESMO tipo são fundidos; tipos diferentes quebram o trecho.
   const construirSegmentos = (feriasMap, totalDias) => {
+    const tipoDe = (valor) => {
+      if (!valor) return null;
+      return valor === 'licenca' ? 'licenca' : 'ferias'; // true, 'ferias' e qualquer truthy → férias
+    };
     const segs = [];
     let i = 0;
     while (i < totalDias) {
-      const diaStr = (i + 1).toString().padStart(2, '0');
-      if (feriasMap[diaStr]) {
+      const tipoAtual = tipoDe(feriasMap[(i + 1).toString().padStart(2, '0')]);
+      if (tipoAtual) {
         let len = 1;
-        while (i + len < totalDias && feriasMap[(i + len + 1).toString().padStart(2, '0')]) len++;
-        segs.push({ tipo: 'ferias', inicio: i, len });
+        while (
+          i + len < totalDias &&
+          tipoDe(feriasMap[(i + len + 1).toString().padStart(2, '0')]) === tipoAtual
+        ) len++;
+        segs.push({ tipo: tipoAtual, inicio: i, len });
         i += len;
       } else {
         segs.push({ tipo: 'dia', i });
@@ -5935,7 +5968,13 @@ const imprimirRelatorioGeladeira = () => {
     // ======================================================
     // 2. REGRA SIMPLIFICADA
     // ======================================================
-    if (statusPlantonista === 'Falta') {
+    if (statusPlantonista === 'Feriado') {
+      nomeFinal = `${nomeLimpo} [FERIADO]`;
+    } 
+    else if (statusPlantonista === 'FolgaAniv') {
+      nomeFinal = `${nomeLimpo} [FOLGA ANIVERSARIO]`;
+    } 
+    else if (statusPlantonista === 'Falta') {
       nomeFinal = `${nomeLimpo} [FALTOU]`;
     } 
     else if (statusPlantonista === 'Atestado') {
@@ -12706,11 +12745,11 @@ const imprimirRelatorioGeladeira = () => {
         { id: 'Fonoaudiólogo', icon: <Mic size={16} /> }, 
         { id: 'Nutricionista', icon: <Leaf size={16} /> },
         { id: 'Psicólogo', icon: <Brain size={16} /> },
+        { id: 'Farmácia', icon: <Pill size={16} /> },
         { id: 'Motorista', icon: <Truck size={16} /> },
         { id: 'Central de Nutrição', icon: <UtensilsCrossed size={16} /> },
         { id: 'Administrativo', icon: <ClipboardList size={16} /> },
         { id: 'Recepção', icon: <Users size={16} /> },
-        { id: 'Farmácia', icon: <Pill size={16} /> },
       ];
 
       return (
@@ -12843,16 +12882,9 @@ const imprimirRelatorioGeladeira = () => {
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   
-                  {/* CABEÇALHO DA SEÇÃO DE ESCALA COM BOTÃO DE EXTRA */}
+                  {/* CABEÇALHO DA VISTA DIÁRIA */}
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-800">Grade Mensal - {categoriaAtiva}</h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-500 uppercase">Mês de Referência:</span>
-                      <input type="month" value={dataSelecionada.substring(0, 7)} onChange={(e) => setDataSelecionada(e.target.value + "-01")} className="p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500" />
-                      <button onClick={() => { setServidoresGerados([]); setIsGerarEscalaModalOpen(true); }} className="text-xs bg-blue-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors" title="Gerar escala do zero para este mês">
-                        ⚡ Gerar Escala
-                      </button>
-                    </div>
+                    <h3 className="font-bold text-slate-800">Grade Diária - {categoriaAtiva}</h3>
                   </div>
 
                   <div className="space-y-4">
@@ -12867,7 +12899,9 @@ const imprimirRelatorioGeladeira = () => {
                       let corBg = 'bg-slate-50'; let corBorder = 'border-slate-100'; let corText = 'text-slate-600';
                       
                       // Ajuste de cores baseado na sigla ou se for EXTRA/FALTA/ATESTADO
-                      if (plantao.nome.includes('[FALTOU]')) { corBg = 'bg-red-50'; corBorder = 'border-red-200'; corText = 'text-red-600'; }
+                      if (plantao.nome.includes('[FERIADO]')) { corBg = 'bg-cyan-50'; corBorder = 'border-cyan-200'; corText = 'text-cyan-700'; }
+                      else if (plantao.nome.includes('[FOLGA ANIVERSARIO]')) { corBg = 'bg-pink-50'; corBorder = 'border-pink-200'; corText = 'text-pink-700'; }
+                      else if (plantao.nome.includes('[FALTOU]')) { corBg = 'bg-red-50'; corBorder = 'border-red-200'; corText = 'text-red-600'; }
                       else if (plantao.nome.includes('[ATESTADO]')) { corBg = 'bg-orange-50'; corBorder = 'border-orange-200'; corText = 'text-orange-600'; }
                       else if (plantao.nome.includes('[EXTRA]') || plantao.extra === true || plantao.sigla === 'V') { corBg = 'bg-emerald-50'; corBorder = 'border-emerald-100'; corText = 'text-emerald-600'; }
                       else if (plantao.sigla === 'N') { corBg = 'bg-indigo-50'; corBorder = 'border-indigo-100'; corText = 'text-indigo-600'; }
@@ -12925,21 +12959,7 @@ const imprimirRelatorioGeladeira = () => {
                    <div className="flex items-center gap-2">
                      <span className="text-xs font-bold text-slate-500 uppercase">Mês de Referência:</span>
                      <input type="month" value={dataSelecionada.substring(0, 7)} onChange={(e) => setDataSelecionada(e.target.value + "-01")} className="p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500" />
-                     <select
-                       value=""
-                       onChange={(e) => adicionarLinhaRegular(e.target.value)}
-                       className="p-1.5 border border-slate-300 bg-white rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
-                       title="Adicionar um servidor à grade (linha com células vazias)"
-                     >
-                       <option value="">＋ Adicionar servidor</option>
-                       {listaProfissionais
-                         .filter(prof => prof.categoria === categoriaAtiva)
-                         .filter(prof => !plantoesDoMes[prof.nome.toUpperCase()])
-                         .map((prof) => (
-                           <option key={prof.id} value={prof.nome}>{prof.nome}</option>
-                         ))}
-                     </select>
-                      <button onClick={() => {
+                     <button onClick={() => {
                        // 🚀 Inicia com TODOS os servidores da profissão ativa pré-selecionados
                        const nomesServidores = [...new Set(
                          listaProfissionais
@@ -12951,14 +12971,31 @@ const imprimirRelatorioGeladeira = () => {
                      }} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-700 transition-colors" title="Gerar escala do zero para este mês">
                        ⚡ Gerar Escala
                      </button>
-                         <button
-                           onClick={() => { setFormFerias({ nome: '', inicio: dataSelecionada + '-01', qtdDias: 30 }); setModalFerias(true); }}
-                           className="p-1.5 border border-sky-300 bg-sky-50 rounded-lg text-xs font-bold text-sky-700 hover:bg-sky-100"
-                           title="Registrar período de férias de um servidor"
-                         >
-                           🌴 Adicionar Férias
-                         </button>                            
+                     <button
+                      onClick={() => { setFormFerias({ id: '', nome: '', inicio: dataSelecionada + '-01', qtdDias: 30, tipo: 'Férias' }); setModalFerias(true); }}
+                      className="p-1.5 border border-sky-300 bg-sky-50 rounded-lg text-xs font-bold text-sky-700 hover:bg-sky-100"
+                      title="Registrar férias ou licença de um servidor"
+                      >
+                      🗓️ Férias / Licença
+                      </button>
                    </div>
+                 </div>
+                 {/* 🆕 Linha separada: Adicionar servidor colado à direita */}
+                 <div className="flex justify-end mb-4">
+                   <select
+                     value=""
+                     onChange={(e) => adicionarLinhaRegular(e.target.value)}
+                     className="p-1.5 border border-slate-300 bg-white rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
+                     title="Adicionar um servidor à grade (linha com células vazias)"
+                   >
+                     <option value="">＋ Adicionar servidor</option>
+                     {listaProfissionais
+                       .filter(prof => prof.categoria === categoriaAtiva)
+                       .filter(prof => !plantoesDoMes[prof.nome.toUpperCase()])
+                       .map((prof) => (
+                         <option key={prof.id} value={prof.nome}>{prof.nome}</option>
+                       ))}
+                   </select>
                  </div>
 
                  {/* ===== ESCALA REGULAR ===== */}
@@ -13001,13 +13038,16 @@ const imprimirRelatorioGeladeira = () => {
                             </div>
                           </td>
                           {construirSegmentos(feriasDias, getDiasNoMes(dataSelecionada.substring(0, 7))).map((seg) => {
-                            // 🌴 Férias: UMA célula mesclada cobrindo o período
-                            if (seg.tipo === 'ferias') {
+                            // 🌴 Férias/Licença: UMA célula mesclada cobrindo o período
+                            if (seg.tipo === 'ferias' || seg.tipo === 'licenca') {
+                              const ehLic = seg.tipo === 'licenca';
                               return (
-                                <td key={`ferias-${seg.inicio}`} colSpan={seg.len}
-                                    className="p-0 border-r border-slate-200 text-center bg-sky-100 align-middle"
-                                    title={`${seg.len} dia(s) de férias — remova o período na lista de férias para editar estes dias`}>
-                                  <span className="font-black text-[7px] tracking-tight text-sky-700 select-none">FÉRIAS</span>
+                                <td key={`${seg.tipo}-${seg.inicio}`} colSpan={seg.len}
+                                    className={`p-0 border-r border-slate-200 text-center align-middle ${ehLic ? 'bg-violet-100' : 'bg-sky-100'}`}
+                                    title={`${seg.len} dia(s) de ${ehLic ? 'licença' : 'férias'} — remova o período na lista para editar estes dias`}>
+                                  <span className={`font-black text-[7px] tracking-tight select-none ${ehLic ? 'text-violet-700' : 'text-sky-700'}`}>
+                                    {ehLic ? 'LICENÇA' : 'FÉRIAS'}
+                                  </span>
                                 </td>
                               );
                             }
@@ -13018,19 +13058,15 @@ const imprimirRelatorioGeladeira = () => {
                             const sigla = dias[diaStr];
                             let corLetra = 'text-slate-300'; let corFundo = '';
                             if (sigla) {
-                              if (sigla === 'ATM') { corLetra = 'text-orange-600'; corFundo = 'bg-orange-50'; }
+                              if (sigla === 'FE') { corLetra = 'text-cyan-700'; corFundo = 'bg-cyan-100'; }
+                              else if (sigla === 'FA') { corLetra = 'text-pink-700'; corFundo = 'bg-pink-100'; }
+                              else if (sigla === 'ATM') { corLetra = 'text-orange-600'; corFundo = 'bg-orange-50'; }
                               else if (sigla === 'F') { corLetra = 'text-red-600'; corFundo = 'bg-red-50'; }
                               else if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; }
                               else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; }
                               else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; }
                               else { corLetra = 'text-slate-700'; corFundo = 'bg-slate-50'; }
                             } 
-                            if (sigla) {
-                              if (sigla.includes('V')) { corLetra = 'text-emerald-700'; corFundo = 'bg-emerald-50'; }
-                              else if (sigla.includes('N')) { corLetra = 'text-indigo-700'; corFundo = 'bg-indigo-50'; }
-                              else if (sigla.includes('D') || sigla.includes('M') || sigla.includes('T')) { corLetra = 'text-blue-700'; corFundo = 'bg-blue-50'; }
-                              else { corLetra = 'text-slate-700'; corFundo = 'bg-slate-50'; }
-                            }
                             // 🌒 Fim de semana: toda a coluna um tom mais escuro
                             if (fimSemana) {
                               corFundo = corFundo
@@ -13096,7 +13132,8 @@ const imprimirRelatorioGeladeira = () => {
                          >                          
                            <option value="">＋ Adicionar servidor ao extras</option>
                            {listaProfissionais
-                             .filter(prof => prof.categoria === categoriaAtiva)
+                             .filter(prof => prof.categoria === categoriaAtiva
+                               || (categoriaAtiva === 'Farmácia' && prof.categoria === 'Gerência de Farmácia'))
                              .filter(prof => !extrasDoMes[prof.nome.toUpperCase()])
                              .map((prof) => (
                                <option key={prof.id} value={prof.nome}>{prof.nome}</option>
@@ -13195,28 +13232,50 @@ const imprimirRelatorioGeladeira = () => {
                      </table>
                     {feriasMes.length > 0 && (
                       <div className="mt-4 p-3 bg-sky-50 border border-sky-200 rounded-lg">
-                        <h5 className="text-xs font-bold text-sky-700 uppercase mb-2">🌴 Férias registradas neste mês — os plantões dos dias cobertos foram removidos da grade</h5>
+                        <h5 className="text-xs font-bold text-sky-700 uppercase mb-2">🗓️ Férias e licenças registradas neste mês — os plantões dos dias cobertos foram removidos da grade</h5>
                         <ul className="space-y-1">
-                          {feriasMes.map((f) => (
-                            <li key={f.nome} className="flex items-center justify-between text-xs text-slate-600 group">
-                              <span>
-                                <b>{f.nome}</b> — {f.inicio.split('-')[2]}/{f.inicio.split('-')[1]}/{f.inicio.split('-')[0]}, {f.dias} dias
-                              </span>
-                              <button
-                                onClick={() => {
-                                  if (!window.confirm(`Remover as férias de ${f.nome}?\n\nOs plantões já apagados pelos dias de férias NÃO serão restaurados automaticamente.`)) return;
-                                  salvarFeriasMes(feriasMes.filter(x => x.nome !== f.nome), f);
-                                }}
-                                className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 transition-colors"
-                                title="Remover este período de férias"
-                              >
-                                <X size={12} />
-                              </button>
-                            </li>
-                          ))}
+                          {[...feriasMes]
+                            .sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)))
+                            .map((f) => {
+                              const ehLicenca = f.tipo === 'Licença';
+                              const [aa, mm, dd] = String(f.inicio).split('-');
+                              return (
+                                <li key={f.id || f.nome} className="flex items-center justify-between text-xs text-slate-600 group">
+                                  <span className="flex items-center gap-2 flex-wrap">
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${ehLicenca ? 'bg-violet-200 text-violet-800' : 'bg-sky-200 text-sky-800'}`}>
+                                      {ehLicenca ? '⚕️ Licença' : '🌴 Férias'}
+                                    </span>
+                                    <b>{f.nome}</b>
+                                    <span>— {dd}-{mm}-{aa}, {f.dias} dias{f.motivo ? ` · ${f.motivo}` : ''}</span>
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => {
+                                        setFormFerias({ id: f.id || '', nome: f.nome, inicio: f.inicio, qtdDias: f.dias, tipo: f.tipo || 'Férias', motivo: f.motivo || '' });
+                                        setModalFerias(true);
+                                      }}
+                                      className="p-1 text-slate-300 hover:text-sky-600 rounded hover:bg-sky-100 transition-colors"
+                                      title="Editar este período"
+                                    >
+                                      ✏️
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        if (!window.confirm(`Remover o período de ${f.nome}?\\n\\nOs plantões já apagados por este período NÃO serão restaurados automaticamente.`)) return;
+                                        salvarFeriasMes(feriasMes.filter(x => (x.id || x.nome) !== (f.id || f.nome)), f);
+                                      }}
+                                      className="p-1 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 transition-colors"
+                                      title="Remover este período"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </span>
+                                </li>
+                              );
+                            })}
                         </ul>
                       </div>
-                    )}                     
+                    )}
                    </div>
                  )}
 
@@ -13321,12 +13380,15 @@ const imprimirRelatorioGeladeira = () => {
 
                                  {/* Células de dia — com férias mescladas */}
                                  {construirSegmentos(feriasEsp, getDiasNoMes(dataSelecionada.substring(0, 7))).map((seg) => {
-                                   if (seg.tipo === 'ferias') {
+                                   if (seg.tipo === 'ferias' || seg.tipo === 'licenca') {
+                                     const ehLic = seg.tipo === 'licenca';
                                      return (
-                                       <td key={`ferias-${seg.inicio}`} colSpan={seg.len}
-                                           className="p-0 border-r border-slate-200 text-center bg-sky-100 align-middle"
-                                           title={`${seg.len} dia(s) de férias — remova o período na lista de férias para editar estes dias`}>
-                                         <span className="font-black text-[7px] tracking-tight text-sky-700 select-none">FÉRIAS</span>
+                                       <td key={`${seg.tipo}-${seg.inicio}`} colSpan={seg.len}
+                                           className={`p-0 border-r border-slate-200 text-center align-middle ${ehLic ? 'bg-violet-100' : 'bg-sky-100'}`}
+                                           title={`${seg.len} dia(s) de ${ehLic ? 'licença' : 'férias'} — remova o período na lista para editar estes dias`}>
+                                         <span className={`font-black text-[7px] tracking-tight select-none ${ehLic ? 'text-violet-700' : 'text-sky-700'}`}>
+                                           {ehLic ? 'LICENÇA' : 'FÉRIAS'}
+                                         </span>
                                        </td>
                                      );
                                    }
@@ -13403,6 +13465,8 @@ const imprimirRelatorioGeladeira = () => {
                     <div className="flex gap-2">
                       <button onClick={() => setStatusPlantonista('Normal')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${statusPlantonista === 'Normal' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-300'}`}>Troca</button>
                       <button onClick={() => setStatusPlantonista('Atestado')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${statusPlantonista === 'Atestado' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-300'}`}>Atestado</button>
+                      <button onClick={() => setStatusPlantonista('Feriado')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${statusPlantonista === 'Feriado' ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-500 border-slate-300'}`}>Feriado</button>
+                      <button onClick={() => setStatusPlantonista('Folga Aniv')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${statusPlantonista === 'Folga Aniv' ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-slate-500 border-slate-300'}`}>Folga Aniv</button>
                       <button onClick={() => setStatusPlantonista('Falta')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${statusPlantonista === 'Falta' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-500 border-slate-300'}`}>Falta</button>
                     </div>
                   </div>
@@ -14085,12 +14149,33 @@ const imprimirRelatorioGeladeira = () => {
         </div>
       )}
 
-                 {/* MODAL DE FÉRIAS */}
+                 {/* MODAL DE FÉRIAS / LICENÇA */}
                  {modalFerias && (
                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setModalFerias(false)}>
-                     <div className="bg-white rounded-xl p-6 w-[420px] shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                       <h4 className="font-bold text-sky-700 mb-4">🌴 Registrar Férias</h4>
+                     <div className="bg-white rounded-xl p-6 w-[460px] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                       <h4 className="font-bold text-sky-700 mb-4">
+                         {formFerias.id ? '✏️ Editar Férias / Licença' : '🗓️ Registrar Férias / Licença'}
+                       </h4>
                        <div className="space-y-3">
+                         <div>
+                           <label className="text-xs font-bold text-slate-500 uppercase">Tipo de afastamento</label>
+                           <div className="flex gap-2 mt-1">
+                             {['Férias', 'Licença'].map(t => (
+                               <button
+                                 key={t}
+                                 type="button"
+                                 onClick={() => setFormFerias(f => ({ ...f, tipo: t }))}
+                                 className={`flex-1 px-3 py-2 rounded-lg text-sm font-bold border transition-colors ${
+                                   formFerias.tipo === t
+                                     ? (t === 'Férias' ? 'bg-sky-600 text-white border-sky-600' : 'bg-violet-600 text-white border-violet-600')
+                                     : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'
+                                 }`}
+                               >
+                                 {t === 'Férias' ? '🌴 Férias' : '⚕️ Licença'}
+                               </button>
+                             ))}
+                           </div>
+                         </div>
                          <div>
                            <label className="text-xs font-bold text-slate-500 uppercase">Servidor (nome + matrícula)</label>
                            <select
@@ -14103,10 +14188,28 @@ const imprimirRelatorioGeladeira = () => {
                                .filter(prof => (prof.categoria === categoriaAtiva
                                  || (categoriaAtiva === 'Farmácia' && prof.categoria === 'Gerência de Farmácia'))
                                  && prof.nome)
-                               .map((prof) => (
-                                 <option key={prof.id} value={prof.nome.toUpperCase()}>{prof.nome.toUpperCase()}</option>
-                               ))}
+                               .map((prof) => {
+                                 // 🆕 Usa a chave EXATA da grade (NOME + matrícula do Excel),
+                                 // que é o valor comparado em diasDeFerias. Se o profissional
+                                 // já existe na grade, preenche com o nome + matrícula real;
+                                 // senão cai no nome do cadastro (fallback).
+                                 const naGrade = Object.keys(plantoesDoMes).find(chave =>
+                                   normalizarBuscaEscala(chave).startsWith(normalizarBuscaEscala(prof.nome)));
+                                 const rotulo = naGrade || prof.nome.toUpperCase();
+                                 return <option key={prof.id} value={rotulo}>{rotulo}</option>;
+                               })}
                            </select>
+                         </div>
+                         <div>
+                           <label className="text-xs font-bold text-slate-500 uppercase">Motivo da licença (opcional)</label>
+                           <input
+                             type="text"
+                             value={formFerias.motivo || ''}
+                             onChange={(e) => setFormFerias(f => ({ ...f, motivo: e.target.value }))}
+                             placeholder={formFerias.tipo === 'Licença' ? 'Ex.: Licença médica, maternidade, luto...' : 'Não se aplica a férias'}
+                             disabled={formFerias.tipo !== 'Licença'}
+                             className="w-full p-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                           />
                          </div>
                          <div>
                            <label className="text-xs font-bold text-slate-500 uppercase">Data de início</label>
@@ -14134,19 +14237,26 @@ const imprimirRelatorioGeladeira = () => {
                          <button
                            onClick={() => {
                              if (!formFerias.nome || !formFerias.inicio || !formFerias.qtdDias) { alert("Preencha servidor, data de início e dias."); return; }
-                             // Uma linha de férias por servidor — substitui se já existir.
-                             // O salvarFeriasMes limpa os plantões da pessoa nos dias do período.
-                             const anterior = feriasMes.find(f => f.nome === formFerias.nome);
-                             const novoArray = feriasMes.filter(f => f.nome !== formFerias.nome).concat({
-                               nome: formFerias.nome, inicio: formFerias.inicio, dias: formFerias.qtdDias,
-                               criadoEm: anterior?.criadoEm || new Date().toISOString()
-                             });
-                             salvarFeriasMes(novoArray);
+                             // 🆕 Um registro por ID: permite 2+ períodos da mesma pessoa no mês
+                             // (ex.: licença médica + férias). Ao editar, substitui pelo id.
+                             const registro = {
+                               id: formFerias.id || `ft-${Date.now()}`,
+                               nome: formFerias.nome,
+                               inicio: formFerias.inicio,
+                               dias: formFerias.qtdDias,
+                               tipo: formFerias.tipo || 'Férias',
+                               ...(formFerias.tipo === 'Licença' && formFerias.motivo ? { motivo: formFerias.motivo } : {}),
+                               criadoEm: feriasMes.find(f => f.id === formFerias.id)?.criadoEm || new Date().toISOString()
+                             };
+                             const novoArray = formFerias.id
+                               ? feriasMes.map(f => (f.id === formFerias.id ? registro : f))
+                               : [...feriasMes, registro];
+                             salvarFeriasMes(novoArray, null, registro);
                              setModalFerias(false);
                            }}
-                           className="px-4 py-2 bg-sky-600 text-white text-sm font-bold rounded-lg hover:bg-sky-700"
+                           className={`px-4 py-2 text-white text-sm font-bold rounded-lg ${formFerias.tipo === 'Licença' ? 'bg-violet-600 hover:bg-violet-700' : 'bg-sky-600 hover:bg-sky-700'}`}
                          >
-                           Salvar Férias
+                           {formFerias.id ? 'Salvar Alteração' : `Salvar ${formFerias.tipo}`}
                          </button>
                        </div>
                      </div>

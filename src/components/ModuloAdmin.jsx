@@ -399,6 +399,7 @@ const handleAtribuirVinculo = async (e) => {
                 <option value="PJ">PJ</option>
                 <option value="CLT">CLT</option>
                 <option value="Efetivo">Efetivo</option>
+                <option value="Cedido">Cedido</option>
               </select>
             </div>
             
@@ -441,6 +442,10 @@ const handleAtribuirVinculo = async (e) => {
                   <option value="Fonoaudiólogo">Fonoaudiólogo</option>
                   <option value="Nutricionista">Nutricionista</option>
                   <option value="Psicólogo">Psicólogo</option>
+                  <option value="Motorista">Motorista</option>
+                  <option value="Farmácia">Farmácia</option>
+                  <option value="Gerência de Farmácia">Gerência de Farmácia</option>
+                  <option value="Central de Nutrição">Central de Nutrição</option>
                   <option value="Administrativo">Administrativo (Gestão)</option>
                 </select>
               </div>

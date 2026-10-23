@@ -101,6 +101,8 @@ const ImportadorEscala = ({ categoria = "Médico Plantonista" }) => {
     'M': { nome: 'Plantão Manhã',  inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'plantonista' },
     'T': { nome: 'Plantão Tarde',  inicio: '13:00', fim: '19:00', horas: 6,  tipo: 'plantonista' },
     'V': { nome: 'Visita Médica',  inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'visita' },
+    'M4': { nome: 'Manhã 4h',    inicio: '08:00', fim: '12:00', horas: 4,  tipo: 'plantonista' },
+    'T4': { nome: 'Tarde 4h',    inicio: '13:00', fim: '17:00', horas: 4,  tipo: 'plantonista' },
   };
 
   const dicionarioTurnos = {
