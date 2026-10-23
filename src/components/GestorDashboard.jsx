@@ -95,6 +95,8 @@ const somarHorasMes = (dias) => {
   let total = 0;
   Object.values(dias || {}).forEach(sigla => {
     if (!sigla) return;
+    // 🆕 FE/FA usam as horas herdadas do turno substituído (definidas no slot)
+    if (sigla === 'FE' || sigla === 'FA') { total += (horasHerdadasPorSigla[sigla] || 0); return; }
     const turno = DICIONARIO_SIGLAS_DASH[sigla];
     if (turno) total += turno.horas;
   });
@@ -5198,8 +5200,13 @@ const imprimirRelatorioGeladeira = () => {
         const siglaSlot = String(s?.sigla || '');
         if (!siglaSlot && !nomeStr) return;               // placeholder vazio
         if (nomeStr.includes('[FALTOU]') || siglaSlot === 'F') return;   // 🆕 falta zera
-        if (nomeStr.includes('[ATESTADO]') || siglaSlot === 'ATM') {     // 🆕 atestado mantém carga
+        if (nomeStr.includes('[ATESTADO]') || siglaSlot === 'ATM') {     // atestado mantém carga
           total += calcularHorasSigla(s.siglaOriginal || siglaSlot);
+          return;
+        }
+        // 🆕 FE/FA mantêm a carga do turno substituído (siglaOriginal)
+        if (siglaSlot === 'FE' || siglaSlot === 'FA') {
+          total += calcularHorasSigla(s.siglaOriginal || '');
           return;
         }
         total += calcularHorasSigla(siglaSlot);
@@ -5539,7 +5546,7 @@ const imprimirRelatorioGeladeira = () => {
           });
         });
       });
-    const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6, 'ATM': 7, 'F': 8 };
+    const ordemTurnos = { 'M': 1, 'T': 2, 'N': 3, 'D': 4, 'DN': 5, 'V': 6, 'ATM': 7, 'F': 8, 'FE': 9, 'FA': 10 };
     const ordenar = (dados) => {
       Object.keys(dados).forEach(nome => {
         Object.keys(dados[nome]).forEach(d => {
@@ -5856,12 +5863,16 @@ const imprimirRelatorioGeladeira = () => {
       if (novaSigla) {
         const ehAtestado = novaSigla === 'ATM';
         const ehFalta = novaSigla === 'F'; // 🆕
-        const ehFeriado = novaSigla === 'FE';   // 🆕
-        const ehFolgaAniv = novaSigla === 'FA'; // 🆕
-        const ehOcorrencia = ehAtestado || ehFalta || ehFeriado || ehFolgaAniv; // 🆕 agrupa as 4
+        const ehFeriado = novaSigla === 'FE';   // 🆕 mesma linha, sem tag
+        const ehFolgaAniv = novaSigla === 'FA'; // 🆕 mesma linha, sem tag
+        const ehHerdaTurno = ehAtestado || ehFalta || ehFeriado || ehFolgaAniv;
+        const ehTagNoNome = ehAtestado || ehFalta; // só ATM/F viram linha própria
+
         const t = DICIONARIO_SIGLAS_DASH[novaSigla]
           || { nome: ehAtestado ? 'Atestado' : ehFalta ? 'Falta' : ehFeriado ? 'Feriado' : ehFolgaAniv ? 'Folga Aniversário' : novaSigla, inicio: '', fim: '', tipo: 'plantonista' };
-        const idNovo = ehAtestado ? `${buscaP}_ATESTADO` : ehFalta ? `${buscaP}_FALTOU` : ehFeriado ? `${buscaP}_FERIADO` : ehFolgaAniv ? `${buscaP}_FOLGAANIV` : `${buscaP}_${novaSigla}`;
+
+        const idNovo = ehAtestado ? `${buscaP}_ATESTADO` : ehFalta ? `${buscaP}_FALTOU` : `${buscaP}_${novaSigla}`;
+
         const slotNovo = {
           id: idNovo,
           seq: Object.keys(slotsDia).length + 1,
@@ -5870,25 +5881,41 @@ const imprimirRelatorioGeladeira = () => {
           cadastradoEm: new Date().toISOString(),
           categoria: SLUG_CATEGORIA[slug] || categoriaAtiva,
           data: `${anoMes}-${dia}`,
-          sigla: ehAtestado ? (slotBase?.sigla || 'ATM') : ehFalta ? (slotBase?.sigla || 'F') : ehFeriado ? (slotBase?.sigla || 'FE') : ehFolgaAniv ? (slotBase?.sigla || 'FA') : novaSigla,
-          turno: ehAtestado ? (slotBase?.turno || 'Atestado') : ehFalta ? (slotBase?.turno || 'Falta') : ehFeriado ? (slotBase?.turno || 'Feriado') : ehFolgaAniv ? (slotBase?.turno || 'Folga Aniversário') : t.nome,
-          horario: ehAtestado ? (slotBase?.horario || 'Atestado') : ehFalta ? (slotBase?.horario || 'Falta') : ehFeriado ? (slotBase?.horario || 'Feriado') : ehFolgaAniv ? (slotBase?.horario || 'Folga Aniversário') : `${t.inicio} às ${t.fim}`,
-          nome: ehAtestado ? `${nomeProfissional.toUpperCase()} [ATESTADO]`
-              : ehFalta ? `${nomeProfissional.toUpperCase()} [FALTOU]` // 🆕
-              : ehFeriado ? `${nomeProfissional.toUpperCase()} [FERIADO]`
-              : ehFolgaAniv ? `${nomeProfissional.toUpperCase()} [FOLGA ANIVERSARIO]`
+          // FE/FA gravam a PRÓPRIA sigla → a célula mostra FE/FA
+          sigla: ehAtestado ? (slotBase?.sigla || 'ATM')
+               : ehFalta   ? (slotBase?.sigla || 'F')
+               : novaSigla,
+          turno: ehAtestado ? (slotBase?.turno || 'Atestado')
+               : ehFalta   ? (slotBase?.turno || 'Falta')
+               : ehFeriado ? 'Feriado'
+               : ehFolgaAniv ? 'Folga Aniversário'
+               : t.nome,
+          horario: ehAtestado ? (slotBase?.horario || 'Atestado')
+                 : ehFalta   ? (slotBase?.horario || 'Falta')
+                 : ehHerdaTurno ? (slotBase?.horario || '')
+                 : `${t.inicio} às ${t.fim}`,
+          // SÓ ATM e F ganham tag no nome; FE/FA mantêm nome puro → mesma linha
+          nome: ehTagNoNome
+              ? `${nomeProfissional.toUpperCase()} ${ehAtestado ? '[ATESTADO]' : '[FALTOU]'}`
               : nomeProfissional.toUpperCase(),
-          tipo: ehOcorrencia ? (slotBase?.tipo || t.tipo) : t.tipo,
+          status: "Confirmado",
+          tipo: ehHerdaTurno ? (slotBase?.tipo || t.tipo) : t.tipo,
           extra: false,
           observacao: "",
           editadoNaGrade: true,
           modificadoEm: new Date().toISOString()
         };
-        if (ehOcorrencia) {
+
+        // Carga original preservada para soma de horas (mesma lógica do ATM)
+        if (ehFeriado || ehFolgaAniv) {
+          slotNovo.siglaOriginal = slotBase?.sigla || '';
+          slotNovo.statusAlteracao = ehFeriado ? 'Feriado' : 'Folga Aniversário';
+        } else if (ehTagNoNome) {
           slotNovo.nomeOriginal = slotBase?.nome || nomeProfissional.toUpperCase();
-          slotNovo.statusAlteracao = ehAtestado ? 'Atestado' : ehFalta ? 'Falta' : ehFeriado ? 'Feriado' : 'Folga Aniversário';
-          if (ehAtestado || ehFeriado || ehFolgaAniv) slotNovo.siglaOriginal = slotBase?.sigla || ''; // 🆕 carga original preservada
+          slotNovo.statusAlteracao = ehAtestado ? 'Atestado' : 'Falta';
+          if (ehAtestado) slotNovo.siglaOriginal = slotBase?.sigla || '';
         }
+
         dadosGravacao[idNovo] = slotNovo;
       }
 
@@ -12902,6 +12929,8 @@ const imprimirRelatorioGeladeira = () => {
                       if (plantao.nome.includes('[FERIADO]')) { corBg = 'bg-cyan-50'; corBorder = 'border-cyan-200'; corText = 'text-cyan-700'; }
                       else if (plantao.nome.includes('[FOLGA ANIVERSARIO]')) { corBg = 'bg-pink-50'; corBorder = 'border-pink-200'; corText = 'text-pink-700'; }
                       else if (plantao.nome.includes('[FALTOU]')) { corBg = 'bg-red-50'; corBorder = 'border-red-200'; corText = 'text-red-600'; }
+                      if (plantao.sigla === 'FE') { corBg = 'bg-cyan-50'; corBorder = 'border-cyan-200'; corText = 'text-cyan-700'; }
+                      else if (plantao.sigla === 'FA') { corBg = 'bg-pink-50'; corBorder = 'border-pink-200'; corText = 'text-pink-700'; }
                       else if (plantao.nome.includes('[ATESTADO]')) { corBg = 'bg-orange-50'; corBorder = 'border-orange-200'; corText = 'text-orange-600'; }
                       else if (plantao.nome.includes('[EXTRA]') || plantao.extra === true || plantao.sigla === 'V') { corBg = 'bg-emerald-50'; corBorder = 'border-emerald-100'; corText = 'text-emerald-600'; }
                       else if (plantao.sigla === 'N') { corBg = 'bg-indigo-50'; corBorder = 'border-indigo-100'; corText = 'text-indigo-600'; }
