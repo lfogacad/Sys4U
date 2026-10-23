@@ -5108,32 +5108,47 @@ const imprimirRelatorioGeladeira = () => {
 
   // ===== CONTAGEM DE PLANTONISTAS POR DIA (D, N, DN) =====
   // Soma regular + extras do mesmo dia. DN conta 1 dia e 1 noite.
-  // FE/FA/ATM/F/V e demais siglas são ignorados.
+  // FE/FA/ATM/F e demais siglas são ignorados.
   const contarPlantonistasDia = (diaStr) => {
     const slots = slotsCruPorDia[diaStr] || {};
     let d = 0, n = 0;
     const vistos = new Set();
+
     Object.values(slots).forEach(s => {
       if (!s) return;
       const sigla = String(s.sigla || '').toUpperCase();
-      const nomeStr = String(s.nome || '');
+      const nomeStr = String(s.nome || '').toUpperCase();
       if (!sigla && !nomeStr) return;
 
       const chave = s.id || `${s.busca || ''}_${sigla}_${nomeStr}`;
       if (vistos.has(chave)) return;
       vistos.add(chave);
 
-      // Slots com nome composto "FULANO (D) / BELTRANO (N)" — DN desmembrado
+      // 🚫 OCORRÊNCIAS NÃO CONTAM — testadas ANTES de qualquer outra regra
+      if (nomeStr.includes('[FALTOU]')) return;
+      if (nomeStr.includes('[ATESTADO]')) return;
+      if (nomeStr.includes('[EXCLUÍDO]')) return;
+      if (sigla === 'F' || sigla === 'ATM') return;
+      if (sigla === 'FE' || sigla === 'FA') return;
+
+      // 🔀 Slot com nome composto "FULANO (D) / BELTRANO (N)" — conta por período,
+      // mas só para quem NÃO está em ocorrência (já filtrado acima)
       if (nomeStr.includes(' / ')) {
-        if (nomeStr.includes('(D)')) d += 1;
-        if (nomeStr.includes('(N)')) n += 1;
+        nomeStr.split(' / ').forEach(parte => {
+          if (parte.includes('[FALTOU]') || parte.includes('[ATESTADO]') || parte.includes('[EXCLUÍDO]')) return;
+          if (parte.includes('(D)')) d += 1;
+          if (parte.includes('(N)')) n += 1;
+        });
         return;
       }
+
+      // ✅ Somente D, N e DN contam
       if (sigla === 'DN') { d += 1; n += 1; }
       else if (sigla === 'D') { d += 1; }
       else if (sigla === 'N') { n += 1; }
-      // D, N e DN contam; qualquer outra sigla (F, ATM, FE, FA, V, M, T...) ignora
+      // Qualquer outra sigla (M, T, V...) ignora
     });
+
     return { d, n };
   };
 
@@ -5151,7 +5166,7 @@ const imprimirRelatorioGeladeira = () => {
     const verde = isTecEnfermagem && d === 6 && n === 5;
     return { texto, verde };
   };
-    
+
   // ===== GERAR ESCALA DO ZERO (merge: nomes entram com células vazias) =====
   const gerarEscalaZero = async () => {
     const nomes = servidoresGerados.map(n => String(n || '').trim()).filter(Boolean);
