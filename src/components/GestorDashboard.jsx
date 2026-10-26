@@ -492,6 +492,9 @@ useEffect(() => {
   const [modalConferenciaOpen, setModalConferenciaOpen] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
 
+  const [modalChecklistOpen, setModalChecklistOpen] = useState(false);
+  const [textoChecklist, setTextoChecklist] = useState('');
+
   const [listaMedicos, setListaMedicos] = useState([]);
   const [listaProfissionais, setListaProfissionais] = useState([]);
 
@@ -4092,6 +4095,37 @@ const imprimirRelatorioGeladeira = () => {
         });
       }
 
+      // ===== CARGO/POSIÇÃO ESPECIAL (campos-irmãos do "dias") =====
+      // Não são coleções paralelas: vivem no mesmo doc do mês.
+      const MAPA_CAMPOS_ESPECIAIS = {
+        medico: { campo: 'visitador', rotulo: 'Médico Visitador', siglaPadrao: 'V' },
+        enfermeiro: { campo: 'gerenciaEnfermagem', rotulo: 'Gerência de Enfermagem', siglaPadrao: 'M' },
+        fisioterapeuta: { campo: 'responsavelTecnico', rotulo: 'RT Fisioterapia', siglaPadrao: 'D' },
+        farmacia: { campo: 'gerenciaFarmacia', rotulo: 'Gerência de Farmácia', siglaPadrao: 'T' }
+      };
+
+      const especiaisMes = []; // { campo, rotulo, dia, data, sigla, nome }
+      for (const [slug, cfg] of Object.entries(MAPA_CAMPOS_ESPECIAIS)) {
+        const mesRef = doc(db, "escalas", slug, "meses", mesAlvo);
+        const snap = await getDoc(mesRef);
+        if (!snap.exists()) continue;
+        const bloco = snap.data()[cfg.campo];
+        if (!bloco) continue;
+        const nomeEspecial = bloco.nome || ''; // responsavelTecnico tem nome; os outros podem não ter
+        Object.entries(bloco.dias || {}).forEach(([dia, sigla]) => {
+          if (!sigla) return;
+          especiaisMes.push({
+            campo: cfg.campo,
+            rotulo: cfg.rotulo,
+            dia,
+            data: `${mesAlvo}-${dia}`,
+            sigla: String(sigla).toUpperCase() || cfg.siglaPadrao,
+            nome: nomeEspecial,
+            categoriaCanonica: SLUG_CATEGORIA[slug] || slug
+          });
+        });
+      }
+
       // ---------- SEÇÃO 1: ocorrências ----------
       const ocorrencias = {};
       const garantir = (buscaP, nome, classe) => {
@@ -5510,11 +5544,20 @@ const imprimirRelatorioGeladeira = () => {
         const resultados = [];
         const agrupadoGeral = {};
 
+        // ===== CARGOS ESPECIAIS (campos-irmãos de "dias") =====
+        // Só entram em "Visão Geral" (plantão do dia) — nunca na aba da categoria.
+        const CAMPOS_ESPECIAIS = {
+          medico:        { campo: 'visitador',           rotulo: 'Médico Visitador',      sigla: 'V' },
+          enfermeiro:    { campo: 'gerenciaEnfermagem',  rotulo: 'Gerência de Enfermagem', sigla: 'M' },
+          fisioterapeuta:{ campo: 'responsavelTecnico',  rotulo: 'RT Fisioterapia',       sigla: 'RT' },
+          farmacia:      { campo: 'gerenciaFarmacia',    rotulo: 'Gerência de Farmácia',  sigla: 'T' }
+        };
+
         for (const catNome of categoriasParaLer) {
           const slug = getSlugCategoria(catNome);
           const mesRef = doc(db, "escalas", slug, "meses", anoMes);
           const snap = await getDoc(mesRef);
-          if (!snap.exists()) continue; // profissão/mês ainda não importado
+          if (!snap.exists()) continue;
           const dadosMes = snap.data();
           const turnosDoDia = dadosMes.dias?.[dia] || {};
           const categoriaCanonica = SLUG_CATEGORIA[slug] || dadosMes.categoria || catNome;
@@ -5522,13 +5565,11 @@ const imprimirRelatorioGeladeira = () => {
           Object.entries(turnosDoDia).forEach(([idTurno, turno]) => {
             const dados = {
               id: turno.id || idTurno,
-              dia, // guarda o dia para gravar de volta no caminho certo
+              dia,
               ...turno,
               categoria: categoriaCanonica
             };
-            // 🛡️ Placeholder de linha gerada do zero (sigla vazia) não vira card na vista diária
             if (!dados.sigla) return;
-            // 🚫 PULA exclusão TOTAL (sem desmembramento Dia/Noite) — mesma regra de antes
             const nomeEscala = dados.nome || "";
             const ehExclusaoTotal =
               (nomeEscala.includes('[EXCLUÍDO]') || dados.statusAlteracao === 'Excluído') &&
@@ -5538,10 +5579,40 @@ const imprimirRelatorioGeladeira = () => {
             if (!agrupadoGeral[dados.categoria]) agrupadoGeral[dados.categoria] = [];
             agrupadoGeral[dados.categoria].push(dados);
           });
+
+          // 🔽 Cargo especial do mês (visitador, gerência, RT) — somente na Visão Geral
+          const cfg = CAMPOS_ESPECIAIS[slug];
+          if (!cfg || categoriaAtiva !== 'Visão Geral') continue;
+
+          const bloco = dadosMes[cfg.campo];
+          if (!bloco) continue;
+
+          // Estrutura confirmada: { nome, dias: { "03": "V", ... }, atualizadoEm }
+          const siglaDia = bloco.dias?.[dia];
+          if (!siglaDia) continue;
+
+          const nomeEspecial = bloco.nome || '';
+          if (!nomeEspecial) continue;
+
+          const registro = {
+            id: `especial_${cfg.campo}_${dia}`,
+            dia,
+            nome: nomeEspecial,
+            sigla: String(siglaDia).toUpperCase() || cfg.sigla,
+            cargo: cfg.rotulo,
+            categoria: categoriaCanonica,
+            especial: true,
+            turno: cfg.rotulo,
+            horario: ''
+          };
+          resultados.push(registro);
+          if (!agrupadoGeral[registro.categoria]) agrupadoGeral[registro.categoria] = [];
+          agrupadoGeral[registro.categoria].push(registro);
         }
 
         setPlantoesDoDia(resultados);
         setConsolidadoDia(agrupadoGeral);
+        console.log('[SYS4U] consolidadoDia:', JSON.stringify(agrupadoGeral, null, 2));
       } catch (error) {
         console.error("Erro ao buscar dados:", error);
       } finally {
@@ -6899,91 +6970,105 @@ const imprimirRelatorioGeladeira = () => {
     }
   };
 
-  // Função para gerar e copiar o Checklist de Profissionais
-  const gerarTextoChecklist = () => {
-    let texto = `UTI MUNICIPAL\n${formatarDataBR(dataSelecionada)}\n\n`;
+  // Monta o texto do checklist (não copia nada)
+  const montarTextoChecklist = () => {
+    let texto = `*UTI MUNICIPAL*\n${formatarDataBR(dataSelecionada)}\n\n`;
 
-    // Mapeamento das categorias para o título impresso e a chave no banco de dados
     const mapaCategorias = [
-      { titulo: "MÉDICO VISITADOR", chave: "Médico Visitador" },
-      { titulo: "MÉDICO", chave: "Médico" },
-      { titulo: "ENFERMEIRO", chave: "Enfermeiro" },
+      { titulo: "MÉDICO VISITADOR",     chave: "Médico",            soCargos: true },
+      { titulo: "MÉDICO PLANTONISTA",               chave: "Médico",            semCargos: true },
+      { titulo: "ENFERMEIRO",           chave: "Enfermeiro" },
       { titulo: "TÉCNICO DE ENFERMAGEM", chave: "Téc. Enfermagem" },
-      { titulo: "TÉCNICO HEMODIÁLISE", chave: "Téc. Hemodiálise" },
-      { titulo: "FISIOTERAPEUTA", chave: "Fisioterapeuta" },
-      { titulo: "MOTORISTA", chave: "Motorista" },
-      { titulo: "NUTRICIONISTA", chave: "Nutricionista" },
-      { titulo: "PSICÓLOGO", chave: "Psicólogo" },
-      { titulo: "FONOAUDIÓLOGO", chave: "Fonoaudiólogo" },
-      { titulo: "RECEPÇÃO", chave: "Recepção" }
-    ];
-    mapaCategorias.forEach(cat => {
-      texto += `${cat.titulo}\n`;
-      const profissionaisRaw = consolidadoDia[cat.chave] || [];
-      let ativos = [];
+      { titulo: "TÉCNICO HEMODIÁLISE",   chave: "Téc. Hemodiálise" },
+      { titulo: "FISIOTERAPEUTA",       chave: "Fisioterapeuta" },
+      { titulo: "MOTORISTA",            chave: "Motorista" },
+      { titulo: "NUTRICIONISTA",        chave: "Nutricionista" },
+      { titulo: "PSICÓLOGO",            chave: "Psicólogo" },
+      { titulo: "FONOAUDIÓLOGO",        chave: "Fonoaudiólogo" },
+      { titulo: "FARMÁCIA",             chave: "Farmácia" },
+      { titulo: "RECEPÇÃO",             chave: "Recepção" }
 
-      // Aplicando o filtro de limpeza
+    ];
+
+    mapaCategorias.forEach(cat => {
+      texto += `*${cat.titulo}*\n`;
+      const profissionaisRaw = consolidadoDia[cat.chave] || [];
+      const ativos = [];
+
       profissionaisRaw.forEach(p => {
-        let strNome = p.nome || "";
-        let siglaBase = p.sigla || "";
+        const ehEspecial = p.especial === true;
+
+        if (cat.soCargos && !ehEspecial) return;   // MÉDICO VISITADOR: só o visitador
+        if (cat.semCargos && ehEspecial) return;   // MÉDICO: só o plantonista
+        // seções sem marcação: plantonista + gerente, os dois entram
+
+        const strNome = p.nome || "";
+        const siglaBase = p.sigla || "";
+
+        if (ehEspecial) {
+          ativos.push({ nome: strNome.trim(), sigla: siglaBase, especial: true });
+          return;
+        }
 
         if (strNome.includes('[EXTRA]')) {
           ativos.push({ nome: strNome.replace('[EXTRA]', '').trim(), sigla: siglaBase });
         } else if (strNome.includes(' / ')) {
-          let partes = strNome.split(' / ');
-          partes.forEach(parte => {
-            let match = parte.match(/(.+?)\s*\((D|N)\)/);
-            if (match) {
-              let nomeExt = match[1].trim();
-              let siglaExt = match[2];
-              if (!nomeExt.includes('[FALTOU]') && !nomeExt.includes('[ATESTADO]')) {
-                ativos.push({ nome: nomeExt, sigla: siglaExt });
-              }
-            }
+          strNome.split(' / ').forEach(parte => {
+            const match = parte.match(/(.+?)\s*\((D|N)\)/);
+            if (!match) return;
+            const nomeExt = match[1].trim();
+            const siglaExt = match[2];
+            if (nomeExt.includes('[FALTOU]') || nomeExt.includes('[ATESTADO]')) return;
+            ativos.push({ nome: nomeExt, sigla: siglaExt });
           });
         } else if (strNome.includes('(Cobrindo:')) {
-          let match = strNome.match(/(.+?)\s*\(Cobrindo:/);
-          if (match) {
-            ativos.push({ nome: match[1].trim(), sigla: siglaBase });
-          }
+          const match = strNome.match(/(.+?)\s*\(Cobrindo:/);
+          if (match) ativos.push({ nome: match[1].trim(), sigla: siglaBase });
         } else if (!strNome.includes('[FALTOU]') && !strNome.includes('[ATESTADO]')) {
           ativos.push({ nome: strNome.trim(), sigla: siglaBase });
         }
       });
 
-      // Imprime os nomes ou deixa o espaço em branco sob a categoria
+      // Plantonistas primeiro, cargos especiais depois
+      ativos.sort((a, b) => (a.especial ? 1 : 0) - (b.especial ? 1 : 0));
+
       if (ativos.length === 0) {
         texto += "\n";
       } else {
         ativos.forEach(p => {
-          let turno = p.sigla ? ` - ${p.sigla}` : "";
-          
-          // A MÁGICA AQUI: Quebra o nome nos espaços e pega só a primeira palavra
-          let primeiroNome = p.nome.split(' ')[0]; 
-          
+          const turno = p.sigla ? ` - ${p.sigla}` : "";
+          const primeiroNome = p.nome.split(' ')[0];
           texto += `•\t${primeiroNome}${turno}\n`;
         });
         texto += "\n";
       }
     });
 
-    // ==========================================
-    // CÁLCULO INTELIGENTE DE LEITOS VAGOS
-    // ==========================================
+    // Leitos vagos
     let numeroLeitosVagos = 0;
-    
     if (typeof leitosConfig !== 'undefined') {
-      // Alterado: checa se o nome está vazio em vez de confiar no status
       numeroLeitosVagos = leitosConfig.filter(l => (!l.nome || l.nome.trim() === '') && !l.bloqueado).length;
     } else if (typeof patients !== 'undefined') {
       numeroLeitosVagos = patients.filter(p => (!p.nome || p.nome.trim() === '') && (p.leito !== 11 || currentRolePerms?.canSeeLeito11)).length;
     }
+    texto += `Leitos vagos - ${numeroLeitosVagos} LEITOS`;
 
-    texto += `Leitos vagos - ${numeroLeitosVagos} LEITOS\n`;
+    return texto;
+  };
 
-    // Copia para a área de transferência
-    navigator.clipboard.writeText(texto)
-      .then(() => alert("Checklist de profissionais copiado com sucesso!"))
+  // Abre o modal de conferência
+  const gerarTextoChecklist = () => {
+    setTextoChecklist(montarTextoChecklist());
+    setModalChecklistOpen(true);
+  };
+
+  // Copia o texto já conferido
+  const copiarChecklist = () => {
+    navigator.clipboard.writeText(textoChecklist)
+      .then(() => {
+        setModalChecklistOpen(false);
+        alert("Checklist de profissionais copiado com sucesso!");
+      })
       .catch(err => console.error("Erro ao copiar: ", err));
   };
 
@@ -13482,6 +13567,7 @@ const imprimirRelatorioGeladeira = () => {
                      </button>
                    </div>
                  </div>
+
                  <div className="p-6 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {categorias.filter(c => c.id !== 'Visão Geral').map(cat => {
                       // 1. Pega os profissionais crus
@@ -13536,12 +13622,29 @@ const imprimirRelatorioGeladeira = () => {
                                 Nenhum profissional ativo / Escala Descoberta
                               </div>
                             ) : (
-                              profissionaisAtivos.sort((a,b) => (a.sigla === 'V' ? -1 : 1)).map(p => {
+                              profissionaisAtivos
+                                .sort((a, b) => {
+                                  // 1º critério: cargo especial (visitador/gerência/RT) vai por último
+                                  const espA = a.especial ? 1 : 0;
+                                  const espB = b.especial ? 1 : 0;
+                                  if (espA !== espB) return espA - espB;
+                                  // 2º critério: Visitador (V) primeiro entre os especiais
+                                  if (a.especial && b.especial) {
+                                    if (a.sigla === 'V' && b.sigla !== 'V') return -1;
+                                    if (b.sigla === 'V' && a.sigla !== 'V') return 1;
+                                  }
+                                  return 0;
+                                })
+                                .map(p => {
                                 let corBarra = "border-blue-500";
                                 let corFundoSigla = "bg-slate-100";
                                 let corTextoSigla = "text-slate-500";
 
-                                if (p.sigla === 'V') { 
+                                if (p.especial) {
+                                  corBarra = "border-amber-400";
+                                  corFundoSigla = "bg-amber-100";
+                                  corTextoSigla = "text-amber-700";
+                                } else if (p.sigla === 'V') { 
                                   corBarra = "border-emerald-500"; corFundoSigla = "bg-emerald-100"; corTextoSigla = "text-emerald-700";
                                 } else if (p.sigla === 'N') { 
                                   corBarra = "border-indigo-500"; corFundoSigla = "bg-indigo-100"; corTextoSigla = "text-indigo-700";
@@ -15109,6 +15212,44 @@ const imprimirRelatorioGeladeira = () => {
             </div>
           </div>
         )}
+
+      {/* ===== CONFERÊNCIA DO CHECKLIST ===== */}
+      {modalChecklistOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200">
+              <div>
+                <h3 className="font-bold text-slate-800">Conferência do Checklist</h3>
+                <p className="text-xs text-slate-500">{formatarDataBR(dataSelecionada)}</p>
+              </div>
+              <button onClick={() => setModalChecklistOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-6 bg-slate-50">
+              <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-slate-800 bg-white border border-slate-200 rounded-xl p-4">
+                {textoChecklist}
+              </pre>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-white">
+              <button
+                onClick={() => setModalChecklistOpen(false)}
+                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={copiarChecklist}
+                className="px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors flex items-center gap-2"
+              >
+                <ClipboardList size={16} /> Copiar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
