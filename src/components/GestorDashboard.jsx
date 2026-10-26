@@ -16,7 +16,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ReferenceLine, Label  
 } from 'recharts';
 import { collection, onSnapshot, getDocs, getDoc, doc, deleteDoc, setDoc, orderBy, limit, updateDoc, 
-         query, where, deleteField } from "firebase/firestore";
+         query, where, deleteField, arrayUnion } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { gerarSnapshotLeitos, listarSnapshots, restaurarSnapshot } from '../utils/backupLeitos';
 
@@ -139,6 +139,107 @@ const DICIONARIO_SIGLAS_DASH = (() => {
 // Opções do select de célula — apenas as siglas operacionais (o dicionário completo
 // permanece para lookup de horário/turno ao gravar VT, VN, TN etc.)
 const OPCOES_SIGLA_DASH = ['D', 'N', 'DN', 'V', 'M', 'T', 'M4', 'T4', 'VT', 'VN', 'MN', 'TN'];
+
+// ===== FERIADOS NACIONAIS (fixos + móveis) =====
+const FERIADOS_NACIONAIS_FIXOS = [
+  '01-01', // Confraternização Universal
+  '04-21', // Tiradentes
+  '05-01', // Dia do Trabalho
+  '09-07', // Independência
+  '10-12', // Nossa Senhora Aparecida
+  '11-02', // Finados
+  '11-15', // Proclamação da República
+  '11-20', // Consciência Negra (Lei 14.759/2023)
+  '12-25'  // Natal
+];
+
+const calcularPascoa = (ano) => {
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100;
+  const d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31);
+  const dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(ano, mes - 1, dia);
+};
+
+const feriadosNacionaisDoAno = (ano) => {
+  const set = new Set();
+  FERIADOS_NACIONAIS_FIXOS.forEach(mmdd => set.add(`${ano}-${mmdd}`));
+  const isoLocal = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const pascoa = calcularPascoa(ano);
+  const add = (dias) => {
+    const d = new Date(pascoa);
+    d.setDate(d.getDate() + dias);
+    set.add(isoLocal(d));
+  };
+  add(-48); // Carnaval (segunda)
+  add(-47); // Carnaval (terça)
+  add(-2);  // Sexta-feira Santa
+  add(60);  // Corpus Christi
+  return set;
+};
+
+// ===== TARIFAS DE PLANTÃO EXTRA =====
+// Valores do PDF oficial. Base 24h — as demais cargas são proporcionais.
+const TARIFAS_EXTRAS = {
+  'Téc. Enfermagem':     { 4: 65.00,  6: 97.50,  8: 130.00,  12: 195.00,  24: 390.00 },
+  'Enfermeiro':          { 4: 130.00, 6: 195.00, 8: 260.00,  12: 390.00,  24: 780.00 },
+  'Médico':              { 4: 477.10, 6: 715.00, 8: 954.20,  12: 1430.00, 24: 2860.00 },
+  'Médico Especialista': { 4: 607.10, 6: 910.00, 8: 1214.20, 12: 1820.00, 24: 3640.00 }
+};
+
+// Classes que recebem pela tabela do PDF (não recebem 50%/100%)
+const CLASSES_COM_TABELA_PDF = ['Téc. Enfermagem', 'Enfermeiro', 'Médico', 'Médico Especialista'];
+
+// Ordem hierárquica de exibição das classes nos relatórios
+const ORDEM_CLASSES_RELATORIO = [
+  'Médico Especialista',
+  'Médico',
+  'Enfermeiro',
+  'Téc. Enfermagem',
+  'Téc. Hemodiálise',
+  'Fisioterapeuta',
+  'Fonoaudiólogo',
+  'Nutricionista',
+  'Psicólogo',
+  'Recepcionista'
+];
+
+const ordemClasse = (c) => {
+  const i = ORDEM_CLASSES_RELATORIO.indexOf(c);
+  return i === -1 ? 999 : i;
+};
+
+// Agrupa uma lista [{classe, ...}] em [{classe, itens:[...]}] já ordenado
+const agruparPorClasse = (lista) => {
+  const mapa = {};
+  lista.forEach(item => {
+    const c = item.classe || 'Sem classe';
+    if (!mapa[c]) mapa[c] = [];
+    mapa[c].push(item);
+  });
+  return Object.keys(mapa)
+    .sort((a, b) => ordemClasse(a) - ordemClasse(b))
+    .map(classe => ({
+      classe,
+      itens: mapa[classe].sort((x, y) => x.nome.localeCompare(y.nome))
+    }));
+};
+
+// Resolve a classe tarifária de um profissional.
+// categoria "Médico" com especialidade preenchida → Médico Especialista.
+const classeTarifaria = (categoria, especialidade) => {
+  const cat = String(categoria || '').trim();
+  if (cat === 'Médico') {
+    return String(especialidade || '').trim() ? 'Médico Especialista' : 'Médico';
+  }
+  return cat;
+};
 
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
@@ -382,12 +483,14 @@ useEffect(() => {
   // ESTADOS DO DOSSIÊ DE AUDITORIA
   // ==========================================
   const [isModalRelatorioOpen, setIsModalRelatorioOpen] = useState(false);
-  const [relatorioMudancas, setRelatorioMudancas] = useState([]);
   const [isLoadingRelatorio, setIsLoadingRelatorio] = useState(false);
   
   // NOVOS ESTADOS PARA OS FILTROS
   const [filtroMesRelatorio, setFiltroMesRelatorio] = useState("");
   const [filtroCategoriaRelatorio, setFiltroCategoriaRelatorio] = useState("Todas");
+  const [relatorioFechamento, setRelatorioFechamento] = useState({ ocorrencias: [], noturnas: [], extras: [], feriados: [], mes: '' });
+  const [modalConferenciaOpen, setModalConferenciaOpen] = useState(false);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
 
   const [listaMedicos, setListaMedicos] = useState([]);
   const [listaProfissionais, setListaProfissionais] = useState([]);
@@ -411,6 +514,12 @@ useEffect(() => {
   const [auditSAPS3, setAuditSAPS3] = useState(null);
   const [salvandoAuditoria, setSalvandoAuditoria] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const [modalFeriadoOpen, setModalFeriadoOpen] = useState(false);
+  const [novaDataFeriado, setNovaDataFeriado] = useState('');
+  const [novaDescFeriado, setNovaDescFeriado] = useState('');
+  const [feriadosAno, setFeriadosAno] = useState([]);
+  const [descricoesFeriado, setDescricoesFeriado] = useState({});
 
   const SAPS3_CAMPOS_AUDITORIA = [
     { key: 'idade', label: 'Idade', tipo: 'select', match: 'Idade', options: [
@@ -3880,67 +3989,481 @@ const imprimirRelatorioGeladeira = () => {
     }
   };
 
-  // Motor de Busca isolado (permite buscar novamente quando trocar o mês)
+  const carregarFeriadosDoAno = async (ano) => {
+    const set = feriadosNacionaisDoAno(ano);
+    try {
+      const snap = await getDoc(doc(db, "feriados", String(ano)));
+      if (snap.exists()) {
+        const dados = snap.data();
+        (dados.municipais || []).forEach(d => set.add(d));
+      }
+    } catch (e) {
+      console.warn("[SYS4U] Não foi possível carregar feriados municipais:", e);
+    }
+    return set;
+  };
+
+  const recarregarFeriados = async (ano) => {
+    try {
+      const snap = await getDoc(doc(db, "feriados", String(ano)));
+      if (snap.exists()) {
+        const d = snap.data();
+        setFeriadosAno(d.municipais || []);
+        setDescricoesFeriado(d.descricoes || {});
+      } else {
+        setFeriadosAno([]);
+        setDescricoesFeriado({});
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const salvarFeriado = async () => {
+    if (!novaDataFeriado) { alert("Informe a data do feriado."); return; }
+    const ano = novaDataFeriado.substring(0, 4);
+    try {
+      const ref = doc(db, "feriados", ano);
+      await setDoc(ref, {
+        municipais: arrayUnion(novaDataFeriado),
+        [`descricoes.${novaDataFeriado}`]: novaDescFeriado.trim() || 'Feriado'
+      }, { merge: true });
+      setModalFeriadoOpen(false);
+      setNovaDataFeriado('');
+      setNovaDescFeriado('');
+      await recarregarFeriados(ano);
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao salvar o feriado.");
+    }
+  };
+
+  const removerFeriado = async (dataISO) => {
+    const ano = dataISO.substring(0, 4);
+    try {
+      const ref = doc(db, "feriados", ano);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
+      const atuais = (snap.data().municipais || []).filter(d => d !== dataISO);
+      await setDoc(ref, { municipais: atuais }, { merge: true });
+      await recarregarFeriados(ano);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // ===== RELATÓRIO DE FECHAMENTO =====
   const buscarDadosRelatorio = async (mesAlvo) => {
     setIsLoadingRelatorio(true);
     try {
-      const mudancas = [];
+      const anoRef = mesAlvo.substring(0, 4);
+      const feriadosSet = await carregarFeriadosDoAno(anoRef);
 
-      // Percorre todas as profissões (slugs) — mesma lista do leitor/importador
+      // Mapa de profissionais (especialidade, categoria) — uma única leitura
+      const mapaProf = {};
+      const snapProf = await getDocs(collection(db, "profissionais"));
+      snapProf.forEach(d => {
+        const p = d.data();
+        const chave = normalizarBuscaEscala(p.nome || '');
+        if (!chave) return;
+        mapaProf[chave] = {
+          nome: p.nome || '',
+          categoria: p.categoria || '',
+          especialidade: p.especialidade || '',
+          classe: classeTarifaria(p.categoria, p.especialidade)
+        };
+      });
+
+      // Coleta todos os slots do mês, de todas as classes
+      const slotsMes = []; // { ...slot, dia, mesSlug, categoriaCanonica }
       for (const slug of Object.keys(SLUG_CATEGORIA)) {
         const mesRef = doc(db, "escalas", slug, "meses", mesAlvo);
         const snap = await getDoc(mesRef);
-        if (!snap.exists()) continue; // profissão/mês ainda não importado
-
+        if (!snap.exists()) continue;
         const dadosMes = snap.data();
         const categoriaCanonica = SLUG_CATEGORIA[slug] || dadosMes.categoria || slug;
         const dias = dadosMes.dias || {};
-
         Object.entries(dias).forEach(([dia, turnosDoDia]) => {
           Object.entries(turnosDoDia || {}).forEach(([turnoId, turno]) => {
             const dataTurno = turno.data || `${mesAlvo}-${dia}`;
-            if (!dataTurno.startsWith(mesAlvo)) return; // defensivo: ignora dado fora do mês
-
-            const nomeFinal = turno.nome || "";
-            const alteracao = turno.statusAlteracao || "";
-            const tipoPlantao = turno.tipo || "";
-
-            const isFalta = nomeFinal.includes('[FALTOU]') || alteracao === 'Falta';
-            const isAtestado = nomeFinal.includes('[ATESTADO]') || alteracao === 'Atestado';
-            const isExtra = tipoPlantao === 'plantao_extra' || nomeFinal.includes('[EXTRA]') || alteracao === 'Extra';
-            const isTroca = alteracao === 'Normal';
-            const isExcluido = alteracao === 'Excluído' || nomeFinal.includes('[EXCLUÍDO]');
-
-            if (isFalta || isExtra || isAtestado || isTroca || isExcluido) {
-              mudancas.push({
-                id: turno.id || turnoId,
-                ...turno,
-                dia,
-                categoria: categoriaCanonica
-              });
-            }
+            if (!dataTurno.startsWith(mesAlvo)) return;
+            slotsMes.push({ ...turno, id: turno.id || turnoId, dia, data: dataTurno, categoriaCanonica });
           });
         });
       }
 
-      mudancas.sort((a, b) => (a.data || "").localeCompare(b.data || ""));
-      setRelatorioMudancas(mudancas);
+      // ---------- SEÇÃO 1: ocorrências ----------
+      const ocorrencias = {};
+      const garantir = (buscaP, nome, classe) => {
+        if (!ocorrencias[buscaP]) {
+          ocorrencias[buscaP] = {
+            nome: nome.replace(/\[.*?\]/g, '').replace(/\((D|N)\)/g, '').replace(/\/.*$/, '').trim(),
+            classe,
+            faltas: 0, atestados: 0, fa: 0, fe: 0,
+            horasFalta: 0, horasAtestado: 0, horasFA: 0, horasFE: 0
+          };
+        }
+        return ocorrencias[buscaP];
+      };
+
+      slotsMes.forEach(s => {
+        const nomeStr = String(s.nome || '').toUpperCase();
+        const sigla = String(s.sigla || '').toUpperCase();
+        const buscaP = s.busca || normalizarBuscaEscala(nomeStr);
+        if (!buscaP) return;
+        const prof = mapaProf[buscaP] || {};
+        const classe = prof.classe || s.categoriaCanonica || '';
+        const horas = calcularHorasSigla(s.siglaOriginal || sigla) || (s.horasHerdadas || 0);
+
+        if (nomeStr.includes('[FALTOU]') || sigla === 'F') {
+          const o = garantir(buscaP, nomeStr, classe);
+          o.faltas += 1;
+          o.horasFalta += horas;
+          return;
+        }
+        if (nomeStr.includes('[ATESTADO]') || sigla === 'ATM') {
+          const o = garantir(buscaP, nomeStr, classe);
+          o.atestados += 1;
+          o.horasAtestado += horas;
+          return;
+        }
+        if (sigla === 'FA') {
+          const o = garantir(buscaP, nomeStr, classe);
+          o.fa += 1;
+          o.horasFA += s.horasHerdadas ?? horas;
+          return;
+        }
+        if (sigla === 'FE') {
+          const o = garantir(buscaP, nomeStr, classe);
+          o.fe += 1;
+          o.horasFE += s.horasHerdadas ?? horas;
+        }
+      });
+
+      // ---------- SEÇÃO 2 e 3/4: horas extras ----------
+      const noturnas = {};  // buscaP → { nome, classe, noites, horas }
+      const extras = {};    // buscaP → { nome, classe, extras, horas50, horas100, horasTotal, valor }
+
+      slotsMes.forEach(s => {
+        const buscaP = s.busca || normalizarBuscaEscala(String(s.nome || ''));
+        if (!buscaP) return;
+        const prof = mapaProf[buscaP] || {};
+        const classe = prof.classe || s.categoriaCanonica || '';
+        const nomeStr = String(s.nome || '').toUpperCase();
+        const sigla = String(s.sigla || '').toUpperCase();
+
+        // Horas noturnas (regular + extra, todos os servidores)
+        const ehOcorrencia = nomeStr.includes('[FALTOU]') || nomeStr.includes('[ATESTADO]')
+          || sigla === 'F' || sigla === 'ATM' || sigla === 'FE' || sigla === 'FA';
+        if (!ehOcorrencia) {
+          let contaNoite = false;
+          if (sigla === 'N' || sigla === 'DN') contaNoite = true;
+          else if (nomeStr.includes(' / ') && nomeStr.includes('(N)')) contaNoite = true;
+          if (contaNoite) {
+            if (!noturnas[buscaP]) noturnas[buscaP] = { nome: nomeStr.replace(/\[.*?\]/g, '').replace(/\((D|N)\)/g, '').split('/')[0].trim(), classe, noites: 0, horas: 0 };
+            noturnas[buscaP].noites += 1;
+            noturnas[buscaP].horas += 8;
+          }
+        }
+
+        // Extras (somente slots marcados como extra)
+        const ehExtra = s.extra === true || String(s.tipo || '') === 'plantao_extra' || nomeStr.includes('[EXTRA]');
+        if (!ehExtra) return;
+        if (ehOcorrencia) return;
+
+        const frac = fracionarHorasExtras(s.data, (s.horario || '').split(' às ')[0], (s.horario || '').split(' às ')[1], feriadosSet);
+        if (!extras[buscaP]) extras[buscaP] = { nome: nomeStr.replace(/\[.*?\]/g, '').trim(), classe, extras: 0, horas50: 0, horas100: 0, horasTotal: 0, valor: 0 };
+        extras[buscaP].extras += 1;
+        extras[buscaP].horas50 += frac.horas50;
+        extras[buscaP].horas100 += frac.horas100;
+        extras[buscaP].horasTotal += (frac.horas50 + frac.horas100);
+      });
+
+      // Calcula o valor a pagar (apenas classes com tabela PDF)
+      Object.values(extras).forEach(e => {
+        if (TARIFAS_EXTRAS[e.classe]) {
+          e.valor = e.horasTotal * (TARIFAS_EXTRAS[e.classe][24] / 24);
+        }
+      });
+
+      // Arredondamentos e ordenação
+      const arred = (n) => Math.round(n * 100) / 100;
+      Object.values(ocorrencias).forEach(o => {
+        o.horasFalta = arred(o.horasFalta); o.horasAtestado = arred(o.horasAtestado);
+        o.horasFA = arred(o.horasFA); o.horasFE = arred(o.horasFE);
+      });
+      Object.values(extras).forEach(e => {
+        e.horas50 = arred(e.horas50); e.horas100 = arred(e.horas100);
+        e.horasTotal = arred(e.horasTotal); e.valor = arred(e.valor);
+      });
+
+      setRelatorioFechamento({
+        ocorrencias: Object.values(ocorrencias).sort((a, b) => a.nome.localeCompare(b.nome)),
+        noturnas: Object.values(noturnas).sort((a, b) => a.nome.localeCompare(b.nome)),
+        extras: Object.values(extras).sort((a, b) => a.nome.localeCompare(b.nome)),
+        feriados: Array.from(feriadosSet).sort(),
+        mes: mesAlvo
+      });
     } catch (error) {
-      console.error("Erro ao buscar relatório de mudanças:", error);
+      console.error("Erro ao compilar o relatório:", error);
       alert("Erro ao compilar o relatório.");
     } finally {
       setIsLoadingRelatorio(false);
     }
   };
 
-  // Função apenas para abrir a interface e disparar a primeira busca
-  const abrirRelatorioMudancas = () => {
+  // ===== GERAÇÃO DO PDF DO FECHAMENTO =====
+  const gerarPdfFechamento = () => {
+    if (gerandoPdf) return;
+    setGerandoPdf(true);
+    try {
+      const r = relatorioFechamento;
+      const docPdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const dataBr = r.mes ? r.mes.split('-').reverse().join('-') : '';
+      const agora = new Date();
+      const emissao = `${String(agora.getDate()).padStart(2,'0')}-${String(agora.getMonth()+1).padStart(2,'0')}-${agora.getFullYear()} ${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}`;
+
+      const cabecalho = (titulo) => {
+        docPdf.setFontSize(14);
+        docPdf.setFont('helvetica', 'bold');
+        docPdf.text('FECHAMENTO DE ESCALA', 14, 14);
+        docPdf.setFontSize(9);
+        docPdf.setFont('helvetica', 'normal');
+        docPdf.text(`Competência: ${dataBr}`, 14, 20);
+        docPdf.text(`Emitido em: ${emissao}`, 14, 25);
+        docPdf.setFontSize(11);
+        docPdf.setFont('helvetica', 'bold');
+        docPdf.text(titulo, 14, 33);
+      };
+
+      const moeda = (v) => 'R$ ' + (v || 0).toFixed(2).replace('.', ',');
+
+      let primeira = true;
+      const novaPagina = () => {
+        if (!primeira) docPdf.addPage();
+        primeira = false;
+        cabecalho('');
+      };
+
+      // ---- SEÇÃO 1 ----
+      primeira = true;
+      cabecalho('1. OCORRÊNCIAS POR SERVIDOR');
+      autoTable(docPdf, {
+        startY: 37,
+        head: [['Servidor', 'Classe', 'Faltas', 'Horas', 'Atestados', 'Horas', 'Folga Aniv.', 'Horas', 'Feriado Abon.', 'Horas']],
+        body: (() => {
+          if (!r.ocorrencias.length) return [['Nenhuma ocorrência registrada no mês.', '', '', '', '', '', '', '', '', '']];
+          const linhas = [];
+          agruparPorClasse(r.ocorrencias).forEach(g => {
+            g.itens.forEach(o => {
+              linhas.push([
+                o.nome, o.classe,
+                o.faltas || '-', o.horasFalta ? `${o.horasFalta}h` : '-',
+                o.atestados || '-', o.horasAtestado ? `${o.horasAtestado}h` : '-',
+                o.fa || '-', o.horasFA ? `${o.horasFA}h` : '-',
+                o.fe || '-', o.horasFE ? `${o.horasFE}h` : '-'
+              ]);
+            });
+            const sFalta = g.itens.reduce((s, o) => s + (o.faltas || 0), 0);
+            const sHFalta = g.itens.reduce((s, o) => s + (o.horasFalta || 0), 0);
+            const sAtest = g.itens.reduce((s, o) => s + (o.atestados || 0), 0);
+            const sHAtest = g.itens.reduce((s, o) => s + (o.horasAtestado || 0), 0);
+            const sFA = g.itens.reduce((s, o) => s + (o.fa || 0), 0);
+            const sHFA = g.itens.reduce((s, o) => s + (o.horasFA || 0), 0);
+            const sFE = g.itens.reduce((s, o) => s + (o.fe || 0), 0);
+            const sHFE = g.itens.reduce((s, o) => s + (o.horasFE || 0), 0);
+            const arred = (n) => Math.round(n * 100) / 100;
+            linhas.push([
+              '',
+              { content: `Subtotal ${g.classe}`, styles: { fontStyle: 'bold', halign: 'right' } },
+              { content: sFalta ? String(sFalta) : '-', styles: { fontStyle: 'bold' } },
+              { content: sHFalta ? `${arred(sHFalta)}h` : '-', styles: { fontStyle: 'bold' } },
+              { content: sAtest ? String(sAtest) : '-', styles: { fontStyle: 'bold' } },
+              { content: sHAtest ? `${arred(sHAtest)}h` : '-', styles: { fontStyle: 'bold' } },
+              { content: sFA ? String(sFA) : '-', styles: { fontStyle: 'bold' } },
+              { content: sHFA ? `${arred(sHFA)}h` : '-', styles: { fontStyle: 'bold' } },
+              { content: sFE ? String(sFE) : '-', styles: { fontStyle: 'bold' } },
+              { content: sHFE ? `${arred(sHFE)}h` : '-', styles: { fontStyle: 'bold' } }
+            ]);
+          });
+          return linhas;
+        })(),
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        headStyles: { fillColor: [241, 245, 249], textColor: [51, 65, 85], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 14, right: 14 },
+        didParseCell: (data) => {
+          if (data.section === 'body' && String(data.row.raw?.[1]?.content || '').startsWith('Subtotal')) {
+            data.cell.styles.fillColor = [254, 243, 199];
+          }
+        }
+      });
+
+      // ---- SEÇÃO 2 ----
+      docPdf.addPage();
+      cabecalho('2. HORAS NOTURNAS (TODOS OS SERVIDORES)');
+      autoTable(docPdf, {
+        startY: 37,
+        head: [['Servidor', 'Classe', 'Noites (N + DN)', 'Horas Noturnas (x8)']],
+        body: (() => {
+          if (!r.noturnas.length) return [['Nenhum plantão noturno no mês.', '', '', '']];
+          const linhas = [];
+          agruparPorClasse(r.noturnas).forEach(g => {
+            g.itens.forEach(n => {
+              linhas.push([n.nome, n.classe, String(n.noites), `${n.horas}h`]);
+            });
+            const totNoites = g.itens.reduce((s, n) => s + (n.noites || 0), 0);
+            const totHoras = g.itens.reduce((s, n) => s + (n.horas || 0), 0);
+            linhas.push([
+              '',
+              { content: `Subtotal ${g.classe}`, styles: { fontStyle: 'bold', halign: 'right' } },
+              { content: String(totNoites), styles: { fontStyle: 'bold' } },
+              { content: `${totHoras}h`, styles: { fontStyle: 'bold' } }
+            ]);
+          });
+          return linhas;
+        })(),
+        styles: { fontSize: 7.5, cellPadding: 1.8 },
+        headStyles: { fillColor: [224, 231, 255], textColor: [49, 46, 129], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 14, right: 14 },
+        didParseCell: (data) => {
+          if (data.section === 'body' && String(data.row.raw?.[1]?.content || '').startsWith('Subtotal')) {
+            data.cell.styles.fillColor = [238, 242, 255];
+          }
+        }
+      });
+
+      // ---- SEÇÃO 3 ----
+      const lista50 = r.extras.filter(e => !CLASSES_COM_TABELA_PDF.includes(e.classe));
+      docPdf.addPage();
+      cabecalho('3. HORAS EXTRAS 50% / 100%');
+      docPdf.setFontSize(8);
+      docPdf.setFont('helvetica', 'italic');
+      docPdf.text('Seg-sab: 50% | Domingo e feriados: 100% | Turnos fracionados na virada da meia-noite.', 14, 36);
+      autoTable(docPdf, {
+        startY: 40,
+        head: [['Servidor', 'Classe', 'Extras', 'Horas 50%', 'Horas 100%', 'Total']],
+        body: (() => {
+          if (!lista50.length) return [['Nenhuma hora extra no mês.', '', '', '', '', '']];
+          const linhas = [];
+          agruparPorClasse(lista50).forEach(g => {
+            g.itens.forEach(e => {
+              linhas.push([e.nome, e.classe, String(e.extras), `${e.horas50}h`, `${e.horas100}h`, `${e.horasTotal}h`]);
+            });
+            const s50 = g.itens.reduce((s, e) => s + (e.horas50 || 0), 0);
+            const s100 = g.itens.reduce((s, e) => s + (e.horas100 || 0), 0);
+            const sTot = g.itens.reduce((s, e) => s + (e.horasTotal || 0), 0);
+            linhas.push([
+              '',
+              { content: `Subtotal ${g.classe}`, styles: { fontStyle: 'bold', halign: 'right' } },
+              '',
+              { content: `${Math.round(s50 * 100) / 100}h`, styles: { fontStyle: 'bold' } },
+              { content: `${Math.round(s100 * 100) / 100}h`, styles: { fontStyle: 'bold' } },
+              { content: `${Math.round(sTot * 100) / 100}h`, styles: { fontStyle: 'bold' } }
+            ]);
+          });
+          return linhas;
+        })(),
+        styles: { fontSize: 7.5, cellPadding: 1.8 },
+        headStyles: { fillColor: [209, 250, 229], textColor: [6, 78, 59], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 14, right: 14 },
+        didParseCell: (data) => {
+          if (data.section === 'body' && String(data.row.raw?.[1]?.content || '').startsWith('Subtotal')) {
+            data.cell.styles.fillColor = [236, 253, 245];
+          }
+        }
+      });
+
+      // ---- SEÇÃO 4 ----
+      const listaPdf = r.extras.filter(e => CLASSES_COM_TABELA_PDF.includes(e.classe));
+      const totalGeral = listaPdf.reduce((s, e) => s + (e.valor || 0), 0);
+      docPdf.addPage();
+      cabecalho('4. CALCULADORA DE PAGAMENTO - PLANTÕES EXTRAS');
+      const corpo4 = (() => {
+        if (!listaPdf.length) return [['Nenhum extra a pagar no mês.', '', '', '', '', '']];
+        const linhas = [];
+        agruparPorClasse(listaPdf).forEach(g => {
+          g.itens.forEach(e => {
+            linhas.push([
+              e.nome, e.classe, String(e.extras), `${e.horasTotal}h`,
+              moeda(TARIFAS_EXTRAS[e.classe][24] / 24), moeda(e.valor)
+            ]);
+          });
+          const sub = g.itens.reduce((s, e) => s + (e.valor || 0), 0);
+          linhas.push([
+            '',
+            { content: `Subtotal ${g.classe}`, styles: { fontStyle: 'bold', halign: 'right' } },
+            '', '', '',
+            { content: moeda(sub), styles: { fontStyle: 'bold', textColor: [21, 128, 61] } }
+          ]);
+        });
+        linhas.push([
+          '', { content: 'TOTAL GERAL', styles: { fontStyle: 'bold', halign: 'right' } },
+          '', '', '',
+          { content: moeda(totalGeral), styles: { fontStyle: 'bold', textColor: [30, 64, 175] } }
+        ]);
+        return linhas;
+      })();
+      autoTable(docPdf, {
+        startY: 37,
+        head: [['Servidor', 'Classe', 'Extras', 'Horas', 'Valor/hora', 'Total a pagar']],
+        body: corpo4,
+        styles: { fontSize: 7.5, cellPadding: 1.8 },
+        headStyles: { fillColor: [219, 234, 254], textColor: [30, 58, 138], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 14, right: 14 },
+        didParseCell: (data) => {
+          if (data.section !== 'body') return;
+          const rotulo = String(data.row.raw?.[1]?.content || '');
+          if (rotulo.startsWith('Subtotal')) {
+            data.cell.styles.fillColor = [239, 246, 255];
+          }
+          if (rotulo === 'TOTAL GERAL') {
+            data.cell.styles.fillColor = [219, 234, 254];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      });
+
+      // Rodapé com paginação
+      const totalPaginas = docPdf.internal.getNumberOfPages();
+      for (let p = 1; p <= totalPaginas; p++) {
+        docPdf.setPage(p);
+        docPdf.setFontSize(7);
+        docPdf.setFont('helvetica', 'normal');
+        docPdf.setTextColor(120);
+        docPdf.text(`Sys4U - Fechamento de Escala - ${dataBr}`, 14, docPdf.internal.pageSize.getHeight() - 7);
+        docPdf.text(
+          `Página ${p} de ${totalPaginas}`,
+          docPdf.internal.pageSize.getWidth() - 14,
+          docPdf.internal.pageSize.getHeight() - 7,
+          { align: 'right' }
+        );
+      }
+
+      // Abre em nova aba para visualização (o usuário pode salvar pelo próprio navegador)
+      const blobUrl = docPdf.output('bloburl');
+      const janela = window.open(blobUrl, '_blank');
+      if (!janela) {
+        // Bloqueador de pop-up ativo → cai para download
+        docPdf.save(`Fechamento_Escala_${r.mes || 'mes'}.pdf`);
+      }
+    } catch (e) {
+      console.error("Erro ao gerar PDF:", e);
+      alert("Erro ao gerar o PDF.");
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
+
+  const abrirRelatorioMudancas = async () => {
     const mesAtual = dataSelecionada.substring(0, 7);
     setFiltroMesRelatorio(mesAtual);
-    setFiltroCategoriaRelatorio("Todas"); // Reseta a categoria
-    setIsModalRelatorioOpen(true);
-    
-    buscarDadosRelatorio(mesAtual);
+    setFiltroCategoriaRelatorio("Todas");
+    await buscarDadosRelatorio(mesAtual);
+    setModalConferenciaOpen(true);
   };
 
   const salvarPAVManual = async () => {
@@ -6034,6 +6557,79 @@ const imprimirRelatorioGeladeira = () => {
       }
     }
     return segs;
+  };
+
+  // ===== TARIFAS DE PLANTÃO EXTRA (por hora) =====
+  // Valores do PDF; divididos pela carga do plantão para dar R$/hora.
+  const TARIFAS_EXTRAS = {
+    'Téc. Enfermagem':     { 4: 65.00, 6: 97.50, 8: 130.00, 12: 195.00, 24: 390.00 },
+    'Enfermeiro':          { 4: 130.00, 6: 195.00, 8: 260.00, 12: 390.00, 24: 780.00 },
+    'Médico':              { 4: 477.10, 6: 715.00, 8: 954.20, 12: 1430.00, 24: 2860.00 }, // clínico geral
+    'Médico Especialista': { 4: 607.10, 6: 910.00, 8: 1214.20, 12: 1820.00, 24: 3640.00 }
+  };
+
+  const valorHoraExtra = (classe, horas) => {
+    const tab = TARIFAS_EXTRAS[classe];
+    if (!tab) return 0;
+    // tarifa/hora = valor da carga de 24h / 24 (é linear em todas as classes)
+    return horas * (tab[24] / 24);
+  };
+  
+  // ===== FRACIONAMENTO DE HORAS EXTRAS NA VIRADA DA MEIA-NOITE =====
+  // 50%: seg 00h → sáb 23h59 · 100%: domingo inteiro e feriado inteiro
+  const fracionarHorasExtras = (dataISO, inicio, fim, feriadosSet) => {
+    const [hi, mi] = String(inicio || '00:00').split(':').map(Number);
+    const [hf, mf] = String(fim || '00:00').split(':').map(Number);
+    if ([hi, mi, hf, mf].some(n => Number.isNaN(n))) return { horas50: 0, horas100: 0 };
+
+    const inicioMin = hi * 60 + mi;
+    let fimMin = hf * 60 + mf;
+    if (fimMin <= inicioMin) fimMin += 24 * 60; // atravessa a meia-noite
+
+    const base = new Date(`${dataISO}T00:00:00`);
+    const isoLocal = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    let horas50 = 0, horas100 = 0;
+    let minAtual = inicioMin;
+    let restante = fimMin - inicioMin;
+
+    while (restante > 0) {
+      const diaOffset = Math.floor(minAtual / (24 * 60));
+      const minNoDia = minAtual % (24 * 60);
+      const d = new Date(base);
+      d.setDate(d.getDate() + diaOffset);
+      const isoDia = isoLocal(d);
+      const dow = d.getDay(); // 0 = domingo
+
+      const eh100 = feriadosSet.has(isoDia) || dow === 0;
+      // consome até o fim da hora corrente (bloco máximo de 60 min)
+      const passo = Math.min(60 - (minNoDia % 60), restante);
+
+      if (eh100) horas100 += passo / 60; else horas50 += passo / 60;
+      minAtual += passo;
+      restante -= passo;
+    }
+    return { horas50, horas100 };
+  };
+
+  // ===== HORAS NOTURNAS =====
+  // N = 8h · DN = 8h (contém a noite) · ATM/F/FE/FA não contam
+  const horasNoturnasServidor = (buscaP) => {
+    let total = 0;
+    Object.values(slotsCruPorDia).forEach(slots => {
+      Object.values(slots || {}).forEach(s => {
+        if (!s || s.busca !== buscaP) return;
+        const nomeStr = String(s.nome || '').toUpperCase();
+        const sigla = String(s.sigla || '').toUpperCase();
+        if (nomeStr.includes('[FALTOU]') || nomeStr.includes('[ATESTADO]')) return;
+        if (sigla === 'F' || sigla === 'ATM' || sigla === 'FE' || sigla === 'FA') return;
+        if (sigla === 'N' || sigla === 'DN') { total += 8; return; }
+        // nome composto "(D) / (N)" → conta só a parte da noite
+        if (nomeStr.includes(' / ') && nomeStr.includes('(N)')) total += 8;
+      });
+    });
+    return total;
   };
 
   const salvarTrocaPlantao = async () => {
@@ -12974,6 +13570,13 @@ const imprimirRelatorioGeladeira = () => {
                   {/* CABEÇALHO DA VISTA DIÁRIA */}
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-slate-800">Grade Diária - {categoriaAtiva}</h3>
+                    <button
+                      onClick={() => setIsExtraModalOpen(true)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition-colors shadow-sm flex items-center gap-1.5"
+                      title="Adicionar plantonista extra"
+                    >
+                      <Plus size={14} /> Adicionar Extra
+                    </button>
                   </div>
 
                   <div className="space-y-4">
@@ -13036,7 +13639,13 @@ const imprimirRelatorioGeladeira = () => {
                         onClick={abrirRelatorioMudancas}
                         className="w-full bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 font-bold py-2.5 px-4 rounded-xl transition-colors shadow-sm flex justify-center items-center gap-2 text-sm"
                       >
-                        <ClipboardList size={16} /> Relatório de Mudanças e Faltas
+                        <ClipboardList size={16} /> Relatório Mensal de Plantões
+                      </button>
+                      <button
+                        onClick={() => { recarregarFeriados(dataSelecionada.substring(0,4)); setModalFeriadoOpen(true); }}
+                        className="w-full bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 font-bold py-2.5 px-4 rounded-xl transition-colors shadow-sm flex justify-center items-center gap-2 text-sm"
+                      >
+                        <Calendar size={16} /> Cadastrar Feriados
                       </button>
                     </div>
                   </div>
@@ -13696,7 +14305,14 @@ const imprimirRelatorioGeladeira = () => {
                       
                       {/* 🔥 Filtra a lista geral pela categoria que o gestor está visualizando */}
                       {listaProfissionais
-                        .filter(prof => prof.categoria === categoriaAtiva)
+                        .filter(prof => {
+                          const cat = String(prof.categoria || '').trim();
+                          const ativa = String(categoriaAtiva || '').trim();
+                          if (cat === ativa) return true;
+                          // Téc. Hemodiálise puxa também os Téc. Enfermagem (mesmo profissional, habilitação diferente)
+                          if (ativa === 'Téc. Hemodiálise') return cat === 'Téc. Enfermagem';
+                          return false;
+                        })
                         .map((med) => (
                           <option key={med.id} value={med.nome}>{med.nome}</option>
                         ))
@@ -13955,168 +14571,260 @@ const imprimirRelatorioGeladeira = () => {
       {activeView === 'auditoria' && renderGestaoRisco()} 
       {activeView === 'equipe' && renderEquipe()}
 
-      {/* ==========================================
-          MODAL GLOBAL: RELATÓRIO DE MUDANÇAS DE ESCALA
-          ========================================== */}
-      {isModalRelatorioOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 print:hidden">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-            
-            {/* Header do Modal */}
-            <div className="bg-slate-800 p-6 flex justify-between items-center flex-shrink-0">
+      {/* ===== CONFERÊNCIA DO FECHAMENTO ===== */}
+      {modalConferenciaOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col">
+
+            {/* Cabeçalho */}
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200">
               <div>
-                <h3 className="text-xl font-black text-white flex items-center gap-2">
-                  <ClipboardList className="text-emerald-400" />
-                  Dossiê de Auditoria de RH
-                </h3>
-                <p className="text-slate-300 text-sm mt-1">
-                  Rastreabilidade de trocas, atestados e faltas da UTI
+                <h3 className="font-bold text-slate-800 text-lg">Conferência do Fechamento</h3>
+                <p className="text-xs text-slate-500">
+                  Mês de referência: {relatorioFechamento.mes ? relatorioFechamento.mes.split('-').reverse().join('-') : '—'}
                 </p>
               </div>
-              <button 
-                onClick={() => setIsModalRelatorioOpen(false)}
-                className="text-slate-300 hover:text-white transition-colors p-2 bg-slate-700 hover:bg-slate-600 rounded-lg"
-              >
-                ✕
+              <button onClick={() => setModalConferenciaOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <X size={20} />
               </button>
             </div>
 
-            {/* 🚨 NOVA BARRA DE FILTROS */}
-            <div className="bg-slate-100 p-4 border-b border-slate-200 flex flex-col sm:flex-row gap-4 items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div className="flex flex-col w-full sm:w-auto">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Mês de Referência</label>
-                  <input 
-                    type="month" 
-                    value={filtroMesRelatorio} 
-                    onChange={(e) => {
-                      const novoMes = e.target.value;
-                      setFiltroMesRelatorio(novoMes);
-                      buscarDadosRelatorio(novoMes); // Busca no banco novamente ao trocar o mês
-                    }} 
-                    className="p-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500 bg-white"
-                  />
-                </div>
+            {/* Conteúdo */}
+            <div className="flex-1 overflow-auto px-6 py-4 space-y-8">
+              {isLoadingRelatorio && (
+                <div className="text-center py-12 text-slate-400 text-sm">Compilando dados…</div>
+              )}
 
-                <div className="flex flex-col w-full sm:w-auto">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Classe Profissional</label>
-                  <select 
-                    value={filtroCategoriaRelatorio} 
-                    onChange={(e) => setFiltroCategoriaRelatorio(e.target.value)}
-                    className="p-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500 bg-white"
-                  >
-                    <option value="Todas">Todas as Classes</option>
-                    <option value="Médico">Médicos</option>
-                    <option value="Enfermeiro">Enfermeiros</option>
-                    <option value="Téc. Enfermagem">Técnicos de Enfermagem</option>
-                    <option value="Téc. Hemodiálise">Técnicos de Hemodiálise</option>
-                    <option value="Fisioterapeuta">Fisioterapeutas</option>
-                    <option value="Fonoaudiólogo">Fonoaudiólogos</option>
-                    <option value="Nutricionista">Nutricionistas</option>
-                    <option value="Recepção">Recepção</option>
-                    <option value="Psicólogo">Psicólogos</option>
-                  </select>
-                </div>
-              </div>
-              
-              {/* Contador dinâmico */}
-              <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-sm font-bold text-slate-600">
-                Total Registrado: <span className="text-blue-600">{
-                  relatorioMudancas.filter(item => filtroCategoriaRelatorio === "Todas" || item.categoria === filtroCategoriaRelatorio).length
-                }</span>
-              </div>
+              {/* SEÇÃO 1 — OCORRÊNCIAS */}
+              {!isLoadingRelatorio && (
+                <section>
+                  <h4 className="font-bold text-sm text-slate-700 mb-3 uppercase tracking-wide border-l-4 border-orange-400 pl-2">
+                    1. Ocorrências por Servidor
+                  </h4>
+                  {relatorioFechamento.ocorrencias.length === 0 ? (
+                    <p className="text-sm text-slate-400 italic">Nenhuma ocorrência registrada no mês.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {agruparPorClasse(relatorioFechamento.ocorrencias).map(grupo => (
+                        <div key={grupo.classe}>
+                          <div className="bg-slate-700 text-white text-[11px] font-black uppercase tracking-wide px-2 py-1 rounded-t">
+                            {grupo.classe} <span className="font-normal opacity-70">({grupo.itens.length})</span>
+                          </div>
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100">
+                                <th className="p-2 border border-slate-200 text-left">Servidor</th>
+                                <th className="p-2 border border-slate-200 text-center">Faltas</th>
+                                <th className="p-2 border border-slate-200 text-center">Horas</th>
+                                <th className="p-2 border border-slate-200 text-center">Atestados</th>
+                                <th className="p-2 border border-slate-200 text-center">Horas</th>
+                                <th className="p-2 border border-slate-200 text-center">Folga Aniv.</th>
+                                <th className="p-2 border border-slate-200 text-center">Horas</th>
+                                <th className="p-2 border border-slate-200 text-center">Feriado Abon.</th>
+                                <th className="p-2 border border-slate-200 text-center">Horas</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {grupo.itens.map((o, i) => (
+                                <tr key={i} className="hover:bg-slate-50">
+                                  <td className="p-2 border border-slate-200 font-bold text-slate-700">{o.nome}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-red-600 font-bold">{o.faltas || '—'}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-slate-500">{o.horasFalta ? `${o.horasFalta}h` : '—'}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-orange-600 font-bold">{o.atestados || '—'}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-slate-500">{o.horasAtestado ? `${o.horasAtestado}h` : '—'}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-pink-600 font-bold">{o.fa || '—'}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-slate-500">{o.horasFA ? `${o.horasFA}h` : '—'}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-cyan-600 font-bold">{o.fe || '—'}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-slate-500">{o.horasFE ? `${o.horasFE}h` : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* SEÇÃO 2 — HORAS NOTURNAS */}
+              {!isLoadingRelatorio && (
+                <section>
+                  <h4 className="font-bold text-sm text-slate-700 mb-3 uppercase tracking-wide border-l-4 border-indigo-400 pl-2">
+                    2. Horas Noturnas (todos os servidores)
+                  </h4>
+                  {relatorioFechamento.noturnas.length === 0 ? (
+                    <p className="text-sm text-slate-400 italic">Nenhum plantão noturno no mês.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {agruparPorClasse(relatorioFechamento.noturnas).map(grupo => (
+                        <div key={grupo.classe}>
+                          <div className="bg-slate-700 text-white text-[11px] font-black uppercase tracking-wide px-2 py-1 rounded-t">
+                            {grupo.classe} <span className="font-normal opacity-70">({grupo.itens.length})</span>
+                          </div>
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100">
+                                <th className="p-2 border border-slate-200 text-left">Servidor</th>
+                                <th className="p-2 border border-slate-200 text-center">Noites (N + DN)</th>
+                                <th className="p-2 border border-slate-200 text-center">Horas Noturnas</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {grupo.itens.map((n, i) => (
+                                <tr key={i} className="hover:bg-slate-50">
+                                  <td className="p-2 border border-slate-200 font-bold text-slate-700">{n.nome}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-indigo-600 font-bold">{n.noites}</td>
+                                  <td className="p-2 border border-slate-200 text-center text-indigo-700 font-bold">{n.horas}h</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* SEÇÃO 3 — HORAS EXTRAS 50/100 */}
+              {!isLoadingRelatorio && (() => {
+                const lista = relatorioFechamento.extras.filter(e => !CLASSES_COM_TABELA_PDF.includes(e.classe));
+                return (
+                  <section>
+                    <h4 className="font-bold text-sm text-slate-700 mb-3 uppercase tracking-wide border-l-4 border-emerald-400 pl-2">
+                      3. Horas Extras 50% / 100%
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Seg–sáb: 50% · Domingo e feriados: 100% · Turnos fracionados na virada da meia-noite.
+                    </p>
+                    {lista.length === 0 ? (
+                      <p className="text-sm text-slate-400 italic">Nenhuma hora extra no mês.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {agruparPorClasse(lista).map(grupo => (
+                          <div key={grupo.classe}>
+                            <div className="bg-slate-700 text-white text-[11px] font-black uppercase tracking-wide px-2 py-1 rounded-t">
+                              {grupo.classe} <span className="font-normal opacity-70">({grupo.itens.length})</span>
+                            </div>
+                            <table className="w-full text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-100">
+                                  <th className="p-2 border border-slate-200 text-left">Servidor</th>
+                                  <th className="p-2 border border-slate-200 text-center">Extras</th>
+                                  <th className="p-2 border border-slate-200 text-center">Horas 50%</th>
+                                  <th className="p-2 border border-slate-200 text-center">Horas 100%</th>
+                                  <th className="p-2 border border-slate-200 text-center">Total</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {grupo.itens.map((e, i) => (
+                                  <tr key={i} className="hover:bg-slate-50">
+                                    <td className="p-2 border border-slate-200 font-bold text-slate-700">{e.nome}</td>
+                                    <td className="p-2 border border-slate-200 text-center">{e.extras}</td>
+                                    <td className="p-2 border border-slate-200 text-center text-emerald-600 font-bold">{e.horas50}h</td>
+                                    <td className="p-2 border border-slate-200 text-center text-emerald-700 font-bold">{e.horas100}h</td>
+                                    <td className="p-2 border border-slate-200 text-center font-black text-slate-800">{e.horasTotal}h</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                );
+              })()}
+
+              {/* SEÇÃO 4 — CALCULADORA DE PAGAMENTO */}
+              {!isLoadingRelatorio && (() => {
+                const lista = relatorioFechamento.extras.filter(e => CLASSES_COM_TABELA_PDF.includes(e.classe));
+                const totalGeral = lista.reduce((s, e) => s + (e.valor || 0), 0);
+                return (
+                  <section>
+                    <h4 className="font-bold text-sm text-slate-700 mb-3 uppercase tracking-wide border-l-4 border-blue-500 pl-2">
+                      4. Calculadora de Pagamento — Plantões Extras
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Tabela oficial por classe · Frações de turno proporcionais à carga.
+                    </p>
+                    {lista.length === 0 ? (
+                      <p className="text-sm text-slate-400 italic">Nenhum extra a pagar no mês.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {agruparPorClasse(lista).map(grupo => {
+                          const subtotal = grupo.itens.reduce((s, e) => s + (e.valor || 0), 0);
+                          return (
+                            <div key={grupo.classe}>
+                              <div className="bg-slate-700 text-white text-[11px] font-black uppercase tracking-wide px-2 py-1 rounded-t">
+                                {grupo.classe} <span className="font-normal opacity-70">({grupo.itens.length})</span>
+                              </div>
+                              <table className="w-full text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-100">
+                                    <th className="p-2 border border-slate-200 text-left">Servidor</th>
+                                    <th className="p-2 border border-slate-200 text-center">Extras</th>
+                                    <th className="p-2 border border-slate-200 text-center">Horas</th>
+                                    <th className="p-2 border border-slate-200 text-center">Valor/hora</th>
+                                    <th className="p-2 border border-slate-200 text-center">Total a pagar</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {grupo.itens.map((e, i) => (
+                                    <tr key={i} className="hover:bg-slate-50">
+                                      <td className="p-2 border border-slate-200 font-bold text-slate-700">{e.nome}</td>
+                                      <td className="p-2 border border-slate-200 text-center">{e.extras}</td>
+                                      <td className="p-2 border border-slate-200 text-center">{e.horasTotal}h</td>
+                                      <td className="p-2 border border-slate-200 text-center text-slate-500">
+                                        R$ {(TARIFAS_EXTRAS[e.classe][24] / 24).toFixed(2).replace('.', ',')}
+                                      </td>
+                                      <td className="p-2 border border-slate-200 text-center font-black text-emerald-700">
+                                        R$ {(e.valor || 0).toFixed(2).replace('.', ',')}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  <tr className="bg-blue-50">
+                                    <td colSpan={4} className="p-2 border border-slate-200 text-right font-bold text-slate-600">
+                                      Subtotal {grupo.classe}
+                                    </td>
+                                    <td className="p-2 border border-slate-200 text-center font-black text-blue-700">
+                                      R$ {subtotal.toFixed(2).replace('.', ',')}
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        })}
+                        <div className="flex justify-end pt-2 border-t-2 border-slate-300">
+                          <div className="bg-blue-600 text-white px-4 py-2 rounded-lg">
+                            <span className="text-[11px] font-bold uppercase mr-3">Total Geral</span>
+                            <span className="font-black text-lg">R$ {totalGeral.toFixed(2).replace('.', ',')}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                );
+              })()}
             </div>
 
-            {/* Corpo do Modal (Lista) */}
-            <div className="p-6 overflow-y-auto bg-slate-50 flex-1">
-              {isLoadingRelatorio ? (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500 mb-4"></div>
-                  <p className="font-bold">A compilar registros de RH...</p>
-                </div>
-              ) : relatorioMudancas.filter(item => filtroCategoriaRelatorio === "Todas" || item.categoria === filtroCategoriaRelatorio).length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="bg-emerald-100 text-emerald-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <ClipboardList size={32} />
-                  </div>
-                  <h4 className="text-lg font-bold text-slate-700">Nenhuma alteração encontrada</h4>
-                  <p className="text-slate-500 text-sm mt-1">Nenhum registro bate com os filtros selecionados.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* 🚨 APLICA O FILTRO DE CATEGORIA AQUI NO MAP */}
-                  {relatorioMudancas
-                    .filter(item => filtroCategoriaRelatorio === "Todas" || item.categoria === filtroCategoriaRelatorio)
-                    .map((item, idx) => {
-                    let corBorda = "border-slate-200";
-                    let corTexto = "text-slate-700";
-                    let tag = "Alteração";
-
-                    const nomeFinal = item.nome || "";
-                    const alteracao = item.statusAlteracao || "";
-                    const tipoPlantao = item.tipo || ""; // 🚨 LÊ O TIPO PARA O VISUAL TAMBÉM
-                    // Nome limpo (remove tags e desmembramentos) — mostra UMA vez
-                    const nomeLimpoRel = item.nome
-                      .replace(/\[FALTOU\]/g, '')
-                      .replace(/\[ATESTADO\]/g, '')
-                      .replace(/\[EXCLUÍDO\]/g, '')
-                      .replace(/\[EXTRA\]/g, '')
-                      .replace(/\(D\)/g, '')
-                      .replace(/\(N\)/g, '')
-                      .split('/')[0]
-                      .trim();
-                    // Detecta qual período foi excluído (exclusão parcial)
-                    const periodoExcluido = item.nome.includes('[EXCLUÍDO] (D)') ? 'Dia (D)'
-                      : item.nome.includes('[EXCLUÍDO] (N)') ? 'Noite (N)'
-                      : null;
-
-                    if (alteracao === 'Falta' || nomeFinal.includes('[FALTOU]')) {
-                      corBorda = "border-red-200 bg-red-50"; corTexto = "text-red-700"; tag = "Falta Não Justificada";
-                    } else if (alteracao === 'Atestado' || nomeFinal.includes('[ATESTADO]')) {
-                      corBorda = "border-amber-200 bg-amber-50"; corTexto = "text-amber-700"; tag = "Atestado Médico";
-                    } else if (tipoPlantao === 'plantao_extra' || alteracao === 'Extra' || nomeFinal.includes('[EXTRA]')) { // 🚨 ATUALIZADO AQUI
-                      corBorda = "border-emerald-200 bg-emerald-50"; corTexto = "text-emerald-700"; tag = "Plantão Extra";
-                    } else if (alteracao === 'Excluído' || nomeFinal.includes('[EXCLUÍDO]')) {
-                      corBorda = "border-rose-300 bg-rose-50"; corTexto = "text-rose-700"; tag = "Excluído da Escala";
-                    } else {
-                      corBorda = "border-blue-200 bg-blue-50"; corTexto = "text-blue-700"; tag = "Troca de Plantão";
-                    }
-
-                    return (
-                      <div key={idx} className={`p-4 rounded-xl border ${corBorda} flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white shadow-sm hover:shadow-md transition-shadow`}>
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${corBorda} ${corTexto}`}>
-                              {tag}
-                            </span>
-                            <span className="text-xs font-bold text-slate-500">{item.data.split('-').reverse().join('/')} - {item.turno}</span>
-                          </div>
-                          <p className="font-bold text-slate-800 uppercase">{nomeLimpoRel}</p>
-                          {periodoExcluido && (
-                            <p className="text-[10px] font-bold text-rose-600/80 mt-0.5 flex items-center gap-1">
-                              ⮑ Período excluído: {periodoExcluido}
-                            </p>
-                          )}                          
-                          {item.statusAlteracao === 'Normal' && item.nomeOriginal && item.nomeOriginal !== item.nome && (
-                            <p className="text-[10px] font-bold text-blue-600/80 mt-0.5 flex items-center gap-1">
-                              ⮑ Substituiu: {item.nomeOriginal.replace(/\[FALTOU\]/g, '').replace(/\[ATESTADO\]/g, '')}
-                            </p>
-                          )}
-
-                          <p className="text-xs font-medium text-slate-500 mt-1">
-                            {item.categoria} • {item.horario}
-                          </p>
-                        </div>
-                        {item.observacao && (
-                          <div className="md:max-w-[40%] bg-slate-50 p-2.5 rounded border border-slate-100 text-xs text-slate-600 italic">
-                            "{item.observacao}"
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+            {/* Rodapé */}
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+              <button
+                onClick={() => setModalConferenciaOpen(false)}
+                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={gerarPdfFechamento}
+                disabled={gerandoPdf || isLoadingRelatorio}
+                className="px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-xl transition-colors flex items-center gap-2"
+              >
+                <FileDown size={16} /> {gerandoPdf ? 'Gerando…' : 'Gerar PDF'}
+              </button>
             </div>
           </div>
         </div>
@@ -14360,6 +15068,47 @@ const imprimirRelatorioGeladeira = () => {
                      </div>
                    </div>
                  )}
+
+        {/* MODAL DE FERIADOS */}
+        {modalFeriadoOpen && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-slate-800">Feriados — {dataSelecionada.substring(0,4)}</h3>
+                <button onClick={() => setModalFeriadoOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg"><X size={18} /></button>
+              </div>
+
+              <div className="flex gap-2 mb-4">
+                <input type="date" value={novaDataFeriado} onChange={e => setNovaDataFeriado(e.target.value)}
+                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm flex-1" />
+                <input type="text" placeholder="Descrição (opcional)" value={novaDescFeriado}
+                  onChange={e => setNovaDescFeriado(e.target.value)}
+                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm flex-1" />
+                <button onClick={salvarFeriado} className="bg-emerald-600 text-white font-bold px-4 rounded-lg text-sm hover:bg-emerald-700">Adicionar</button>
+              </div>
+
+              <div className="max-h-72 overflow-auto">
+                {feriadosAno.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Nenhum feriado estadual/municipal cadastrado.</p>}
+                {feriadosAno.sort().map(d => {
+                  const [a, m, dia] = d.split('-');
+                  return (
+                    <div key={d} className="flex justify-between items-center py-2 border-b border-slate-100">
+                      <div>
+                        <span className="font-bold text-sm text-slate-700">{dia}-{m}-{a}</span>
+                        <span className="text-xs text-slate-500 ml-2">{descricoesFeriado[d] || '—'}</span>
+                      </div>
+                      <button onClick={() => removerFeriado(d)} className="p-1.5 text-slate-300 hover:text-red-500 rounded"><X size={14} /></button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <p className="text-[11px] text-slate-400 mt-4">
+                Feriados nacionais já são considerados automaticamente (incluindo Carnaval, Sexta-feira Santa e Corpus Christi).
+              </p>
+            </div>
+          </div>
+        )}
 
     </div>
   );
