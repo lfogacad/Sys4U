@@ -46,7 +46,6 @@ export const isSessionExpired = (timeoutMs) => {
  * @param {boolean}  enabled           ativa/desativa o hook
  * @param {number}   timeoutMs         inatividade até deslogar (padrão 2h)
  * @param {Object}   options
- * @param {boolean}  options.absolute  se true, desloga 2h após o LOGIN mesmo com atividade
  * @param {number}   options.checkIntervalMs  intervalo de checagem (padrão 60s)
  */
 const useIdleLogout = (
