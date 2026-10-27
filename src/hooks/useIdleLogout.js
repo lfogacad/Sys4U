@@ -72,6 +72,11 @@ const useIdleLogout = (
     const verificar = () => {
       if (disparadoRef.current) return;
       const inativo = isSessionExpired(timeoutMs);
+
+      if (inativo) {
+        disparadoRef.current = true;
+        onLogoutRef.current();
+      }
     };
 
     // ---------- timers ----------
@@ -80,30 +85,15 @@ const useIdleLogout = (
     const resetTimer = () => {
       touchActivity();
       if (idleTimer) clearTimeout(idleTimer);
-      // Só faz sentido armar o timer de inatividade se NÃO for absoluto
-      if (!absolute) {
-        idleTimer = setTimeout(verificar, timeoutMs);
-      }
+      idleTimer = setTimeout(verificar, timeoutMs);
     };
 
     const events = ['mousemove', 'mousedown', 'keydown', 'click', 'scroll', 'touchstart'];
 
-    // Em modo absoluto NÃO registramos eventos como atividade,
-    // pois nada deve prolongar a sessão além das 2h do login.
-    if (!absolute) {
-      events.forEach(ev =>
-        window.addEventListener(ev, resetTimer, { passive: true })
-      );
-      resetTimer();
-    } else {
-      // Garante que existe um LOGIN_KEY; se não existir, cria agora
-      try {
-        if (!localStorage.getItem(LOGIN_KEY)) {
-          localStorage.setItem(LOGIN_KEY, String(Date.now()));
-        }
-      } catch (e) { /* ignora */ }
-      touchActivity();
-    }
+    events.forEach(ev =>
+      window.addEventListener(ev, resetTimer, { passive: true })
+    );
+    resetTimer();
 
     // ---------- retorno ao app (crucial no mobile) ----------
     const aoVoltar = () => {
@@ -134,7 +124,7 @@ const useIdleLogout = (
       if (idleTimer) clearTimeout(idleTimer);
       clearInterval(intervalo);
     };
-  }, [enabled, timeoutMs, absolute, checkIntervalMs]);
+  }, [enabled, timeoutMs, checkIntervalMs]);
 };
 
 export default useIdleLogout;

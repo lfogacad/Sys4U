@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ShieldAlert, X, Bug, CheckCircle, Stethoscope, ArrowRight, ArrowLeft, Microscope, Activity } from 'lucide-react';
 import { RASS_OPTS, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM } from '../../constants/clinicalLists'; 
 
@@ -24,24 +24,87 @@ const ChecklistEvoModal = ({
   const [imagemPulmonar, setImagemPulmonar] = useState(null);
   const [novoInfiltrado, setNovoInfiltrado] = useState(null);
 
-  // Reseta o modal sempre que ele for aberto/fechado
+  // ===== RASCUNHO LOCAL DOS CAMPOS DE TEXTO =====
+  // Lê do Firestore apenas na abertura; enquanto o usuário digita,
+  // o valor vive aqui. Só persiste no onBlur (ou ao fechar o modal).
+  const [rascunho, setRascunho] = useState({});
+
+  // Marca quais campos já foram "sujos" (para o onBlur saber o que salvar)
+  const rascunhoSujoRef = useRef({});
+
+  const jaHidratouRef = useRef(false);
+
   useEffect(() => {
-    if (showChecklistEvo) {
-      setFase(1);
-      setErroValidacao("");
-      setCulturaHoje(null);
-      setCulturasTipos([]);
-      setCulturaOutro("");
-      setImagemPulmonar(null);
-      setNovoInfiltrado(null);
+    if (!showChecklistEvo) {
+      jaHidratouRef.current = false;
+      return;
     }
-  }, [showChecklistEvo]);
+    if (jaHidratouRef.current) return; // já hidratou nesta abertura
+    jaHidratouRef.current = true;
+
+    setFase(1);
+    setErroValidacao("");
+    setCulturaHoje(null);
+    setCulturasTipos([]);
+    setCulturaOutro("");
+    setImagemPulmonar(null);
+    setNovoInfiltrado(null);
+
+    const m = currentPatient?.medical || {};
+    setRascunho({
+      antibioticosTextoIA: m.antibioticosTextoIA || "",
+      nivelConsciencia: m.nivelConsciencia || currentPatient?.neuro?.nivelConsciencia || currentPatient?.admissionData?.exameNeuro || "",
+      exameGeral: m.exameGeral || "",
+      exameAR: m.exameAR || "",
+      exameACV: m.exameACV || "",
+      exameABD: m.exameABD || "",
+      exameExtremidades: m.exameExtremidades || "",
+      pupilas: m.pupilas || currentPatient?.admissionData?.pupilas || "",
+      observacoesImportantes: m.observacoesImportantes || "",
+      examesComplementares: m.examesComplementares || "",
+      condutaPlano: m.condutaPlano || ""
+    });
+    rascunhoSujoRef.current = {};
+  }, [showChecklistEvo, currentPatient]);
 
   if (!showChecklistEvo || !currentPatient) return null;
 
   const med = currentPatient.medical || {};
   const neuro = currentPatient.neuro || {};
   const cardio = currentPatient.cardio || {};
+
+  // Chamado a cada tecla: só atualiza o rascunho local (nenhuma escrita no Firestore)
+  const handleChangeRascunho = (campo, valor) => {
+    setRascunho(prev => ({ ...prev, [campo]: valor }));
+    rascunhoSujoRef.current[campo] = true;
+  };
+
+  // Chamado no onBlur: persiste no Firestore apenas se houve alteração real
+  const handleBlurRascunho = (campo, categoria = "medical") => {
+    if (!rascunhoSujoRef.current[campo]) return;
+
+    const novoValor = rascunho[campo] ?? "";
+    const atual = currentPatient?.[categoria]?.[campo] ?? "";
+
+    if (novoValor === atual) {
+      delete rascunhoSujoRef.current[campo];
+      return;
+    }
+
+    updateNested(categoria, campo, novoValor);
+    delete rascunhoSujoRef.current[campo];
+  };
+
+  // Antes de confirmar/fechar: garante que nada digitado se perca
+  const flushRascunho = () => {
+    Object.entries(rascunhoSujoRef.current).forEach(([campo, sujo]) => {
+      if (!sujo) return;
+      const novoValor = rascunho[campo] ?? "";
+      const atual = currentPatient?.medical?.[campo] ?? "";
+      if (novoValor !== atual) updateNested("medical", campo, novoValor);
+    });
+    rascunhoSujoRef.current = {};
+  };
 
   const toggleArrayItemLocal = (categoria, campoArray, item) => {
     const atual = currentPatient[categoria]?.[campoArray] || [];
@@ -63,6 +126,7 @@ const ChecklistEvoModal = ({
   // VALIDAÇÃO E CONFIRMAÇÃO FINAL
   // ==========================================
   const handleFinalConfirm = () => {
+    flushRascunho(); // garante que nada digitado e não "blurado" se perca
     if (culturaHoje === null || imagemPulmonar === null) {
       setErroValidacao("Por favor, responda se houve coleta de cultura e imagem pulmonar.");
       return;
@@ -124,7 +188,7 @@ const ChecklistEvoModal = ({
             <ShieldAlert size={18} className="text-amber-400" />
             {fase === 1 ? "EVOLUÇÃO MÉDICA" : "Checklist Obrigatório: CCIH e Risco"}
           </h3>
-          <button onClick={() => setShowChecklistEvo(false)} className="text-slate-400 hover:text-white transition-colors">
+          <button onClick={() => { flushRascunho(); setShowChecklistEvo(false); }} className="text-slate-400 hover:text-white transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -311,8 +375,9 @@ const ChecklistEvoModal = ({
                     </label>
                     <textarea 
                       className="w-full p-2 border rounded text-sm outline-none focus:ring-2 focus:ring-orange-200 h-16 resize-none bg-slate-50 focus:bg-white transition" 
-                      value={med.antibioticosTextoIA || ""} 
-                      onChange={(e) => updateNested("medical", "antibioticosTextoIA", e.target.value)} 
+                      value={rascunho.antibioticosTextoIA ?? ""} 
+                      onChange={(e) => handleChangeRascunho("antibioticosTextoIA", e.target.value)} 
+                      onBlur={() => handleBlurRascunho("antibioticosTextoIA")} 
                       placeholder="Ex: Meropenem (D3) + Vancomicina (D3)" 
                     />
                   </div>
@@ -331,8 +396,9 @@ const ChecklistEvoModal = ({
                     <label className="text-[10px] font-bold text-slate-500 uppercase">NÍVEL DE CONSCIÊNCIA</label>
                     <textarea 
                       className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" 
-                      value={med.nivelConsciencia || currentPatient?.neuro?.nivelConsciencia || currentPatient?.admissionData?.exameNeuro || ""} 
-                      onChange={(e) => updateNested("medical", "nivelConsciencia", e.target.value)} 
+                      value={rascunho.nivelConsciencia ?? ""} 
+                      onChange={(e) => handleChangeRascunho("nivelConsciencia", e.target.value)} 
+                      onBlur={() => handleBlurRascunho("nivelConsciencia")} 
                       rows={2} 
                       placeholder="LOTE, TORPOROSO, SONOLENTO, SEDADO..."
                     />
@@ -340,25 +406,25 @@ const ChecklistEvoModal = ({
 
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">GERAL</label>
-                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameGeral || ""} onChange={(e) => updateNested("medical", "exameGeral", e.target.value)} rows={2} />
+                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={rascunho.exameGeral ?? ""} onChange={(e) => handleChangeRascunho("exameGeral", e.target.value)} onBlur={() => handleBlurRascunho("exameGeral")} rows={2} />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">AR</label>
-                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameAR || ""} onChange={(e) => updateNested("medical", "exameAR", e.target.value)} rows={2} />
+                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={rascunho.exameAR ?? ""} onChange={(e) => handleChangeRascunho("exameAR", e.target.value)} onBlur={() => handleBlurRascunho("exameAR")} rows={2} />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">ACV</label>
-                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameACV || ""} onChange={(e) => updateNested("medical", "exameACV", e.target.value)} rows={2} />
+                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={rascunho.exameACV ?? ""} onChange={(e) => handleChangeRascunho("exameACV", e.target.value)} onBlur={() => handleBlurRascunho("exameACV")} rows={2} />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">ABD.</label>
-                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameABD || ""} onChange={(e) => updateNested("medical", "exameABD", e.target.value)} rows={2} />
+                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={rascunho.exameABD ?? ""} onChange={(e) => handleChangeRascunho("exameABD", e.target.value)} onBlur={() => handleBlurRascunho("exameABD")} rows={2} />
                   </div>
                   
                   {/* EXTREMIDADES */}
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">EXTREMIDADES</label>
-                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={med.exameExtremidades || ""} onChange={(e) => updateNested("medical", "exameExtremidades", e.target.value)} rows={2} />
+                    <textarea className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" value={rascunho.exameExtremidades || ""} onChange={(e) => handleChangeRascunho("exameExtremidades", e.target.value)} onBlur={() => handleBlurRascunho("exameExtremidades")} rows={2} />
                   </div>
                   
                   {/* PUPILAS */}
@@ -366,8 +432,9 @@ const ChecklistEvoModal = ({
                     <label className="text-[10px] font-bold text-slate-500 uppercase">PUPILAS</label>
                     <textarea 
                       className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" 
-                      value={med.pupilas || currentPatient?.admissionData?.pupilas || ""} 
-                      onChange={(e) => updateNested("medical", "pupilas", e.target.value)} 
+                      value={rascunho.pupilas || ""} 
+                      onChange={(e) => handleChangeRascunho("pupilas", e.target.value)} 
+                      onBlur={() => handleBlurRascunho("pupilas")} 
                       rows={2} 
                       placeholder="Fotorreagentes, isocóricas..."
                     />
@@ -379,8 +446,9 @@ const ChecklistEvoModal = ({
                     <textarea 
                       className="w-full p-2 mt-1 border rounded text-xs bg-orange-50/30 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-orange-200" 
                       placeholder="Anotações relevantes, pendências, avisos..." 
-                      value={med.observacoesImportantes || ""} 
-                      onChange={(e) => updateNested("medical", "observacoesImportantes", e.target.value)} 
+                      value={rascunho.observacoesImportantes ?? ""} 
+                      onChange={(e) => handleChangeRascunho("observacoesImportantes", e.target.value)} 
+                      onBlur={() => handleBlurRascunho("observacoesImportantes")} 
                       rows={3} 
                     />
                   </div>
@@ -391,8 +459,9 @@ const ChecklistEvoModal = ({
                     <textarea 
                       className="w-full p-2 mt-1 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" 
                       placeholder="Descreva os achados relevantes dos exames..." 
-                      value={med.examesComplementares || ""} 
-                      onChange={(e) => updateNested("medical", "examesComplementares", e.target.value)} 
+                      value={rascunho.examesComplementares ?? ""} 
+                      onChange={(e) => handleChangeRascunho("examesComplementares", e.target.value)} 
+                      onBlur={() => handleBlurRascunho("examesComplementares")} 
                       rows={3} 
                     />
                   </div>
@@ -403,8 +472,9 @@ const ChecklistEvoModal = ({
                     <textarea 
                       className="w-full p-2 mt-1 border rounded text-xs bg-indigo-50/30 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200 font-medium" 
                       placeholder="Planejamento para as próximas 24h..." 
-                      value={med.condutaPlano || ""} 
-                      onChange={(e) => updateNested("medical", "condutaPlano", e.target.value)} 
+                      value={rascunho.condutaPlano ?? ""} 
+                      onChange={(e) => handleChangeRascunho("condutaPlano", e.target.value)} 
+                      onBlur={() => handleBlurRascunho("condutaPlano")} 
                       rows={4} 
                     />
                   </div>
@@ -497,7 +567,7 @@ const ChecklistEvoModal = ({
         <div className="p-4 bg-white border-t flex justify-between gap-3 shrink-0">
           {fase === 1 ? (
             <>
-              <button onClick={() => setShowChecklistEvo(false)} className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded transition-colors">Cancelar</button>
+              <button onClick={() => { flushRascunho(); setShowChecklistEvo(false); }} className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded transition-colors">Cancelar</button>
               <button 
                 onClick={() => setFase(2)} 
                 className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded shadow transition-colors flex items-center gap-2"
