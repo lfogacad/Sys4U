@@ -27,6 +27,7 @@ import PainelAuditoriaTab from './tabs/PainelAuditoriaTab';
 import RelatorioChecklistCVC from './relatorios/RelatorioChecklistCVC';
 import RelatorioChecklistSVD from './relatorios/RelatorioChecklistSVD';
 import RelatorioChecklistIOT from './relatorios/RelatorioChecklistIOT';
+import logoAriquemes from '../assets/logo-ariquemes.png';
 
 // ==========================================================
 // MAPAS DE CATEGORIA ↔ SLUG (MESMOS do ImportadorEscala —
@@ -193,6 +194,32 @@ const TARIFAS_EXTRAS = {
   'Médico Especialista': { 4: 607.10, 6: 910.00, 8: 1214.20, 12: 1820.00, 24: 3640.00 }
 };
 
+// ===== LEGENDA OFICIAL DA ESCALA =====
+const LEGENDA_ESCALA = [
+  'DN = DIA E NOITE - Entrada as 07h Saída as 07h do dia seguinte (24h)',
+  'D = DIA - Entrada as 07h e Saída as 19h (12h)',
+  'N = NOITE - Entrada as 19h e Saída as 07h do dia seguinte (12h)',
+  'M = MANHÃ - 6h',
+  'M4 = MANHÃ - 4h',
+  'T = TARDE - 6h',
+  'V = VISITA MÉDICA - 6h',
+  'ATM = ATESTADO MÉDICO',
+  'F = FALTA',
+  'FE = FERIADO',
+  'FA = FOLGA ANIVERSÁRIO'
+];
+
+// Horas por sigla (usadas no cálculo da carga horária)
+const HORAS_SIGLA_ESCALA = {
+  DN: 24, D: 12, N: 12, M: 6, M4: 4, T: 6, V: 6,
+  ATM: 0, F: 0, FE: 0, FA: 0, '': 0
+};
+
+const DIAS_SEMANA_CURTO = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+
+const TEXTO_RESPONSABILIDADE =
+  'As eventuais trocas de plantão, faltas, atrasos ou não cumprimento de carga horária devidamente justificada são de responsabilidade do SERVIDOR que está na escala. Em caso de FALTA ou ATESTADO MÉDICO haverá mudanças na escala. O atestado médico deverá ser entregue em até 8 horas diretamente ao RH. A equipe pode ser remanejada a critério da gerência. Tolerância de atraso de 15 minutos, atraso acima do estabelecido o profissional sofrerá advertência verbal, acarretando medidas administrativas em caso de reincidência.';
+
 // Classes que recebem pela tabela do PDF (não recebem 50%/100%)
 const CLASSES_COM_TABELA_PDF = ['Téc. Enfermagem', 'Enfermeiro', 'Médico', 'Médico Especialista'];
 
@@ -241,6 +268,196 @@ const classeTarifaria = (categoria, especialidade) => {
   return cat;
 };
 
+const montarPaginaEscala = (docPdf, d, { pageW, pageH, margem, logoBase64 }) => {
+  const MESES_NOME = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+
+  // ---------- CABEÇALHO ----------
+  if (logoBase64) {
+    try {
+      docPdf.addImage(logoBase64, 'PNG', margem, margem - 1, 22, 22);
+    } catch (e) {
+      console.warn('[SYS4U] Falha ao desenhar a logo no PDF:', e);
+    }
+  }
+
+  docPdf.setFont('helvetica', 'bold');
+  docPdf.setFontSize(8);
+  docPdf.text('PREFEITURA MUNICIPAL DE ARIQUEMES', pageW / 2, margem + 3, { align: 'center' });
+  docPdf.text('SECRETARIA MUNICIPAL DE SAÚDE', pageW / 2, margem + 7, { align: 'center' });
+  docPdf.text('HOSPITAL MUNICIPAL DE ARIQUEMES', pageW / 2, margem + 11, { align: 'center' });
+  docPdf.text('UNIDADE DE TERAPIA INTENSIVA (UTI)', pageW / 2, margem + 15, { align: 'center' });
+
+  // Última linha: fonte maior e espaçamento duplo antes
+  docPdf.setFontSize(11);
+  docPdf.text(`ESCALA DE SERVIÇO ${String(d.titulo).toUpperCase()} - ${MESES_NOME[d.mes - 1]} ${d.ano}`, pageW / 2, margem + 23, { align: 'center' });
+
+  // ---------- TABELA ----------
+  const dias = Array.from({ length: d.ultimoDia }, (_, i) => String(i + 1).padStart(2, '0'));
+  const dow = dias.map(dd => {
+    const dt = new Date(d.ano, d.mes - 1, Number(dd));
+    return DIAS_SEMANA_CURTO[dt.getDay()];
+  });
+
+  const head = [
+    [
+      { content: 'NOME DO SERVIDOR', rowSpan: 2, styles: { halign: 'left', valign: 'middle' } },
+      { content: 'CONSELHO', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'MATRÍCULA', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      ...dias,
+      { content: 'CARGA HORÁRIA', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } }
+    ],
+    dow.map(x => ({ content: x, styles: { halign: 'center', fontSize: 5 } }))
+  ];
+
+  const corpo = [];
+  const totalCols = 3 + dias.length + 1;
+
+  const linhaTitulo = (txt) => corpo.push([{
+    content: txt,
+    colSpan: totalCols,
+    styles: { fillColor: [180, 180, 180], fontStyle: 'bold', halign: 'left', fontSize: 7 }
+  }]);
+
+  const montarLinha = (item, tipo, permitirFerias = true) => {
+    const carga = Object.values(item.dias || {}).reduce((s, sig) => s + (HORAS_SIGLA_ESCALA[sig] || 0), 0);
+    const nomeLimpo = item.nome || '';
+    const conselho = item.conselho || '';
+    const matricula = item.matricula || '';
+
+    // Detecta período de férias (casa por nome normalizado; a matrícula desempata)
+    // Blocado quando permitirFerias === false (linhas de PLANTÕES EXTRAS)
+    const chaveNome = permitirFerias ? normalizarBuscaEscala(nomeLimpo) : null;
+    const candidatasFerias = permitirFerias
+      ? (d.ferias || []).filter(f => normalizarBuscaEscala(f.nome) === chaveNome)
+      : [];
+    const feriasItem =
+      candidatasFerias.find(f => f.matricula && f.matricula === matricula) ||
+      (candidatasFerias.length === 1 ? candidatasFerias[0] : null);
+
+    // Se não há férias, monta linha normal
+    if (!feriasItem || !feriasItem.inicio || !feriasItem.dias) {
+      const linha = [
+        { content: nomeLimpo, styles: { fontSize: 6 } },
+        { content: conselho, styles: { halign: 'center', fontSize: 6 } },
+        { content: matricula, styles: { halign: 'center', fontSize: 6 } }
+      ];
+      dias.forEach(dd => linha.push({ content: (item.dias || {})[dd] || '', styles: { halign: 'center', fontSize: 6 } }));
+      linha.push({ content: `${carga}h`, styles: { halign: 'center', fontStyle: 'bold', fontSize: 6 } });
+      return linha;
+    }
+
+    // Com férias: quebra em segmentos (antes | FÉRIAS | depois)
+    const [anoF, mesF, diaF] = feriasItem.inicio.split('-').map(Number);
+    const diaInicio = diaF;
+    const diaFim = Math.min(diaF + Number(feriasItem.dias) - 1, d.ultimoDia);
+
+    const linha = [
+      { content: nomeLimpo, styles: { fontSize: 6 } },
+      { content: conselho, styles: { halign: 'center', fontSize: 6 } },
+      { content: matricula, styles: { halign: 'center', fontSize: 6 } }
+    ];
+
+    let cursor = 1;
+    while (cursor <= d.ultimoDia) {
+      if (cursor === diaInicio) {
+        const span = diaFim - diaInicio + 1;
+        linha.push({
+          content: 'FÉRIAS',
+          colSpan: span,
+          styles: { halign: 'center', fontSize: 6, fontStyle: 'bold', fillColor: [220, 220, 220] }
+        });
+        cursor = diaFim + 1;
+      } else {
+        const dd = String(cursor).padStart(2, '0');
+        linha.push({ content: (item.dias || {})[dd] || '', styles: { halign: 'center', fontSize: 6 } });
+        cursor++;
+      }
+    }
+
+    linha.push({ content: `${carga}h`, styles: { halign: 'center', fontStyle: 'bold', fontSize: 6 } });
+    return linha;
+  };
+
+  // Bloco 1: plantonistas
+  linhaTitulo(String(d.titulo).toUpperCase());
+  d.plantoes
+    .sort((a, b) => a.nome.localeCompare(b.nome))
+    .forEach(p => corpo.push(montarLinha(p, 'plantao')));
+
+  // Bloco 2: VISITADOR
+  if (d.especiais.visitador) {
+    linhaTitulo('VISITADOR');
+    corpo.push(montarLinha(d.especiais.visitador, 'especial'));
+  }
+
+  // Bloco 3: RESPONSÁVEL TÉCNICO
+  if (d.especiais.responsavelTecnico) {
+    linhaTitulo('RESPONSÁVEL TÉCNICO');
+    corpo.push(montarLinha(d.especiais.responsavelTecnico, 'especial'));
+  }
+
+  // Bloco 4: GERÊNCIA DE ENFERMAGEM
+  if (d.especiais.gerenciaEnfermagem) {
+    linhaTitulo('GERÊNCIA DE ENFERMAGEM');
+    corpo.push(montarLinha(d.especiais.gerenciaEnfermagem, 'especial'));
+  }
+
+  // Bloco 5: GERÊNCIA DE FARMÁCIA
+  if (d.especiais.gerenciaFarmacia) {
+    linhaTitulo('GERÊNCIA DE FARMÁCIA');
+    corpo.push(montarLinha(d.especiais.gerenciaFarmacia, 'especial'));
+  }
+
+  // Bloco 6: PLANTÕES EXTRAS (sem tarja de férias)
+  linhaTitulo('PLANTÕES EXTRAS');
+  if (d.extras.length) {
+    d.extras
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .forEach(p => corpo.push(montarLinha(p, 'plantao', false)));
+  } else {
+    for (let i = 0; i < 3; i++) {
+      corpo.push([{ content: '', colSpan: totalCols, styles: { minCellHeight: 5 } }]);
+    }
+  }
+
+  autoTable(docPdf, {
+    startY: margem + 25,
+    head,
+    body: corpo,
+    theme: 'grid',
+    styles: { fontSize: 6, cellPadding: 0.6, lineWidth: 0.1, lineColor: [120, 120, 120] },
+    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center' },
+    margin: { left: margem, right: margem },
+    tableWidth: pageW - (margem * 2),
+    columnStyles: {
+      0: { cellWidth: 52 },              // NOME DO SERVIDOR
+      1: { cellWidth: 14 },              // CONSELHO
+      2: { cellWidth: 14 },              // MATRÍCULA
+      [3 + dias.length]: { cellWidth: 16 } // CARGA HORÁRIA
+    }
+  });
+
+  // ---------- LEGENDA + TEXTO ----------
+  const finalY = docPdf.lastAutoTable.finalY + 5;
+  const larguraLegenda = 95; // metade esquerda da página
+
+  docPdf.setFont('helvetica', 'bold');
+  docPdf.setFontSize(6);
+  docPdf.text('LEGENDA:', margem, finalY);
+  docPdf.setFont('helvetica', 'normal');
+  LEGENDA_ESCALA.forEach((linha, i) => {
+    const linhasQ = docPdf.splitTextToSize(linha, larguraLegenda);
+    docPdf.text(linhasQ, margem, finalY + 3 + i * 2.6);
+  });
+
+  // Texto de responsabilidade (à direita)
+  const larguraTexto = pageW - (margem * 2) - larguraLegenda - 6;
+  docPdf.setFont('helvetica', 'normal');
+  docPdf.setFontSize(5.5);
+  const linhasTexto = docPdf.splitTextToSize(TEXTO_RESPONSABILIDADE, larguraTexto);
+  docPdf.text(linhasTexto, margem + larguraLegenda + 6 + (larguraTexto / 2), finalY, { align: 'center' });
+};
+
 const GestorDashboard = ({ userProfile }) => {
   const navigate = useNavigate();
   // Controle de navegação principal (hub, indicadores, tendencias, qualidade, auditoria, equipe)
@@ -256,6 +473,7 @@ const GestorDashboard = ({ userProfile }) => {
   const [plantaoEditado, setPlantaoEditado] = useState(null);
   const [novoPlantonista, setNovoPlantonista] = useState("");
   const [tipoTrocaPlantao, setTipoTrocaPlantao] = useState('Total');
+
   // Seletor INDEPENDENTE da exclusão (não usa o tipoTrocaPlantao da troca)
   const [tipoExclusaoPlantao, setTipoExclusaoPlantao] = useState('Total');
   const [mostrarSeletorExclusao, setMostrarSeletorExclusao] = useState(false);  
@@ -267,6 +485,10 @@ const GestorDashboard = ({ userProfile }) => {
   const [plantoesDoMes, setPlantoesDoMes] = useState({});
   const [isLoadingMes, setIsLoadingMes] = useState(false);
   const [consolidadoDia, setConsolidadoDia] = useState({});
+
+  const [modalImpressaoOpen, setModalImpressaoOpen] = useState(false);
+  const [escalasParaImprimir, setEscalasParaImprimir] = useState([]);
+  const [gerandoPdfEscala, setGerandoPdfEscala] = useState(false);
 
   const [statusPlantonista, setStatusPlantonista] = useState('Normal'); // 'Normal', 'Falta', 'Atestado'
   const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
@@ -7056,6 +7278,281 @@ const imprimirRelatorioGeladeira = () => {
     return texto;
   };
 
+  // Extrai a matrícula: procura o ÚLTIMO bloco numérico com 3+ dígitos,
+  // ignorando sufixos como (DN), [EXTRA], siglas e espaços extras.
+  const extrairMatricula = (nome) => {
+    const limpo = String(nome || '')
+      .replace(/\[.*?\]/g, ' ')
+      .replace(/\(.*?\)/g, ' ')
+      .trim();
+    const tokens = limpo.split(/\s+/).filter(Boolean);
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (/^\d{3,}$/.test(tokens[i])) return tokens[i];
+    }
+    return '';
+  };
+
+  // Remove matrícula e marcadores do nome
+  const limparNomeEscala = (nome) => {
+    let s = String(nome || '')
+      .replace(/\[.*?\]/g, ' ')          // remove [EXTRA], [FALTOU], etc.
+      .replace(/\((Cobrindo:[^)]*)\)/g, ' ')
+      .replace(/\(([DN])\)/g, ' ')       // remove (D) e (N) de desmembramento
+      .trim();
+    // Remove a matrícula (último token numérico com 3+ dígitos)
+    s = s.replace(/\s+\d{3,}\s*$/, '').trim();
+    // Segunda passada: se sobrou espaço+número no fim após outras limpezas
+    s = s.replace(/\s+\d{3,}\s*$/, '').trim();
+    return s;
+  };
+
+
+  // ===== BUSCA DE DADOS PARA IMPRESSÃO DA ESCALA =====
+  const buscarDadosImpressao = async (mesAlvo, categorias) => {
+    const resultado = {};
+    const [anoStr, mesStr] = mesAlvo.split('-');
+    const ano = Number(anoStr), mes = Number(mesStr);
+    const ultimoDia = new Date(ano, mes, 0).getDate();
+
+    // Mapa de profissionais (conselho + matrícula)
+    const mapaProf = {};
+    const snapProf = await getDocs(collection(db, 'profissionais'));
+    snapProf.forEach(d => {
+      const p = d.data();
+      const nomeBruto = p.nome || '';
+      const matricula = extrairMatricula(nomeBruto);
+
+      const registro = {
+        nome: nomeBruto,
+        conselho: p.numeroConselho || '',
+        numeroConselho: p.numeroConselho || '',
+        siglaConselho: p.conselho || '',
+        matricula
+      };
+
+      // Indexa com o nome COMPLETO (com matrícula) e também SEM a matrícula,
+      // porque a escala usa busca com matrícula e o cadastro pode não ter.
+      const chaveCompleta = normalizarBuscaEscala(nomeBruto);
+      const chaveSemMat = normalizarBuscaEscala(limparNomeEscala(nomeBruto));
+
+      [chaveCompleta, chaveSemMat].forEach(ch => {
+        if (!ch) return;
+        if (!mapaProf[ch]) mapaProf[ch] = [];
+        if (!mapaProf[ch].some(x => x.matricula === matricula)) {
+          mapaProf[ch].push(registro);
+        }
+      });
+    });
+
+    for (const catNome of categorias) {
+      const slug = getSlugCategoria(catNome);
+      const mesRef = doc(db, 'escalas', slug, 'meses', mesAlvo);
+      const snap = await getDoc(mesRef);
+      if (!snap.exists()) continue;
+      const dadosMes = snap.data();
+
+      // ---- Linhas de plantão ----
+      const porMatricula = {}; // busca|matricula → linha
+      Object.entries(dadosMes.dias || {}).forEach(([dia, turnos]) => {
+        Object.values(turnos || {}).forEach(t => {
+          const nome = t.nome || '';
+          if (!nome || !t.sigla) return;
+          if (nome.includes('[EXCLUÍDO]')) return;
+
+          // 🚫 Extras vão somente para a tabela de PLANTÕES EXTRAS
+          const ehExtra =
+            t.extra === true ||
+            t.tipo === 'plantao_extra' ||
+            nome.includes('[EXTRA]') ||
+            t.statusAlteracao === 'Extra';
+          if (ehExtra) return;
+
+          // A matrícula do slot é a fonte de verdade (vem no nome do plantonista)
+          const matSlot = extrairMatricula(nome);
+          const busca = t.busca || normalizarBuscaEscala(nome);
+          if (!busca) return;
+
+          // Procura por: chave com matrícula → chave sem matrícula → fallback
+          const buscaSemMat = busca.replace(/\d{3,}$/, '');
+          const candidatos = [
+            ...(mapaProf[busca] || []),
+            ...(mapaProf[buscaSemMat] || []),
+            ...(mapaProf[normalizarBuscaEscala(limparNomeEscala(nome))] || [])
+          ];
+
+          // Casa primeiro pela matrícula exata; se não achar, fica o único/primeiro
+          const prof =
+            (matSlot && candidatos.find(p => p.matricula === matSlot)) ||
+            (!matSlot && candidatos.length === 1 ? candidatos[0] : null) ||
+            candidatos.find(p => p.matricula) ||
+            candidatos[0] ||
+            {};
+
+          // Se o slot TEM matrícula, usa ela mesmo sem cadastro correspondente
+          const matricula = matSlot || prof.matricula || '';
+          const chave = `${normalizarBuscaEscala(limparNomeEscala(nome))}|${matricula}`;
+
+          if (!porMatricula[chave]) {
+            porMatricula[chave] = {
+              nome: limparNomeEscala(nome),
+              matricula,
+              conselho: prof.numeroConselho || prof.conselho || '',
+              siglaConselho: prof.siglaConselho || '',
+              dias: {},
+              extra: t.extra === true || t.tipo === 'plantao_extra'
+            };
+          }
+          porMatricula[chave].dias[dia] = t.sigla;
+        });
+      });
+
+      // ---- Extras (linha separada) ----
+      const extrasPorMatricula = {};
+      Object.entries(dadosMes.dias || {}).forEach(([dia, turnos]) => {
+        Object.values(turnos || {}).forEach(t => {
+          const ehExtra =
+            t.extra === true ||
+            t.tipo === 'plantao_extra' ||
+            (t.nome || '').includes('[EXTRA]') ||
+            t.statusAlteracao === 'Extra';
+          if (!ehExtra) return;
+
+          const nomeBruto = t.nome || '';
+          const mat = extrairMatricula(nomeBruto);
+          const nomeLimpo = limparNomeEscala(nomeBruto);
+          const chave = `${normalizarBuscaEscala(nomeLimpo)}|${mat}`;
+
+          // Busca o conselho do cadastro (mesma lógica do bloco regular)
+          const buscaE = t.busca || normalizarBuscaEscala(nomeLimpo);
+          const buscaE_sem = buscaE.replace(/\d{3,}$/, '');
+          const cands = [
+            ...(mapaProf[buscaE] || []),
+            ...(mapaProf[buscaE_sem] || []),
+            ...(mapaProf[normalizarBuscaEscala(nomeLimpo)] || [])
+          ];
+          const profE =
+            (mat && cands.find(p => p.matricula === mat)) ||
+            cands.find(p => p.matricula) ||
+            cands[0] ||
+            {};
+
+          if (!extrasPorMatricula[chave]) {
+            extrasPorMatricula[chave] = {
+              nome: nomeLimpo,
+              matricula: mat,
+              conselho: profE.numeroConselho || profE.conselho || '',
+              siglaConselho: profE.siglaConselho || '',
+              dias: {}
+            };
+          }
+          extrasPorMatricula[chave].dias[dia] = t.sigla;
+        });
+      });
+
+      // ---- Férias / licenças ----
+      const ferias = (dadosMes.ferias || []).map(f => {
+        // Estrutura vista no Firebase: { id, nome, inicio/dataInicio, dias, ... }
+        const nomeF = f.nome || f.servidor || '';
+        return {
+          nome: limparNomeEscala(nomeF),
+          nomeBruto: nomeF,
+          matricula: extrairMatricula(nomeF) || f.matricula || '',
+          inicio: f.inicio || f.dataInicio || f.data || '',
+          dias: Number(f.dias || f.quantidadeDias || f.diasFerias || 0)
+        };
+      }).filter(f => f.inicio && f.dias > 0);
+
+      // ---- Cargos especiais ----
+      const especiais = {};
+      ['visitador', 'responsavelTecnico', 'gerenciaEnfermagem', 'gerenciaFarmacia'].forEach(campo => {
+        const bloco = dadosMes[campo];
+        if (!bloco || !bloco.nome) return;
+
+        const nomeBruto = bloco.nome;
+        const matricula = extrairMatricula(nomeBruto);
+        const nomeLimpo = limparNomeEscala(nomeBruto);
+
+        // Busca o conselho no cadastro (mesma lógica dos plantonistas)
+        const chaveNome = normalizarBuscaEscala(nomeLimpo);
+        const candidatos = mapaProf[chaveNome] || mapaProf[normalizarBuscaEscala(nomeBruto)] || [];
+        const prof =
+          (matricula && candidatos.find(p => p.matricula === matricula)) ||
+          candidatos.find(p => p.matricula) ||
+          candidatos[0] ||
+          {};
+
+        especiais[campo] = {
+          nome: nomeLimpo,
+          matricula,
+          conselho: prof.numeroConselho || prof.conselho || '',
+          dias: bloco.dias || {}
+        };
+      });
+
+      resultado[catNome] = {
+        titulo: catNome,
+        ultimoDia,
+        ano, mes,
+        plantoes: Object.values(porMatricula),
+        extras: Object.values(extrasPorMatricula),
+        ferias,
+        especiais
+      };
+    }
+    return resultado;
+  };
+
+  // Converte a logo importada para base64 (o jsPDF precisa disso)
+  const carregarLogoBase64 = async () => {
+    try {
+      const resp = await fetch(logoAriquemes);
+      const blob = await resp.blob();
+      return await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.warn('[SYS4U] Logo não carregada:', e);
+      return null;
+    }
+  };
+
+  const gerarPdfEscala = async () => {
+    if (!escalasParaImprimir.length) {
+      alert('Selecione ao menos uma escala.');
+      return;
+    }
+    setGerandoPdfEscala(true);
+    try {
+      const mesAlvo = dataSelecionada.substring(0, 7);
+      const logoBase64 = await carregarLogoBase64();
+      const dados = await buscarDadosImpressao(mesAlvo, escalasParaImprimir);
+      const docPdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageW = docPdf.internal.pageSize.getWidth();
+      const pageH = docPdf.internal.pageSize.getHeight();
+      const margem = 10;
+
+      const chaves = Object.keys(dados);
+      chaves.forEach((chave, idx) => {
+        if (idx > 0) docPdf.addPage();
+        const d = dados[chave];
+        montarPaginaEscala(docPdf, d, { pageW, pageH, margem, logoBase64 });
+      });
+
+      const blobUrl = docPdf.output('bloburl');
+      const janela = window.open(blobUrl, '_blank');
+      if (!janela) docPdf.save(`Escala_${mesAlvo}.pdf`);
+      setModalImpressaoOpen(false);
+    } catch (e) {
+      console.error('Erro ao gerar PDF da escala:', e);
+      alert('Erro ao gerar o PDF da escala.');
+    } finally {
+      setGerandoPdfEscala(false);
+    }
+  };
+
   // Abre o modal de conferência
   const gerarTextoChecklist = () => {
     setTextoChecklist(montarTextoChecklist());
@@ -13534,12 +14031,21 @@ const imprimirRelatorioGeladeira = () => {
                 <p className="text-slate-500 text-sm">Controle diário e mensal das equipes da UTI.</p>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setEscalasParaImprimir([categoriaAtiva === 'Visão Geral' ? 'Médico' : categoriaAtiva]); setModalImpressaoOpen(true); }}
+                className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-colors"
+                title="Imprimir escalas"
+              >
+                <Printer size={16} /> Imprimir
+              </button>
 
-            <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
-              <input type="date" value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} className="text-sm font-bold text-slate-700 p-2 outline-none border-r border-slate-100" />
-              <button onClick={() => setModoVisao('dia')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${modoVisao === 'dia' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>DIA</button>
-              <button onClick={() => setModoVisao('mes')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${modoVisao === 'mes' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>MÊS</button>
-            </div>
+              <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                <input type="date" value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} className="text-sm font-bold text-slate-700 p-2 outline-none border-r border-slate-100" />
+                <button onClick={() => setModoVisao('dia')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${modoVisao === 'dia' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>DIA</button>
+                <button onClick={() => setModoVisao('mes')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${modoVisao === 'mes' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>MÊS</button>
+              </div>
+            </div>   
           </div>
 
           <div className="flex overflow-x-auto gap-2 mb-6 no-scrollbar pb-2">
@@ -15245,6 +15751,70 @@ const imprimirRelatorioGeladeira = () => {
                 className="px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors flex items-center gap-2"
               >
                 <ClipboardList size={16} /> Copiar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalImpressaoOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200">
+              <div>
+                <h3 className="font-bold text-slate-800">Imprimir Escalas</h3>
+                <p className="text-xs text-slate-500">{formatarDataBR(dataSelecionada)}</p>
+              </div>
+              <button onClick={() => setModalImpressaoOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-3 max-h-[60vh] overflow-auto">
+              <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                <input
+                  type="checkbox"
+                  checked={escalasParaImprimir.length === Object.values(SLUG_CATEGORIA).length}
+                  onChange={(e) => {
+                    setEscalasParaImprimir(e.target.checked ? Object.values(SLUG_CATEGORIA) : []);
+                  }}
+                  className="w-4 h-4 accent-blue-600"
+                />
+                <span className="font-bold text-sm text-slate-700">Todas as escalas</span>
+              </label>
+
+              <div className="border-t border-slate-100 pt-3 space-y-2">
+                {Object.values(SLUG_CATEGORIA).map(cat => (
+                  <label key={cat} className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={escalasParaImprimir.includes(cat)}
+                      onChange={(e) => {
+                        setEscalasParaImprimir(prev =>
+                          e.target.checked ? [...prev, cat] : prev.filter(c => c !== cat)
+                        );
+                      }}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    <span className="text-sm text-slate-600">{cat}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+              <button
+                onClick={() => setModalImpressaoOpen(false)}
+                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={gerarPdfEscala}
+                disabled={gerandoPdfEscala || escalasParaImprimir.length === 0}
+                className="px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-xl flex items-center gap-2"
+              >
+                <Printer size={16} /> {gerandoPdfEscala ? 'Gerando…' : 'Gerar PDF'}
               </button>
             </div>
           </div>
