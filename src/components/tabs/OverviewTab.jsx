@@ -50,6 +50,26 @@ const OverviewTab = ({
     return "text-slate-700"; // Normal
   };
 
+  // Converte datas em string (ISO "2026-10-27" ou "DD/MM/AAAA" ou "DD/MM - HH:MM") em timestamp.
+  // Usada para ordenar o historico_bh do mais recente para o mais antigo.
+  const parseDateForSort = (str) => {
+    if (!str) return 0;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const [y, m, d] = str.split('-');
+      return new Date(Number(y), Number(m) - 1, Number(d), 0, 0).getTime();
+    }
+    const dMatch = String(str).match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (dMatch) {
+      const day = parseInt(dMatch[1], 10);
+      const month = parseInt(dMatch[2], 10) - 1;
+      const year = dMatch[3]
+        ? (dMatch[3].length === 2 ? 2000 + parseInt(dMatch[3], 10) : parseInt(dMatch[3], 10))
+        : new Date().getFullYear();
+      return new Date(year, month, day, 0, 0).getTime();
+    }
+    return 0;
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn text-left">
     <div className="flex gap-2 mb-4 border-b border-slate-200 pb-3">
@@ -212,70 +232,175 @@ const OverviewTab = ({
         </div>
 
         {(() => {
-          const checkLossBH = (bh, lossName) => {
+          const escStr = (v) => String(v ?? "").trim().toLowerCase();
+
+          // Uma perda está "positiva" quando o valor registrado indica ocorrência real.
+          // Regra: "sim"/"s" → sim; qualquer número > 0 → sim; "0", "", "-", "não" → não.
+          const valorPositivo = (v) => {
+            const s = escStr(v);
+            if (!s) return false;
+            if (["não", "nao", "n", "-", "0", "0,0"].includes(s)) return false;
+            if (["sim", "s"].includes(s)) return true;
+            if (s.includes("+")) return true;
+            const num = parseFloat(s.replace(",", "."));
+            if (!isNaN(num)) return num > 0;
+            return false; // texto sem sentido numérico ("ausente", "nega", etc.)
+          };
+
+          // ============================================================
+          // 1. EVACUAÇÃO — busca retrógrada: bh → histórico → nutri
+          // ============================================================
+
+          // Retorna a data (Date) da ocorrência mais recente de evacuação no BH atual.
+          // Percorre as horas de 06h→00h (mais recente primeiro, pois o BH termina às 06h do dia seguinte).
+          const ultimaEvacNoBH = (bh) => {
+            if (!bh || !bh.losses) return null;
+            const horas = Object.keys(bh.losses).sort().reverse(); // "23","22",...,"00"
+            for (const h of horas) {
+              const cel = bh.losses[h] || {};
+              const evac = cel["Evacuação"] ?? cel["Evacuacao"] ?? cel["Fezes"];
+              if (valorPositivo(evac)) {
+                return { hora: h };
+              }
+            }
+            return null;
+          };
+
+          // Procura na lista historico_bh (mais recente primeiro) e devolve quantos dias atrás.
+          const acharEvacNoHistorico = () => {
+            const hist = currentPatient.historico_bh;
+            if (!Array.isArray(hist) || !hist.length) return null;
+
+            // ordena por data decrescente
+            const ordenado = [...hist]
+              .filter((item) => item && item.date)
+              .sort((a, b) => parseDateForSort(b.date) - parseDateForSort(a.date));
+
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+
+            for (const item of ordenado) {
+              const achou = ultimaEvacNoBH(item);
+              if (!achou) continue;
+
+              // data do item histórico (aceita ISO ou DD/MM/AAAA)
+              let dRef = null;
+              if (/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
+                const [y, m, d] = item.date.split("-");
+                dRef = new Date(Number(y), Number(m) - 1, Number(d));
+              } else {
+                const m = item.date.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+                if (m) {
+                  const ano = m[3]
+                    ? m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])
+                    : new Date().getFullYear();
+                  dRef = new Date(ano, Number(m[2]) - 1, Number(m[1]));
+                }
+              }
+              if (!dRef) continue;
+
+              const diffDias = Math.round((hoje.getTime() - dRef.getTime()) / 86400000);
+              return diffDias;
+            }
+            return null;
+          };
+
+          let evacResult = "-";
+          let isConstipado = false;
+
+          // Passo 1: o BH atual tem evacuação?
+          if (ultimaEvacNoBH(currentPatient.bh)) {
+            evacResult = "Hoje";
+          } else {
+            // Passo 2: o BH anterior (bh_previous) tem evacuação?
+            if (ultimaEvacNoBH(currentPatient.bh_previous)) {
+              evacResult = "1 dia";
+            } else {
+              // Passo 3: histórico completo
+              const diasHist = acharEvacNoHistorico();
+              if (diasHist !== null) {
+                evacResult = diasHist === 0 ? "Hoje" : diasHist === 1 ? "1 dia" : `${diasHist} dias`;
+              } else {
+                // Passo 4: fallback na nutri (data manual)
+                const manual = currentPatient.gastro?.dataUltimaEvacuacao;
+                if (manual) {
+                  evacResult = typeof calculateEvacDays === "function"
+                    ? calculateEvacDays(manual)
+                    : "-";
+                } else {
+                  evacResult = "-";
+                }
+              }
+            }
+          }
+
+          // Alerta de constipação: > 2 dias (não vale para "Hoje")
+          const diasNum = parseInt(String(evacResult).replace(/\D/g, ""), 10);
+          const temDiaComputavel = !isNaN(diasNum) && !String(evacResult).toLowerCase().includes("hoje");
+          if (temDiaComputavel && diasNum > 2) isConstipado = true;
+
+          // ============================================================
+          // 2. VÔMITOS E DIARREIA — hoje e ontem (dia calendário)
+          // ============================================================
+
+          // O BH cobre 07h de hoje até 06h de amanhã (com virada em histórico às 00h local).
+          // Para saber se houve perda HOJE ou ONTEM, precisamos olhar as horas
+          // que pertencem a cada janela calendário.
+
+          const horaNum = (h) => {
+            const n = parseInt(String(h).split(":")[0], 10);
+            return isNaN(n) ? null : n;
+          };
+
+          // Para a janela de HOJE (dia calendário), no BH atual:
+          // horas 07..23 são de hoje. Horas 00..06 são da madrugada — pertencem a amanhã,
+          // então NÃO contam como hoje (mas contam como "ontem" quando o BH anterior tinha 07..23).
+          const checkPerdaJanela = (bh, perda, alvo) => {
             if (!bh || !bh.losses) return false;
-            for (let h of BH_HOURS || []) {
-              const val = String(bh.losses[h]?.[lossName] || "").trim().toLowerCase();
-              const numVal = parseFloat(val);
-              if (["sim", "s"].includes(val) || val.includes("+") || (!isNaN(numVal) && numVal > 0)) return true;
+            for (const h of Object.keys(bh.losses)) {
+              const hn = horaNum(h);
+              if (hn === null) continue;
+              // "hoje" = horas 07h-23h do BH atual
+              if (alvo === "hoje" && (hn < 7 || hn > 23)) continue;
+              // "ontem" = horas 07h-23h do bh_previous (que é o dia calendário anterior)
+              if (alvo === "ontem" && (hn < 7 || hn > 23)) continue;
+              const cel = bh.losses[h] || {};
+              const v = cel[perda] ?? (perda === "Vômitos" ? cel["Vômito"] : undefined);
+              if (valorPositivo(v)) return true;
             }
             return false;
           };
 
-          // 1. Checa Diarreia e Vômitos
-          const diarreiaHoje = checkLossBH(currentPatient.bh, "Diarreia");
-          const diarreiaOntem = checkLossBH(currentPatient.bh_previous, "Diarreia");
+          const diarreiaHoje = checkPerdaJanela(currentPatient.bh, "Diarreia", "hoje");
+          const diarreiaOntem = checkPerdaJanela(currentPatient.bh_previous, "Diarreia", "ontem");
+
           let diarreiaText = "";
           if (diarreiaHoje && diarreiaOntem) diarreiaText = "Hoje e Ontem";
           else if (diarreiaHoje) diarreiaText = "Hoje";
           else if (diarreiaOntem) diarreiaText = "Ontem";
 
-          const vomitoHoje = checkLossBH(currentPatient.bh, "Vômitos") || checkLossBH(currentPatient.bh, "Vômito");
-          const vomitoOntem = checkLossBH(currentPatient.bh_previous, "Vômitos") || checkLossBH(currentPatient.bh_previous, "Vômito");
+          const vomitoHoje = checkPerdaJanela(currentPatient.bh, "Vômitos", "hoje");
+          const vomitoOntem = checkPerdaJanela(currentPatient.bh_previous, "Vômitos", "ontem");
+
           let vomitoText = "";
           if (vomitoHoje && vomitoOntem) vomitoText = "Hoje e Ontem";
           else if (vomitoHoje) vomitoText = "Hoje";
           else if (vomitoOntem) vomitoText = "Ontem";
 
-          // 2. Checa Evacuação direto no BH
-          const evacHojeBH = checkLossBH(currentPatient.bh, "Evacuação") || checkLossBH(currentPatient.bh, "Evacuacao") || checkLossBH(currentPatient.bh, "Fezes");
-          const evacOntemBH = checkLossBH(currentPatient.bh_previous, "Evacuação") || checkLossBH(currentPatient.bh_previous, "Evacuacao") || checkLossBH(currentPatient.bh_previous, "Fezes");
-
-          let evacResult = "";
-          let isConstipado = false;
-
-          // 3. Define o texto final e checa se há constipação (> 2 dias)
-          if (evacHojeBH || diarreiaHoje) {
-            evacResult = "Hoje";
-          } else if (evacOntemBH || diarreiaOntem) {
-            evacResult = "Ontem";
-          } else {
-            // Se não tem no BH, calcula pela data manual
-            evacResult = typeof calculateEvacDays === 'function' ? calculateEvacDays(currentPatient.gastro?.dataUltimaEvacuacao) : "-";
-            
-            // Extrai apenas os números da string resultante (ex: "Há 3 dias" vira o número 3)
-            const diasSemEvacuar = parseInt(String(evacResult).replace(/\D/g, ""), 10);
-            
-            // Se o número for maior que 2 (e não for um texto que diz "hoje" ou "ontem"), liga o alerta de constipação!
-            if (!isNaN(diasSemEvacuar) && diasSemEvacuar > 2 && !String(evacResult).toLowerCase().includes("hoje") && !String(evacResult).toLowerCase().includes("ontem")) {
-              isConstipado = true;
-            }
-          }
-
           return (
             <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl">
               <h4 className="font-bold text-orange-800 mb-3 flex items-center gap-2"><Activity size={16} /> Eliminações</h4>
-              
+
               <div className="space-y-2">
                 <p className="text-sm flex items-center flex-wrap gap-1.5 text-slate-700">
-                  Últ. Evacuação: 
-                  <span className={isConstipado 
-                    ? "text-red-700 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-200 shadow-sm" 
+                  Últ. Evacuação:
+                  <span className={isConstipado
+                    ? "text-red-700 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-200 shadow-sm"
                     : "text-emerald-700 font-bold"}>
                     {evacResult}
                   </span>
                 </p>
-                
+
                 {diarreiaText && <p className="text-sm text-slate-700">Diarreia: <b className="text-red-600">{diarreiaText}</b></p>}
                 {vomitoText && <p className="text-sm text-slate-700">Vômitos: <b className="text-red-600">{vomitoText}</b></p>}
               </div>
