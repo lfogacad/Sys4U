@@ -8,7 +8,7 @@ import { formatDateDDMM } from '../../utils/core';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import PhysioEvoModal from '../../components/modals/PhysioEvoModal';
 import { ModalPortal } from '../../components/ModuloUTI';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 
 const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients, activeTab, setPatients, save, handlePhysioAdmission, handleViewPhysioAdmission, clearDate, updateP, updateNested, handleBlurSave, setShowVmFlowsheet, handleSuporteChange, toggleArrayItem, calculateExchangeDate, isDeviceExpired, handlePrintGasometria, handleGeneratePhysioEvo, getTempoVMText, isOverviewEditable, localEditRef }) => {
@@ -23,6 +23,10 @@ const PhysioDashboard = ({ currentPatient, isEditable, uniqueGasoCols, patients,
   const [listaMedicos, setListaMedicos] = useState([]);
 
   const [gasoDraft, setGasoDraft] = useState({});
+  const [gasoModalOpen, setGasoModalOpen] = useState(false);
+  const [gasoNovaData, setGasoNovaData] = useState("");
+  const [gasoNovaHora, setGasoNovaHora] = useState("");
+  const [gasoNovoTipo, setGasoNovoTipo] = useState("arterial");
   
   const [showRegistrosFisio, setShowRegistrosFisio] = useState(false);
   const [showEvolucaoModal, setShowEvolucaoModal] = useState(false);
@@ -485,8 +489,8 @@ const LISTAS_MOBILIZACAO = {
       .title-center { text-align: center; font-size: 16px; margin-bottom: 5px; font-weight: bold; text-transform: uppercase; }
       .header { display: flex; justify-content: space-between; border-bottom: 2px solid black; padding-bottom: 4px; margin-bottom: 12px; font-weight: bold; font-size: 11px; text-transform: uppercase; }
       table { width: 100%; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed; }
-      th, td { border: 1px solid #000; padding: 4px 1px; text-align: center; overflow: hidden; white-space: nowrap; font-size: 8px; }
-      th { background-color: #334155; color: white; font-weight: bold; }
+      th, td { border: 1px solid #000; padding: 3px 1px; text-align: center; overflow: hidden; white-space: nowrap; font-size: 8px; }
+      th { background-color: #334155; color: white; font-weight: bold; line-height: 1.15; }
       .col-item { width: 9.6%; text-align: left; padding-left: 2px; font-weight: bold; background-color: #f1f5f9; color: #000; white-space: normal; line-height: 1.1; }
       .col-data { width: 5%; }
       .page-break { page-break-after: always; }
@@ -498,14 +502,17 @@ const LISTAS_MOBILIZACAO = {
     for (let i = 0; i < totalChunks; i++) {
       const chunk = sortedGasoCols.slice(i * chunkSize, (i + 1) * chunkSize);
       if (i > 0) html += `<div class="page-break"></div>`;
-      
-      html += `<div class="title-center">Histórico de Gasometria Arterial</div>`;
+
+      html += `<div class="title-center">Histórico de Gasometria</div>`;
       html += `<div class="header"><span>PACIENTE: ${currentPatient.nome || "___________________"}</span><span>LEITO: ${currentPatient.leito || "___"}</span><span>PÁGINA ${i + 1} DE ${totalChunks}</span></div>`;
       html += `<table><thead><tr><th class="col-item" style="color: white; background-color: #334155;">PARÂMETRO</th>`;
-      
+
       chunk.forEach(col => {
         const displayName = col.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(col) : col;
-        html += `<th class="col-data">${displayName}</th>`;
+        const tipo = currentPatient.gasometriaHistory?.[col]?.["_tipo"] || "";
+        const sigla = tipo === "venosaCentral" ? "VEN" : tipo === "arterial" ? "ART" : "";
+        const bg = tipo === "venosaCentral" ? "#4c1d95" : "#334155";
+        html += `<th class="col-data" style="background-color:${bg}">${displayName}${sigla ? `<br><span style="font-size:7px;opacity:.85">${sigla}</span>` : ""}</th>`;
       });
       for (let j = chunk.length; j < chunkSize; j++) html += `<th class="col-data">-</th>`;
       html += `</tr></thead><tbody>`;
@@ -1782,7 +1789,6 @@ const TRE_CHECKLIST = [
             <div className="flex justify-between items-center mb-3">
               <div className="flex items-center gap-2">
                 <h4 className="font-bold text-slate-700 flex items-center gap-2"><TestTube size={16} /> Gasometria</h4>
-                {/* 🔥 NOVO BOTÃO DE HISTÓRICO */}
                 <button 
                   onClick={(e) => { e.preventDefault(); setShowO2History(true); }}
                   className="p-1 bg-cyan-100 text-cyan-700 hover:bg-cyan-600 hover:text-white rounded-lg transition-colors shadow-sm"
@@ -1803,95 +1809,105 @@ const TRE_CHECKLIST = [
                         <button
                           onClick={(e) => {
                             e.preventDefault();
-                            const dataInput = prompt("Data da gasometria (DD/MM):");
-                            if (!dataInput || !dataInput.trim()) return;
-                            const horaInput = prompt("Horário (HH:MM):");
-                            if (!horaInput || !horaInput.trim()) return;
-                            const dataLimpa = dataInput.trim();
-                            const horaLimpa = horaInput.trim();
-                            const nomeColuna = `${dataLimpa} - ${horaLimpa}`;
-                            const up = [...patients];
-                            if (!up[activeTab].customGasometriaCols) up[activeTab].customGasometriaCols = [];
-                            if (!up[activeTab].gasometriaHistory) up[activeTab].gasometriaHistory = {};
-                            if (!up[activeTab].customGasometriaCols.includes(nomeColuna)) {
-                              up[activeTab].customGasometriaCols.unshift(nomeColuna);
-                            }
-                            if (!up[activeTab].gasometriaHistory[nomeColuna]) up[activeTab].gasometriaHistory[nomeColuna] = {};
-                            up[activeTab].gasometriaHistory[nomeColuna]["_hora"] = horaLimpa;
-                            setPatients(up);
-                            save(up[activeTab], `Fisioterapia: Adicionou gasometria em ${nomeColuna}`);
+                            setGasoNovaData("");
+                            setGasoNovaHora("");
+                            setGasoNovoTipo("arterial");
+                            setGasoModalOpen(true);
                           }}
                           className="text-blue-600 hover:text-blue-800 w-full h-full flex items-center justify-center p-2 transition-colors"
-                          title="Adicionar Gasometria extra"
+                          title="Adicionar Gasometria"
                         >
                           <PlusCircle size={18} />
                         </button>
                       </th>
                     )}
-                    {sortedGasoCols.map((col) => (
-                      <th key={col} className="p-2 border-l border-slate-300 min-w-[80px] align-top">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[10px] leading-tight text-center w-full">{col.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(col) : col}</span>
-                          {currentPatient.customGasometriaCols?.includes(col) && isEditable && (
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                if (!window.confirm(`Excluir a coluna "${col}"?`)) return;
-                                
-                                // Marca edição local pendente
-                                if (localEditRef) localEditRef.current = true;
-                                
-                                const up = [...patients];
-                                up[activeTab].customGasometriaCols = up[activeTab].customGasometriaCols.filter((c) => c !== col);
-                                if (up[activeTab].gasometriaHistory) delete up[activeTab].gasometriaHistory[col];
-                                setPatients(up);
-                                save(up[activeTab], `Fisioterapia: Excluiu coluna de Gasometria (${col})`);
-                                
-                                // Libera o ref após tempo suficiente para o Firebase processar
-                                setTimeout(() => {
-                                  if (localEditRef) localEditRef.current = false;
-                                }, 3000);
-                              }}
-                              className="text-slate-400 hover:text-red-500 transition-colors" title="Excluir Coluna"
-                            >
-                              <X size={10} />
-                            </button>
-                          )}
-                        </div>
-                        {isEditable && (
-                          <input
-                            type="time"
-                            value={editingHora[col] ?? currentPatient.gasometriaHistory?.[col]?.["_hora"] ?? ""}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              setEditingHora(prev => ({ ...prev, [col]: e.target.value }));
-                            }}
-                            onBlur={(e) => {
-                              const val = e.target.value;
-                              if (val !== (currentPatient.gasometriaHistory?.[col]?.["_hora"] || "")) {
-                                const up = [...patients];
-                                if (!up[activeTab].gasometriaHistory) up[activeTab].gasometriaHistory = {};
-                                if (!up[activeTab].gasometriaHistory[col]) up[activeTab].gasometriaHistory[col] = {};
-                                up[activeTab].gasometriaHistory[col]["_hora"] = val;
-                                setPatients(up);
-                                save(up[activeTab], `Fisioterapia: Horário definido para ${col}`);
-                              }
-                              setEditingHora(prev => {
-                                const next = { ...prev };
-                                delete next[col];
-                                return next;
-                              });
-                            }}
-                            className="w-full text-[10px] p-0.5 text-center border border-slate-200 rounded bg-white mt-1"
-                          />
-                        )}
-                        {!isEditable && currentPatient.gasometriaHistory?.[col]?.["_hora"] && (
-                          <div className="text-[10px] font-bold text-slate-500 mt-1">
-                            🕐 {currentPatient.gasometriaHistory[col]["_hora"]}
+                    {sortedGasoCols.map((col) => {
+                      const [dataCol, horaCol] = col.split(" - ");
+                      const tipoCol = currentPatient.gasometriaHistory?.[col]?.["_tipo"] || "arterial";
+                      return (
+                        <th key={col} className="p-2 border-l border-slate-300 min-w-[84px] align-top">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[10px] leading-tight text-center w-full">
+                              {dataCol.match(/^\d{4}-\d{2}-\d{2}$/) ? formatDateDDMM(dataCol) : dataCol}
+                            </span>
+                            {currentPatient.customGasometriaCols?.includes(col) && isEditable && (
+                              <button
+                                onClick={async (e) => {
+                                  e.preventDefault();
+                                  if (!window.confirm(`Excluir a coluna "${col}"?`)) return;
+                                  if (localEditRef) localEditRef.current = true;
+                                  const up = [...patients];
+                                  up[activeTab].customGasometriaCols = (up[activeTab].customGasometriaCols || []).filter((c) => c !== col);
+                                  if (up[activeTab].gasometriaHistory) delete up[activeTab].gasometriaHistory[col];
+                                  setPatients(up);
+                                  // Apaga a chave NO SERVIDOR: setDoc(merge) ignora chaves
+                                  // ausentes e manteria o valor antigo no Firestore.
+                                  try {
+                                    const idBruto = up[activeTab].id !== undefined ? up[activeTab].id : up[activeTab].leito;
+                                    const numeroFinal = String(idBruto).replace(/bed_/g, "") || "1";
+                                    await updateDoc(doc(db, "leitos_uti", `bed_${numeroFinal}`), {
+                                      [`gasometriaHistory.${col}`]: deleteField()
+                                    });
+                                  } catch (err) {
+                                    console.error("[SYS4U] Falha ao remover coluna de gasometria:", err);
+                                  }
+                                  save(up[activeTab], `Fisioterapia: Excluiu coluna de Gasometria (${col})`);
+                                  setTimeout(() => {
+                                    if (localEditRef) localEditRef.current = false;
+                                  }, 3000);
+                                }}
+                                className="text-slate-400 hover:text-red-500 transition-colors shrink-0" title="Excluir Coluna"
+                              >
+                                <X size={10} />
+                              </button>
+                            )}
                           </div>
-                        )}
-                      </th>
-                    ))}
+                          {isEditable ? (
+                            <input
+                              type="time"
+                              value={editingHora[col] ?? currentPatient.gasometriaHistory?.[col]?.["_hora"] ?? ""}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                setEditingHora(prev => ({ ...prev, [col]: e.target.value }));
+                              }}
+                              onBlur={(e) => {
+                                const val = e.target.value;
+                                if (val !== (currentPatient.gasometriaHistory?.[col]?.["_hora"] || "")) {
+                                  const up = [...patients];
+                                  if (!up[activeTab].gasometriaHistory) up[activeTab].gasometriaHistory = {};
+                                  if (!up[activeTab].gasometriaHistory[col]) up[activeTab].gasometriaHistory[col] = {};
+                                  up[activeTab].gasometriaHistory[col]["_hora"] = val;
+                                  setPatients(up);
+                                  save(up[activeTab], `Fisioterapia: Horário definido para ${col}`);
+                                }
+                                setEditingHora(prev => {
+                                  const next = { ...prev };
+                                  delete next[col];
+                                  return next;
+                                });
+                              }}
+                              className="w-full text-[10px] p-0.5 text-center border border-slate-200 rounded bg-white mt-1"
+                            />
+                          ) : (
+                            currentPatient.gasometriaHistory?.[col]?.["_hora"] && (
+                              <div className="text-[10px] font-bold text-slate-500 mt-1">
+                                🕐 {currentPatient.gasometriaHistory[col]["_hora"]}
+                              </div>
+                            )
+                          )}
+                          <div
+                            className={`mt-1 text-[9px] font-black uppercase tracking-wide rounded px-1 py-0.5 ${
+                              tipoCol === "venosaCentral"
+                                ? "bg-indigo-100 text-indigo-700"
+                                : "bg-rose-100 text-rose-700"
+                            }`}
+                            title={tipoCol === "venosaCentral" ? "Amostra venosa central" : "Amostra arterial"}
+                          >
+                            {tipoCol === "venosaCentral" ? "VEN C" : "ART"}
+                          </div>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -1920,7 +1936,6 @@ const TRE_CHECKLIST = [
                               const draftCell = gasoDraft[col]?.[param];
                               // Sem edição pendente nesta célula → não faz nada (evita save "vazio")
                               if (draftCell === undefined) return;
-
                               // Monta a versão MAIS RECENTE do paciente a partir do estado atual
                               setPatients(prev => {
                                 const up = [...prev];
@@ -1928,7 +1943,6 @@ const TRE_CHECKLIST = [
                                 if (!p.gasometriaHistory) p.gasometriaHistory = {};
                                 if (!p.gasometriaHistory[col]) p.gasometriaHistory[col] = {};
                                 p.gasometriaHistory[col][param] = draftCell;
-
                                 // Recalcula P/F (mesma lógica de antes, agora só no blur)
                                 const pao2Str = p.gasometriaHistory[col]["PaO2"];
                                 const fio2Str = p.gasometriaHistory[col]["FiO2"];
@@ -1942,13 +1956,11 @@ const TRE_CHECKLIST = [
                                 } else if (p.gasometriaHistory[col]["Relação P/F"]) {
                                   p.gasometriaHistory[col]["P/F"] = "";
                                 }
-
                                 up[activeTab] = p;
                                 // ÚNICA gravação: no blur, com a versão fresca que contém a digitação
                                 save(p, `Gasometria: Editou ${param} (Ref: ${col})`);
                                 return up;
                               });
-
                               // Limpa o rascunho desta célula
                               setGasoDraft(prev => {
                                 const next = { ...prev, [col]: { ...(prev[col] || {}) } };
@@ -1966,6 +1978,109 @@ const TRE_CHECKLIST = [
               </table>
             </fieldset>
           </div>
+
+          {/* MODAL: NOVA GASOMETRIA */}
+          {gasoModalOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+              <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+                <div className="bg-slate-800 text-white p-3 flex justify-between items-center">
+                  <h3 className="font-bold text-sm flex items-center gap-2"><TestTube size={16} /> Nova Gasometria</h3>
+                  <button onClick={() => setGasoModalOpen(false)} className="hover:bg-white/20 p-1 rounded transition-colors">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Data</label>
+                    <input
+                      type="date"
+                      value={gasoNovaData}
+                      onChange={(e) => setGasoNovaData(e.target.value)}
+                      className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Horário</label>
+                    <input
+                      type="time"
+                      value={gasoNovaHora}
+                      onChange={(e) => setGasoNovaHora(e.target.value)}
+                      className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Tipo de amostra</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setGasoNovoTipo("arterial")}
+                        className={`flex-1 py-2 rounded-lg border-2 font-bold text-xs transition-all ${
+                          gasoNovoTipo === "arterial"
+                            ? "bg-rose-50 border-rose-500 text-rose-700"
+                            : "bg-white border-slate-200 text-slate-500 hover:border-rose-300"
+                        }`}
+                      >
+                        Arterial
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGasoNovoTipo("venosaCentral")}
+                        className={`flex-1 py-2 rounded-lg border-2 font-bold text-xs transition-all ${
+                          gasoNovoTipo === "venosaCentral"
+                            ? "bg-indigo-50 border-indigo-500 text-indigo-700"
+                            : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"
+                        }`}
+                      >
+                        Venosa Central
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 border-t flex justify-end gap-2">
+                  <button
+                    onClick={() => setGasoModalOpen(false)}
+                    className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-200 text-xs transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!gasoNovaData || !gasoNovaHora) {
+                        alert("Informe a data e o horário da gasometria.");
+                        return;
+                      }
+                      const [a, m, dia] = gasoNovaData.split("-");
+                      const nomeColuna = `${dia}/${m} - ${gasoNovaHora}`;
+                      if (currentPatient.customGasometriaCols?.includes(nomeColuna)) {
+                        alert("Já existe uma gasometria nesse dia e horário.");
+                        return;
+                      }
+                      if (localEditRef) localEditRef.current = true;
+                      const up = [...patients];
+                      if (!up[activeTab].customGasometriaCols) up[activeTab].customGasometriaCols = [];
+                      if (!up[activeTab].gasometriaHistory) up[activeTab].gasometriaHistory = {};
+                      up[activeTab].customGasometriaCols.unshift(nomeColuna);
+                      up[activeTab].gasometriaHistory[nomeColuna] = {
+                        ...(up[activeTab].gasometriaHistory[nomeColuna] || {}),
+                        _hora: gasoNovaHora,
+                        _data: gasoNovaData,
+                        _tipo: gasoNovoTipo
+                      };
+                      setPatients(up);
+                      save(up[activeTab], `Fisioterapia: Adicionou gasometria em ${nomeColuna} (${gasoNovoTipo})`);
+                      setGasoModalOpen(false);
+                      setTimeout(() => {
+                        if (localEditRef) localEditRef.current = false;
+                      }, 3000);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow transition-colors"
+                  >
+                    Criar Coluna
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* GERAR EVOLUÇÃO */}
           <div className="mt-8 mb-6 border-t-2 border-slate-200 pt-6">

@@ -1080,8 +1080,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     return 0;
   };
 
-  const gasoCols = [...Object.keys(currentPatient.gasometriaHistory || {}), ...(currentPatient.customGasometriaCols || [])];
-  const uniqueGasoCols = [...new Set(gasoCols)].sort((a, b) => parseDateForSort(b) - parseDateForSort(a));
+const custom = new Set(currentPatient.customGasometriaCols || []);
+const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDateForSort(a));
 
   // --- FUNÇÕES DE PERSISTÊNCIA ---
   const save = async (updatedPatient, logMsg = "Alteração no Prontuário") => {
