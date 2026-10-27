@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { doc, setDoc, getDocs, getDoc, deleteDoc, collection, addDoc, arrayUnion, writeBatch, increment,
-         onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp, FieldPath } from 'firebase/firestore';
+         onSnapshot, query, where, updateDoc, orderBy, limit, serverTimestamp, FieldPath, deleteField } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
   Stethoscope, HeartPulse, Brain, Wind, Utensils, Apple,
@@ -4812,63 +4812,66 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
   // ========================================================================
 
   const handleAddVmEntry = () => {
+    let pacienteAtualizado = null;
+
     setPatients(prev => {
-    const up = [...prev];
-    const p = JSON.parse(JSON.stringify(up[activeTab]));
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab]));
 
-    if (!p.physio) p.physio = {};
-    if (!Array.isArray(p.physio.vmFlowsheet)) p.physio.vmFlowsheet = [];
+      if (!p.physio) p.physio = {};
+      if (!Array.isArray(p.physio.vmFlowsheet)) p.physio.vmFlowsheet = [];
 
-    const now = new Date();
-    const dataHora = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')} - ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const now = new Date();
+      const dataHora = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')} - ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    // 👇 PRÉ-CALCULA E CONGELA os valores no momento da criação
-    const diasUti = typeof getDaysD1 === 'function' 
-      ? getDaysD1(p.dataInternacao || p.dataAdmissao) 
-      : "";
-    const diasVm = typeof getTempoVMText === 'function' 
-      ? getTempoVMText(p) 
-      : "";
+      const diasUti = typeof getDaysD1 === 'function'
+        ? getDaysD1(p.dataInternacao || p.dataAdmissao)
+        : "";
+      const diasVm = typeof getTempoVMText === 'function'
+        ? getTempoVMText(p)
+        : "";
 
-    const newEntry = {
-      id: Date.now().toString(),
-      dataHora: dataHora,
-      // 👇 Campos preenchidos automaticamente e congelados
-      suporte: p.physio.suporte || "",
-      diasUti: diasUti,
-      diasVm: diasVm,
-      // Campos copiados do painel principal
-      modo: p.physio.parametro || "",
-      fluxo: p.physio.fluxo || "",
-      fio2: p.physio.fiO2 || "",
-      peep: p.physio.peep || "",
-      vc: p.physio.volCorrente || "",
-      pc: p.physio.pressaoControlada || "",
-      ps: p.physio.pressaoSuporte || "",
-      frSet: p.physio.fr || "",
-      frTotal: "",
-      
-      // 👇 CORREÇÃO: Agora puxa os valores do cuff que já estão salvos na physiodashboard
-      cuffM: p.physio.cuffM || "", 
-      cuffT: p.physio.cuffT || "", 
-      cuffN: p.physio.cuffN || "",
-      
-      despertarS: false, despertarN: false,
-      vtPc: "", vm: "", fluxoInsp: "", tInsp: "", ie: "",
-      pPico: "", pPlato: "", dp: "", cst: "",
-      cdin: "", rva: "", autoPeep: "", p01: "", irrs: "",
-      satO2: p.physio.satO2 || "",
-      etco2: p.physio.etco2 || "",
-      ajustesDia: ""
-    };
+      const newEntry = {
+        id: Date.now().toString(),
+        dataHora: dataHora,
+        suporte: p.physio.suporte || "",
+        diasUti: diasUti,
+        diasVm: diasVm,
+        modo: p.physio.parametro || "",
+        fluxo: p.physio.fluxo || "",
+        fio2: p.physio.fiO2 || "",
+        peep: p.physio.peep || "",
+        vc: p.physio.volCorrente || "",
+        pc: p.physio.pressaoControlada || "",
+        ps: p.physio.pressaoSuporte || "",
+        frSet: p.physio.fr || "",
+        frTotal: "",
+        cuffM: p.physio.cuffM || "",
+        cuffT: p.physio.cuffT || "",
+        cuffN: p.physio.cuffN || "",
+        despertarS: false, despertarN: false,
+        vtPc: "", vm: "", fluxoInsp: "", tInsp: "", ie: "",
+        pPico: "", pPlato: "", dp: "", cst: "",
+        cdin: "", rva: "", autoPeep: "", p01: "", irrs: "",
+        satO2: p.physio.satO2 || "",
+        etco2: p.physio.etco2 || "",
+        ajustesDia: ""
+      };
 
-    p.physio.vmFlowsheet.push(newEntry);
+      p.physio.vmFlowsheet.push(newEntry);
 
-    up[activeTab] = p;
-    return up;
+      up[activeTab] = p;
+      pacienteAtualizado = p; // ← captura a versão COM a nova entrada
+      return up;
     });
 
-    save(p, "Fisioterapia: Adicionou nova coluna de avaliação no Mapa de Suporte Ventilatório");
+    // Salva FORA do callback, com a versão que já contém a coluna nova.
+    // requestAnimationFrame garante que o setPatients foi aplicado antes do save.
+    requestAnimationFrame(() => {
+      if (pacienteAtualizado) {
+        save(pacienteAtualizado, "Fisioterapia: Adicionou nova coluna de avaliação no Mapa de Suporte Ventilatório");
+      }
+    });
   };
 
   const updateVmEntry = (index, field, value) => {
@@ -4926,6 +4929,36 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       return up;
     });
     // O 'save' não está aqui porque a digitação salva no onBlur do input!
+  };
+
+  const excluirColunaVm = (entry) => {
+    if (!entry?.id) {
+      alert("Esta coluna foi criada em uma versão antiga e não pode ser excluída por aqui.");
+      return;
+    }
+
+    if (localEditRef) localEditRef.current = true;
+    scheduleLocalEditRelease();
+
+    let pacienteAtualizado = null;
+
+    setPatients(prev => {
+      const up = [...prev];
+      const p = JSON.parse(JSON.stringify(up[activeTab]));
+
+      if (!Array.isArray(p.physio?.vmFlowsheet)) return prev;
+
+      p.physio.vmFlowsheet = p.physio.vmFlowsheet.filter(x => x.id !== entry.id);
+      up[activeTab] = p;
+      pacienteAtualizado = p;
+      return up;
+    });
+
+    requestAnimationFrame(() => {
+      if (pacienteAtualizado) {
+        save(pacienteAtualizado, `Fisioterapia: Excluiu coluna do Mapa Ventilatório (${entry.dataHora})`);
+      }
+    });
   };
 
   const toggleArrayItem = (category, field, value) => {
@@ -6598,6 +6631,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
         getDaysD1={getDaysD1}
         getTempoVMText={getTempoVMText}
         updateNested={updateNested}
+        excluirColunaVm={excluirColunaVm}
       />
 
       {/* MODAL: GERADOR DE EVOLUÇÃO DA FISIOTERAPIA */}

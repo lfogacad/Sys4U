@@ -12,7 +12,8 @@ const VmFlowsheetModal = ({
   handleBlurSave,
   getDaysD1,
   getTempoVMText,
-  updateNested
+  updateNested,
+  excluirColunaVm
 }) => {
   if (!showVmFlowsheet) return null;
 
@@ -28,9 +29,31 @@ const VmFlowsheetModal = ({
   // O que está sendo digitado tem precedência sobre snapshots → nada "apaga" durante a escrita.
   // A gravação acontece APENAS no onBlur (via updateVmEntry + handleBlurSave).
 
-  const draftInput = (realIndex, entry, key, label, extra = {}) => {
-    const k = `${realIndex}:${key}`;
+  // Chave estável do rascunho: id da entrada (nunca o índice)
+  const draftKey = (entry, key) => `${entry?.id || entry?._tmpKey || 'x'}:${key}`;
+
+  // Resolve o índice ATUAL pelo id no momento do blur — imune a snapshots
+  const resolverIndiceVm = (entry) => {
+    const lista = currentPatient?.physio?.vmFlowsheet || [];
+    if (!entry?.id) return null;
+    const pos = lista.findIndex(e => e.id === entry.id);
+    return pos >= 0 ? pos : null;
+  };
+
+  // Descarta o rascunho de uma célula
+  const limparDraft = (k) => {
+    setVmDraft(prev => {
+      if (!(k in prev)) return prev;
+      const n = { ...prev };
+      delete n[k];
+      return n;
+    });
+  };
+
+  const draftInput = (entry, key, label, extra = {}) => {
+    const k = draftKey(entry, key);
     const draftVal = vmDraft[k];
+
     return (
       <input
         type={extra.type || "text"}
@@ -41,42 +64,57 @@ const VmFlowsheetModal = ({
         onChange={(e) => setVmDraft(prev => ({ ...prev, [k]: e.target.value }))}
         onBlur={(e) => {
           const val = e.target.value;
-          if (val !== (entry[key] || "")) {
-            updateVmEntry(realIndex, key, val);
+          const atual = entry[key] || "";
+          if (val !== atual) {
+            const idx = resolverIndiceVm(entry);
+            if (idx === null) {
+              // Entrada removida em outro dispositivo — descarta silenciosamente
+              limparDraft(k);
+              return;
+            }
+            updateVmEntry(idx, key, val);
             if (extra.onBlurExtra) extra.onBlurExtra(val);
             handleBlurSave(`Mapa SV: Editou ${label} - Coluna ${getEntryTime(entry)}`);
           }
-          setVmDraft(prev => { const n = { ...prev }; delete n[k]; return n; });
+          limparDraft(k);
         }}
       />
     );
   };
 
-  const draftCheckbox = (realIndex, entry, key, label, text) => {
-    const k = `${realIndex}:${key}`;
+  const draftCheckbox = (entry, key, label, text) => {
+    const k = draftKey(entry, key);
     const draftVal = vmDraft[k];
+    const valorAtual = !!entry[key];
+
     return (
       <label className="flex items-center gap-1 cursor-pointer">
         <input
           type="checkbox"
-          checked={draftVal !== undefined ? draftVal : !!entry[key]}
+          checked={draftVal !== undefined ? draftVal : valorAtual}
           onChange={(e) => setVmDraft(prev => ({ ...prev, [k]: e.target.checked }))}
-          onBlur={(e) => {
-            const val = e.target.checked;
-            if (val !== !!entry[key]) {
-              updateVmEntry(realIndex, key, val);
-              handleBlurSave(`Mapa SV: Avaliou ${label} - Coluna ${getEntryTime(entry)}`);
+          onBlur={() => {
+            const novoValor = draftVal !== undefined ? draftVal : valorAtual;
+            if (novoValor !== valorAtual) {
+              const idx = resolverIndiceVm(entry);
+              if (idx === null) {
+                limparDraft(k);
+                return;
+              }
+              updateVmEntry(idx, key, novoValor);
+              handleBlurSave(`Mapa SV: Editou ${label} - Coluna ${getEntryTime(entry)}`);
             }
-            setVmDraft(prev => { const n = { ...prev }; delete n[k]; return n; });
+            limparDraft(k);
           }}
         /> {text}
       </label>
     );
   };
 
-  const draftTextarea = (realIndex, entry, key, label, extra = {}) => {
-    const k = `${realIndex}:${key}`;
+  const draftTextarea = (entry, key, label, extra = {}) => {
+    const k = draftKey(entry, key);
     const draftVal = vmDraft[k];
+
     return (
       <textarea
         className={extra.className || "w-full p-1 border rounded text-[10px] outline-none focus:ring-1 focus:ring-cyan-400 resize-none overflow-hidden min-h-[28px] leading-tight"}
@@ -86,13 +124,19 @@ const VmFlowsheetModal = ({
           e.target.style.height = 'auto';
           e.target.style.height = e.target.scrollHeight + 'px';
         }}
-        onBlur={(e) => {
-          const val = e.target.value;
-          if (val !== (entry[key] || "")) {
-            updateVmEntry(realIndex, key, val);
+        onBlur={() => {
+          const val = draftVal !== undefined ? draftVal : (entry[key] || "");
+          const atual = entry[key] || "";
+          if (val !== atual) {
+            const idx = resolverIndiceVm(entry);
+            if (idx === null) {
+              limparDraft(k);
+              return;
+            }
+            updateVmEntry(idx, key, val);
             handleBlurSave(`Mapa SV: Editou ${label} - Coluna ${getEntryTime(entry)}`);
           }
-          setVmDraft(prev => { const n = { ...prev }; delete n[k]; return n; });
+          limparDraft(k);
         }}
         placeholder={extra.placeholder || ""}
         rows={1}
@@ -234,7 +278,7 @@ const getRowsBySuporte = () => {
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[90] flex justify-center items-center p-4">
       <div className="bg-white w-full max-w-7xl rounded-2xl shadow-2xl flex flex-col h-[90vh] overflow-hidden animate-fadeIn">
         
-        <div className="p-3 md:p-4 bg-slate-800 flex justify-between items-center shrink-0">
+        <div className="p-3 md:p-4 bg-slate-800 flex justify-center items-center shrink-0">
           <div className="flex flex-col min-w-0 pr-4">
             <h2 className="text-base md:text-lg font-black uppercase text-white flex items-center gap-2 tracking-wide">
               <Activity size={20} className="text-cyan-400 shrink-0" />
@@ -293,65 +337,97 @@ const getRowsBySuporte = () => {
                     <td className="sticky left-0 bg-slate-200 p-2 font-bold text-slate-800 border-r border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 w-40 text-left">
                       {rowDef.label}
                     </td>
-                    
                     {displayVmEntries.map((entry, displayIndex) => {
                       const totalItems = currentPatient.physio?.vmFlowsheet?.length || 0;
                       const realIndex = totalItems - 1 - displayIndex;
-
                       return (
-                        <td key={entry.id || displayIndex} className={`p-1 border-r border-slate-200 ${rowDef.key === 'ajustesDia' ? 'min-w-[250px]' : 'min-w-[120px]'}`}>
-                          {rowDef.key === 'cuff_row' ? (
+                        <td key={entry.id || `col-${realIndex}`} className={`p-1 border-r border-slate-200 ${rowDef.key === 'ajustesDia' ? 'min-w-[250px]' : 'min-w-[120px]'}`}>
+                          {rowDef.key === 'dataHora' ? (
+                            <div className="flex items-center justify-center gap-1 px-1">
+                              <span className="text-[10px] font-bold text-slate-700 truncate">
+                                {entry.dataHora || "-"}
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (!window.confirm(`Excluir a coluna "${entry.dataHora}"? Todos os dados dessa avaliação serão perdidos.`)) return;
+
+                                  if (typeof excluirColunaVm === 'function') excluirColunaVm(entry);
+                                }}
+                                className="text-slate-400 hover:text-red-600 transition-colors shrink-0 p-0.5"
+                                title="Excluir esta coluna"
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          ) : rowDef.key === 'cuff_row' ? (
                             <div className="flex gap-1 justify-center">
-                              {draftInput(realIndex, entry, 'cuffM', 'Pressão Cuff (Manhã)', {
+                              {draftInput(entry, 'cuffM', 'Pressão Cuff (Manhã)', {
                                 type: 'text', inputMode: 'numeric', placeholder: 'M',
                                 className: 'w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400',
-                                onBlurExtra: (val) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffM", val); }
+                                onBlurExtra: (val) => {
+                                  const lista = currentPatient?.physio?.vmFlowsheet || [];
+                                  const idxAtual = lista.findIndex(x => x.id === entry.id);
+                                  const ehUltima = idxAtual >= 0 && idxAtual === lista.length - 1;
+                                  if (ehUltima && typeof updateNested === 'function') updateNested("physio", "cuffM", val);
+                                }
                               })}
-                              {draftInput(realIndex, entry, 'cuffT', 'Pressão Cuff (Tarde)', {
+                              {draftInput(entry, 'cuffT', 'Pressão Cuff (Tarde)', {
                                 type: 'text', inputMode: 'numeric', placeholder: 'T',
                                 className: 'w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400',
-                                onBlurExtra: (val) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffT", val); }
+                                onBlurExtra: (val) => {
+                                  const lista = currentPatient?.physio?.vmFlowsheet || [];
+                                  const idxAtual = lista.findIndex(x => x.id === entry.id);
+                                  const ehUltima = idxAtual >= 0 && idxAtual === lista.length - 1;
+                                  if (ehUltima && typeof updateNested === 'function') updateNested("physio", "cuffT", val);
+                                }
                               })}
-                              {draftInput(realIndex, entry, 'cuffN', 'Pressão Cuff (Noite)', {
+                              {draftInput(entry, 'cuffN', 'Pressão Cuff (Noite)', {
                                 type: 'text', inputMode: 'numeric', placeholder: 'N',
                                 className: 'w-8 p-1 border rounded text-center text-[10px] outline-none focus:ring-1 focus:ring-cyan-400',
-                                onBlurExtra: (val) => { if (realIndex === totalItems - 1 && typeof updateNested === 'function') updateNested("physio", "cuffN", val); }
+                                onBlurExtra: (val) => {
+                                  const lista = currentPatient?.physio?.vmFlowsheet || [];
+                                  const idxAtual = lista.findIndex(x => x.id === entry.id);
+                                  const ehUltima = idxAtual >= 0 && idxAtual === lista.length - 1;
+                                  if (ehUltima && typeof updateNested === 'function') updateNested("physio", "cuffN", val);
+                                }
                               })}
                             </div>
                           ) : rowDef.key === 'diasUti' ? (
-                            draftInput(realIndex, entry, 'diasUti', 'Dias UTI', {
+                            draftInput(entry, 'diasUti', 'Dias UTI', {
                               className: 'w-full p-1 border rounded text-center text-[11px] outline-none bg-blue-50/50 font-bold text-slate-700 focus:ring-1 focus:ring-cyan-400'
                             })
                           ) : rowDef.key === 'suporte' ? (
-                            draftInput(realIndex, entry, 'suporte', 'Suporte Ventilatório', {
+                            draftInput(entry, 'suporte', 'Suporte Ventilatório', {
                               placeholder: 'VM / VNI / CN / Venturi...',
                               className: 'w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 bg-purple-50 font-bold text-purple-800'
                             })
                           ) : rowDef.key === 'diasVm' ? (
-                            draftInput(realIndex, entry, 'diasVm', 'Dias Suporte Vent.', {
+                            draftInput(entry, 'diasVm', 'Dias Suporte Vent.', {
                               className: 'w-full p-1 border rounded text-center text-[11px] outline-none bg-cyan-50/50 font-bold text-slate-700 focus:ring-1 focus:ring-cyan-400'
                             })
                           ) : rowDef.key === 'despertar_row' ? (
                             <div className="flex gap-2 justify-center font-bold text-[9px]">
-                              {draftCheckbox(realIndex, entry, 'despertarS', 'Despertar Diário (Sim)', 'S')}
-                              {draftCheckbox(realIndex, entry, 'despertarN', 'Despertar Diário (Não)', 'N')}
+                              {draftCheckbox(entry, 'despertarS', 'Despertar Diário (Sim)', 'S')}
+                              {draftCheckbox(entry, 'despertarN', 'Despertar Diário (Não)', 'N')}
                             </div>
                           ) : rowDef.key === 'fr_row' ? (
                             <div className="flex gap-1 justify-center items-center">
-                              {draftInput(realIndex, entry, 'frSet', 'FR Setada', { placeholder: 'Set', className: 'w-10 p-1 border rounded text-center text-[10px]' })}
+                              {draftInput(entry, 'frSet', 'FR Setada', { placeholder: 'Set', className: 'w-10 p-1 border rounded text-center text-[10px]' })}
                               <span>/</span>
-                              {draftInput(realIndex, entry, 'frTotal', 'FR Total', { placeholder: 'Tot', className: 'w-10 p-1 border rounded text-center text-[10px]' })}
+                              {draftInput(entry, 'frTotal', 'FR Total', { placeholder: 'Tot', className: 'w-10 p-1 border rounded text-center text-[10px]' })}
                             </div>
                           ) : rowDef.key === 'fluxo' ? (
-                            draftInput(realIndex, entry, 'fluxo', 'Fluxo', { placeholder: 'L/min' })
+                            draftInput(entry, 'fluxo', 'Fluxo', { placeholder: 'L/min' })
                           ) : rowDef.key === 'dispositivo' ? (
-                            draftInput(realIndex, entry, 'dispositivo', 'Dispositivo', { placeholder: 'Tipo...' })
+                            draftInput(entry, 'dispositivo', 'Dispositivo', { placeholder: 'Tipo...' })
                           ) : rowDef.key === 'satO2' ? (
-                            draftInput(realIndex, entry, 'satO2', 'SatO2', { placeholder: '%' })
+                            draftInput(entry, 'satO2', 'SatO2', { placeholder: '%' })
                           ) : rowDef.key === 'ajustesDia' ? (
-                            draftTextarea(realIndex, entry, 'ajustesDia', 'Ajustes do Dia', { placeholder: 'Digite os ajustes...' })
+                            draftTextarea(entry, 'ajustesDia', 'Ajustes do Dia', { placeholder: 'Digite os ajustes...' })
                           ) : (
-                            draftInput(realIndex, entry, rowDef.key, rowDef.label, {
+                            draftInput(entry, rowDef.key, rowDef.label, {
                               className: `w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 ${rowDef.key === 'dp' ? 'bg-amber-100 font-bold text-amber-900' : ''} ${rowDef.key === 'cst' || rowDef.key === 'cdin' ? 'bg-blue-50 font-bold' : ''}`
                             })
                           )}
