@@ -18,51 +18,58 @@ const PhysioEvoModal = ({
   const physioEvoAberturaRef = useRef(false);  // detecta abertura do modal  
   const [isSaving, setIsSaving] = useState(false);
 
-  // Inicializa o estado local APENAS quando o modal ABRE ou o paciente MUDA de verdade.
-  // Protege a digitação: snapshots do Firestore não re-rodam este bloco no meio da edição.
+  // Refs auxiliares
+  const hidratouRef = useRef(false);
+
+  // 1) Fecha o modal → libera nova hidratação na próxima abertura
   useEffect(() => {
-    if (showPhysioEvoModal && currentPatient?.physio) {
-      const physio = currentPatient.physio;
-
-      const abriuAgora = !physioEvoAberturaRef.current;
-      physioEvoAberturaRef.current = true;
-
-      const chavePaciente = currentPatient.id || currentPatient.leito || currentPatient.nome || 'chave-desconhecida';
-      const precisaReset = abriuAgora || chavePaciente !== physioEvoPacienteRef.current;
-
-      if (precisaReset) {
-        physioEvoPacienteRef.current = chavePaciente;
-
-        setEvolucaoData({
-          // Avaliação Respiratória
-          expansibilidadeTipo: physio.expansibilidadeTipo || "",
-          expansibilidadePredominio: physio.expansibilidadePredominio || "",
-          auscultaPulmonar: physio.auscultaPulmonar || "",
-          tosse: physio.tosse || "",
-          secrecao: physio.secrecao || false,
-          secrecaoAspecto: physio.secrecaoAspecto || "",
-          secrecaoColoracao: physio.secrecaoColoracao || "",
-          secrecaoQtd: physio.secrecaoQtd || "",
-          desconfortoRespiratorio: physio.desconfortoRespiratorio || false,
-          sinaisDesconforto: Array.isArray(physio.sinaisDesconforto) ? [...physio.sinaisDesconforto] : [],
-          // Avaliação Musculoesquelética
-          tonusMuscular: physio.tonusMuscular || "",
-          retracoesMusculares: physio.retracoesMusculares || false,
-          amplitudeMovimento: physio.amplitudeMovimento || "",
-          amplitudeDescricao: physio.amplitudeDescricao || "",
-          // Escalas Funcionais — SEMPRE zeradas ao abrir (conforme solicitado)
-          mrcScore: "",
-          ims: "",
-          // Condutas e Planejamento
-          condutas: physio.condutas || "",
-          planoMetas: physio.planoMetas || "",
-          observacoes: physio.observacoes || "",
-          intercorrencias: physio.intercorrencias || ""
-        });
-      }
-    } else {
-      physioEvoAberturaRef.current = false; // modal fechado → próxima abertura reseta
+    if (!showPhysioEvoModal) {
+      hidratouRef.current = false;
+      physioEvoAberturaRef.current = false;
+      physioEvoPacienteRef.current = null;
     }
+  }, [showPhysioEvoModal]);
+
+  // 2) Hidrata SOMENTE na abertura. Nunca reage a snapshots do Firestore.
+  useEffect(() => {
+    if (!showPhysioEvoModal) return;
+    if (!currentPatient) return;
+    if (hidratouRef.current) return;
+    hidratouRef.current = true;
+
+    physioEvoAberturaRef.current = true;
+    physioEvoPacienteRef.current =
+      currentPatient.id || currentPatient.leito || currentPatient.nome || 'chave-desconhecida';
+
+    const physio = currentPatient.physio || {};
+
+    setEvolucaoData({
+      // Avaliação Respiratória
+      expansibilidadeTipo: physio.expansibilidadeTipo || "",
+      expansibilidadePredominio: physio.expansibilidadePredominio || "",
+      auscultaPulmonar: physio.auscultaPulmonar || "",
+      tosse: physio.tosse || "",
+      secrecao: physio.secrecao || false,
+      secrecaoAspecto: physio.secrecaoAspecto || "",
+      secrecaoColoracao: physio.secrecaoColoracao || "",
+      secrecaoQtd: physio.secrecaoQtd || "",
+      desconfortoRespiratorio: physio.desconfortoRespiratorio || false,
+      sinaisDesconforto: Array.isArray(physio.sinaisDesconforto) ? [...physio.sinaisDesconforto] : [],
+      // Avaliação Musculoesquelética
+      tonusMuscular: physio.tonusMuscular || "",
+      retracoesMusculares: physio.retracoesMusculares || false,
+      amplitudeMovimento: physio.amplitudeMovimento || "",
+      amplitudeDescricao: physio.amplitudeDescricao || "",
+      // Escalas Funcionais — SEMPRE zeradas ao abrir (conforme solicitado)
+      mrcScore: "",
+      ims: "",
+      mrcNaoAvaliavel: false,
+      // Condutas e Planejamento
+      condutas: physio.condutas || "",
+      planoMetas: physio.planoMetas || "",
+      observacoes: physio.observacoes || "",
+      intercorrencias: physio.intercorrencias || ""
+    });
   }, [showPhysioEvoModal, currentPatient]);
 
   if (!showPhysioEvoModal) return null;
@@ -298,6 +305,7 @@ const PhysioEvoModal = ({
                 className="w-full p-3 border border-slate-200 rounded-lg bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-sky-200 resize-y h-16 leading-relaxed"
                 value={evolucaoData.auscultaPulmonar || ""}
                 onChange={(e) => updateField('auscultaPulmonar', e.target.value)}
+                onBlur={(e) => handleCampoBlur('auscultaPulmonar', e.target.value)}
                 placeholder="Ex: MVF s/ RA. ou MV reduzido em bases..."
               />
             </div>
@@ -417,6 +425,7 @@ const PhysioEvoModal = ({
                   className="w-full p-3 border border-slate-200 rounded-lg bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-emerald-200 resize-y h-16"
                   value={evolucaoData.amplitudeDescricao || ""}
                   onChange={(e) => updateField('amplitudeDescricao', e.target.value)}
+                  onBlur={(e) => handleCampoBlur('amplitudeDescricao', e.target.value)}
                   placeholder="Relacione as articulações com ADM reduzida..."
                 />
               </div>
