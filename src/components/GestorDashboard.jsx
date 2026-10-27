@@ -315,7 +315,7 @@ const montarPaginaEscala = (docPdf, d, { pageW, pageH, margem, logoBase64 }) => 
   const linhaTitulo = (txt) => corpo.push([{
     content: txt,
     colSpan: totalCols,
-    styles: { fillColor: [180, 180, 180], fontStyle: 'bold', halign: 'left', fontSize: 7 }
+    styles: { fillColor: [91, 155, 213], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'left', fontSize: 7 }
   }]);
 
   const montarLinha = (item, tipo, permitirFerias = true) => {
@@ -425,8 +425,8 @@ const montarPaginaEscala = (docPdf, d, { pageW, pageH, margem, logoBase64 }) => 
     head,
     body: corpo,
     theme: 'grid',
-    styles: { fontSize: 6, cellPadding: 0.6, lineWidth: 0.1, lineColor: [120, 120, 120] },
-    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center' },
+    styles: { fontSize: 6, cellPadding: 0.6, lineWidth: 0.1, lineColor: [0, 0, 0] },
+    headStyles: { fillColor: [157, 195, 230], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center' },
     margin: { left: margem, right: margem },
     tableWidth: pageW - (margem * 2),
     columnStyles: {
