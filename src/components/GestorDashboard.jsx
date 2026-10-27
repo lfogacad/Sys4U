@@ -185,6 +185,16 @@ const feriadosNacionaisDoAno = (ano) => {
   return set;
 };
 
+// Recebe o Set retornado por carregarFeriadosDoAno (YYYY-MM-DD) e devolve
+// os dias do mês alvo em dois dígitos: ['01','15','20'].
+const feriadosDoMes = (ano, mes, setFeriadosAno) => {
+  const prefixo = `${ano}-${String(mes).padStart(2, '0')}-`;
+  const dias = Array.from(setFeriadosAno || [])
+    .filter(d => typeof d === 'string' && d.startsWith(prefixo))
+    .map(d => d.slice(8, 10));
+  return [...new Set(dias)].sort();
+};
+
 // ===== TARIFAS DE PLANTÃO EXTRA =====
 // Valores do PDF oficial. Base 24h — as demais cargas são proporcionais.
 const TARIFAS_EXTRAS = {
@@ -430,10 +440,40 @@ const montarPaginaEscala = (docPdf, d, { pageW, pageH, margem, logoBase64 }) => 
     margin: { left: margem, right: margem },
     tableWidth: pageW - (margem * 2),
     columnStyles: {
-      0: { cellWidth: 52 },              // NOME DO SERVIDOR
-      1: { cellWidth: 14 },              // CONSELHO
-      2: { cellWidth: 14 },              // MATRÍCULA
+      0: { cellWidth: 52 },                // NOME DO SERVIDOR
+      1: { cellWidth: 14 },                // CONSELHO
+      2: { cellWidth: 14 },                // MATRÍCULA
       [3 + dias.length]: { cellWidth: 16 } // CARGA HORÁRIA
+    },
+    didParseCell: (data) => {
+      const idx = data.column.index;
+      const inicioDias = 3;
+      const fimDias = 3 + dias.length - 1;
+      if (idx < inicioDias || idx > fimDias) return;
+
+      const diaIdx = idx - inicioDias;
+      const dd = dias[diaIdx];
+      const dowTxt = dow[diaIdx];
+      const ehFeriado = (d.feriadosMes || []).includes(dd);
+      const ehFimDeSemana = dowTxt === 'DOM' || dowTxt === 'SÁB';
+
+      // ---- Cabeçalho da linha dos dias (segunda linha do thead) ----
+      if (data.section === 'head' && data.row.index === 1) {
+        if (ehFimDeSemana || ehFeriado) {
+          data.cell.styles.fillColor = [120, 160, 200];
+        }
+        return;
+      }
+
+      // ---- Corpo ----
+      if (data.section !== 'body') return;
+      if (data.cell.colSpan && data.cell.colSpan > 1) return; // preserva FÉRIAS e faixas azuis
+
+      if (ehFimDeSemana || ehFeriado) {
+        data.cell.styles.fillColor = ehFeriado && !ehFimDeSemana
+          ? [232, 232, 232]   // feriado em dia útil — cinza mais denso
+          : [242, 242, 242];  // sábado / domingo — cinza tênue
+      }
     }
   });
 
@@ -7316,6 +7356,8 @@ const imprimirRelatorioGeladeira = () => {
 
     // Mapa de profissionais (conselho + matrícula)
     const mapaProf = {};
+    // Feriados completos do ano (nacionais fixos + móveis + municipais do Firestore)
+    const feriadosDoMesSet = await carregarFeriadosDoAno(Number(mesAlvo.split('-')[0]));
     const snapProf = await getDocs(collection(db, 'profissionais'));
     snapProf.forEach(d => {
       const p = d.data();
@@ -7472,7 +7514,6 @@ const imprimirRelatorioGeladeira = () => {
         const matricula = extrairMatricula(nomeBruto);
         const nomeLimpo = limparNomeEscala(nomeBruto);
 
-        // Busca o conselho no cadastro (mesma lógica dos plantonistas)
         const chaveNome = normalizarBuscaEscala(nomeLimpo);
         const candidatos = mapaProf[chaveNome] || mapaProf[normalizarBuscaEscala(nomeBruto)] || [];
         const prof =
@@ -7496,7 +7537,8 @@ const imprimirRelatorioGeladeira = () => {
         plantoes: Object.values(porMatricula),
         extras: Object.values(extrasPorMatricula),
         ferias,
-        especiais
+        especiais,
+        feriadosMes: feriadosDoMes(ano, mes, feriadosDoMesSet)
       };
     }
     return resultado;
@@ -15698,7 +15740,7 @@ const imprimirRelatorioGeladeira = () => {
 
               <div className="max-h-72 overflow-auto">
                 {feriadosAno.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Nenhum feriado estadual/municipal cadastrado.</p>}
-                {feriadosAno.sort().map(d => {
+                {[...feriadosAno].sort().map(d => {
                   const [a, m, dia] = d.split('-');
                   return (
                     <div key={d} className="flex justify-between items-center py-2 border-b border-slate-100">
