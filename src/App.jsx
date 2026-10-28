@@ -18,7 +18,7 @@ import TrocaSenhaObrigatoria from "./components/TrocaSenhaObrigatoria";
 import SeletorUnidade from "./components/SeletorUnidade";
 import ModuloRecepcao from "./components/ModuloRecepcao";
 import GestorDashboard from './components/GestorDashboard';
-import useIdleLogout, { markLogin, clearSession, isSessionExpired } from './hooks/useIdleLogout';
+import useIdleLogout, { clearSession, isSessionExpired, renovarSessaoAbsoluta, msRestantesAbsoluto, markLogin } from './hooks/useIdleLogout';
 
 // Componente de Segurança (Disjuntor)
 class ErrorBoundary extends React.Component {
@@ -227,12 +227,54 @@ const handleRegister = async (e) => {
     await signOut(auth); 
     window.location.href = "/"; 
   };
-  useIdleLogout(handleLogout, !!user, 2 * 60 * 60 * 1000);
+  
+  // Aviso 5 min antes do limite absoluto de 3h
+  const avisarExpiracao = (minutos) => {
+    // Guarda de segurança: nunca exibir o diálogo se a sessão já expirou.
+    // (no celular, ao reabrir depois de horas, o logout deve ser imediato e silencioso)
+    if (msRestantesAbsoluto(3 * 60 * 60 * 1000) <= 0) {
+      handleLogout();
+      return;
+    }
+
+    const continuar = window.confirm(
+      `Sua sessão expira em ${minutos} minuto(s).\n\n` +
+      `Clique em OK para continuar conectado por mais 3 horas.\n` +
+      `Clique em Cancelar para sair agora.`
+    );
+
+    if (continuar) {
+      // Revalida antes de renovar: se o usuário demorou para responder
+      // ao diálogo e o prazo estourou, não renova — desloga.
+      if (msRestantesAbsoluto(3 * 60 * 60 * 1000) <= 0) {
+        handleLogout();
+        return;
+      }
+      renovarSessaoAbsoluta();
+    } else {
+      handleLogout();
+    }
+  };
+
+  useIdleLogout(handleLogout, !!user, 2 * 60 * 60 * 1000, {
+    absoluteTimeoutMs: 3 * 60 * 60 * 1000,   // logout absoluto: 3h
+    warnBeforeMs: 5 * 60 * 1000,             // aviso: 5 min antes
+    onWarn: avisarExpiracao
+  });
 
   // 🛡️ BLOQUEIO DE SESSÃO EXPIRADA: se passou de 2h desde a última atividade (ex.: dia seguinte),
   // força o logout ANTES de renderizar o sistema — impede o login automático do Firebase.
   useEffect(() => {
-    if (user && isSessionExpired(2 * 60 * 60 * 1000)) {
+    if (!user) return;
+
+    // 1) Inatividade de 2h
+    if (isSessionExpired(2 * 60 * 60 * 1000)) {
+      handleLogout();
+      return;
+    }
+
+    // 2) Limite absoluto de 3h (por login)
+    if (msRestantesAbsoluto(3 * 60 * 60 * 1000) <= 0) {
       handleLogout();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
