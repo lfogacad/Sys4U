@@ -238,6 +238,7 @@ export const EXAM_ROWS = [
   'FRESUBIN ORIGINAL 1.0',
   'FRESUBIN 2KCAL',
   'DIASON ENERGY HP 1.5',
+  'NUTRISON ADV DIASON 1.0',
   'DIANUTRI 1.0',
   'NUTRI RD 2.0'
 ];
@@ -251,6 +252,7 @@ export const EXAM_ROWS = [
     'FRESUBIN ORIGINAL 1.0':             { kcal: 1.0,  ptn: 0.038, agua: 0.84 },
     'FRESUBIN 2KCAL':                    { kcal: 2.0,  ptn: 0.1,   agua: 0.70 },
     'DIASON ENERGY HP 1.5':              { kcal: 1.5,  ptn: 0.077, agua: 0.78 },
+    'NUTRISON ADV DIASON 1.0':           { kcal: 1.0,  ptn: 0.042, agua: 0.84 },
     'DIANUTRI 1.0':                      { kcal: 1.0,  ptn: 0.039, agua: 0.83 },
     'NUTRI RD 2.0':                      { kcal: 2.0,  ptn: 0.075, agua: 0.81 }
   };
