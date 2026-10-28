@@ -112,6 +112,7 @@ const DICIONARIO_SIGLAS_DASH = (() => {
     'M': { nome: 'Plantão Manhã', inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'plantonista' },
     'T': { nome: 'Plantão Tarde', inicio: '13:00', fim: '19:00', horas: 6,  tipo: 'plantonista' },
     'V': { nome: 'Visita Médica', inicio: '07:00', fim: '13:00', horas: 6,  tipo: 'visita' },
+    'M3': { nome: 'Manhã 3h',    inicio: '08:00', fim: '11:00', horas: 3,  tipo: 'plantonista' },
     'M4': { nome: 'Manhã 4h',    inicio: '08:00', fim: '12:00', horas: 4,  tipo: 'plantonista' },
     'T4': { nome: 'Tarde 4h',    inicio: '13:00', fim: '17:00', horas: 4,  tipo: 'plantonista' },
     'FE': { nome: 'Feriado', inicio: '', fim: '', horas: 0, tipo: 'plantonista' },
@@ -139,7 +140,7 @@ const DICIONARIO_SIGLAS_DASH = (() => {
 
 // Opções do select de célula — apenas as siglas operacionais (o dicionário completo
 // permanece para lookup de horário/turno ao gravar VT, VN, TN etc.)
-const OPCOES_SIGLA_DASH = ['D', 'N', 'DN', 'V', 'M', 'T', 'M4', 'T4', 'VT', 'VN', 'MN', 'TN'];
+const OPCOES_SIGLA_DASH = ['D', 'N', 'DN', 'V', 'M', 'T', 'M3', 'M4', 'T4', 'VT', 'VN', 'MN', 'TN'];
 
 // ===== FERIADOS NACIONAIS (fixos + móveis) =====
 const FERIADOS_NACIONAIS_FIXOS = [
@@ -210,6 +211,7 @@ const LEGENDA_ESCALA = [
   'D = DIA - Entrada as 07h e Saída as 19h (12h)',
   'N = NOITE - Entrada as 19h e Saída as 07h do dia seguinte (12h)',
   'M = MANHÃ - 6h',
+  'M3 = MANHÃ - 3h',
   'M4 = MANHÃ - 4h',
   'T = TARDE - 6h',
   'V = VISITA MÉDICA - 6h',
@@ -221,7 +223,7 @@ const LEGENDA_ESCALA = [
 
 // Horas por sigla (usadas no cálculo da carga horária)
 const HORAS_SIGLA_ESCALA = {
-  DN: 24, D: 12, N: 12, M: 6, M4: 4, T: 6, V: 6,
+  DN: 24, D: 12, N: 12, M: 6, M4: 4, M3: 3, T: 6, V: 6,
   ATM: 0, F: 0, FE: 0, FA: 0, '': 0
 };
 
