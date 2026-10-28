@@ -1512,7 +1512,19 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
   const imprimirGasometria = () => {
     const hoje = new Date();
     const dataBR = `${String(hoje.getDate()).padStart(2, '0')}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${hoje.getFullYear()}`;
-    const pacientesLista = pacientesInternados.map(p => `<li>${p.nome} - Leito ${p.leito}</li>`).join('');
+
+    // Filtra apenas os pacientes marcados no modal, preservando a ordem da lista
+    const selecionados = modalGasometria.selecionados || [];
+    const pacientesFiltrados = pacientesInternados.filter(p => selecionados.includes(p.id));
+
+    if (pacientesFiltrados.length === 0) {
+      alert('Selecione ao menos um paciente para imprimir a solicitação.');
+      return;
+    }
+
+    const pacientesLista = pacientesFiltrados
+      .map(p => `<li>${p.nome} - Leito ${p.leito}</li>`)
+      .join('');
 
     const conteudoHTML = `
       <!DOCTYPE html>
@@ -1554,7 +1566,7 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     }
     win.document.write(conteudoHTML);
     win.document.close();
-  };  
+  };
 
   const togglePacienteGasometria = (id) => {
     setModalGasometria(prev => {
