@@ -343,49 +343,90 @@ const OverviewTab = ({
           // 2. VÔMITOS E DIARREIA — hoje e ontem (dia calendário)
           // ============================================================
 
-          // O BH cobre 07h de hoje até 06h de amanhã (com virada em histórico às 00h local).
-          // Para saber se houve perda HOJE ou ONTEM, precisamos olhar as horas
-          // que pertencem a cada janela calendário.
-
-          const horaNum = (h) => {
-            const n = parseInt(String(h).split(":")[0], 10);
-            return isNaN(n) ? null : n;
+          // Lê uma perda de uma célula de losses, aceitando variações de nome
+          const lerPerda = (cel, perda) => {
+            if (!cel) return undefined;
+            if (perda === "Vômitos") {
+              return cel["Vômitos"] ?? cel["Vômito"] ?? cel["Vomitos"] ?? cel["Vomito"];
+            }
+            if (perda === "Diarreia") {
+              return cel["Diarreia"] ?? cel["Diarreias"];
+            }
+            return cel[perda];
           };
 
-          // Para a janela de HOJE (dia calendário), no BH atual:
-          // horas 07..23 são de hoje. Horas 00..06 são da madrugada — pertencem a amanhã,
-          // então NÃO contam como hoje (mas contam como "ontem" quando o BH anterior tinha 07..23).
-          const checkPerdaJanela = (bh, perda, alvo) => {
+          // Varre um objeto de BH (bh, bh_previous) e diz se houve a perda
+          const temPerdaNoBh = (bh, perda) => {
             if (!bh || !bh.losses) return false;
             for (const h of Object.keys(bh.losses)) {
-              const hn = horaNum(h);
-              if (hn === null) continue;
-              // "hoje" = horas 07h-23h do BH atual
-              if (alvo === "hoje" && (hn < 7 || hn > 23)) continue;
-              // "ontem" = horas 07h-23h do bh_previous (que é o dia calendário anterior)
-              if (alvo === "ontem" && (hn < 7 || hn > 23)) continue;
               const cel = bh.losses[h] || {};
-              const v = cel[perda] ?? (perda === "Vômitos" ? cel["Vômito"] : undefined);
-              if (valorPositivo(v)) return true;
+              if (valorPositivo(lerPerda(cel, perda))) return true;
             }
             return false;
           };
 
-          const diarreiaHoje = checkPerdaJanela(currentPatient.bh, "Diarreia", "hoje");
-          const diarreiaOntem = checkPerdaJanela(currentPatient.bh_previous, "Diarreia", "ontem");
+          // Varre o historico_bh inteiro e devolve a data (timestamp) mais recente
+          // em que houve a perda. Ignora o registro de "date" igual ao dia de hoje
+          // (esse já é o BH atual).
+          // Diferença em dias de calendário entre a data do registro e hoje
+          const diffDiasDaData = (dateStr) => {
+            if (!dateStr) return null;
+            let dRef = null;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+              const [y, m, d] = dateStr.split("-");
+              dRef = new Date(Number(y), Number(m) - 1, Number(d));
+            } else {
+              const mm = String(dateStr).match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+              if (mm) {
+                const ano = mm[3]
+                  ? (mm[3].length === 2 ? 2000 + Number(mm[3]) : Number(mm[3]))
+                  : new Date().getFullYear();
+                dRef = new Date(ano, Number(mm[2]) - 1, Number(mm[1]));
+              }
+            }
+            if (!dRef) return null;
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+            return Math.round((hoje.getTime() - dRef.getTime()) / 86400000);
+          };
 
-          let diarreiaText = "";
-          if (diarreiaHoje && diarreiaOntem) diarreiaText = "Hoje e Ontem";
-          else if (diarreiaHoje) diarreiaText = "Hoje";
-          else if (diarreiaOntem) diarreiaText = "Ontem";
+          // Procura a perda no histórico respeitando a data:
+          // devolve o menor diff em dias (mais recente), ou null se não houver.
+          const diasPerdaNoHistorico = (perda) => {
+            const hist = currentPatient.historico_bh;
+            if (!Array.isArray(hist) || !hist.length) return null;
+            let menor = null;
+            for (const item of hist) {
+              if (!item || !item.losses) continue;
+              if (!temPerdaNoBh(item, perda)) continue;
+              const d = diffDiasDaData(item.date);
+              if (d === null || d < 0) continue;
+              if (menor === null || d < menor) menor = d;
+            }
+            return menor;
+          };
 
-          const vomitoHoje = checkPerdaJanela(currentPatient.bh, "Vômitos", "hoje");
-          const vomitoOntem = checkPerdaJanela(currentPatient.bh_previous, "Vômitos", "ontem");
+          // "hoje" = BH atual (inclui 00:00-06:00 da madrugada seguinte,
+          //          porque no plantão essas horas ainda são do dia assistencial de hoje)
+          // "ontem" = bh_previous OU qualquer registro de historico_bh
+          const perdaHoje = (perda) => temPerdaNoBh(currentPatient.bh, perda);
+          const perdaOntem = (perda) => temPerdaNoBh(currentPatient.bh_previous, perda);
 
-          let vomitoText = "";
-          if (vomitoHoje && vomitoOntem) vomitoText = "Hoje e Ontem";
-          else if (vomitoHoje) vomitoText = "Hoje";
-          else if (vomitoOntem) vomitoText = "Ontem";
+          // Devolve o texto considerando quantos dias atrás ocorreu a perda.
+          // Regra: hoje → "Hoje"; ontem (D1) → "Ontem"; D2+ → "Há N dias".
+          // Só interessa hoje (D0) e ontem (D1). D2 ou mais não é exibido.
+          const montarTextoPerda = (perda) => {
+            if (perdaHoje(perda)) return "Hoje";
+            if (perdaOntem(perda)) return "Ontem";
+
+            const dHist = diasPerdaNoHistorico(perda);
+            if (dHist === 0) return "Hoje";
+            if (dHist === 1) return "Ontem";
+            return "";
+          };
+
+          const diarreiaText = montarTextoPerda("Diarreia");
+          const vomitoText = montarTextoPerda("Vômitos");
 
           return (
             <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl">
