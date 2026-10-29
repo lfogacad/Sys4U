@@ -432,10 +432,20 @@ const LISTAS_MOBILIZACAO = {
   };
 
   const handleModoVMChange = (novoModo) => {
+    // Aplica os 4 campos. O PhysioDashboard não tem acesso aos refs de trava
+    // do ModuloUTI, então delega ao updateNested do pai, que já cuida disso.
+    // Salvamos ao final, uma única vez, com o estado já consolidado.
     updateNested("physio", "parametro", novoModo);
     updateNested("physio", "volCorrente", "");
     updateNested("physio", "pressaoControlada", "");
     updateNested("physio", "pressaoSuporte", "");
+
+    // Um único save consolidado, agendado para depois dos setPatients
+    setTimeout(() => {
+      if (typeof handleBlurSave === "function") {
+        handleBlurSave("Fisioterapia: Alterou Modo VM");
+      }
+    }, 0);
   };
 
   const handleAcaoFisio = (acao) => console.log("Abrir modal de:", acao);
@@ -1670,26 +1680,30 @@ const TRE_CHECKLIST = [
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
                   <div>
                     <label className="text-[10px] font-bold text-slate-700 uppercase">Modo</label>
-                    <select className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.parametro || ""} onChange={(e) => handleModoVMChange(e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Alterou Modo VM")}>
-                      <option value="">...</option>
-                      {MODOS_VM && MODOS_VM.map((m) => <option key={m} value={m}>{m}</option>)}
-                    </select>
+                      <select
+                        className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs"
+                        value={currentPatient.physio?.parametro ?? ""}
+                        onChange={(e) => handleModoVMChange(e.target.value)}
+                      >
+                        <option value="">...</option>
+                        {MODOS_VM && MODOS_VM.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
                   </div>
                   
                   {currentPatient.physio?.parametro === "VCV" ? (
                     <div className="animate-fadeIn">
                       <label className="text-[10px] font-bold text-blue-700 uppercase">Vt (ml)</label>
-                      <input type="number" className="w-full p-2 border border-blue-200 rounded bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-400 text-xs font-bold" value={currentPatient.physio?.volCorrente || ""} onChange={(e) => updateNested("physio", "volCorrente", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Vol Corrente VM")} />
+                      <input type="number" className="w-full p-2 border border-blue-200 rounded bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-400 text-xs font-bold" value={currentPatient.physio?.volCorrente ?? ""} onChange={(e) => updateNested("physio", "volCorrente", e.target.value)} />
                     </div>
                   ) : currentPatient.physio?.parametro === "PCV" ? (
                     <div className="animate-fadeIn">
                       <label className="text-[10px] font-bold text-emerald-700 uppercase">PC (cmH2O)</label>
-                      <input type="number" className="w-full p-2 border border-emerald-200 rounded bg-emerald-50/30 outline-none focus:ring-2 focus:ring-emerald-400 text-xs font-bold" value={currentPatient.physio?.pressaoControlada || ""} onChange={(e) => updateNested("physio", "pressaoControlada", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Pressão Controlada VM")} />
+                      <input type="number" className="w-full p-2 border border-emerald-200 rounded bg-emerald-50/30 outline-none focus:ring-2 focus:ring-emerald-400 text-xs font-bold" value={currentPatient.physio?.pressaoControlada ?? ""} onChange={(e) => updateNested("physio", "pressaoControlada", e.target.value)} />
                     </div>
                   ) : currentPatient.physio?.parametro === "PSV" ? (
                     <div className="animate-fadeIn">
                       <label className="text-[10px] font-bold text-purple-700 uppercase">PS (cmH2O)</label>
-                      <input type="number" className="w-full p-2 border border-purple-200 rounded bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-400 text-xs font-bold" value={currentPatient.physio?.pressaoSuporte || ""} onChange={(e) => updateNested("physio", "pressaoSuporte", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou Pressão Suporte VM")} />
+                      <input type="number" className="w-full p-2 border border-purple-200 rounded bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-400 text-xs font-bold" value={currentPatient.physio?.pressaoSuporte ?? ""} onChange={(e) => updateNested("physio", "pressaoSuporte", e.target.value)} />
                     </div>
                   ) : (
                     <div className="opacity-60">
@@ -1700,11 +1714,11 @@ const TRE_CHECKLIST = [
                   
                   <div>
                     <label className="text-[10px] font-bold text-slate-700 uppercase">PEEP</label>
-                    <input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.peep || ""} onChange={(e) => updateNested("physio", "peep", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou PEEP VM")} />
+                    <input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.peep ?? ""} onChange={(e) => updateNested("physio", "peep", e.target.value)} />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-700 uppercase">FiO2 (%)</label>
-                    <input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.fiO2 || ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 VM")} />
+                    <input type="number" className="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-cyan-200 text-xs" value={currentPatient.physio?.fiO2 ?? ""} onChange={(e) => updateNested("physio", "fiO2", e.target.value)} />
                   </div>
                 </div>
 

@@ -15,70 +15,98 @@ const VmFlowsheetModal = ({
 }) => {
   if (!showVmFlowsheet) return null;
 
+  // ===== BASE NORMALIZADA =====
+  // Computada UMA única vez. Garante id em toda entrada e serve tanto
+  // para o rascunho quanto para a comparação no salvar.
+  const baseInicial = useRef(null);
+  if (baseInicial.current === null) {
+    baseInicial.current = (currentPatient?.physio?.vmFlowsheet || []).map((e, i) => ({
+      ...e,
+      id: e && e.id ? String(e.id) : `legacy-${i}-${Date.now()}`
+    }));
+  }
+
   // ===== ESTADO LOCAL DO MODAL =====
   // Fonte da verdade é o array copiado. Nada é persistido até "Salvar e Fechar".
-  const [vmDraft, setVmDraft] = useState(() =>
-    JSON.parse(JSON.stringify(currentPatient?.physio?.vmFlowsheet || []))
-  );
+  const [vmDraft, setVmDraft] = useState(() => JSON.parse(JSON.stringify(baseInicial.current)));
   const [colunasExcluidas, setColunasExcluidas] = useState([]);
   const [colunasAdicionadas, setColunasAdicionadas] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
-  const originalRef = useRef(
-    JSON.parse(JSON.stringify(currentPatient?.physio?.vmFlowsheet || []))
-  );
+  const originalRef = useRef(JSON.parse(JSON.stringify(baseInicial.current)));
 
   const getEntryTime = (entry) => entry?.dataHora || "Horário Indefinido";
   const suporteAtual = currentPatient?.physio?.suporte || "Ar Ambiente";
 
   // Ordem de exibição: mais recente à esquerda
-  const displayVmEntries = [...vmDraft].reverse();
+  const displayVmEntries = [...vmDraft].filter(Boolean).reverse();
 
-  // ===== EDIÇÃO EM RASCUNHO (sem persistência) =====
+  // Campos que disparam o recálculo dos derivados
+  const CAMPOS_CALCULO = ['peep', 'autoPeep', 'pPlato', 'pPico', 'vc', 'vtPc'];
+
   const setCell = (id, key, value) => {
     setVmDraft(prev =>
-      prev.map(e => (e.id === id ? { ...e, [key]: value } : e))
+      prev.map(e => {
+        if (e.id !== id) return e;
+        const atualizado = { ...e, [key]: value };
+        return CAMPOS_CALCULO.includes(key) ? calcularDerivados(atualizado) : atualizado;
+      })
     );
   };
 
-  const draftInput = (entry, key, label, extra = {}) => (
-    <input
-      type={extra.type || "text"}
-      inputMode={extra.inputMode}
-      className={extra.className || "w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400"}
-      placeholder={extra.placeholder || ""}
-      value={entry[key] || ""}
-      onChange={(e) => setCell(entry.id, key, e.target.value)}
-    />
-  );
+  const draftInput = (entry, key, label, extra = {}) => {
+    const bruto = entry ? entry[key] : undefined;
+    const valor = bruto === undefined || bruto === null ? "" : String(bruto);
+    return (
+      <input
+        type={extra.type || "text"}
+        inputMode={extra.inputMode}
+        className={extra.className || "w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400"}
+        placeholder={extra.placeholder || ""}
+        value={valor}
+        onChange={(e) => {
+          if (!entry) return;
+          setCell(entry.id, key, e.target.value);
+        }}
+      />
+    );
+  };
 
   const draftCheckbox = (entry, key, label, text) => (
     <label className="flex items-center gap-1 cursor-pointer">
       <input
         type="checkbox"
-        checked={!!entry[key]}
-        onChange={(e) => setCell(entry.id, key, e.target.checked)}
+        checked={!!(entry && entry[key])}
+        onChange={(e) => {
+          if (!entry) return;
+          setCell(entry.id, key, e.target.checked);
+        }}
       /> {text}
     </label>
   );
 
-  const draftTextarea = (entry, key, label, extra = {}) => (
-    <textarea
-      className={extra.className || "w-full p-1 border rounded text-[10px] outline-none focus:ring-1 focus:ring-cyan-400 resize-none overflow-hidden min-h-[28px] leading-tight"}
-      value={entry[key] || ""}
-      onChange={(e) => {
-        setCell(entry.id, key, e.target.value);
-        e.target.style.height = 'auto';
-        e.target.style.height = e.target.scrollHeight + 'px';
-      }}
-      placeholder={extra.placeholder || ""}
-      rows={1}
-      onInput={(e) => {
-        e.target.style.height = 'auto';
-        e.target.style.height = e.target.scrollHeight + 'px';
-      }}
-    />
-  );
+  const draftTextarea = (entry, key, label, extra = {}) => {
+    const bruto = entry ? entry[key] : undefined;
+    const valor = bruto === undefined || bruto === null ? "" : String(bruto);
+    return (
+      <textarea
+        className={extra.className || "w-full p-1 border rounded text-[10px] outline-none focus:ring-1 focus:ring-cyan-400 resize-none overflow-hidden min-h-[28px] leading-tight"}
+        value={valor}
+        onChange={(e) => {
+          if (!entry) return;
+          setCell(entry.id, key, e.target.value);
+          e.target.style.height = 'auto';
+          e.target.style.height = e.target.scrollHeight + 'px';
+        }}
+        placeholder={extra.placeholder || ""}
+        rows={1}
+        onInput={(e) => {
+          e.target.style.height = 'auto';
+          e.target.style.height = e.target.scrollHeight + 'px';
+        }}
+      />
+    );
+  };
 
   // ===== LINHAS =====
   const getRowsBySuporte = () => {
@@ -118,6 +146,78 @@ const VmFlowsheetModal = ({
   };
   const rowsDef = getRowsBySuporte();
 
+  // Calcula DP, Cst e Cdin a partir de Pplato, Ppico, PEEP e VC.
+  // Só preenche quando os dados são suficientes — nunca apaga valor válido.
+  const calcularDerivados = (entry) => {
+    const num = (v) => {
+      if (v === null || v === undefined || v === '' || v === '-') return NaN;
+      const n = parseFloat(String(v).replace(',', '.'));
+      return isNaN(n) ? NaN : n;
+    };
+
+    const peep = num(entry.peep);
+    const pPlato = num(entry.pPlato);
+    const pPico = num(entry.pPico);
+    const autoPeep = num(entry.autoPeep);
+    const vc = num(entry.vc) || num(entry.vtPc);
+
+    // PEEP efetiva = PEEP total + Auto-PEEP (quando ambos existem)
+    const peepEfetiva = !isNaN(peep) && !isNaN(autoPeep) ? peep + autoPeep : peep;
+
+    const out = { ...entry };
+
+    // Driving Pressure = Pplato - PEEP total
+    if (!isNaN(pPlato) && !isNaN(peepEfetiva)) {
+      const dp = pPlato - peepEfetiva;
+      if (dp > 0) {
+        out.dp = dp.toFixed(1);
+        // Complacência estática = VC / DP (mL/cmH2O)
+        if (!isNaN(vc) && vc > 0) {
+          out.cst = (vc / dp).toFixed(1);
+        }
+      }
+    }
+
+    // Complacência dinâmica = VC / (Ppico - PEEP total)
+    if (!isNaN(pPico) && !isNaN(peepEfetiva) && !isNaN(vc) && vc > 0) {
+      const grad = pPico - peepEfetiva;
+      if (grad > 0) {
+        out.cdin = (vc / grad).toFixed(1);
+      }
+    }
+
+    return out;
+  };
+
+  // Calcula "D0", "D3", etc. a partir da data de internação
+  const calcularDiasUti = () => {
+    const base = currentPatient?.dataInternacaoISO
+      || currentPatient?.dataInternacao
+      || currentPatient?.dataAdmissao;
+    if (!base) return "";
+
+    let dRef = null;
+    const s = String(base);
+    // Aceita ISO (2026-10-27), ISO completo (2026-10-27T...) e DD/MM/AAAA
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+      dRef = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    } else {
+      const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+      if (br) {
+        const ano = br[3].length === 2 ? 2000 + Number(br[3]) : Number(br[3]);
+        dRef = new Date(ano, Number(br[2]) - 1, Number(br[1]));
+      }
+    }
+    if (!dRef || isNaN(dRef.getTime())) return "";
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    dRef.setHours(0, 0, 0, 0);
+    const diff = Math.round((hoje.getTime() - dRef.getTime()) / 86400000);
+    return diff >= 0 ? `D${diff + 1}` : "D1";
+  };
+
   // ===== ADICIONAR COLUNA (local) =====
   const adicionarColunaLocal = () => {
     const agora = new Date();
@@ -125,21 +225,66 @@ const VmFlowsheetModal = ({
     const mm = String(agora.getMonth() + 1).padStart(2, '0');
     const hh = String(agora.getHours()).padStart(2, '0');
     const mi = String(agora.getMinutes()).padStart(2, '0');
+
+    const ph = currentPatient?.physio || {};
+
+    // Trata "", null, undefined e "-" como vazio
+    const val = (v) => (v === null || v === undefined || v === '-' ? '' : v);
+
     const novo = {
       id: String(Date.now()),
       dataHora: `${dd}/${mm} - ${hh}:${mi}`,
-      suporte: currentPatient?.physio?.suporte || "",
-      diasUti: currentPatient?.physio?.diasUti || "",
-      diasVm: currentPatient?.physio?.diasVm || "",
-      modo: "", fluxo: "", fio2: "", pc: "", vc: "", vtPc: "", ps: "", vm: "",
-      fluxoInsp: "", tInsp: "", ie: "", frSet: "", frTotal: "", peep: "",
-      pPico: "", pPlato: "", dp: "", cst: "", cdin: "", rva: "", autoPeep: "",
-      p01: "", irrs: "", satO2: "", etco2: "", ajustesDia: "",
-      cuffM: "", cuffT: "", cuffN: "",
-      despertarS: false, despertarN: false
+
+      // --- Herdados da physio (nomes reais) ---
+      suporte: val(ph.suporte),
+      diasUti: calcularDiasUti(),
+      diasVm: (ph.diasAcumuladosVM !== undefined && ph.diasAcumuladosVM !== null && ph.diasAcumuladosVM !== 0)
+        ? `D${ph.diasAcumuladosVM}`
+        : val(ph.diasVm),
+      modo: val(ph.parametro),
+      fio2: val(ph.fiO2),
+      frSet: val(ph.fr),
+      peep: val(ph.peep),
+      ie: val(ph.relIE),
+      tInsp: val(ph.tIns),
+      fluxo: ["VNI", "Cateter Nasal", "Máscara de Venturi", "Venturi", "Halo", "Capacete"]
+        .includes(val(ph.suporte))
+        ? val(ph.fluxo)
+        : "",
+      vc: val(ph.volCorrente),
+      autoPeep: val(ph.autoPeep),
+
+      // --- Campos que a physio não guarda: nascem vazios ---
+      frTotal: '',
+      pPico: '',
+      pPlato: '',
+      dp: '',
+      cst: '',
+      cdin: '',
+      rva: '',
+      p01: '',
+      irrs: '',
+      pc: val(ph.pressaoControlada),
+      ps: val(ph.pressaoSuporte),
+      vm: '',
+      vtPc: '',
+      fluxoInsp: '',
+      satO2: '',
+      etco2: '',
+      ajustesDia: '',
+
+      // --- Cuff e despertar ---
+      cuffM: val(ph.cuffM),
+      cuffT: val(ph.cuffT),
+      cuffN: val(ph.cuffN),
+      despertarS: false,
+      despertarN: false
     };
-    setVmDraft(prev => [...prev, novo]);
-    setColunasAdicionadas(prev => [...prev, novo.id]);
+
+    const novoCalc = calcularDerivados(novo);
+
+    setVmDraft(prev => [...prev, novoCalc]);
+    setColunasAdicionadas(prev => [...prev, novoCalc.id]);
   };
 
   // ===== EXCLUIR COLUNA (local) =====
@@ -338,9 +483,8 @@ const VmFlowsheetModal = ({
                       {rowDef.label}
                     </td>
                     {displayVmEntries.map((entry, displayIndex) => {
-                      const realIndex = vmDraft.length - 1 - displayIndex;
                       return (
-                        <td key={entry.id || `col-${realIndex}`} className={`p-1 border-r border-slate-200 ${rowDef.key === 'ajustesDia' ? 'min-w-[250px]' : 'min-w-[120px]'}`}>
+                        <td key={entry.id} className={`p-1 border-r border-slate-200 ${rowDef.key === 'ajustesDia' ? 'min-w-[250px]' : 'min-w-[120px]'}`}>
                           {rowDef.key === 'dataHora' ? (
                             <div className="flex items-center justify-center gap-1 px-1">
                               <span className="text-[10px] font-bold text-slate-700 truncate">
@@ -405,9 +549,20 @@ const VmFlowsheetModal = ({
                             draftInput(entry, 'satO2', 'SatO2', { placeholder: '%' })
                           ) : rowDef.key === 'ajustesDia' ? (
                             draftTextarea(entry, 'ajustesDia', 'Ajustes do Dia', { placeholder: 'Digite os ajustes...' })
+                          ) : ['dp', 'cst', 'cdin'].includes(rowDef.key) ? (
+                            <div
+                              className={`w-full p-1 border rounded text-center text-[11px] font-bold ${
+                                rowDef.key === 'dp'
+                                  ? 'bg-amber-100 border-amber-300 text-amber-900'
+                                  : 'bg-blue-50 border-blue-200 text-slate-700'
+                              }`}
+                              title="Calculado automaticamente a partir de Pplato, Ppico, PEEP e VC"
+                            >
+                              {entry[rowDef.key] || "—"}
+                            </div>
                           ) : (
                             draftInput(entry, rowDef.key, rowDef.label, {
-                              className: `w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400 ${rowDef.key === 'dp' ? 'bg-amber-100 font-bold text-amber-900' : ''} ${rowDef.key === 'cst' || rowDef.key === 'cdin' ? 'bg-blue-50 font-bold' : ''}`
+                              className: "w-full p-1 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-cyan-400"
                             })
                           )}
                         </td>
