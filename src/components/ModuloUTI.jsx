@@ -802,9 +802,8 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
         const updatedPatients = firestoreBeds.map(bedData => {
           const index = parseInt(bedData.id.replace('bed_', '')) - 1;
           const merged = mergePatientData(defaultPatient(index), bedData);
-          return syncLabsFromHistory(merged);
+          return syncLabsFromHistory(merged); // comportamento do listener 1, agora para todos os leitos
         });
-        patientsRef.current = updatedPatients;
         return updatedPatients;
       });
     }, (error) => {
@@ -1088,10 +1087,11 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
   const save = async (updatedPatient, logMsg = "Alteração no Prontuário") => {
     if (!db || !updatedPatient) return;
 
+    // SUTURA DE SEGURANÇA: Esterilizando o payload
     const pacienteSeguro = JSON.parse(JSON.stringify(updatedPatient));
-    const contagemNoInicio = editCountRef.current;
+    const contagemNoInicio = editCountRef.current; // edições que existiam quando o save começou
 
-    // Sincroniza o espelho bh_previous (em memória) — mantém como estava
+    // 🔄 SINCRONIZAÇÃO BH HISTÓRICO → bh_previous
     const dataBHPrev = pacienteSeguro.bh_previous?.date;
     if (dataBHPrev && Array.isArray(pacienteSeguro.historico_bh)) {
       const itemHistorico = pacienteSeguro.historico_bh.find(h => h.date === dataBHPrev);
@@ -1100,134 +1100,92 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       }
     }
 
-    let idBruto = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
-    const apenasNumero = String(idBruto).replace(/bed_/g, "");
-    let numeroFinal = apenasNumero === "0" ? "1" : apenasNumero;
-    const docId = `bed_${numeroFinal}`;
-    const ref = doc(db, "leitos_uti", docId);
+    // Sincroniza também o estado em memória (sem isso, a UI só atualizaria após F5)
+    if (pacienteSeguro.bh_previous && JSON.stringify(updatedPatient.bh_previous || null) !== JSON.stringify(pacienteSeguro.bh_previous)) {
+      setPatients(prev => {
+        const copia = [...prev];
+        if (copia[activeTab]) copia[activeTab] = { ...copia[activeTab], bh_previous: pacienteSeguro.bh_previous };
+        return copia;
+      });
+    }
 
     try {
-      // 1) Lê o servidor UMA vez para resolver merges pontuais
-      const snapServidor = await getDoc(ref);
-      const servidor = snapServidor.exists() ? snapServidor.data() : null;
+      // Normalização do ID
+      let idBruto = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
+      const apenasNumero = String(idBruto).replace(/bed_/g, "");
+      let numeroFinal = apenasNumero;
+      if (numeroFinal === "0") numeroFinal = "1"; 
 
-      // 2) Monta o payload campo a campo, apenas com o que mudou
-      const payload = {};
-
-      // Campos simples (string/number/boolean/array) — comparação rasa
-      const CAMPOS_SIMPLES = [
-        'id', 'leito', 'nome', 'cpf', 'dataNascimento', 'sexo', 'procedencia',
-        'diagnostico', 'comorbidades', 'dataInternacao', 'dataIntubacao',
-        'dataExtubacao', 'dataTQT', 'dataDecanulacao', 'peso', 'saps3',
-        'statusInternacao', 'dataInternacaoISO', 'idInternacao', 'etnia',
-        'status', 'visita', 'historico_suporte_o2', 'historico_escores',
-        'customGasometriaCols', 'customExamRows'
-      ];
-
-      CAMPOS_SIMPLES.forEach(k => {
-        if (pacienteSeguro[k] === undefined) return;
-        const antes = servidor ? JSON.stringify(servidor[k] ?? null) : null;
-        const depois = JSON.stringify(pacienteSeguro[k] ?? null);
-        if (antes !== depois) payload[k] = pacienteSeguro[k];
-      });
-
-      // Objetos aninhados de 1 nível: compara subcampo a subcampo
-      const CATEGORIAS = [
-        'neuro', 'cardio', 'physio', 'resp', 'nutri', 'fono', 'enfermagem',
-        'gastro', 'antibiotics', 'antibioticsHistory', 'labs', 'examHistory',
-        'gasometriaHistory', 'anotacoes', 'checklist', 'hd_prescricao',
-        'hd_monitoramento', 'hd_balanco', 'hd_acesso', 'hd_anotacoes',
-        'hd_insumos', 'exames', 'admissaoFisioterapia', 'admissaoEnfermagem',
-        'admissaoNutricao', 'medical', 'sofa_data_technical', 'culturas'
-      ];
-
-      CATEGORIAS.forEach(cat => {
-        const novo = pacienteSeguro[cat];
-        if (novo === undefined || novo === null || typeof novo !== 'object') return;
-        const velho = (servidor && servidor[cat]) || {};
-
-        Object.keys(novo).forEach(sub => {
-          if (sub === 'lista' && cat === 'culturas') {
-            const a = JSON.stringify(velho.lista ?? null);
-            const b = JSON.stringify(novo.lista ?? null);
-            if (a !== b) payload[`${cat}.lista`] = novo.lista;
-            return;
+      const docId = `bed_${numeroFinal}`;
+      
+      // Grava no Prontuário Físico (Leito Atual) — só os campos DEFINIDOS, com merge.
+      // Paciente novo (admissão) pode não ter historico_bh/bh_previous ainda — incluir
+      // essas chaves com valor undefined faz o Firestore rejeitar a escrita.
+      const payloadBH = { ...pacienteSeguro };
+      delete payloadBH.admissionData;
+      delete payloadBH.admissaoMedica;
+      delete payloadBH.historiaClinica;
+      if (pacienteSeguro.bh !== undefined) {
+        payloadBH.bh = pacienteSeguro.bh;
+        if (pacienteSeguro.bh.vitals !== undefined) payloadBH.vitals = pacienteSeguro.bh.vitals;
+      }
+      if (pacienteSeguro.historico_bh !== undefined) payloadBH.historico_bh = pacienteSeguro.historico_bh;
+      if (pacienteSeguro.bh_previous !== undefined) payloadBH.bh_previous = pacienteSeguro.bh_previous;
+      // Dentro do save(), ANTES do setDoc — mescla o histórico do estado com o do servidor
+      if (payloadBH.historico_bh !== undefined && Array.isArray(payloadBH.historico_bh)) {
+        try {
+          const snapServidor = await getDoc(doc(db, "leitos_uti", docId));
+          const historicoServidor = snapServidor.exists() ? snapServidor.data().historico_bh : null;
+          if (Array.isArray(historicoServidor) && historicoServidor.length > 0) {
+            const datasLocais = new Set(payloadBH.historico_bh.map(h => h && h.date).filter(Boolean));
+            const soNoServidor = historicoServidor.filter(h => h && h.date && !datasLocais.has(h.date));
+            if (soNoServidor.length > 0) payloadBH.historico_bh = [...payloadBH.historico_bh, ...soNoServidor];
           }
-          const antes = JSON.stringify(velho[sub] ?? null);
-          const depois = JSON.stringify(novo[sub] ?? null);
-          if (antes !== depois) {
-            payload[`${cat}.${sub}`] = novo[sub];
+        } catch (e) { console.warn("[SYS4U] Não foi possível mesclar historico_bh no save:", e); }
+      }
+
+      // 🛡️ UNIÃO DO BH COM O SERVIDOR: impede que um estado obsoleto apague
+      // horas/células gravadas por outra aba/dispositivo.
+      if (payloadBH.bh && typeof payloadBH.bh === 'object') {
+        try {
+          const snapServidor = await getDoc(doc(db, "leitos_uti", docId));
+          const bhServidor = snapServidor.exists() ? snapServidor.data().bh : null;
+          if (bhServidor && typeof bhServidor === 'object') {
+            payloadBH.bh = unirMapasBH(payloadBH.bh, bhServidor);
+            if (payloadBH.bh.vitals !== undefined) payloadBH.vitals = payloadBH.bh.vitals;
           }
-        });
-      });
-
-      // 3) BH: só participa do payload se o local TIVER conteúdo real.
-      const bhLocalTemConteudo = pacienteSeguro.bh
-        && typeof pacienteSeguro.bh === 'object'
-        && Object.keys(pacienteSeguro.bh).length > 0;
-
-      if (bhLocalTemConteudo) {
-        const bhServidor = (servidor && servidor.bh) || null;
-        const bhUnido = bhServidor ? unirMapasBH(pacienteSeguro.bh, bhServidor) : pacienteSeguro.bh;
-        const a = JSON.stringify(bhServidor ?? null);
-        const b = JSON.stringify(bhUnido ?? null);
-        if (a !== b) {
-          payload['bh'] = bhUnido;
-          if (bhUnido.vitals !== undefined) payload['vitals'] = bhUnido.vitals;
-        }
+        } catch (e) { console.warn("[SYS4U] Não foi possível unir bh no save:", e); }
       }
-
-      // 4) historico_bh: mescla por date — só se o local for array válido
-      const histLocalValido = Array.isArray(pacienteSeguro.historico_bh)
-        && pacienteSeguro.historico_bh.length > 0;
-
-      if (histLocalValido) {
-        const histServidor = (servidor && Array.isArray(servidor.historico_bh)) ? servidor.historico_bh : [];
-        const datasLocais = new Set(pacienteSeguro.historico_bh.map(h => h && h.date).filter(Boolean));
-        const soNoServidor = histServidor.filter(h => h && h.date && !datasLocais.has(h.date));
-        const histFinal = soNoServidor.length
-          ? [...pacienteSeguro.historico_bh, ...soNoServidor]
-          : pacienteSeguro.historico_bh;
-        if (JSON.stringify(histFinal) !== JSON.stringify(histServidor)) {
-          payload['historico_bh'] = histFinal;
-        }
-      }
-
-      // bh_previous: só grava se o local for objeto REAL (não vazio)
-      if (pacienteSeguro.bh_previous && typeof pacienteSeguro.bh_previous === 'object'
-          && Object.keys(pacienteSeguro.bh_previous).length > 0) {
-        const a = JSON.stringify((servidor && servidor.bh_previous) ?? null);
-        const b = JSON.stringify(pacienteSeguro.bh_previous ?? null);
-        if (a !== b) payload['bh_previous'] = pacienteSeguro.bh_previous;
-      }
-
-      // 5) Nada mudou? Não escreve.
-      if (Object.keys(payload).length === 0) {
-        console.log(`[AUDITORIA] save() sem alterações reais — escrita ignorada (${docId})`);
-        if (editCountRef.current === contagemNoInicio) localEditRef.current = false;
-        return;
-      }
-
-      auditarEscrita("save()", docId, payload, { merge: true });
-      await setDoc(ref, payload, { merge: true });
-
-      console.log(`[AUDITORIA]: ${logMsg} no documento ${docId} | campos: ${Object.keys(payload).join(', ')}`);
-
-      // Espelhamento de culturas globais
+      auditarEscrita("save()", docId, payloadBH, { merge: true });
+      await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
+      // 🔓 DESTRAVAMENTO PÓS-COMMIT: o Firestore confirmou a gravação —
+      // o próximo snapshot que voltar já contém este próprio dado, então
+      // é seguro liberar o listener IMEDIATAMENTE (não espera os espelhamentos).
+      localEditRef.current = false;
+      if (localEditTimeoutRef.current) clearTimeout(localEditTimeoutRef.current);      
+      
+      // =========================================================
+      // 🚨 O PULO DO GATO: ESPELHAMENTO GLOBAL DE CULTURAS (CCIH)
+      // =========================================================
       if (pacienteSeguro.culturas && Array.isArray(pacienteSeguro.culturas.lista)) {
         pacienteSeguro.culturas.lista.forEach(async (cultura) => {
-          if (cultura.id && cultura.tipo) {
-            await setDoc(doc(db, "culturas_globais", cultura.id), {
-              ...cultura,
-              pacienteId: pacienteSeguro.id || docId,
-              pacienteNome: pacienteSeguro.nome || "Desconhecido",
-              leito: numeroFinal
-            }, { merge: true });
-          }
+           // Grava apenas culturas reais que possuam ID
+           if (cultura.id && cultura.tipo) {
+             const culturaGlobal = {
+               ...cultura,
+               pacienteId: pacienteSeguro.id || docId,
+               pacienteNome: pacienteSeguro.nome || "Desconhecido",
+               leito: numeroFinal
+             };
+             // Grava na coleção 'imortal' da CCIH (nunca apagada na alta)
+             await setDoc(doc(db, "culturas_globais", cultura.id), culturaGlobal, { merge: true });
+           }
         });
       }
 
-      // Origem da internação
+      // =========================================================
+      // 🗺️ ORIGEM DA INTERNAÇÃO (MAPA EPIDEMIOLÓGICO)
+      // =========================================================
       if (pacienteSeguro.idInternacao) {
         await setDoc(doc(db, "origens_internacao", pacienteSeguro.idInternacao), {
           nomePaciente: pacienteSeguro.nome || "",
@@ -1240,11 +1198,17 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
         }, { merge: true });
       }
 
+      console.log(`[AUDITORIA]: ${logMsg} no documento ${docId}`);
+
+      // Libera a trava SOMENTE se nada novo foi digitado durante o save.
+      // Se o usuário seguiu digitando, mantém travado e o próximo save libera.
       if (editCountRef.current === contagemNoInicio) {
         localEditRef.current = false;
       }
-    } catch (err) {
+    } catch (err) { 
       console.error("Erro fatal ao salvar no Firebase:", err);
+      // Se ainda há edições não salvas, MANTÉM a trava para o listener não apagar a tela.
+      // O usuário pode tentar salvar de novo; só libera quando um save tiver sucesso.
       if (editCountRef.current === contagemNoInicio) {
         localEditRef.current = false;
       }
@@ -1345,16 +1309,21 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
   };
 
   const updateNested = (categoria, campo, valor) => {
+    // MARCA EDIÇÃO LOCAL: impede o listener unificado de sobrescrever a digitação
     editCountRef.current += 1;
     localEditRef.current = true;
     scheduleLocalEditRelease();
 
-    // Helper local: aplica o campo + sincronizações Shiley <-> HD
+    // Helper interno: aplica o campo + as sincronizações Shiley <-> Hemodiálise
+    // em uma cópia do paciente. É a ÚNICA fonte da lógica de atualização.
     const aplicar = (pac) => {
       const alvo = JSON.parse(JSON.stringify(pac || {}));
       if (!alvo[categoria]) alvo[categoria] = {};
       alvo[categoria][campo] = valor;
 
+      // 🔄 SINCRONIZAÇÃO DE MÃO DUPLA (SHILEY <-> HEMODIÁLISE)
+
+      // 1. Sincroniza a Data de Inserção
       if (categoria === "enfermagem" && campo === "shileyData") {
         if (!alvo["hd_acesso"]) alvo["hd_acesso"] = {};
         alvo["hd_acesso"]["insercao"] = valor;
@@ -1362,6 +1331,8 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
         if (!alvo["enfermagem"]) alvo["enfermagem"] = {};
         alvo["enfermagem"]["shileyData"] = valor;
       }
+
+      // 2. Sincroniza o Local do Catéter
       if (categoria === "enfermagem" && campo === "shileyLocal") {
         if (!alvo["hd_acesso"]) alvo["hd_acesso"] = {};
         alvo["hd_acesso"]["cateter_local"] = valor;
@@ -1369,49 +1340,29 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
         if (!alvo["enfermagem"]) alvo["enfermagem"] = {};
         alvo["enfermagem"]["shileyLocal"] = valor;
       }
+
       return alvo;
     };
 
-    // 1) base síncrona a partir do REF (o que será gravado)
+    // 1. Base SÍNCRONA a partir do REF (fonte do que vai ser persistido).
+    //    Atualizado na hora → o save()/handleBlurSave subsequente lê o dado NOVO.
     const base = aplicar(patientsRef.current[activeTab]);
     patientsRef.current[activeTab] = base;
 
-    // 2) setPatients com updater funcional — preserva o encadeamento
+    // 2. Estado: mantém o UPDATER FUNCIONAL (encadeia updates pendentes de terceiros,
+    //    ex.: listener/bulk upload) — comportamento original preservado.
     setPatients(prev => {
-      const novos = [...prev];
-      const alvo = aplicar(novos[activeTab]);
-      novos[activeTab] = alvo;
-      patientsRef.current[activeTab] = alvo;
-      return novos;
+      const novosPacientes = [...prev];
+      const alvo = aplicar(novosPacientes[activeTab]);
+      novosPacientes[activeTab] = alvo;
+      patientsRef.current[activeTab] = alvo; // trunca para ficar consistente com o estado
+      return novosPacientes;
     });
 
-    // 3) GRAVA SÓ O CAMPO ALTERADO — sem save(), sem payload inteiro.
-    //    O ref é atualizado SÍNCRONO acima, então nenhuma escrita concorrente
-    //    dispara antes deste ponto.
-    const docId = `bed_${activeTab + 1}`;
-    const refDoc = doc(db, "leitos_uti", docId);
-
-    const escritas = { [`${categoria}.${campo}`]: valor };
-
-    if (categoria === "enfermagem" && campo === "shileyData") {
-      escritas["hd_acesso.insercao"] = valor;
-    } else if (categoria === "hd_acesso" && campo === "insercao") {
-      escritas["enfermagem.shileyData"] = valor;
+    // 3. SAVE FORA DO setPatients: roda UMA vez por chamada (não duplica no StrictMode)
+    if (base && typeof save === 'function') {
+      save(base, `Atualização Automática: ${categoria} > ${campo}`);
     }
-    if (categoria === "enfermagem" && campo === "shileyLocal") {
-      escritas["hd_acesso.cateter_local"] = valor;
-    } else if (categoria === "hd_acesso" && campo === "cateter_local") {
-      escritas["enfermagem.shileyLocal"] = valor;
-    }
-
-    updateDoc(refDoc, escritas)
-      .then(() => {
-        console.log(`[AUDITORIA]: updateDoc — ${Object.keys(escritas).join(', ')} (${docId})`);
-      })
-      .catch(err => {
-        console.error("[SYS4U] Erro no updateDoc:", err);
-        localEditRef.current = false;
-      });
   };
 
   const updateP = (field, value) => {
