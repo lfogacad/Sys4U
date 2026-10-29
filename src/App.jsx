@@ -222,10 +222,26 @@ const handleRegister = async (e) => {
     }
   };
 
-  const handleLogout = async () => { 
+  const handleLogout = async () => {
+    // 1) Limpa imediatamente os marcadores locais.
+    //    Mesmo que o signOut falhe, o próximo carregamento já bloqueia pelo timestamp.
     clearSession();
-    await signOut(auth); 
-    window.location.href = "/"; 
+
+    // 2) Garante o redirect mesmo se o signOut travar (rede ruim no celular).
+    //    O Firebase limpa a sessão local de qualquer forma ao recarregar.
+    const forcarSaida = setTimeout(() => {
+      window.location.replace('/');
+    }, 3000);
+
+    try {
+      await signOut(auth);
+      clearTimeout(forcarSaida);
+      window.location.replace('/');
+    } catch (e) {
+      console.error('[SYS4U] signOut falhou, forçando saída local:', e);
+      clearTimeout(forcarSaida);
+      window.location.replace('/');
+    }
   };
   
   // Aviso 5 min antes do limite absoluto de 3h
@@ -262,23 +278,21 @@ const handleRegister = async (e) => {
     onWarn: avisarExpiracao
   });
 
-  // 🛡️ BLOQUEIO DE SESSÃO EXPIRADA: se passou de 2h desde a última atividade (ex.: dia seguinte),
-  // força o logout ANTES de renderizar o sistema — impede o login automático do Firebase.
+  // Roda SEMPRE que o usuário autenticado mudar — inclusive quando o Firebase
+  // restaura a sessão no mobile depois de um reload do app.
   useEffect(() => {
     if (!user) return;
 
-    // 1) Inatividade de 2h
     if (isSessionExpired(2 * 60 * 60 * 1000)) {
       handleLogout();
       return;
     }
 
-    // 2) Limite absoluto de 3h (por login)
     if (msRestantesAbsoluto(3 * 60 * 60 * 1000) <= 0) {
       handleLogout();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user]);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-bold text-emerald-600 animate-pulse">Sincronizando Ecossistema...</div>;

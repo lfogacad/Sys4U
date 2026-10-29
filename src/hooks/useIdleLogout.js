@@ -107,21 +107,32 @@ const useIdleLogout = (
     disparadoRef.current = false;
 
     // ---------- verificação central ----------
+    // Tenta deslogar e, se falhar, rearma a flag para não travar a sessão.
+    const executarLogout = async (motivo) => {
+      if (disparadoRef.current) return;
+      disparadoRef.current = true;
+      try {
+        await onLogoutRef.current(motivo);
+      } catch (e) {
+        // Falhou (rede, signOut travado). Rearma para tentar de novo
+        // na próxima checagem, em vez de deixar a sessão presa.
+        console.error('[SYS4U] Falha ao deslogar, será retentado:', e);
+        disparadoRef.current = false;
+      }
+    };
+
     const verificar = () => {
       if (disparadoRef.current) return;
 
-      // 1) Expiração absoluta (não depende de atividade)
       const restanteAbs = msRestantesAbsoluto(absoluteTimeoutMs);
 
+      // 1) Expiração absoluta
       if (restanteAbs <= 0) {
-        disparadoRef.current = true;
-        onLogoutRef.current();
+        executarLogout('absoluto');
         return;
       }
 
-      // 2) Aviso prévio do absoluto (5 min antes) — SÓ se ainda há tempo sobrando.
-      // Se já passou das 3h (ex.: celular bloqueado), o logout acima já retornou
-      // e o diálogo nunca abre.
+      // 2) Aviso prévio (só se ainda há tempo)
       if (restanteAbs > 0 && restanteAbs <= warnBeforeMs) {
         let jaAvisou = false;
         try {
@@ -136,10 +147,9 @@ const useIdleLogout = (
         }
       }
 
-      // 3) Expiração por inatividade (2h)
+      // 3) Inatividade
       if (isSessionExpired(timeoutMs)) {
-        disparadoRef.current = true;
-        onLogoutRef.current();
+        executarLogout('inatividade');
       }
     };
 
@@ -166,16 +176,24 @@ const useIdleLogout = (
 
     const aoGanharFoco = () => verificar();
 
+    // O bfcache restaura a página com o React intacto. Sempre revalidar.
+    const aoPageshow = (ev) => {
+      if (ev.persisted) disparadoRef.current = false; // sessão restaurada, permite nova tentativa
+      verificar();
+    };
+
     document.addEventListener('visibilitychange', aoVoltar);
     window.addEventListener('focus', aoGanharFoco);
-    window.addEventListener('pageshow', aoGanharFoco);
+    window.addEventListener('pageshow', aoPageshow);
 
     // ---------- checagem periódica ----------
-    // No mobile, timers longos são suspensos; um intervalo curto
-    // continua disparando enquanto o app está visível.
+    // No mobile o app pode ficar 'hidden' por longos períodos sem morrer.
+    // O absoluto NÃO depende de atividade, então podemos verificar sempre:
+    // se já passou das 3h, desloga mesmo em background.
+    // (deslogar é seguro em background: signOut + redirect não dependem de UI)
     const intervalo = setInterval(() => {
-      if (document.visibilityState === 'visible') verificar();
-    }, checkIntervalMs);
+      verificar();
+    }, Math.min(checkIntervalMs, 30 * 1000));
 
     // Checagem imediata na montagem
     verificar();
@@ -184,7 +202,7 @@ const useIdleLogout = (
       events.forEach(ev => window.removeEventListener(ev, resetTimer));
       document.removeEventListener('visibilitychange', aoVoltar);
       window.removeEventListener('focus', aoGanharFoco);
-      window.removeEventListener('pageshow', aoGanharFoco);
+      window.removeEventListener('pageshow', aoPageshow);
       if (idleTimer) clearTimeout(idleTimer);
       clearInterval(intervalo);
     };
