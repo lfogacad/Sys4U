@@ -296,18 +296,29 @@ const handleRegister = async (e) => {
     const INATIVIDADE_MS = 2 * 60 * 60 * 1000;      // 2h
     const ABSOLUTO_MS   = 3 * 60 * 60 * 1000;      // 3h
 
-    const expirouPorInatividade = isSessionExpired(INATIVIDADE_MS);
-    const expirouPorAbsoluto    = msRestantesAbsoluto(ABSOLUTO_MS) <= 0;
+    // 🚨 CARÊNCIA DE MONTAGEM: o onAuthStateChanged do Firebase dispara ANTES
+    // de o handleLogin gravar o markLogin(). Se verificarmos imediatamente,
+    // getLoginAt() === 0 e o usuário é expulso no mesmo instante do login.
+    // 10s de carência cobrem a janela do getDoc do perfil + verificarCatraca.
+    const timer = setTimeout(() => {
+      const expirouPorInatividade = isSessionExpired(INATIVIDADE_MS);
+      const expirouPorAbsoluto    = msRestantesAbsoluto(ABSOLUTO_MS) <= 0;
 
-    // Sem LOGIN_KEY significa que o localStorage foi limpo (iOS privado /
-    // troca de navegador). Nesse caso NÃO dá para confiar no relógio absoluto:
-    // força logout preventivo — é mais seguro do que deixar sessão aberta.
-    const semMarcadorDeLogin = getLoginAt() === 0;
+      // Sem LOGIN_KEY significa sessão nova neste dispositivo (iOS privado,
+      // troca de navegador). Nesse caso NÃO desloga: registra agora e segue.
+      // Só uma sessão COM registro vencido pode ser considerada expirada.
+      if (getLoginAt() === 0) {
+        markLogin();
+        return;
+      }
 
-    if (expirouPorInatividade || expirouPorAbsoluto || semMarcadorDeLogin) {
-      console.log('[SYS4U] logout na montagem:', { expirouPorInatividade, expirouPorAbsoluto, semMarcadorDeLogin });
-      handleLogout();
-    }
+      if (expirouPorInatividade || expirouPorAbsoluto) {
+        console.log('[SYS4U] logout na montagem:', { expirouPorInatividade, expirouPorAbsoluto });
+        handleLogout();
+      }
+    }, 10000);   // 10s de carência
+
+    return () => clearTimeout(timer);
   }, [user]);
 
   if (isLoading) {
