@@ -251,10 +251,7 @@ const OverviewTab = ({
           // REGRA DO DIA ASSISTENCIAL: o BH roda de 06h a 06h.
           // As horas 00h–05h gravadas no bh_previous pertencem a HOJE.
           // ============================================================
-          const EH_MADRUGADA = (h) => {
-            const hh = String(h).split(":")[0].padStart(2, "0");
-            return ["00","01","02","03","04","05"].includes(hh);
-          };
+          const EH_MADRUGADA = (h) => Number(String(h).split(":")[0]) < 7;
 
           // ---------- 1. EVACUAÇÃO ----------
           // Procura evacuação num BH. somenteMadrugada=true restringe às horas 00-05.
@@ -387,15 +384,6 @@ const OverviewTab = ({
             return "";
           };
 
-          console.log("[DEBUG-ELIM]", {
-            bhDate: currentPatient.bh?.date,
-            prevDate: currentPatient.bh_previous?.date,
-            horasPrev: Object.keys(currentPatient.bh_previous?.losses || {}),
-            diarreiaHoje: perdaHoje("Diarreia"),
-            diarreiaOntem: perdaOntem("Diarreia"),
-            evacPrevTotal: evacNoBH(currentPatient.bh_previous, false),
-            evacPrevMadrugada: evacNoBH(currentPatient.bh_previous, true),
-          });
           const diarreiaText = montarTextoPerda("Diarreia");
           const vomitoText = montarTextoPerda("Vômitos");
 
