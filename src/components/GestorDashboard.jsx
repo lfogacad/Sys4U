@@ -5946,6 +5946,14 @@ const imprimirRelatorioGeladeira = () => {
       .split('/')[0]
       .trim();
 
+  const fecharModalEdicao = () => {
+    // Reseta a "página" do modal: ao reabrir, volta sempre ao seletor principal
+    setMostrarSeletorExclusao(false);
+    setTipoExclusaoPlantao('Total');
+    setIsEditModalOpen(false);
+    setPlantaoEditado(null);
+  };
+
   const abrirModalTroca = (plantaoId, dia, turnoEHorario, nomeAtual, sigla, extra = false) => {
     setPlantaoEditado({
       id: plantaoId,
@@ -14820,7 +14828,7 @@ const imprimirRelatorioGeladeira = () => {
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-fadeIn">
                 <div className="bg-slate-800 p-5 flex justify-between items-center text-white">
                   <div><h3 className="font-black text-lg">Gerenciar Plantão</h3><p className="text-slate-300 text-xs">Substituição e Ocorrências</p></div>
-                  <button onClick={() => setIsEditModalOpen(false)} className="hover:bg-white/20 p-2 rounded-full transition-colors text-white font-bold">FECHAR</button>
+                  <button onClick={() => fecharModalEdicao()} className="hover:bg-white/20 p-2 rounded-full transition-colors text-white font-bold">FECHAR</button>
                 </div>
                 
                 <div className="p-6 space-y-4">
@@ -14898,39 +14906,45 @@ const imprimirRelatorioGeladeira = () => {
                           Somente Noite (N)
                         </label>
                       </div>
-                      <div className="flex justify-end gap-2 mt-3">
-                        <button
-                          onClick={() => setMostrarSeletorExclusao(false)}
-                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          onClick={excluirPlantonista}
-                          className="px-4 py-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-sm"
-                        >
-                          Confirmar Exclusão
-                        </button>
-                      </div>
                     </div>
                   )}                  
                 </div>
 
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => {
-                      setTipoExclusaoPlantao('Total'); // reseta para Total ao abrir
-                      setMostrarSeletorExclusao(true);
-                    }}
-                    className="px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-red-200"
-                  >
-                    Excluir da Escala
-                  </button>
-                  <div className="flex gap-2">
-                    <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
-                    <button onClick={salvarTrocaPlantao} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">Confirmar Alteração</button>
+                {/* RODAPÉ — muda conforme o modo. No modo exclusão mostram-se
+                    apenas Cancelar / Confirmar Exclusão, escondendo os 3 botões
+                    originais (Excluir da Escala, Cancelar, Confirmar Alteração). */}
+                {mostrarSeletorExclusao ? (
+                  <div className="p-4 bg-red-50 border-t border-red-100 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => setMostrarSeletorExclusao(false)}
+                      className="px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-800"
+                    >
+                      ← Voltar
+                    </button>
+                    <button
+                      onClick={excluirPlantonista}
+                      className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
+                    >
+                      Confirmar Exclusão
+                    </button>
                   </div>
-                </div>
+                ) : (
+                  <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => {
+                        setTipoExclusaoPlantao('Total'); // reseta para Total ao abrir
+                        setMostrarSeletorExclusao(true);
+                      }}
+                      className="px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-red-200"
+                    >
+                      Excluir da Escala
+                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => fecharModalEdicao()} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancelar</button>
+                      <button onClick={salvarTrocaPlantao} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">Confirmar Alteração</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
