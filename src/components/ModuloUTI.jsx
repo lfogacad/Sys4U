@@ -2089,7 +2089,7 @@ const clearAntibiotic = (i) => {
       };
     }
 
-    const cpfPaciente = admissionData.cpf || currentPatient?.cpf || 'SEM_CPF';
+    const cpfPaciente = (admissionData.cpf || currentPatient?.cpf || '').replace(/\D/g, '') || 'SEM_CPF';
     const idInternacao = `${cpfPaciente}_${Date.now()}`;
     if (!r.idInternacao) r.idInternacao = idInternacao; 
 

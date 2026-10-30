@@ -5,6 +5,40 @@ import { db } from "../config/firebase";
 import { ArrowLeft, Activity, Search, Loader2, UserPlus, CheckCircle, AlertTriangle, Send } from "lucide-react";
 import { formatarDataBR } from "../utils/core";
 
+// ============================================================
+// MÁSCARAS — tela de cadastro
+// ============================================================
+
+// CPF: 000.000.000-00 (máx. 11 dígitos)
+const mascaraCPF = (valor) => {
+  const d = String(valor || '').replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+};
+
+// Telefone: automático por quantidade de dígitos
+// 10 dígitos  → (69) 3333-4444   (fixo)
+// 11 dígitos  → (69) 99999-9999  (celular)
+const mascaraTelefone = (valor) => {
+  const d = String(valor || '').replace(/\D/g, '').slice(0, 11);
+  if (d.length === 0) return '';
+  if (d.length <= 2) return `(${d}`;
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+};
+
+// CNS: 000 0000 0000 0000 (15 dígitos)
+const mascaraCNS = (valor) => {
+  const d = String(valor || '').replace(/\D/g, '').slice(0, 15);
+  if (d.length <= 3) return d;
+  if (d.length <= 7) return `${d.slice(0, 3)} ${d.slice(3)}`;
+  if (d.length <= 11) return `${d.slice(0, 3)} ${d.slice(3, 7)} ${d.slice(7)}`;
+  return `${d.slice(0, 3)} ${d.slice(3, 7)} ${d.slice(7, 11)} ${d.slice(11)}`;
+};
+
 const ModuloRecepcao = ({ userProfile }) => {
   const navigate = useNavigate();
   
@@ -79,30 +113,69 @@ const ModuloRecepcao = ({ userProfile }) => {
     setView('register');
   };
 
+  // 🔠 NORMALIZAÇÃO PARA MAIÚSCULAS: esta tela de cadastro aceita somente
+  // letras maiúsculas nos campos de texto livre. Campos numéricos (CPF, CNS,
+  // passaporte, telefone) e data não são afetados.
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+
+    // 1) MÁSCARAS — aplicadas antes de qualquer outra transformação
+    if (name === 'cpf') {
+      setFormData({ ...formData, cpf: mascaraCPF(value) });
+      return;
+    }
+    if (name === 'cns') {
+      setFormData({ ...formData, cns: mascaraCNS(value) });
+      return;
+    }
+    if (name === 'telefone' || name === 'telefoneContatos') {
+      setFormData({ ...formData, [name]: mascaraTelefone(value) });
+      return;
+    }
+
+    // 2) CAMPOS QUE NÃO SOFREM MAIÚSCULA (números, datas, selects)
+    const camposSemMaiuscula = [
+      'passaporte', 'dataNascimento', 'sexo', 'cor',
+      'estadoCivil'
+    ];
+
+    if (camposSemMaiuscula.includes(name)) {
+      setFormData({ ...formData, [name]: value });
+    } else {
+      setFormData({ ...formData, [name]: value.toUpperCase() });
+    }
   };
 
   // Salva a ficha E abre o modal para escolher o setor
   const handleSaveAndPrepareForward = async (e) => {
     e.preventDefault();
     if (!formData.nome || !formData.cpf) return alert("Nome e CPF são obrigatórios.");
-    
+
+    // 🔢 NÚMERO PURO NO BANCO: a máscara é apenas visual (durante a digitação).
+    // No momento de gravar, removemos todos os caracteres não numéricos dos
+    // campos mascarados — o Firestore recebe só os dígitos.
+    const camposMascarados = ['cpf', 'cns', 'telefone', 'telefoneContatos'];
+    const dadosParaGravar = { ...formData };
+    camposMascarados.forEach(campo => {
+      if (typeof dadosParaGravar[campo] === 'string') {
+        dadosParaGravar[campo] = dadosParaGravar[campo].replace(/\D/g, '');
+      }
+    });
+
     try {
       let currentPatientId = patient?.id;
 
       // Se NÃO tem ID, é um paciente novo. Salva no banco.
       if (!currentPatientId) {
         const docRef = await addDoc(collection(db, "pacientes"), {
-          ...formData, status: "Ativo", cadastradoPor: userProfile.nome || "Admin", dataCriacao: serverTimestamp()
+          ...dadosParaGravar, status: "Ativo", cadastradoPor: userProfile.nome || "Admin", dataCriacao: serverTimestamp()
         });
         currentPatientId = docRef.id;
-        setPatient({ ...formData, id: currentPatientId });
+        setPatient({ ...dadosParaGravar, id: currentPatientId });
       } else {
         // Se já tem ID, só atualiza os dados dele (edição)
-        await updateDoc(doc(db, "pacientes", currentPatientId), formData);
-        setPatient({ ...formData, id: currentPatientId });
+        await updateDoc(doc(db, "pacientes", currentPatientId), dadosParaGravar);
+        setPatient({ ...dadosParaGravar, id: currentPatientId });
       }
 
       // Tudo salvo, agora pergunta o setor!
