@@ -104,6 +104,7 @@ const useIdleLogout = (
   useEffect(() => {
     if (!enabled) return;
 
+    // Reseta SEMPRE que o efeito monta — inclusive após retorno do background
     disparadoRef.current = false;
 
     // ---------- verificação central ----------
@@ -186,14 +187,12 @@ const useIdleLogout = (
     window.addEventListener('focus', aoGanharFoco);
     window.addEventListener('pageshow', aoPageshow);
 
-    // ---------- checagem periódica ----------
-    // No mobile o app pode ficar 'hidden' por longos períodos sem morrer.
-    // O absoluto NÃO depende de atividade, então podemos verificar sempre:
-    // se já passou das 3h, desloga mesmo em background.
-    // (deslogar é seguro em background: signOut + redirect não dependem de UI)
+    // Checagem periódica. Roda mesmo com a aba oculta — no mobile os timers
+    // longos são pausados em background, então também usamos um intervalo
+    // curto (checkIntervalMs) para garantir que ao menos um disparo ocorra.
     const intervalo = setInterval(() => {
-      verificar();
-    }, Math.min(checkIntervalMs, 30 * 1000));
+      verificar();   // sem a guarda de visibilityState
+    }, checkIntervalMs);
 
     // Checagem imediata na montagem
     verificar();

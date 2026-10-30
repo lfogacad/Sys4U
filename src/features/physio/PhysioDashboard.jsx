@@ -1573,7 +1573,7 @@ const TRE_CHECKLIST = [
 
             <select
               className="w-full p-2 border rounded mb-4 font-bold"
-              value={currentPatient.physio?.suporte || ""}
+              value={currentPatient.physio?.suporte ?? ""}
               onChange={(e) => onSuporteChange(e.target.value)}
               onBlur={() => handleBlurSave("Fisioterapia: Alterou Suporte Ventilatório")}
             >
@@ -1594,7 +1594,7 @@ const TRE_CHECKLIST = [
                       currentPatient.physio?.suporte === "Cateter Nasal" && Number(currentPatient.physio?.fluxo) > 6 ? 'border-red-500 bg-red-50 text-red-700 focus:border-red-600' : 'border-slate-300 focus:border-cyan-500'
                     }`}
                     placeholder="Ex: 5"
-                    value={currentPatient.physio?.fluxo || ""}
+                    value={currentPatient.physio?.fluxo ?? ""}
                     onChange={(e) => handleFluxoO2Change(e.target.value, currentPatient.physio?.suporte)}
                     onBlur={() => handleBlurSave("Fisioterapia: Editou Fluxo de O2")}
                   />
@@ -1609,7 +1609,7 @@ const TRE_CHECKLIST = [
                     className={`w-full p-2 border font-bold rounded outline-none transition-colors ${
                       currentPatient.physio?.fiO2 === "Fluxo insuficiente" ? 'border-red-400 bg-red-50 text-red-700 focus:border-red-500' : 'border-cyan-200 bg-cyan-50 text-cyan-900 focus:border-cyan-500'
                     }`}
-                    value={currentPatient.physio?.fiO2 || ""}
+                    value={currentPatient.physio?.fiO2 ?? ""}
                     onChange={(e) => updateNested("physio", "fiO2", e.target.value)}
                     onBlur={() => handleBlurSave("Fisioterapia: Ajustou FiO2 manualmente")}
                   />
@@ -1626,7 +1626,7 @@ const TRE_CHECKLIST = [
                     type="number"
                     className="w-full p-2 border rounded outline-none focus:border-cyan-500"
                     placeholder="Ex: 5"
-                    value={currentPatient.physio?.fluxo || ""}
+                    value={currentPatient.physio?.fluxo ?? ""}
                     onChange={(e) => updateNested("physio", "fluxo", e.target.value)}
                     onBlur={() => handleBlurSave("Fisioterapia: Editou Fluxo Venturi")}
                   />
@@ -1637,7 +1637,7 @@ const TRE_CHECKLIST = [
                     type="number"
                     className="w-full p-2 border border-cyan-200 rounded outline-none focus:border-cyan-500 bg-cyan-50 text-cyan-900 font-bold"
                     placeholder="%"
-                    value={currentPatient.physio?.fiO2 || ""}
+                    value={currentPatient.physio?.fiO2 ?? ""}
                     onChange={(e) => updateNested("physio", "fiO2", e.target.value)}
                     onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 Venturi")}
                   />
@@ -1652,7 +1652,7 @@ const TRE_CHECKLIST = [
                   <label className="text-xs font-bold text-slate-700">Modo</label>
                   <select
                     className="w-full p-2 border rounded"
-                    value={currentPatient.physio?.parametro || ""}
+                    value={currentPatient.physio?.parametro ?? ""}
                     onChange={(e) => updateNested("physio", "parametro", e.target.value)}
                     onBlur={() => handleBlurSave("Fisioterapia: Alterou Modo VNI")}
                   >
@@ -1666,7 +1666,7 @@ const TRE_CHECKLIST = [
                   <input
                     type="number"
                     className="w-full p-2 border rounded"
-                    value={currentPatient.physio?.fiO2 || ""}
+                    value={currentPatient.physio?.fiO2 ?? ""}
                     onChange={(e) => updateNested("physio", "fiO2", e.target.value)}
                     onBlur={() => handleBlurSave("Fisioterapia: Editou FiO2 VNI")}
                   />

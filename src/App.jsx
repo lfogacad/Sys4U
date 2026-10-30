@@ -278,20 +278,26 @@ const handleRegister = async (e) => {
     onWarn: avisarExpiracao
   });
 
-  // Roda SEMPRE que o usuário autenticado mudar — inclusive quando o Firebase
-  // restaura a sessão no mobile depois de um reload do app.
+  // 🛡️ BLOQUEIO DE SESSÃO EXPIRADA — verificado ANTES de renderizar o sistema.
+  // Não depende de timer nem de evento: roda no carregamento, sempre.
   useEffect(() => {
     if (!user) return;
 
-    if (isSessionExpired(2 * 60 * 60 * 1000)) {
-      handleLogout();
-      return;
-    }
+    const INATIVIDADE_MS = 2 * 60 * 60 * 1000;      // 2h
+    const ABSOLUTO_MS   = 3 * 60 * 60 * 1000;      // 3h
 
-    if (msRestantesAbsoluto(3 * 60 * 60 * 1000) <= 0) {
+    const expirouPorInatividade = isSessionExpired(INATIVIDADE_MS);
+    const expirouPorAbsoluto    = msRestantesAbsoluto(ABSOLUTO_MS) <= 0;
+
+    // Sem LOGIN_KEY significa que o localStorage foi limpo (iOS privado /
+    // troca de navegador). Nesse caso NÃO dá para confiar no relógio absoluto:
+    // força logout preventivo — é mais seguro do que deixar sessão aberta.
+    const semMarcadorDeLogin = getLoginAt() === 0;
+
+    if (expirouPorInatividade || expirouPorAbsoluto || semMarcadorDeLogin) {
+      console.log('[SYS4U] logout na montagem:', { expirouPorInatividade, expirouPorAbsoluto, semMarcadorDeLogin });
       handleLogout();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   if (isLoading) {
