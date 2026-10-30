@@ -1688,26 +1688,31 @@ const formatarData = (dataStr) => {
   return dataStr; // fallback: retorna como está
 };
 
-const clearAntibiotic = (i) => {
-    const up = [...patients];
-    const p = JSON.parse(JSON.stringify(up[activeTab]));
-    const atb = p.antibiotics[i];
+  const clearAntibiotic = (i) => {
+    // 🔒 TRAVA DE EDIÇÃO LOCAL — mesmo padrão do updateNested.
+    // Sem isto, o listener único de leitos_uti reescreve o estado com o
+    // documento antigo (ATB volta para a lista e o histórico se perde).
+    editCountRef.current += 1;
+    localEditRef.current = true;
+    scheduleLocalEditRelease();
+
+    // ✅ Base SÍNCRONA a partir do REF (fonte do que vai ser persistido),
+    //    e não do estado React — evita closure obsoleta.
+    const base = JSON.parse(JSON.stringify(patientsRef.current[activeTab] || {}));
+    const atb = base.antibiotics?.[i];
 
     // Arquivar no histórico antes de limpar
     if (atb && atb.name) {
-      if (!p.antibioticsHistory) p.antibioticsHistory = [];
-      
-      // 🧠 MÁGICA NATIVA: Calcula os dias de uso sem depender da ferramenta ausente
+      if (!base.antibioticsHistory) base.antibioticsHistory = [];
+
+      // 🧠 Convenção do serviço: dia do início = D0 (getDaysD0)
       let daysUsed = "?";
       if (atb.date) {
-        const start = new Date(atb.date + 'T12:00:00'); // T12:00:00 evita bugs de fuso horário
-        const today = new Date();
-        const diffTime = today - start;
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 porque o dia de início já é D1
-        daysUsed = diffDays > 0 ? diffDays : 1;
+        const dias = getDaysD0(atb.date);         // "D0", "D1", "D2"... ou "Err"
+        daysUsed = dias.startsWith("D") ? dias.slice(1) : "?";
       }
 
-      p.antibioticsHistory.push({
+      base.antibioticsHistory.push({
         id: Date.now() + "_" + Math.random().toString(36).substr(2, 9),
         name: atb.name,
         startDate: atb.date,
@@ -1717,12 +1722,23 @@ const clearAntibiotic = (i) => {
     }
 
     // Limpa a prancheta e destranca o campo para o próximo uso
-    p.antibiotics[i] = { name: "", date: "", locked: false }; 
-    up[activeTab] = p;
-    setPatients(up);
+    if (Array.isArray(base.antibiotics)) {
+      base.antibiotics[i] = { name: "", date: "", locked: false };
+    }
 
-    // Salva e carimba na auditoria instantaneamente
-    save(p, "Farmácia: Arquivou/Limpou Antibiótico");
+    // 1) Ref síncrono — o save() abaixo lê daqui
+    patientsRef.current[activeTab] = base;
+
+    // 2) Estado com updater funcional
+    setPatients(prev => {
+      const novos = [...prev];
+      novos[activeTab] = base;
+      patientsRef.current[activeTab] = base;
+      return novos;
+    });
+
+    // 3) Grava UMA vez, com a trava já ativa
+    save(base, "Farmácia: Arquivou/Limpou Antibiótico");
   };
 
   const addAntibiotic = () => {
@@ -1909,12 +1925,13 @@ const clearAntibiotic = (i) => {
 
   const abrirEvolucaoInteligente = () => {
     // 1. ATBs (Mantém a lógica intacta)
+    // ATB calculado com getDaysD0 (mesma função do card do dashboard).
+    // Elimina o deslocamento de fuso: parseLocalDate normaliza os dois lados
+    // para meia-noite no fuso de Manaus, e o D0/D1 é tratado pela própria função.
     const atbsAtivos = currentPatient.antibiotics?.filter(atb => atb.name && atb.date) || [];
     const textoAtbs = atbsAtivos.map(atb => {
-      const start = new Date(atb.date + 'T12:00:00');
-      const today = new Date();
-      const diffDays = Math.floor((today - start) / (1000 * 60 * 60 * 24)) + 1;
-      return `${atb.name.toUpperCase()} (D${diffDays > 0 ? diffDays : 1})`;
+      const dias = getDaysD0(atb.date); // retorna "D0", "D1", "D2"... ou "Err"
+      return `${atb.name.toUpperCase()} (${dias})`;
     }).join(", ");
 
     updateNested("medical", "antibioticosTextoIA", textoAtbs || "Nenhum");
