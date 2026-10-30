@@ -7071,8 +7071,15 @@ const imprimirRelatorioGeladeira = () => {
       return;
     }
 
-    let horario = extraTurno === 'DN' ? '07:00 às 07:00' : extraTurno === 'D' ? '07:00 às 19:00' : '19:00 às 07:00';
-    let turnoFormatado = extraTurno === 'DN' ? 'Plantão 24h' : extraTurno === 'D' ? 'Plantão Dia' : 'Plantão Noite';
+    let horario, turnoFormatado;
+    switch (extraTurno) {
+      case 'DN': horario = '07:00 às 07:00'; turnoFormatado = 'Plantão 24h'; break;
+      case 'D':  horario = '07:00 às 19:00'; turnoFormatado = 'Plantão Dia'; break;
+      case 'N':  horario = '19:00 às 07:00'; turnoFormatado = 'Plantão Noite'; break;
+      case 'M':  horario = '07:00 às 13:00'; turnoFormatado = 'Plantão Manhã'; break;
+      case 'T':  horario = '13:00 às 19:00'; turnoFormatado = 'Plantão Tarde'; break;
+      default:   horario = '07:00 às 19:00'; turnoFormatado = 'Plantão Dia';
+    }
 
     const nomeBase = extraNome.trim().toUpperCase();
     const novoId = `${normalizarBuscaEscala(nomeBase)}_EXTRA_${Date.now()}`;
@@ -7088,6 +7095,7 @@ const imprimirRelatorioGeladeira = () => {
       categoria: categoriaAtiva,
       data: dataSelecionada,
       horario: horario,
+      turno: turnoFormatado,
       nome: `${nomeBase} [EXTRA]`,
       sigla: extraTurno,
       status: "Confirmado",
@@ -14256,7 +14264,9 @@ const imprimirRelatorioGeladeira = () => {
 
                       return (
                         <div key={plantao.id} className={`p-4 ${corBg} border ${corBorder} rounded-xl relative group`}>
-                          <span className={`text-[10px] font-bold ${corText} uppercase`}>{plantao.turno} ({plantao.horario})</span>
+                          <span className={`text-[10px] font-bold ${corText} uppercase`}>
+                            {plantao.turno || (plantao.sigla ? `Plantão ${plantao.sigla}` : 'Plantão')} ({plantao.horario || '-'})
+                          </span>
                           <div className="text-lg font-black text-slate-800 mt-1">{plantao.nome}</div>
                           <button onClick={() => abrirModalTroca(plantao.id, plantao.dia, `${plantao.turno} (${plantao.horario})`, plantao.nome, plantao.sigla, plantao.extra)} className={`absolute top-4 right-4 z-20 p-2 bg-white/50 hover:bg-white rounded-lg shadow-sm ${corText} transition-all cursor-pointer border ${corBorder}`} title="Gerenciar Plantonista">
                             <Settings size={16} />
@@ -14942,6 +14952,8 @@ const imprimirRelatorioGeladeira = () => {
                       <option value="DN">DN (24 Horas)</option>
                       <option value="D">D (Somente Dia)</option>
                       <option value="N">N (Somente Noite)</option>
+                      <option value="M">M (Somente Manhã — 07h às 13h)</option>
+                      <option value="T">T (Somente Tarde — 13h às 19h)</option>
                     </select>
                   </div>
                   <div>
