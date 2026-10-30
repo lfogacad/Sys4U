@@ -2117,6 +2117,7 @@ const clearAntibiotic = (i) => {
     r.neuro.glasgowBasalAO = admissionData.ecg_basal_ao;
     r.neuro.glasgowBasalRV = admissionData.ecg_basal_rv;
     r.neuro.glasgowBasalRM = admissionData.ecg_basal_rm;
+    r.neuro.nivelConsciencia = (admissionData.exameNeuro || "").trim();
     r.neuro.rass = admissionData.rass;
 
     r.cardio.dva = admissionData.dva;

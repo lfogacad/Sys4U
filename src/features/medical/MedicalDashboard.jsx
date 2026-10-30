@@ -452,7 +452,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               type="text"
               className="w-full p-2 border rounded text-xs bg-white outline-none focus:ring-2 focus:ring-indigo-200" 
               placeholder="LOTE, TORPOROSO, SONOLENTO, SEDADO..." 
-              value={currentPatient.neuro?.nivelConsciencia || currentPatient.admissionData?.exameNeuro || ""} 
+              value={currentPatient.neuro?.nivelConsciencia ?? ""} 
               onChange={(e) => updateNested("neuro", "nivelConsciencia", e.target.value)} 
               onBlur={() => handleBlurSave("Médico: Editou Nível de Consciência")}
             />
