@@ -219,8 +219,15 @@ const useIdleLogout = (
       verificar();   // sem a guarda de visibilityState
     }, checkIntervalMs);
 
-    // Checagem imediata na montagem
-    verificar();
+    // 🚨 CARÊNCIA DE MONTAGEM — NÃO deslogar imediatamente após o login.
+    // Na montagem inicial (logo após signInWithEmailAndPassword), o localStorage
+    // pode conter o sys4u_login_at de uma sessão ANTERIOR já expirada. Se
+    // verificar() rodar neste instante, o usuário é deslogado antes de o
+    // markLogin() do handleLogin gravar o timestamp novo. 5s de carência
+    // eliminam essa corrida sem afetar a expiração real (3h de sessão).
+    let verificacaoInicialTimer = setTimeout(() => {
+      verificar();
+    }, 5000);
 
     return () => {
       events.forEach(ev => window.removeEventListener(ev, resetTimer));
@@ -229,6 +236,7 @@ const useIdleLogout = (
       window.removeEventListener('pageshow', aoPageshow);
       if (idleTimer) clearTimeout(idleTimer);
       clearInterval(intervalo);
+      if (verificacaoInicialTimer) clearTimeout(verificacaoInicialTimer);   // ← ADICIONE ESTA LINHA
     };
   }, [enabled, timeoutMs, checkIntervalMs, absoluteTimeoutMs, warnBeforeMs]);
 };
