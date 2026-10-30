@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ShieldAlert, X, Bug, CheckCircle, Stethoscope, ArrowRight, ArrowLeft, Microscope, Activity } from 'lucide-react';
-import { RASS_OPTS, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, OPCOES_SEDATIVOS } from '../../constants/clinicalLists'; 
+import { RASS_OPTS, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, OPCOES_SEDATIVOS, OPCOES_DVA } from '../../constants/clinicalLists'; 
 
 const ChecklistEvoModal = ({
   showChecklistEvo,
@@ -356,7 +356,7 @@ const ChecklistEvoModal = ({
                     
                     {cardio.dva && (
                       <div className="pl-6 grid grid-cols-2 gap-1 border-l-2 border-red-50 animate-fadeIn">
-                        {["Noradrenalina", "Vasopressina", "Adrenalina", "Dobutamina", "Milrinone"].map(dva => (
+                        {OPCOES_DVA.map(dva => (
                           <label key={dva} className="flex items-center gap-1 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
                             <input 
                               type="checkbox" 
