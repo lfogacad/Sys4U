@@ -18,7 +18,7 @@ import TrocaSenhaObrigatoria from "./components/TrocaSenhaObrigatoria";
 import SeletorUnidade from "./components/SeletorUnidade";
 import ModuloRecepcao from "./components/ModuloRecepcao";
 import GestorDashboard from './components/GestorDashboard';
-import useIdleLogout, { clearSession, isSessionExpired, renovarSessaoAbsoluta, msRestantesAbsoluto, markLogin } from './hooks/useIdleLogout';
+import useIdleLogout, { clearSession, isSessionExpired, renovarSessaoAbsoluta, msRestantesAbsoluto, markLogin, getLoginAt } from './hooks/useIdleLogout';
 
 // Componente de Segurança (Disjuntor)
 class ErrorBoundary extends React.Component {
