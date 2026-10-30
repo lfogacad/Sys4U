@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ShieldAlert, X, Bug, CheckCircle, Stethoscope, ArrowRight, ArrowLeft, Microscope, Activity } from 'lucide-react';
-import { RASS_OPTS, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM } from '../../constants/clinicalLists'; 
+import { RASS_OPTS, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, OPCOES_SEDATIVOS } from '../../constants/clinicalLists'; 
 
 const ChecklistEvoModal = ({
   showChecklistEvo,
@@ -234,7 +234,7 @@ const ChecklistEvoModal = ({
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sedativos em uso</label>
                           <div className="grid grid-cols-2 gap-1">
-                            {["Fentanil", "Midazolam", "Propofol", "Dexmedetomidina", "Cetamina"].map(sed => (
+                            {OPCOES_SEDATIVOS.map(sed => (
                               <label key={sed} className="flex items-center gap-1 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
                                 <input 
                                   type="checkbox" 

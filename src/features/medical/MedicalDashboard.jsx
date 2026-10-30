@@ -527,23 +527,27 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
           </label>
           
           {currentPatient.neuro?.sedacao && (
-            <div className="grid grid-cols-2 gap-2 pl-4">
-              {OPCOES_SEDATIVOS.map((d) => (
-                <label key={d} className="flex items-center gap-1 text-sm cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={currentPatient.neuro?.drogasSedacao?.includes(d) || false} 
-                    onChange={(e) => {
-                      let arr = currentPatient.neuro?.drogasSedacao || [];
-                      if (e.target.checked) arr = [...arr, d];
-                      else arr = arr.filter(i => i !== d);
-                      updateNested("neuro", "drogasSedacao", arr);
-                    }} 
-                    onBlur={() => handleBlurSave(`Médico: Alterou Sedativo Específico (${d})`)}
-                  /> 
-                  {d}
-                </label>
-              ))}
+            <div className="pl-6 space-y-3 border-l-2 border-slate-100 animate-fadeIn">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sedativos em uso</label>
+                <div className="grid grid-cols-2 gap-1">
+                  {OPCOES_SEDATIVOS.map((d) => (
+                    <label key={d} className="flex items-center gap-1 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                      <input 
+                        type="checkbox" 
+                        className="w-4 h-4 text-slate-800 rounded focus:ring-slate-800"
+                        checked={currentPatient.neuro?.drogasSedacao?.includes(d) || false} 
+                        onChange={(e) => {
+                          let arr = currentPatient.neuro?.drogasSedacao || [];
+                          if (e.target.checked) arr = [...arr, d];
+                          else arr = arr.filter(i => i !== d);
+                          updateNested("neuro", "drogasSedacao", arr);
+                        }}
+                      /> {d}
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
