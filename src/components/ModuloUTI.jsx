@@ -1092,8 +1092,15 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     const contagemNoInicio = editCountRef.current; // edições que existiam quando o save começou
 
     // 🔄 SINCRONIZAÇÃO BH HISTÓRICO → bh_previous
+    // Só sincroniza se o bh_previous local estiver VAZIO ou sem data.
+    // Um bh_previous já preenchido é fonte de verdade (foi gravado pela virada
+    // automática) — o histórico local pode estar defasado e não pode vencê-lo.
     const dataBHPrev = pacienteSeguro.bh_previous?.date;
-    if (dataBHPrev && Array.isArray(pacienteSeguro.historico_bh)) {
+    const bhPrevLocalTemConteudo = pacienteSeguro.bh_previous
+      && typeof pacienteSeguro.bh_previous === 'object'
+      && Object.keys(pacienteSeguro.bh_previous).length > 0;
+
+    if (!bhPrevLocalTemConteudo && dataBHPrev && Array.isArray(pacienteSeguro.historico_bh)) {
       const itemHistorico = pacienteSeguro.historico_bh.find(h => h.date === dataBHPrev);
       if (itemHistorico) {
         pacienteSeguro.bh_previous = JSON.parse(JSON.stringify(itemHistorico));
@@ -1130,7 +1137,16 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
         if (pacienteSeguro.bh.vitals !== undefined) payloadBH.vitals = pacienteSeguro.bh.vitals;
       }
       if (pacienteSeguro.historico_bh !== undefined) payloadBH.historico_bh = pacienteSeguro.historico_bh;
-      if (pacienteSeguro.bh_previous !== undefined) payloadBH.bh_previous = pacienteSeguro.bh_previous;
+      // bh_previous só entra no payload se REALMENTE diferir do servidor.
+      // Um save() de FiO2/PEEP não pode reescrever o balanço do dia anterior.
+      if (pacienteSeguro.bh_previous !== undefined) {
+        const bhPrevServidor = (await getDoc(doc(db, "leitos_uti", docId))).data()?.bh_previous;
+        if (JSON.stringify(bhPrevServidor ?? null) !== JSON.stringify(pacienteSeguro.bh_previous ?? null)) {
+          payloadBH.bh_previous = pacienteSeguro.bh_previous;
+        } else {
+          delete payloadBH.bh_previous;
+        }
+      }
       // Dentro do save(), ANTES do setDoc — mescla o histórico do estado com o do servidor
       if (payloadBH.historico_bh !== undefined && Array.isArray(payloadBH.historico_bh)) {
         try {
