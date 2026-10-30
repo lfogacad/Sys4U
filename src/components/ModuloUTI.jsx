@@ -237,6 +237,9 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const currentPatientRef = useRef(null);
   const bhViradaGlobalRef = useRef(null); // data lógica da última virada executada
   const localEditTimeoutRef = useRef(null);
+  const atbSaveTimerRef = useRef(null);
+  const saveEmVooRef = useRef(false);
+  const savePendenteRef = useRef(null);
 
 
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
@@ -798,6 +801,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
       // 3) Pacientes — com a trava de edição local
       setPatients(prev => {
+        console.log("[SNAPSHOT]", { localEdit: localEditRef.current, chegou: snapshot.docs.length });
         if (localEditRef.current) return prev;
         const updatedPatients = firestoreBeds.map(bedData => {
           const index = parseInt(bedData.id.replace('bed_', '')) - 1;
@@ -1086,6 +1090,14 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
   // --- FUNÇÕES DE PERSISTÊNCIA ---
   const save = async (updatedPatient, logMsg = "Alteração no Prontuário") => {
     if (!db || !updatedPatient) return;
+    console.log("[SAVE-TRACE]", { logMsg, stack: new Error().stack.split("\n")[2]?.trim() });
+    // 🚦 FILA SERIALIZADA: se já há um save em voo, guarda só o mais recente
+    // como pendente e retorna. Quando o atual terminar, ele executa o pendente.
+    if (saveEmVooRef.current) {
+      savePendenteRef.current = { updatedPatient, logMsg };
+      return;
+    }
+    saveEmVooRef.current = true;
 
     // SUTURA DE SEGURANÇA: Esterilizando o payload
     const pacienteSeguro = JSON.parse(JSON.stringify(updatedPatient));
@@ -1174,11 +1186,15 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       }
       auditarEscrita("save()", docId, payloadBH, { merge: true });
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
-      // 🔓 DESTRAVAMENTO PÓS-COMMIT: o Firestore confirmou a gravação —
-      // o próximo snapshot que voltar já contém este próprio dado, então
-      // é seguro liberar o listener IMEDIATAMENTE (não espera os espelhamentos).
-      localEditRef.current = false;
-      if (localEditTimeoutRef.current) clearTimeout(localEditTimeoutRef.current);      
+      // 🔓 Destrava APÓS o commit com uma margem de segurança.
+      // Liberar imediatamente abre janela para um snapshot antigo (de outro
+      // write em voo) sobrescrever o que o usuário acabou de digitar.
+      if (localEditTimeoutRef.current) clearTimeout(localEditTimeoutRef.current);
+      localEditTimeoutRef.current = setTimeout(() => {
+        if (editCountRef.current === contagemNoInicio) {
+          localEditRef.current = false;
+        }
+      }, 1500);   // 1,5s de carência: tempo para o snapshot deste save chegar   
       
       // =========================================================
       // 🚨 O PULO DO GATO: ESPELHAMENTO GLOBAL DE CULTURAS (CCIH)
@@ -1223,12 +1239,15 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       }
     } catch (err) { 
       console.error("Erro fatal ao salvar no Firebase:", err);
-      // Se ainda há edições não salvas, MANTÉM a trava para o listener não apagar a tela.
-      // O usuário pode tentar salvar de novo; só libera quando um save tiver sucesso.
       if (editCountRef.current === contagemNoInicio) {
         localEditRef.current = false;
       }
       alert("Aviso: Ocorreu um erro ao gravar na nuvem. Verifique o console e tente novamente.");
+    } finally {
+      saveEmVooRef.current = false;
+      const pendente = savePendenteRef.current;
+      savePendenteRef.current = null;
+      if (pendente) save(pendente.updatedPatient, pendente.logMsg);
     }
   };
 
@@ -1773,17 +1792,30 @@ const clearAntibiotic = (i) => {
   };
 
   const updateAntibiotic = (i, f, v) => {
+    console.log("[ATB-TECLA]", { i, f, v, localEdit: localEditRef.current, editCount: editCountRef.current });
+    // 🔒 Trava o listener ANTES de mexer no estado
+    localEditRef.current = true;
+    if (editCountRef.current !== undefined) editCountRef.current++;
+
     setPatients(prev => {
       const up = [...prev];
-      const p = JSON.parse(JSON.stringify(up[activeTab])); // Cópia profunda
+      const p = JSON.parse(JSON.stringify(up[activeTab]));
+      if (!p.antibiotics || !p.antibiotics[i]) return prev;
       p.antibiotics[i][f] = v;
       up[activeTab] = p;
-      // 🚨 SALVAMENTO DIRETO: grava a versão exata (mesmo padrão de add/remove/clear)
-      if (typeof save === 'function') {
-        save(p, "Médico: Atualizou prescrição de ATB");
-      }
+
+      // Ref atualizado DENTRO do updater: garante ordem de escrita
+      patientsRef.current = up;
+
       return up;
     });
+
+    // 💾 Debounce de save: um write 900ms após a última tecla
+    if (atbSaveTimerRef.current) clearTimeout(atbSaveTimerRef.current);
+    atbSaveTimerRef.current = setTimeout(() => {
+      const p = patientsRef.current?.[activeTab];
+      if (p) save(p, `Médico: Atualizou prescrição de ATB (${f})`);
+    }, 900);
   };
 
     const replaceAntibiotics = (newArray) => {

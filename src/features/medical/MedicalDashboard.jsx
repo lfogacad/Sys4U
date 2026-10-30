@@ -620,9 +620,6 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
                         type="text" 
                         value={atb.name || ""} 
                         onChange={(e) => updateAntibiotic(idx, "name", e.target.value.toUpperCase())}
-                        onBlur={() => {
-                          if (atb.name) handleBlurSave(`Médico: Digitou Nome de Novo ATB (${atb.name})`);
-                        }} 
                         placeholder={`Novo ATB ${idx + 1}`} 
                         className="w-full md:flex-1 min-w-[100px] p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 uppercase text-sm" 
                       />
@@ -633,9 +630,6 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
                           type="date" 
                           value={atb.date || ""} 
                           onChange={(e) => updateAntibiotic(idx, "date", e.target.value)}
-                          onBlur={() => {
-                            if (atb.date) handleBlurSave("Médico: Definiu Data de Novo ATB");
-                          }} 
                           className="flex-1 md:w-32 p-2 rounded-lg border border-orange-300 focus:border-orange-500 outline-none font-bold text-slate-700 text-sm" 
                         />
                         <div className="hidden md:flex w-12 items-center justify-center font-bold text-orange-300 bg-slate-50 rounded-lg border border-orange-100">-</div>
