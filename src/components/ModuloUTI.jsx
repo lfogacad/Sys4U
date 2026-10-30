@@ -801,7 +801,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
       // 3) Pacientes — com a trava de edição local
       setPatients(prev => {
-        console.log("[SNAPSHOT]", { localEdit: localEditRef.current, chegou: snapshot.docs.length });
         if (localEditRef.current) return prev;
         const updatedPatients = firestoreBeds.map(bedData => {
           const index = parseInt(bedData.id.replace('bed_', '')) - 1;
@@ -1792,7 +1791,6 @@ const clearAntibiotic = (i) => {
   };
 
   const updateAntibiotic = (i, f, v) => {
-    console.log("[ATB-TECLA]", { i, f, v, localEdit: localEditRef.current, editCount: editCountRef.current });
     // 🔒 Trava o listener ANTES de mexer no estado
     localEditRef.current = true;
     if (editCountRef.current !== undefined) editCountRef.current++;

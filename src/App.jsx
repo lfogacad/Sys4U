@@ -95,54 +95,64 @@ const AppRouter = () => {
 // =========================================================================
 // 1. O LOGIN (A Catraca Eletrônica em Ação)
 // =========================================================================
-const handleLogin = async (e) => {
-  e.preventDefault();
-  setIsLoading(true);
-  setAuthError(null);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setAuthError(null);
 
-  try {
-    // Passo 1: O Firebase Auth confere a senha (A chave da porta)
-    const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-    const user = userCredential.user;
+    try {
+      // Passo 1: O Firebase Auth confere a senha (A chave da porta)
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
 
-    // Passo 2: Busca a identidade oficial na coleção 'usuarios'
-    const userDocRef = doc(db, 'usuarios', user.uid);
-    const userDocSnap = await getDoc(userDocRef);
+      // 🚨 REGISTRA A SESSÃO AGORA — antes de qualquer verificação de expiração.
+      // O onAuthStateChanged dispara NESTE instante e o useIdleLogout roda o
+      // verificar() na montagem. Se o sys4u_login_at antigo (de uma sessão já
+      // expirada) ainda estiver no localStorage, o hook deslogaria o usuário
+      // imediatamente. markLogin() aqui zera o relógio de 3h antes disso.
+      markLogin();
 
-    if (!userDocSnap.exists()) {
-      // Se não achar o perfil, expulsa imediatamente
-      await signOut(auth);
-      setAuthError("Perfil não encontrado. Realize o cadastro com seu CRM/COREN primeiro.");
+      // Passo 2: Busca a identidade oficial na coleção 'usuarios'
+      const userDocRef = doc(db, 'usuarios', user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
+        // Se não achar o perfil, expulsa imediatamente
+        clearSession();   // limpa também o login_at recém-gravado
+        await signOut(auth);
+        setAuthError("Perfil não encontrado. Realize o cadastro com seu CRM/COREN primeiro.");
+        setIsLoading(false);
+        return;
+      }
+
+      const userProfile = userDocSnap.data();
+
+      // Passo 3: 🚨 A CATRACA (Cruza com a Escala e Exceções) 🚨
+      const analiseAcesso = await verificarCatraca(userProfile);
+
+      if (!analiseAcesso.liberado) {
+        // Acesso negado: limpa a sessão e desloga silenciosamente
+        clearSession();
+        await signOut(auth);
+        setAuthError(`⚠️ ${analiseAcesso.motivo}`);
+        setIsLoading(false);
+        return; // A execução morre aqui. Ele não entra.
+      }
+
+      // Passo 4: Se chegou aqui, a porta abriu!
+      // O markLogin() já foi feito no Passo 1. O React detecta a mudança
+      // de Auth e carrega a UTI normalmente.
+
+    } catch (err) {
+      console.error("Erro no login:", err);
+      setAuthError("Email ou senha incorretos.");
+      // Garantia: limpa a sessão e força logoff se algo falhar no meio
+      clearSession();
+      await signOut(auth).catch(() => console.log("Sessão já limpa"));
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    const userProfile = userDocSnap.data();
-
-    // Passo 3: 🚨 A CATRACA (Cruza com a Escala e Exceções) 🚨
-    const analiseAcesso = await verificarCatraca(userProfile);
-
-    if (!analiseAcesso.liberado) {
-      // Acesso negado: Desloga silenciosamente por trás dos panos e exibe o motivo
-      await signOut(auth);
-      setAuthError(`⚠️ ${analiseAcesso.motivo}`);
-      setIsLoading(false);
-      return; // A execução morre aqui. Ele não entra.
-    }
-
-    // Passo 4: Se chegou aqui, a porta abriu!
-    markLogin(); // ← registra o momento do login (base do controle de 2h)
-    // O sistema React normal vai detectar a mudança de Auth e carregar a UTI.
-
-  } catch (err) {
-    console.error("Erro no login:", err);
-    setAuthError("Email ou senha incorretos.");
-    // Como garantia, força o logoff se a rede cair no meio do processo
-    await signOut(auth).catch(()=>console.log("Sessão já limpa")); 
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
 // =========================================================================
 // 2. O REGISTRO (Blindado pelo Gestor)

@@ -33,14 +33,39 @@ export const clearSession = () => {
   } catch (e) { /* ignora */ }
 };
 
-// Retorna true se a sessão está expirada por inatividade
+// Retorna true se a sessão está expirada por inatividade.
+// Proteção anti-loop: loginAt = 0 (sem registro) NUNCA é tratado como
+// sessão expirada — é primeiro acesso neste dispositivo, então registra
+// o login agora e considera válido. Sem isso, o usuário é deslogado
+// imediatamente após entrar (o onAuthStateChanged dispara antes do markLogin
+// do handleLogin, lendo o login_at antigo da sessão anterior).
 export const isSessionExpired = (timeoutMs) => {
   try {
+    // 1) Sem registro de atividade → sessão nova, registra e NÃO desloga
     const last = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
-    if (!last) return false;
+    if (!last) {
+      markLogin();
+      return false;
+    }
+
+    // 2) Sem registro de login → sessão nova, registra e NÃO desloga
+    const loginAt = getLoginAt();
+    if (!loginAt) {
+      markLogin();
+      return false;
+    }
+
+    // 3) Login_at no FUTURO (relógio do dispositivo atrasado/ajustado) →
+    //    não desloga; o relógio vai alcançar naturalmente
+    if (loginAt > Date.now()) {
+      markLogin();
+      return false;
+    }
+
+    // 4) Verificação normal de inatividade
     return Date.now() - last > timeoutMs;
   } catch (e) {
-    return false;
+    return false; // localStorage indisponível → não desloga por falha técnica
   }
 };
 
