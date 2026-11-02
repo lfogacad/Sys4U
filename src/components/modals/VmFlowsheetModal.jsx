@@ -301,47 +301,48 @@ const VmFlowsheetModal = ({
   const handleSalvarEFechar = async () => {
     setSalvando(true);
     setErro(null);
-
     try {
-      // 1) Exclusões: remove pelo id no array do pai
-      for (const id of colunasExcluidas) {
-        const alvo = originalRef.current.find(e => e.id === id);
-        if (alvo && typeof excluirColunaVm === 'function') {
-          excluirColunaVm(alvo);
+      // ── ESTRATÉGIA UNIFICADA ──────────────────────────────────────────
+      // Em vez de disparar várias operações assíncronas (add/update/excluir)
+      // lendo currentPatient (stale na 1ª tentativa), montamos o array FINAL
+      // uma única vez e persistimos com UMA operação. Isso garante que
+      // as edições de colunas recém-adicionadas NÃO se percam.
+
+      // 1) Monta o array final a partir do draft (já com id em todas as entradas)
+      const finalArray = vmDraft.map(e => ({ ...e }));
+
+      // 2) Persiste com um único updateNested — o array completo substitui o antigo
+      if (typeof updateNested === 'function') {
+        updateNested("physio", "vmFlowsheet", finalArray);
+      } else {
+        // Fallback: mantém o comportamento antigo (add/update/excluir separados)
+        for (const id of colunasExcluidas) {
+          const alvo = originalRef.current.find(e => e.id === id);
+          if (alvo && typeof excluirColunaVm === 'function') excluirColunaVm(alvo);
+        }
+        const adicionadas = vmDraft.filter(e => colunasAdicionadas.includes(e.id));
+        for (const nova of adicionadas) {
+          if (typeof handleAddVmEntry === 'function') handleAddVmEntry(nova);
+        }
+        const listaAtual = currentPatient?.physio?.vmFlowsheet || [];
+        for (const entry of vmDraft) {
+          const original = originalRef.current.find(o => o.id === entry.id);
+          if (!original) continue;
+          const idx = listaAtual.findIndex(e => e.id === entry.id);
+          if (idx < 0) continue;
+          Object.keys(entry).forEach(key => {
+            if (key === 'id') return;
+            const antes = original[key];
+            const depois = entry[key];
+            const mudou = typeof depois === 'boolean'
+              ? !!antes !== !!depois
+              : String(antes ?? '') !== String(depois ?? '');
+            if (mudou) updateVmEntry(idx, key, depois);
+          });
         }
       }
 
-      // 2) Inclusões: usa handleAddVmEntry para cada coluna nova
-      const adicionadas = vmDraft.filter(e => colunasAdicionadas.includes(e.id));
-      for (const nova of adicionadas) {
-        if (typeof handleAddVmEntry === 'function') {
-          handleAddVmEntry(nova);
-        }
-      }
-
-      // 3) Edições: para cada célula alterada, chama updateVmEntry
-      //    (somente em colunas que já existiam no servidor)
-      const listaAtual = currentPatient?.physio?.vmFlowsheet || [];
-      for (const entry of vmDraft) {
-        const original = originalRef.current.find(o => o.id === entry.id);
-        if (!original) continue; // foi adicionada agora, já tratada acima
-
-        const idx = listaAtual.findIndex(e => e.id === entry.id);
-        if (idx < 0) continue;
-
-        Object.keys(entry).forEach((key) => {
-          if (key === 'id') return;
-          const antes = original[key];
-          const depois = entry[key];
-          const mudou = typeof depois === 'boolean'
-            ? !!antes !== !!depois
-            : String(antes ?? '') !== String(depois ?? '');
-          if (mudou) {
-            updateVmEntry(idx, key, depois);
-          }
-        });
-      }
-
+      // 3) Auditoria (não sobrescreve mais o array: só registra o log)
       if (typeof handleBlurSave === 'function') {
         handleBlurSave("Mapa SV: Salvou alterações do Mapa Ventilatório");
       }

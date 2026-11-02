@@ -4887,71 +4887,85 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
   // MAPA DE VENTILAÇÃO MECÂNICA (FISIOTERAPIA)
   // ========================================================================
 
-  const handleAddVmEntry = () => {
-    let pacienteAtualizado = null;
+  const handleAddVmEntry = (novaColuna) => {
+    // 🔒 TRAVA DE EDIÇÃO LOCAL — mesmo padrão de updateNested/updateVmEntry.
+    // Sem isto, o listener único de leitos_uti reescreve o estado com o
+    // documento anterior e a coluna recém-criada desaparece.
+    editCountRef.current += 1;
+    localEditRef.current = true;
+    scheduleLocalEditRelease();
 
-    setPatients(prev => {
-      const up = [...prev];
-      const p = JSON.parse(JSON.stringify(up[activeTab]));
+    // ✅ Base SÍNCRONA a partir do REF — não do estado React.
+    const base = JSON.parse(JSON.stringify(patientsRef.current[activeTab] || {}));
+    if (!base.physio) base.physio = {};
+    if (!Array.isArray(base.physio.vmFlowsheet)) base.physio.vmFlowsheet = [];
 
-      if (!p.physio) p.physio = {};
-      if (!Array.isArray(p.physio.vmFlowsheet)) p.physio.vmFlowsheet = [];
-
+    // Se o modal já envia a coluna completa (com todas as edições do usuário),
+    // usa exatamente esse objeto. Senão, cria a coluna herdando physio.
+    let newEntry;
+    if (novaColuna && (novaColuna.id || novaColuna.dataHora)) {
+      newEntry = { ...novaColuna };
+      if (!newEntry.id) newEntry.id = String(Date.now());
+    } else {
       const now = new Date();
       const dataHora = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')} - ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
       const diasUti = typeof getDaysD1 === 'function'
-        ? getDaysD1(p.dataInternacao || p.dataAdmissao)
+        ? getDaysD1(base.dataInternacao || base.dataAdmissao)
         : "";
       const diasVm = typeof getTempoVMText === 'function'
-        ? getTempoVMText(p)
+        ? getTempoVMText(base)
         : "";
-
-      const newEntry = {
+      newEntry = {
         id: Date.now().toString(),
-        dataHora: dataHora,
-        suporte: p.physio.suporte || "",
-        diasUti: diasUti,
-        diasVm: diasVm,
-        modo: p.physio.parametro || "",
-        fluxo: p.physio.fluxo || "",
-        fio2: p.physio.fiO2 || "",
-        peep: p.physio.peep || "",
-        vc: p.physio.volCorrente || "",
-        pc: p.physio.pressaoControlada || "",
-        ps: p.physio.pressaoSuporte || "",
-        frSet: p.physio.fr || "",
+        dataHora,
+        suporte: base.physio.suporte || "",
+        diasUti,
+        diasVm,
+        modo: base.physio.parametro || "",
+        fluxo: base.physio.fluxo || "",
+        fio2: base.physio.fiO2 || "",
+        peep: base.physio.peep || "",
+        vc: base.physio.volCorrente || "",
+        pc: base.physio.pressaoControlada || "",
+        ps: base.physio.pressaoSuporte || "",
+        frSet: base.physio.fr || "",
         frTotal: "",
-        cuffM: p.physio.cuffM || "",
-        cuffT: p.physio.cuffT || "",
-        cuffN: p.physio.cuffN || "",
+        cuffM: base.physio.cuffM || "",
+        cuffT: base.physio.cuffT || "",
+        cuffN: base.physio.cuffN || "",
         despertarS: false, despertarN: false,
         vtPc: "", vm: "", fluxoInsp: "", tInsp: "", ie: "",
         pPico: "", pPlato: "", dp: "", cst: "",
         cdin: "", rva: "", autoPeep: "", p01: "", irrs: "",
-        satO2: p.physio.satO2 || "",
-        etco2: p.physio.etco2 || "",
+        satO2: base.physio.satO2 || "",
+        etco2: base.physio.etco2 || "",
         ajustesDia: ""
       };
+    }
 
-      p.physio.vmFlowsheet.push(newEntry);
+    // Deduplica: se o ID já existe, substitui; senão, acrescenta
+    const idx = base.physio.vmFlowsheet.findIndex(e => String(e.id) === String(newEntry.id));
+    if (idx >= 0) base.physio.vmFlowsheet[idx] = newEntry;
+    else base.physio.vmFlowsheet.push(newEntry);
 
-      up[activeTab] = p;
-      pacienteAtualizado = p; // ← captura a versão COM a nova entrada
-      return up;
+    // 1) Ref síncrono (o save lê daqui)
+    patientsRef.current[activeTab] = base;
+
+    // 2) Estado com updater funcional
+    setPatients(prev => {
+      const novos = [...prev];
+      novos[activeTab] = base;
+      patientsRef.current[activeTab] = base;
+      return novos;
     });
 
-    // Salva FORA do callback, com a versão que já contém a coluna nova.
-    // requestAnimationFrame garante que o setPatients foi aplicado antes do save.
-    requestAnimationFrame(() => {
-      if (pacienteAtualizado) {
-        save(pacienteAtualizado, "Fisioterapia: Adicionou nova coluna de avaliação no Mapa de Suporte Ventilatório");
-      }
-    });
+    // 3) Grava UMA vez, de forma síncrona — sem requestAnimationFrame
+    save(base, "Fisioterapia: Adicionou nova coluna de avaliação no Mapa de Suporte Ventilatório");
   };
 
   const updateVmEntry = (index, field, value) => {
-    // 🛡️ Mesmo padrão de updateP/updateNested: trava o listener enquanto edita
+    // 🔒 Trava de edição local (incrementa o contador, igual ao updateNested)
+    editCountRef.current += 1;
     if (localEditRef) localEditRef.current = true;
     scheduleLocalEditRelease();
     setPatients(prev => {
