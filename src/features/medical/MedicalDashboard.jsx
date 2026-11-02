@@ -343,7 +343,7 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         {/* COLUNA ESQUERDA: Empilha Cardio e Renal para aproveitar o espaço */}
         <div className="flex flex-col gap-6">
           
-         {/* --- CARDIOVASCULAR --- */}
+          {/* --- CARDIOVASCULAR --- */}
           <div className="p-4 border rounded-xl bg-red-50/20">
             <h4 className="font-bold text-red-800 mb-4 flex items-center gap-2"><HeartPulse size={16} /> Cardiovascular</h4>
             <label className="flex items-center gap-2 mb-2 font-bold">
@@ -351,7 +351,6 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
                 type="checkbox" 
                 checked={currentPatient.cardio?.dva || false} 
                 onChange={(e) => updateNested("cardio", "dva", e.target.checked)} 
-                onBlur={() => handleBlurSave("Médico: Alterou Uso de DVA")}
               /> 
               DVA (Drogas Vasoativas)
             </label>
@@ -364,12 +363,15 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
                       type="checkbox" 
                       checked={currentPatient.cardio?.drogasDVA?.includes(d) || false} 
                       onChange={(e) => {
-                        let arr = currentPatient.cardio?.drogasDVA || [];
-                        if (e.target.checked) arr = [...arr, d];
-                        else arr = arr.filter(i => i !== d);
+                        // Lê de patients[activeTab] (estado mais atual), não da prop defasada.
+                        const arrAtual = patients?.[activeTab]?.cardio?.drogasDVA
+                          || currentPatient.cardio?.drogasDVA
+                          || [];
+                        const arr = e.target.checked
+                          ? (arrAtual.includes(d) ? arrAtual : [...arrAtual, d])
+                          : arrAtual.filter(i => i !== d);
                         updateNested("cardio", "drogasDVA", arr);
                       }} 
-                      onBlur={() => handleBlurSave(`Médico: Alterou DVA Específica (${d})`)}
                     /> 
                     {d}
                   </label>
@@ -463,7 +465,6 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               className="p-2 border rounded text-xs" 
               value={currentPatient.neuro?.glasgowAO || ""} 
               onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowAO", e.target.value)} 
-              onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (AO)")}
             >
               <option value="">AO</option>
               {GLASGOW_AO.map((o) => <option key={o}>{o}</option>)}
@@ -473,7 +474,6 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               className="p-2 border rounded text-xs" 
               value={currentPatient.neuro?.glasgowRV || ""} 
               onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowRV", e.target.value)} 
-              onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RV)")}
             >
               <option value="">RV</option>
               {GLASGOW_RV.map((o) => <option key={o}>{o}</option>)}
@@ -483,7 +483,6 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               className="p-2 border rounded text-xs" 
               value={currentPatient.neuro?.glasgowRM || ""} 
               onChange={(e) => handleNeuroSwitch("GLASGOW", "glasgowRM", e.target.value)} 
-              onBlur={() => handleBlurSave("Médico: Avaliou Glasgow (RM)")}
             >
               <option value="">RM</option>
               {GLASGOW_RM.map((o) => <option key={o}>{o}</option>)}
@@ -510,7 +509,6 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
             className="w-full p-2 border rounded mb-3" 
             value={currentPatient.neuro?.rass || ""} 
             onChange={(e) => handleNeuroSwitch("RASS", null, e.target.value)} 
-            onBlur={() => handleBlurSave("Médico: Avaliou RASS")}
           >
             <option value="">Se Sedado...</option>
             {RASS_OPTS.map((r) => <option key={r}>{r}</option>)}
@@ -521,7 +519,6 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
               type="checkbox" 
               checked={currentPatient.neuro?.sedacao || false} 
               onChange={(e) => updateNested("neuro", "sedacao", e.target.checked)} 
-              onBlur={() => handleBlurSave("Médico: Alterou Uso de Sedação")}
             /> 
             Sedação Contínua
           </label>
@@ -538,9 +535,14 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
                         className="w-4 h-4 text-slate-800 rounded focus:ring-slate-800"
                         checked={currentPatient.neuro?.drogasSedacao?.includes(d) || false} 
                         onChange={(e) => {
-                          let arr = currentPatient.neuro?.drogasSedacao || [];
-                          if (e.target.checked) arr = [...arr, d];
-                          else arr = arr.filter(i => i !== d);
+                          // Lê do estado mais atual (patients[activeTab]) — currentPatient
+                          // é prop e fica defasado em cliques rápidos em sequência.
+                          const arrAtual = patients?.[activeTab]?.neuro?.drogasSedacao
+                            || currentPatient.neuro?.drogasSedacao
+                            || [];
+                          const arr = e.target.checked
+                            ? (arrAtual.includes(d) ? arrAtual : [...arrAtual, d])
+                            : arrAtual.filter(i => i !== d);
                           updateNested("neuro", "drogasSedacao", arr);
                         }}
                       /> {d}

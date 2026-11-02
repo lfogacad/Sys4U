@@ -241,6 +241,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const saveEmVooRef = useRef(false);
   const savePendenteRef = useRef(null);
 
+  const neuroSaveTimeoutRef = useRef(null);
 
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
   const [showNursingModal, setShowNursingModal] = useState(false);
@@ -1249,7 +1250,17 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       saveEmVooRef.current = false;
       const pendente = savePendenteRef.current;
       savePendenteRef.current = null;
-      if (pendente) save(pendente.updatedPatient, pendente.logMsg);
+      if (pendente) {
+        const refAtual = patientsRef.current[activeTab];
+        // Usa o ref se ele for MAIS RECENTE que o snapshot pendente.
+        // Compara pelo tamanho serializado como heurística barata de recência.
+        const usarRef = refAtual
+          && JSON.stringify(refAtual).length >= JSON.stringify(pendente.updatedPatient).length;
+        const payloadAtualizado = usarRef
+          ? JSON.parse(JSON.stringify(refAtual))
+          : pendente.updatedPatient;
+        save(payloadAtualizado, pendente.logMsg);
+      }
     }
   };
 
@@ -1386,13 +1397,13 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     const base = aplicar(patientsRef.current[activeTab]);
     patientsRef.current[activeTab] = base;
 
-    // 2. Estado: mantém o UPDATER FUNCIONAL (encadeia updates pendentes de terceiros,
-    //    ex.: listener/bulk upload) — comportamento original preservado.
+    // 2. Estado: parte do `base` (que já contém TODAS as edições encadeadas
+    //    desde o ref), nunca do `prev` — evita perder edições rápidas em
+    //    sequência quando o React agrupa os setPatients em batch.
     setPatients(prev => {
       const novosPacientes = [...prev];
-      const alvo = aplicar(novosPacientes[activeTab]);
-      novosPacientes[activeTab] = alvo;
-      patientsRef.current[activeTab] = alvo; // trunca para ficar consistente com o estado
+      novosPacientes[activeTab] = base;             // base é cumulativo
+      patientsRef.current[activeTab] = base;        // ref = base (consistente)
       return novosPacientes;
     });
 
@@ -5463,34 +5474,56 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
 
   // --- TROCA DE GLASGOW POR RASS ---
   const handleNeuroSwitch = (type, field, value) => {
-    const up = [...patients];
-    const p = up[activeTab];
-    if (!p.neuro) p.neuro = {};
+    // 🔒 Trava de edição local (mesmo contrato de updateNested/clearAntibiotic)
+    editCountRef.current += 1;
+    localEditRef.current = true;
+    scheduleLocalEditRelease();
+
+    // ✅ Base síncrona a partir do REF, com cópia profunda — nunca do estado React
+    const base = JSON.parse(JSON.stringify(patientsRef.current[activeTab] || {}));
+    if (!base.neuro) base.neuro = {};
 
     if (type === "RASS") {
-      // Se selecionou um RASS válido
       if (value && value !== "Se sedado..." && value !== "") {
-        // Calcula o Glasgow atual. Se existir, guarda na gaveta "glasgowPreSedacao"
-        const currentGCS = calculateGlasgowTotal(p);
-        if (currentGCS !== "-" && !isNaN(currentGCS)) {
-          p.neuro.glasgowPreSedacao = currentGCS;
+        // Guarda o Glasgow atual na gaveta antes de zerar.
+        // calculateGlasgowTotal espera o PACIENTE completo (usa p.neuro).
+        const currentGCS = calculateGlasgowTotal(base);
+        if (currentGCS !== "-" && !isNaN(currentGCS) && currentGCS > 0) {
+          base.neuro.glasgowPreSedacao = currentGCS;
         }
-        // Zera os campos do Glasgow para eles voltarem ao padrão (AO, RV, RM)
-        p.neuro.glasgowAO = "";
-        p.neuro.glasgowRV = "";
-        p.neuro.glasgowRM = "";
+        base.neuro.glasgowAO = "";
+        base.neuro.glasgowRV = "";
+        base.neuro.glasgowRM = "";
       }
-      p.neuro.rass = value;
-    } 
-    else if (type === "GLASGOW") {
-      p.neuro[field] = value;
-      // Se digitou algum valor de Glasgow, apaga o RASS automaticamente
+      base.neuro.rass = value;
+    } else if (type === "GLASGOW") {
+      if (!field) return;                // guarda de segurança
+      base.neuro[field] = value;
       if (value && value !== "") {
-        p.neuro.rass = ""; // Isso fará o RASS voltar pro "Se sedado..."
+        base.neuro.rass = "";            // Glasgow digitado → limpa RASS
       }
     }
-    
-    setPatients(up);
+
+    // 1) Ref síncrono
+    patientsRef.current[activeTab] = base;
+
+    // 2) Estado (parte do `base`, nunca do `prev`)
+    setPatients(prev => {
+      const novos = [...prev];
+      novos[activeTab] = base;
+      patientsRef.current[activeTab] = base;
+      return novos;
+    });
+
+    // 3) Debounce de 250ms: RASS e Glasgow alterados em sequência rápida
+    //    caem no MESMO save, com o payload final do ref (nunca intermediário).
+    if (neuroSaveTimeoutRef.current) clearTimeout(neuroSaveTimeoutRef.current);
+    neuroSaveTimeoutRef.current = setTimeout(() => {
+      const refFinal = patientsRef.current[activeTab];
+      if (refFinal) {
+        save(refFinal, `Médico: Avaliou ${type}`);
+      }
+    }, 250);
   };
 
 // --- MATRIZ DE PERMISSÕES (RBAC) ---
