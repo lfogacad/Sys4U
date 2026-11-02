@@ -1396,9 +1396,23 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       return novosPacientes;
     });
 
+    // 🔒 ISOLAMENTO DE DOMÍNIO NO SAVE:
+    // Um save disparado por "neuro", "cardio", "physio" etc. NÃO deve carregar
+    // o conteúdo do BH — o bh do ref pode estar defasado e, pela regra de
+    // precedência local do unirMapasBH, apagaria células já gravadas no servidor.
+    // Só o próprio domínio "bh" (e o "sumario"/"alta", que reconstroem tudo)
+    // têm autoridade para reescrever o conteúdo do BH.
+    const DOMINIOS_COM_AUTORIDADE_BH = ["bh", "bh_previous", "sumario", "alta"];
+    const savePayload = JSON.parse(JSON.stringify(base));
+    if (!DOMINIOS_COM_AUTORIDADE_BH.includes(categoria)) {
+      delete savePayload.bh;
+      delete savePayload.vitals;
+      delete savePayload.bh_previous;
+    }
+
     // 3. SAVE FORA DO setPatients: roda UMA vez por chamada (não duplica no StrictMode)
-    if (base && typeof save === 'function') {
-      save(base, `Atualização Automática: ${categoria} > ${campo}`);
+    if (savePayload && typeof save === "function") {
+      save(savePayload, `Atualização Automática: ${categoria} > ${campo}`);
     }
   };
 
