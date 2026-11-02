@@ -793,19 +793,22 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           return numA - numB;
         });
 
+      const isEcoDoProprioWrite = snapshot.metadata?.hasPendingWrites === true;
+
       // 1) Configuração dos leitos (bloqueado / ignorarEstatistica)
       setLeitosConfig(firestoreBeds);
 
       // 2) Censo (auto-preenchimento das notificações) — agora em tempo real
       setListaCenso(firestoreBeds);
 
-      // 3) Pacientes — com a trava de edição local
+      // 3) Pacientes — trava dupla: por edição local ativa OU por eco pendente
       setPatients(prev => {
         if (localEditRef.current) return prev;
+        if (isEcoDoProprioWrite) return prev;
         const updatedPatients = firestoreBeds.map(bedData => {
           const index = parseInt(bedData.id.replace('bed_', '')) - 1;
           const merged = mergePatientData(defaultPatient(index), bedData);
-          return syncLabsFromHistory(merged); // comportamento do listener 1, agora para todos os leitos
+          return syncLabsFromHistory(merged);
         });
         return updatedPatients;
       });
