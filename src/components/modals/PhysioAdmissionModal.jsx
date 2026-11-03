@@ -295,7 +295,7 @@ const PhysioAdmissionModal = ({
             <select
               className="w-full p-2 border rounded mb-3 bg-white outline-none focus:ring-2 focus:ring-cyan-200 text-xs font-bold text-slate-700"
               value={physioData.suporte || ""}
-              onChange={(e) => setPhysioData({ ...physioData, suporte: e.target.value })}
+              onChange={(e) => setPhysioData({ ...physioData, suporte: e.target.value, parametro: "" })}
               disabled={isReadOnly}
             >
               <option value="">Selecione o suporte...</option>
@@ -306,7 +306,7 @@ const PhysioAdmissionModal = ({
             {(physioData.suporte === "Cateter Nasal" || physioData.suporte === "Máscara não reinalante" || physioData.suporte === "Macronebulização por TQT") && (
               <div className="mb-3 animate-fadeIn">
                 <label className="text-[10px] font-bold text-slate-500 uppercase">Fluxo de O2 (L/min)</label>
-                <input type="text" className="w-full p-2 border rounded bg-slate-50 text-xs" value={physioData.parametro || ""} onChange={(e) => setPhysioData({ ...physioData, parametro: e.target.value })} disabled={isReadOnly}/>
+                <input type="text" className="w-full p-2 border rounded bg-slate-50 text-xs" value={physioData.fluxo || ""} onChange={(e) => setPhysioData({ ...physioData, fluxo: e.target.value })} disabled={isReadOnly}/>
               </div>
             )}
             {physioData.suporte === "Venturi" && (
@@ -340,11 +340,11 @@ const PhysioAdmissionModal = ({
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">Nº TOT</label>
-                    <input type="number" step="0.5" className="w-full p-2 border rounded bg-white text-xs text-center" placeholder="Ex: 8.0" value={physioData.numeroTOT || ""} onChange={(e) => setPhysioData({ ...physioData, numeroTOT: e.target.value })} disabled={isReadOnly}/>
+                    <input type="number" step="0.5" className="w-full p-2 border rounded bg-white text-xs text-center" placeholder="Ex: 8.0" value={physioData.totNumero || ""} onChange={(e) => setPhysioData({ ...physioData, totNumero: e.target.value })} disabled={isReadOnly}/>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">Rima (cm)</label>
-                    <input type="number" className="w-full p-2 border rounded bg-white text-xs text-center" placeholder="Ex: 22" value={physioData.rimaFixacao || ""} onChange={(e) => setPhysioData({ ...physioData, rimaFixacao: e.target.value })} disabled={isReadOnly}/>
+                    <input type="number" className="w-full p-2 border rounded bg-white text-xs text-center" placeholder="Ex: 22" value={physioData.totRima || ""} onChange={(e) => setPhysioData({ ...physioData, totRima: e.target.value })} disabled={isReadOnly}/>
                   </div>
                 </div>
                 <div className="grid grid-cols-4 md:grid-cols-8 gap-2">

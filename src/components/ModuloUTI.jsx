@@ -840,7 +840,19 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           return prev;
         }
 
-        return updatedPatients;
+        // 🛡️ Preserva leitos ocupados localmente que o snapshot ainda não refletiu.
+        const merged = updatedPatients.map((novo, i) => {
+          const local = prev[i];
+          const localOcupado = local?.nome && String(local.nome).trim() !== "";
+          const novoVazio = !novo?.nome || String(novo.nome).trim() === "";
+          if (localOcupado && novoVazio && !localEditRef.current) {
+            // Snapshot não tem este leito ainda (write em trânsito) → mantém o local
+            return local;
+          }
+          return novo;
+        });
+
+        return merged;
       });
     }, (error) => {
       console.error("Erro ao sincronizar leitos_uti:", error);
@@ -1534,20 +1546,47 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     setPatients(up);
   };
 
-  // Função disparada ao clicar no "Admitir" do leito vazio
-  const handleOpenQueue = (bedId) => {
-    setSelectedBedForAdmission(bedId);
+  // Função disparada ao clicar no "Admitir" do leito vazio.
+  // Recebe o NÚMERO do leito (1-based) e converte para o ÍNDICE do array (0-based).
+  const handleOpenQueue = (numeroLeito) => {
+    const numero = Number(numeroLeito);
+    if (isNaN(numero) || numero < 1) {
+      console.error("[SYS4U] handleOpenQueue recebeu leito inválido:", numeroLeito);
+      return;
+    }
+    setSelectedBedForAdmission(numero - 1);
     setShowQueueModal(true);
   };
 
-// Função que efetiva a internação (tira da fila e põe no leito)
+  // Função que efetiva a internação (tira da fila e põe no leito)
   const bindPatientToBed = async (patientFromQueue) => {
     try {
-      const bedIndex = selectedBedForAdmission; // Para o computador, Leito 1 = 0
+      // selectedBedForAdmission JÁ é o índice 0-based (normalizado no handleOpenQueue).
+      // NÃO subtrair 1 novamente.
+      const bedIndex = Number(selectedBedForAdmission);
+      if (!Number.isInteger(bedIndex) || bedIndex < 0) {
+        return alert("Selecione um leito antes de vincular o paciente.");
+      }
+      const numeroLeito = bedIndex + 1;
+      const docId = `bed_${numeroLeito}`;
+
+      // 🛡️ GUARDA DE OCUPAÇÃO: nunca sobrescrever um leito ocupado
+      const snapAlvo = await getDoc(doc(db, "leitos_uti", docId));
+      if (snapAlvo.exists()) {
+        const ocupante = snapAlvo.data();
+        const nomeOcupante = (ocupante?.nome || "").trim();
+        if (nomeOcupante) {
+          const confirmar = window.confirm(
+            `⚠️ O Leito ${numeroLeito} já está ocupado por: ${nomeOcupante}.\n\n` +
+            `Deseja SOBRESCREVER? Esta ação apaga o registro atual do leito.`
+          );
+          if (!confirmar) return;
+        }
+      }
 
       const newPatientRecord = {
         ...defaultPatient(bedIndex),
-        id: `bed_${bedIndex + 1}`,
+        id: docId,
         nome: patientFromQueue.nome,
         cpf: patientFromQueue.cpf,
         dataNascimento: patientFromQueue.dataNascimento,
@@ -1555,51 +1594,58 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
         dataInternacao: getManausDateStr(),
         procedencia: patientFromQueue.origem || "Recepção",
         statusInternacao: "Aguardando Admissão Médica",
-        
-        // 💡 VASSOURA DE ESCALAS: Garante que as escalas venham limpas
         enfermagem: {
+          ...defaultPatient(bedIndex).enfermagem,
           bradenResult: "",
           morseResult: "",
-          nrsResult: "",
-          // O resto da enfermagem pode ficar vazio ou ser adicionado conforme necessidade
+          nrsResult: ""
         },
-        // 💡 VASSOURA DO SAPS 3 (Se já preenchido anteriormente, apaga)
         saps3: {
+          ...defaultPatient(bedIndex).saps3,
           score: "",
           lockedProb: "",
           comorbidades: []
         }
       };
 
-      // 1. Salva no Firebase (AQUI ENTRA O + 1: bed_0 vira bed_1)
-      await setDoc(doc(db, "leitos_uti", `bed_${bedIndex + 1}`), newPatientRecord);
+      // 🔒 Trava de edição local — impede o listener de apagar o vínculo
+      // antes de o snapshot do servidor refletir o write.
+      editCountRef.current += 1;
+      localEditRef.current = true;
+      scheduleLocalEditRelease();
 
-      // 2. Atualiza a tela (React) na mesma hora! (Aqui continua sem o + 1)
-      const up = [...patients];
-      up[bedIndex] = newPatientRecord;
-      setPatients(up);
+      // 1) Firestore
+      await setDoc(doc(db, "leitos_uti", docId), newPatientRecord, { merge: true });
 
-      // 3. Remove o paciente da Fila de Espera (Avisando o número real do leito)
+      // 2) Estado + REF síncrono (evita "leito vazio" até o snapshot chegar)
+      patientsRef.current[bedIndex] = newPatientRecord;
+      setPatients(prev => {
+        const novos = [...prev];
+        novos[bedIndex] = newPatientRecord;
+        patientsRef.current[bedIndex] = newPatientRecord;
+        return novos;
+      });
+
+      // 3) Fila de espera
       await updateDoc(doc(db, "fila_espera", patientFromQueue.id), {
         status: "internado",
-        leitoAtribuido: bedIndex + 1, // <--- Ajustado aqui também para o histórico da recepção
+        leitoAtribuido: numeroLeito,
         dataInternada: serverTimestamp()
       });
 
-      // =========================================================================
-      // 💡 4. AUDITORIA: Registra quem efetivou a ocupação do leito
-      // =========================================================================
+      // 4) Auditoria
       if (typeof registrarLogAuditoria === "function") {
         registrarLogAuditoria(
-          "VINCULAÇÃO DE LEITO / ADMISSÃO", 
-          `Paciente puxado da fila de espera. Procedência: ${patientFromQueue.origem || "Não informada"}.`, 
-          `Leito ${bedIndex + 1}`, 
+          "VINCULAÇÃO DE LEITO / ADMISSÃO",
+          `Paciente puxado da fila de espera. Procedência: ${patientFromQueue.origem || "Não informada"}.`,
+          `Leito ${numeroLeito}`,
           patientFromQueue.nome
         );
       }
 
       setShowQueueModal(false);
-      alert(`${patientFromQueue.nome} foi vinculado ao Leito ${bedIndex + 1}.`);
+      setSelectedBedForAdmission(null);   // limpa após uso
+      alert(`${patientFromQueue.nome} foi vinculado ao Leito ${numeroLeito}.`);
 
     } catch (error) {
       console.error("Erro na internação:", error);
@@ -2431,7 +2477,8 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
 
       // Bloco 4: Suporte Ventilatório
       suporte: "",                    // Select obrigatório (VM, VNI, etc)
-      parametro: "",                  // Modo de VM ou Tipo de VNI / Fluxo O2
+      parametro: "",                  // Modo de VM (VCV/PCV/PSV) ou VNI (CPAP/BIPAP)
+      fluxo: "",                      // Fluxo de O2 (L/min) — Cateter/Máscara/Macronebulização
       volCorrente: "",                // Parâmetro Vt (ml)
       pressaoControlada: "",          // Parâmetro PC (cmH2O)
       pressaoSuporte: "",             // Parâmetro PS (cmH2O)
@@ -2443,13 +2490,15 @@ MOBILIDADE BASAL: ${admissionData.mobilidadeBasal || "-"}`;
       
       // Dispositivos da Via Aérea
       dataIntubacao: "",              // Data da IOT
-      numeroTOT: "",                  // Nº do TOT
-      rimaFixacao: "",                // Rima (cm)
+      totNumero: "",                  // Nº do TOT (dashboard e finalização usam totNumero)
+      totRima: "",                    // Rima em cm (dashboard e finalização usam totRima)
       filtroHMEF: false,              // Checkbox Filtro HMEF
       dataHMEF: "",                   // Data da troca do Filtro HMEF
       sistemaFechado: false,          // Checkbox SFA
       dataSFA: "",                    // Data da troca do SFA
-      cuff: "",                       // Pressão do cuff
+      cuffM: "",                      // Pressão do cuff — Manhã
+      cuffT: "",                      // Pressão do cuff — Tarde
+      cuffN: "",                      // Pressão do cuff — Noite
 
       // Bloco 5: Gasometria de Admissão
       gasoHora: "",                   // Horário da Gaso
@@ -2510,8 +2559,15 @@ const handleFinalizePhysioAdmission = () => {
     }
 
     // 1. O CLONE PROFUNDO DO PACIENTE
-    const pacienteBase = patients[activeTab];
-    const r = pacienteBase ? JSON.parse(JSON.stringify(pacienteBase)) : {};
+    // 🔒 Trava de edição local
+    editCountRef.current += 1;
+    localEditRef.current = true;
+    scheduleLocalEditRelease();
+
+    // ✅ Base SÍNCRONA a partir do REF
+    const r = patientsRef.current[activeTab]
+      ? JSON.parse(JSON.stringify(patientsRef.current[activeTab]))
+      : {};
 
     // ========================================================
     // 2. SALVANDO OS DADOS NO COFRE DA FISIOTERAPIA
@@ -2545,8 +2601,8 @@ const handleFinalizePhysioAdmission = () => {
       dataSFA: physioData.dataSFA,
       cuff: physioData.cuff,
       admissao_condutas: physioData.condutas,
-      totNumero: physioData.numeroTOT,
-      totRima: physioData.rimaFixacao,
+      totNumero: physioData.totNumero || "",
+      totRima: physioData.totRima || "",
       secrecao: physioData.secrecao,
       secrecaoAspecto: physioData.secrecaoAspecto,
       secrecaoColoracao: physioData.secrecaoColoracao,
@@ -2602,9 +2658,14 @@ const handleFinalizePhysioAdmission = () => {
       if (physioData.gaso_PF) r.gasometriaHistory[colName]["P/F"] = physioData.gaso_PF;
     }
 
-    const up = [...patients];
-    up[activeTab] = r;
-    setPatients(up);
+    // Ref + estado + save
+    patientsRef.current[activeTab] = r;
+    setPatients(prev => {
+      const novos = [...prev];
+      novos[activeTab] = r;
+      patientsRef.current[activeTab] = r;
+      return novos;
+    });
 
     if (typeof save === "function") {
       save(r, "Fisioterapia: Realizou a Admissão Completa (Avaliação Inicial, Parâmetros Ventilatórios e Escalas)");
@@ -2764,7 +2825,7 @@ const handleFinalizePhysioAdmission = () => {
     } else if (physioData.suporte === "Venturi") {
       paramText = `FiO2: ${physioData.fiO2 || "-"}%`;
     } else if (["Cateter Nasal", "Máscara não reinalante", "Macronebulização por TQT"].includes(physioData.suporte)) {
-      paramText = `Fluxo: ${physioData.parametro || "-"} L/min`;
+      paramText = `Fluxo: ${physioData.fluxo || "-"} L/min`;
     }
 
     const gasoText = physioData.gasoHora ? `${physioData.gasoHora}h - pH: ${physioData.gaso_pH || "-"} | pCO2: ${physioData.gaso_pCO2 || "-"} | PaO2: ${physioData.gaso_PaO2 || "-"} | BE: ${physioData.gaso_BE || "-"} | HCO3: ${physioData.gaso_HCO3 || "-"} | SatO2: ${physioData.gaso_SatO2 || "-"} | FiO2: ${physioData.gaso_FiO2 || "-"} | P/F: ${physioData.gaso_PF || "-"}` : "Não realizada.";
@@ -2955,8 +3016,6 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
     try {
       const envKey = import.meta.env.VITE_GEMINI_API_KEY_MED;
       const currentKey = envKey || window.apiKey || "";
-      
-      console.log("CHAVE QUE ESTÁ INDO PARA O GOOGLE: ", currentKey.substring(0, 8) + "...");
 
       if (!currentKey || currentKey.length < 10 || currentKey === "undefined") {
         throw new Error(`Chave inválida. Valor recebido: ${currentKey}`);
@@ -6479,7 +6538,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                       // 💡 CONTÊINER: Abraça os dois botões para não quebrar o React
                       <div className="flex flex-col items-center gap-3 mt-4 w-full max-w-sm mx-auto">
                         <button
-                          onClick={() => handleOpenQueue(activeTab)}
+                          onClick={() => handleOpenQueue(activeTab + 1)}
                           disabled={(() => {
                             // Encontra o leito do paciente atual pelo número do leito
                             const leitoAtual = patients[activeTab]?.leito;
@@ -6931,7 +6990,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   {waitingList.map((p) => (
                     <button
                       key={p.id}
-                      onClick={() => bindPatientToBed(p)}
+                      onClick={() => { bindPatientToBed(p); }}
                       className="w-full p-4 bg-white border-2 border-slate-100 rounded-2xl text-left hover:border-emerald-500 hover:bg-emerald-50 transition-all flex justify-between items-center group"
                     >
                       <div>
