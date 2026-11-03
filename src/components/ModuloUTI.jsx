@@ -142,24 +142,36 @@ const auditarEscrita = (origem, docId, payload, extra = {}) => {
   );
 };
 
-// Une o BH local com o do servidor: para cada categoria, mantém as horas/células
-// do servidor que faltam no local; o que existe no local vence por item.
+// Une o BH local com o do servidor, mas SÓ aceita horas que pertencem ao dia
+// assistencial corrente (07:00 de D-1 até 06:59 de D). Horas fora dessa janela
+// são lixo de viradas anteriores e são descartadas.
 const unirMapasBH = (localBH, serverBH) => {
   const saida = { ...localBH };
+
+  // Dia assistencial: horas >= 07:00 pertencem a D-1; horas < 07:00 pertencem a D.
+  // Ambas são válidas. O que NÃO é válido é uma célula cuja data real não bate
+  // com o dia arquivado — e como o BH não guarda data por célula, usamos a
+  // regra de consistência: a célula só é aceita se a chave for HH:MM válida.
+  const horaValida = (h) => /^\d{1,2}:\d{2}$/.test(String(h).trim());
+
   ["gains", "losses", "vitals", "irrigation"].forEach(cat => {
     const localCat = localBH[cat];
     const serverCat = serverBH[cat];
-    if (!localCat && serverCat && typeof serverCat === 'object') { saida[cat] = { ...serverCat }; return; }
+
+    if (!localCat && serverCat && typeof serverCat === 'object') {
+      const limpo = {};
+      Object.keys(serverCat).forEach(h => { if (horaValida(h)) limpo[h] = serverCat[h]; });
+      saida[cat] = limpo;
+      return;
+    }
     if (!localCat || !serverCat || typeof serverCat !== 'object') return;
+
     const catOut = { ...localCat };
     Object.keys(serverCat).forEach(hora => {
+      if (!horaValida(hora)) return; // descarta chave inválida
       const localHora = localCat[hora];
       const serverHora = serverCat[hora];
-      // Hora AUSENTE no local → herda do servidor (protege contra perda de outra aba)
       if (localHora === undefined) { catOut[hora] = serverHora; return; }
-      // Hora JÁ EXISTE no local → o local manda. NÃO mescla itens do servidor,
-      // senão recria itens que o usuário acabou de excluir.
-      // (só garante que a hora seja um objeto)
       if (localHora && typeof localHora === 'object' && !Array.isArray(localHora)) {
         catOut[hora] = { ...localHora };
       }
@@ -940,14 +952,12 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
     const automatizarFechamentoBH = async () => {
       const logicalToday = getLogicalDate();
-      // Guarda global: 1 execução por dia por dispositivo (ref em useRef)
       if (bhViradaGlobalRef.current === logicalToday) return;
       bhViradaGlobalRef.current = logicalToday;
 
       console.log(`[SYS4U] Verificando virada de BH para ${logicalToday} (todos os leitos)`);
 
       try {
-        // 1) Lê TODOS os leitos de uma vez — verdade do servidor
         const snap = await getDocs(collection(db, "leitos_uti"));
         const batchWrites = [];
 
@@ -955,30 +965,33 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           const dados = docSnap.data();
           const bhServidor = dados.bh || null;
 
-          // Sem BH ou BH já do dia lógico de hoje → nada a fazer neste leito
           if (!bhServidor || !bhServidor.date || bhServidor.date >= logicalToday) return;
 
-          // RE-CHECAGEM de segurança: só arquivar se ainda não existe cópia deste dia no histórico
+          // 🧹 SANITIZAÇÃO: reconstrói o BH apenas com chaves HH:MM válidas.
+          // Isso remove qualquer resíduo de estrutura corrompida antes de arquivar.
+          const bhLimpo = sanitizarBH(bhServidor);
+
           const historicoServidor = Array.isArray(dados.historico_bh) ? dados.historico_bh : [];
-          if (historicoServidor.some(h => h && h.date === bhServidor.date)) {
-            // Histórico já tem o dia mas o bh não foi zerado (crash anterior) → só zera
+          const jaExiste = historicoServidor.some(h => h && h.date === bhServidor.date);
+
+          if (jaExiste) {
             batchWrites.push({
               ref: docSnap.ref,
               dados: {
-                bh_previous: { ...bhServidor },
-                bh: construirBHzero(logicalToday, bhServidor, dados)
+                bh_previous: bhLimpo,
+                bh: construirBHzero(logicalToday, bhLimpo, dados)
               }
             });
             return;
           }
 
-          historicoServidor.push(bhServidor);
+          historicoServidor.push(bhLimpo);
           batchWrites.push({
             ref: docSnap.ref,
             dados: {
               historico_bh: historicoServidor,
-              bh_previous: { ...bhServidor },
-              bh: construirBHzero(logicalToday, bhServidor, dados)
+              bh_previous: bhLimpo,
+              bh: construirBHzero(logicalToday, bhLimpo, dados)
             }
           });
         });
@@ -988,25 +1001,42 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
           return;
         }
 
-        // 2) Executa tudo atomicamente em batch (máx. 500 ops — você tem 11 leitos, ok)
         const batch = writeBatch(db);
         batchWrites.forEach(w => batch.set(w.ref, w.dados, { merge: true }));
         await batch.commit();
 
-        console.log(`[SYS4U] Virada concluída: ${batchWrites.length} leito(s) — BHs arquivados e zerados.`);
+        console.log(`[SYS4U] Virada concluída: ${batchWrites.length} leito(s).`);
 
-        // 3) Reflete no estado local (merge por id, sem substituir campos alheios)
         setPatients(prev => prev.map(p => {
           const w = batchWrites.find(b => b.ref.id === p.id);
           return w ? { ...p, ...w.dados } : p;
         }));
       } catch (error) {
         console.error("[SYS4U] Erro crítico na virada global do BH:", error);
-        bhViradaGlobalRef.current = null; // permite nova tentativa
+        bhViradaGlobalRef.current = null;
       }
     };
 
-    // Helper local: monta o BH zerado preservando custom fields e saldo
+    // Reconstrói o BH mantendo apenas chaves HH:MM válidas em cada categoria.
+    const sanitizarBH = (bh) => {
+      if (!bh || typeof bh !== "object") return bh;
+      const limpar = (mapa) => {
+        if (!mapa || typeof mapa !== "object") return {};
+        const out = {};
+        Object.keys(mapa).forEach((h) => {
+          if (/^\d{1,2}:\d{2}$/.test(String(h).trim())) out[h] = mapa[h];
+        });
+        return out;
+      };
+      return {
+        ...bh,
+        gains: limpar(bh.gains),
+        losses: limpar(bh.losses),
+        vitals: limpar(bh.vitals),
+        irrigation: limpar(bh.irrigation)
+      };
+    };
+
     const construirBHzero = (logicalToday, bhServidor, dados) => {
       const { accumulated: saldoAnterior } = calculateTotals(bhServidor, dados?.nutri?.peso);
       return {
@@ -1129,6 +1159,22 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
         if (copia[activeTab]) copia[activeTab] = { ...copia[activeTab], bh_previous: pacienteSeguro.bh_previous };
         return copia;
       });
+    }
+
+    // 🧹 VALIDAÇÃO: bh_previous com data divergente do bh atual é lixo.
+    // O bh_previous deve ser sempre o dia imediatamente anterior ao bh.date.
+    if (pacienteSeguro.bh_previous?.date && pacienteSeguro.bh?.date) {
+      const dPrev = new Date(pacienteSeguro.bh_previous.date + "T12:00:00");
+      const dAtual = new Date(pacienteSeguro.bh.date + "T12:00:00");
+      const diffDias = Math.round((dAtual - dPrev) / 86400000);
+      if (diffDias !== 1) {
+        console.warn("[SYS4U] bh_previous com data inconsistente — descartando", {
+          prev: pacienteSeguro.bh_previous.date,
+          atual: pacienteSeguro.bh.date,
+          diffDias
+        });
+        pacienteSeguro.bh_previous = undefined;
+      }
     }
 
     try {
@@ -3070,17 +3116,22 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
 
       // 7. GASTRO E DIETA
       // ============================================================
-      // REGRA DO DIA ASSISTENCIAL: o BH roda de 06h a 06h.
-      // As horas 00h–05h gravadas no bh_previous pertencem a HOJE.
+      // REGRA DO DIA ASSISTENCIAL: o BH roda de 07h de D-1 até 06h de D.
+      // As horas 00h–06h gravadas no bh_previous pertencem a HOJE.
       // ============================================================
-      const EH_MADRUGADA = (h) => Number(String(h).split(":")[0]) < 7;
+      const EH_MADRUGADA = (h) => {
+        const m = String(h).match(/(\d{1,2})/);
+        if (!m) return false;
+        return Number(m[1]) < 7;
+      };
 
       const valorPositivo = (v) => {
         const s = String(v ?? "").trim().toLowerCase();
         if (!s) return false;
-        if (["não", "nao", "n", "-", "0", "0,0"].includes(s)) return false;
-        if (["sim", "s"].includes(s)) return true;
-        if (s.includes("+")) return true;
+        if (["não", "nao", "n", "-", "0", "0,0", "ausente", "nega", "negado",
+             "sem", "nunca", "nenhuma", "nenhum", "n/a", "na"].includes(s)) return false;
+        if (/^\+{1,}$/.test(s)) return true;
+        if (["s", "sim", "presente", "positivo", "normal", "ok", "realizado", "fez"].includes(s)) return true;
         const num = parseFloat(s.replace(",", "."));
         if (!isNaN(num)) return num > 0;
         return false;
@@ -3103,7 +3154,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         return false;
       };
 
-      // Hoje = BH atual + madrugada (00-05) do bh_previous
+      // Hoje = BH atual + madrugada (00-06) do bh_previous
       const perdaHoje = (perda) =>
         temPerdaEmHoras(currentPatient.bh, perda, null) ||
         temPerdaEmHoras(currentPatient.bh_previous, perda, EH_MADRUGADA);
@@ -3151,7 +3202,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         return menor;
       };
 
-      let evacDias = null; // número de dias decorridos, ou null se desconhecido
+      let evacDias = null;
 
       if (evacNoBH(currentPatient.bh, false)) {
         evacDias = 0;
