@@ -3069,45 +3069,138 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       const atbsFinal = (!atbValidado || atbValidado.toLowerCase() === "nenhum") ? "sem uso de antibióticos ativos" : `em uso de ${atbValidado}`;
 
       // 7. GASTRO E DIETA
-      const temRegistroPositivo = (valor) => {
-        if (!valor) return false;
-        const texto = String(valor).trim().toLowerCase();
-        if (texto === "" || texto === "0" || texto === "n" || texto === "nao" || texto === "não" || texto === "-") return false;
-        return true; 
+      // ============================================================
+      // REGRA DO DIA ASSISTENCIAL: o BH roda de 06h a 06h.
+      // As horas 00h–05h gravadas no bh_previous pertencem a HOJE.
+      // ============================================================
+      const EH_MADRUGADA = (h) => Number(String(h).split(":")[0]) < 7;
+
+      const valorPositivo = (v) => {
+        const s = String(v ?? "").trim().toLowerCase();
+        if (!s) return false;
+        if (["não", "nao", "n", "-", "0", "0,0"].includes(s)) return false;
+        if (["sim", "s"].includes(s)) return true;
+        if (s.includes("+")) return true;
+        const num = parseFloat(s.replace(",", "."));
+        if (!isNaN(num)) return num > 0;
+        return false;
       };
 
-      let temVomitoNoBH = false;
-      let temDiarreiaNoBH = false;
-      let temEvacuacaoNoBH = false; 
+      const lerPerda = (cel, perda) => {
+        if (!cel) return undefined;
+        if (perda === "Vômitos") return cel["Vômitos"] ?? cel["Vômito"] ?? cel["Vomitos"] ?? cel["Vomito"];
+        if (perda === "Diarreia") return cel["Diarreia"] ?? cel["Diarreias"];
+        if (perda === "Evacuação") return cel["Evacuação"] ?? cel["Evacuacao"] ?? cel["Fezes"];
+        return cel[perda];
+      };
 
-      if (currentPatient.bh?.losses) {
-        Object.values(currentPatient.bh.losses).forEach(hora => {
-          if (!hora) return;
-          if (temRegistroPositivo(hora["Vômitos"]) || temRegistroPositivo(hora["Vomitos"])) {
-            temVomitoNoBH = true;
+      const temPerdaEmHoras = (bh, perda, filtroHora) => {
+        if (!bh || !bh.losses) return false;
+        for (const h of Object.keys(bh.losses)) {
+          if (filtroHora && !filtroHora(h)) continue;
+          if (valorPositivo(lerPerda(bh.losses[h] || {}, perda))) return true;
+        }
+        return false;
+      };
+
+      // Hoje = BH atual + madrugada (00-05) do bh_previous
+      const perdaHoje = (perda) =>
+        temPerdaEmHoras(currentPatient.bh, perda, null) ||
+        temPerdaEmHoras(currentPatient.bh_previous, perda, EH_MADRUGADA);
+
+      // Ontem = bh_previous EXCETO a madrugada
+      const perdaOntem = (perda) =>
+        temPerdaEmHoras(currentPatient.bh_previous, perda, (h) => !EH_MADRUGADA(h));
+
+      // ---------- EVACUAÇÃO: sempre expressa em dias decorridos ----------
+      const evacNoBH = (bh, somenteMadrugada) => {
+        if (!bh || !bh.losses) return null;
+        const horas = Object.keys(bh.losses).sort().reverse();
+        for (const h of horas) {
+          if (somenteMadrugada && !EH_MADRUGADA(h)) continue;
+          if (valorPositivo(lerPerda(bh.losses[h] || {}, "Evacuação"))) return h;
+        }
+        return null;
+      };
+
+      const diasEvacNoHistorico = () => {
+        const hist = currentPatient.historico_bh;
+        if (!Array.isArray(hist) || !hist.length) return null;
+        let menor = null;
+        for (const item of hist) {
+          if (!item || !item.losses) continue;
+          if (!evacNoBH(item, false)) continue;
+          let dRef = null;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
+            const [y, m, d] = item.date.split("-");
+            dRef = new Date(Number(y), Number(m) - 1, Number(d));
+          } else {
+            const mm = String(item.date).match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+            if (mm) {
+              const ano = mm[3] ? (mm[3].length === 2 ? 2000 + Number(mm[3]) : Number(mm[3])) : new Date().getFullYear();
+              dRef = new Date(ano, Number(mm[2]) - 1, Number(mm[1]));
+            }
           }
-          if (temRegistroPositivo(hora["Diarreia"]) || temRegistroPositivo(hora["Diarréia"])) {
-            temDiarreiaNoBH = true;
+          if (!dRef) continue;
+          const hoje = new Date();
+          hoje.setHours(0, 0, 0, 0);
+          const d = Math.round((hoje.getTime() - dRef.getTime()) / 86400000);
+          if (d < 0) continue;
+          if (menor === null || d < menor) menor = d;
+        }
+        return menor;
+      };
+
+      let evacDias = null; // número de dias decorridos, ou null se desconhecido
+
+      if (evacNoBH(currentPatient.bh, false)) {
+        evacDias = 0;
+      } else if (evacNoBH(currentPatient.bh_previous, true)) {
+        evacDias = 0;
+      } else if (evacNoBH(currentPatient.bh_previous, false)) {
+        evacDias = 1;
+      } else {
+        const dHist = diasEvacNoHistorico();
+        if (dHist !== null) {
+          evacDias = dHist;
+        } else {
+          const dataEvac = currentPatient.gastro?.dataUltimaEvacuacao;
+          if (dataEvac && typeof calculateEvacDays === "function") {
+            const calc = calculateEvacDays(dataEvac);
+            const n = parseInt(String(calc).replace(/\D/g, ""), 10);
+            if (!isNaN(n)) evacDias = n;
           }
-          if (temRegistroPositivo(hora["Evacuação"]) || temRegistroPositivo(hora["Evacuacao"]) || temRegistroPositivo(hora["Fezes"])) {
-            temEvacuacaoNoBH = true;
-          }
-        });
+        }
       }
 
-      const dataEvac = currentPatient.gastro?.dataUltimaEvacuacao;
-      let evacDaysStr = dataEvac 
-        ? (typeof calculateEvacDays === 'function' ? calculateEvacDays(dataEvac) : "-")
-        : "sem registro de evacuações durante essa internação";
+      const evacTexto = evacDias === null
+        ? "sem registro de evacuação nesta internação"
+        : evacDias === 0
+          ? "evacuou hoje"
+          : evacDias === 1
+            ? "evacuou há 1 dia"
+            : `evacuou há ${evacDias} dias`;
 
-      if (temEvacuacaoNoBH) {
-        evacDaysStr = "hoje";
-      }
-      
+      // ---------- VÔMITOS E DIARREIA: somente hoje ou ontem ----------
+      const quandoPerda = (perda) => {
+        if (perdaHoje(perda)) return "hoje";
+        if (perdaOntem(perda)) return "ontem";
+        return "";
+      };
+
+      const diarreiaText = quandoPerda("Diarreia");
+      const vomitoText = quandoPerda("Vômitos");
+
+      const partesTGI = [];
+      if (vomitoText) partesTGI.push(`vômito ${vomitoText}`);
+      if (diarreiaText) partesTGI.push(`diarreia ${diarreiaText}`);
+
       let tgiIntercorrencias = "";
-      if (temVomitoNoBH && temDiarreiaNoBH) tgiIntercorrencias = " Houve registro de vômitos e diarreia no dia de hoje.";
-      else if (temVomitoNoBH) tgiIntercorrencias = " Houve registro de vômito no dia de hoje.";
-      else if (temDiarreiaNoBH) tgiIntercorrencias = " Houve registro de diarreia no dia de hoje.";
+      if (partesTGI.length === 1) {
+        tgiIntercorrencias = ` Houve registro de ${partesTGI[0]}.`;
+      } else if (partesTGI.length === 2) {
+        tgiIntercorrencias = ` Houve registro de ${partesTGI[0]} e ${partesTGI[1]}.`;
+      }
 
       const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
 
@@ -3134,7 +3227,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       - [LEUCOMETRIA]: ${leucoStatus}
       - [ATB]: ${atbsFinal}
       - [VIA DIETA]: ${viaDieta}
-      - [EVACUAÇÃO]: ${evacDaysStr}
+      - [EVACUAÇÃO]: ${evacTexto}
       - [TGI]: ${tgiIntercorrencias}
       INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO]. Se [FR] existir, inclua-o na primeira linha logo após a SpO2, sem quebra de linha.`;
 
