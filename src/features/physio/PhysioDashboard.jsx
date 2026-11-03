@@ -3669,7 +3669,7 @@ const TRE_CHECKLIST = [
                 <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm animate-fadeIn">
                   <label className="text-[10px] font-bold text-cyan-700 uppercase mb-3 block text-center border-b border-slate-100 pb-2">Oxigenoterapia Pós-Extubação</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {['Cateter Nasal de O2', 'Máscara de Venturi', 'VNI Profilática', 'VNI Terapêutica', 'Máscara não reinalante'].map(disp => (
+                    {['Ar Ambiente', 'Cateter Nasal de O2', 'Máscara de Venturi', 'VNI Profilática', 'VNI Terapêutica', 'Máscara não reinalante'].map(disp => (
                       <button key={disp} type="button" onClick={() => setModalExtubacao({ ...modalExtubacao, dispositivoPosExtubacao: disp })} className={`p-2 rounded-xl border-2 font-bold text-[10px] uppercase tracking-wide transition-all ${modalExtubacao.dispositivoPosExtubacao === disp ? 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-cyan-200'}`}>{disp}</button>
                     ))}
                   </div>
