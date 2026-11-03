@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, setDoc, addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { db } from "../config/firebase";
@@ -39,6 +39,15 @@ const mascaraCNS = (valor) => {
   return `${d.slice(0, 3)} ${d.slice(3, 7)} ${d.slice(7, 11)} ${d.slice(11)}`;
 };
 
+// Estado inicial da ficha cadastral — usado no primeiro render e em cada reset.
+const FORM_DATA_INICIAL = {
+  cpf: '', cns: '', passaporte: '', nome: '', nomeSocial: '', dataNascimento: '',
+  sexo: '', identidadeGenero: '', nomeMae: '', nomePai: '',
+  nacionalidade: 'Brasileira', naturalidade: '', estadoCivil: '', conjuge: '',
+  grauInstrucao: '', profissao: '', cor: '', religiao: '',
+  telefone: '', telefoneContatos: '', endereco: '', responsavelLegal: '', alergias: ''
+};
+
 const ModuloRecepcao = ({ userProfile }) => {
   const navigate = useNavigate();
   
@@ -52,13 +61,22 @@ const ModuloRecepcao = ({ userProfile }) => {
   const [setorDestino, setSetorDestino] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
 
-  const [formData, setFormData] = useState({
-    cpf: '', cns: '', passaporte: '', nome: '', nomeSocial: '', dataNascimento: '',
-    sexo: '', identidadeGenero: '', nomeMae: '', nomePai: '',
-    nacionalidade: 'Brasileira', naturalidade: '', estadoCivil: '', conjuge: '',
-    grauInstrucao: '', profissao: '', cor: '', religiao: '',
-    telefone: '', telefoneContatos: '', endereco: '', responsavelLegal: '', alergias: ''
-  });
+  const [formData, setFormData] = useState(FORM_DATA_INICIAL);
+
+  // 🛡️ Rede de segurança: sempre que entrar em 'register' sem paciente,
+  // garante que a ficha está vazia (cobre caminhos futuros que esqueçam o reset).
+  useEffect(() => {
+    if (view === 'register' && !patient?.id) {
+      setFormData(prev => {
+        const cpfPreservado = prev.cpf || cpf;
+        // Só reseta se houver sujeira: compara o nome, que é o campo mais revelador
+        if (prev.nome || prev.nomeMae || prev.endereco) {
+          return { ...FORM_DATA_INICIAL, cpf: cpfPreservado };
+        }
+        return prev;
+      });
+    }
+  }, [view]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -103,15 +121,18 @@ const ModuloRecepcao = ({ userProfile }) => {
     }
   };
 
-  const handleOpenRegister = (isEditing = false) => {
-    if (isEditing && patient) {
-      setFormData(patient); // Preenche a ficha com os dados do paciente achado
-    } else {
-      setFormData(prev => ({ ...prev, cpf: cpf })); // Novo cadastro
-      setPatient(null);
-    }
-    setView('register');
-  };
+const handleOpenRegister = (isEditing = false) => {
+  if (isEditing && patient) {
+    // Revisão: preenche com os dados do paciente localizado
+    setFormData({ ...FORM_DATA_INICIAL, ...patient });
+  } else {
+    // 🔒 CAMPO ESTÉRIL: novo cadastro começa 100% vazio.
+    // Único campo herdado é o CPF já pesquisado na tela de busca.
+    setFormData({ ...FORM_DATA_INICIAL, cpf: cpf || '' });
+    setPatient(null);
+  }
+  setView('register');
+};
 
   // 🔠 NORMALIZAÇÃO PARA MAIÚSCULAS: esta tela de cadastro aceita somente
   // letras maiúsculas nos campos de texto livre. Campos numéricos (CPF, CNS,
@@ -133,13 +154,17 @@ const ModuloRecepcao = ({ userProfile }) => {
       return;
     }
 
-    // 2) CAMPOS QUE NÃO SOFREM MAIÚSCULA (números, datas, selects)
+    // 2) CAMPOS QUE NÃO SOFREM MAIÚSCULA
+    // - SELECT: qualquer <select> é protegido automaticamente (evita value órfão)
+    // - Números, datas e documentos com formato fixo
+    const tag = e.target.tagName;
     const camposSemMaiuscula = [
       'passaporte', 'dataNascimento', 'sexo', 'cor',
-      'estadoCivil'
+      'estadoCivil', 'religiao', 'nacionalidade', 'grauInstrucao',
+      'identidadeGenero', 'tipoSanguineo'
     ];
 
-    if (camposSemMaiuscula.includes(name)) {
+    if (tag === 'SELECT' || camposSemMaiuscula.includes(name)) {
       setFormData({ ...formData, [name]: value });
     } else {
       setFormData({ ...formData, [name]: value.toUpperCase() });
@@ -213,6 +238,7 @@ const ModuloRecepcao = ({ userProfile }) => {
       setShowSectorModal(false);
       setView('search');
       setCpf('');
+      setFormData(FORM_DATA_INICIAL);   // ✅ limpa a ficha do paciente encaminhado
       setPatient(null);
       setStatus('idle');
       setSetorDestino('');
@@ -234,7 +260,14 @@ const ModuloRecepcao = ({ userProfile }) => {
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
-              <button onClick={() => setView('search')} className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-100 transition-colors">
+              <button
+                onClick={() => {
+                  setFormData(FORM_DATA_INICIAL);
+                  setPatient(null);
+                  setView('search');
+                }}
+                className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-100 transition-colors"
+              >
                 <ArrowLeft size={20} className="text-slate-600" />
               </button>
               <div>
