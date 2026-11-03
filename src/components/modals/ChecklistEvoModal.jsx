@@ -53,7 +53,7 @@ const ChecklistEvoModal = ({
     const m = currentPatient?.medical || {};
     setRascunho({
       antibioticosTextoIA: m.antibioticosTextoIA || "",
-      nivelConsciencia: m.nivelConsciencia || currentPatient?.neuro?.nivelConsciencia || currentPatient?.admissionData?.exameNeuro || "",
+      nivelConsciencia: currentPatient?.neuro?.nivelConsciencia || m.nivelConsciencia || currentPatient?.admissionData?.exameNeuro || "",
       exameGeral: m.exameGeral || "",
       exameAR: m.exameAR || "",
       exameACV: m.exameACV || "",
@@ -97,11 +97,17 @@ const ChecklistEvoModal = ({
 
   // Antes de confirmar/fechar: garante que nada digitado se perca
   const flushRascunho = () => {
+    // Campos que NÃO pertencem a "medical" — precisam ir para o seu próprio nó
+    const CATEGORIA_POR_CAMPO = {
+      nivelConsciencia: "neuro"
+    };
+
     Object.entries(rascunhoSujoRef.current).forEach(([campo, sujo]) => {
       if (!sujo) return;
+      const categoria = CATEGORIA_POR_CAMPO[campo] || "medical";
       const novoValor = rascunho[campo] ?? "";
-      const atual = currentPatient?.medical?.[campo] ?? "";
-      if (novoValor !== atual) updateNested("medical", campo, novoValor);
+      const atual = currentPatient?.[categoria]?.[campo] ?? "";
+      if (novoValor !== atual) updateNested(categoria, campo, novoValor);
     });
     rascunhoSujoRef.current = {};
   };
@@ -398,7 +404,7 @@ const ChecklistEvoModal = ({
                       className="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition resize-none outline-none focus:ring-2 focus:ring-indigo-200" 
                       value={rascunho.nivelConsciencia ?? ""} 
                       onChange={(e) => handleChangeRascunho("nivelConsciencia", e.target.value)} 
-                      onBlur={() => handleBlurRascunho("nivelConsciencia")} 
+                      onBlur={() => handleBlurRascunho("nivelConsciencia", "neuro")}
                       rows={2} 
                       placeholder="LOTE, TORPOROSO, SONOLENTO, SEDADO..."
                     />

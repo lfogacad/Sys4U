@@ -763,7 +763,21 @@ export const defaultPatient = (id) => ({
   
   // A data de evacuação fica unificada aqui
   gastro: { dataUltimaEvacuacao: "" },
-  
+  medical: {
+    nivelConsciencia: "",
+    antibioticosTextoIA: "",
+    exameGeral: "",
+    exameAR: "",
+    exameACV: "",
+    exameABD: "",
+    exameExtremidades: "",
+    pupilas: "",
+    observacoesImportantes: "",
+    examesComplementares: "",
+    condutaPlano: "",
+    isolamentoContato: false,
+    motivoIsolamento: ""
+  },  
   antibiotics: [{ name: "", date: "" }, { name: "", date: "" }, { name: "", date: "" }],
   antibioticsHistory: [],
   labs: { today: { date: "" }, yesterday: { date: "" }, dayBefore: { date: "" } },
@@ -778,11 +792,25 @@ export const defaultPatient = (id) => ({
 
 export const mergePatientData = (def, db) => {
   const m = { ...def, ...db };
-  ["saps3", "neuro", "resp", "cardio", "renal", "gastro", "pele", "dispositivos", "seguranca", "fono", "bh", "physio", "nutri", "enfermagem"].forEach((k) => {
+
+  // Domínios que precisam de merge PROFUNDO (objetos aninhados).
+  // Sem isso, um campo novo no defaultPatient sobrescreve o valor real do banco.
+  const DOMINIOS_PROFUNDOS = [
+    "saps3", "neuro", "resp", "cardio", "renal", "gastro", "pele",
+    "dispositivos", "seguranca", "fono", "bh", "physio", "nutri",
+    "enfermagem", "medical", "hd_prescricao", "hd_acesso",
+    "hd_monitoramento", "hd_balanco", "hd_anotacoes", "hd_insumos"
+  ];
+
+  DOMINIOS_PROFUNDOS.forEach((k) => {
     const currentData = db[k] || {};
-    if (k === "physio" && currentData.mobilizacao && typeof currentData.mobilizacao === "string") m[k] = { ...def[k] };
-    else m[k] = { ...def[k], ...currentData };
+    if (k === "physio" && currentData.mobilizacao && typeof currentData.mobilizacao === "string") {
+      m[k] = { ...def[k] };
+    } else {
+      m[k] = { ...(def[k] || {}), ...currentData };
+    }
   });
+
   if (m.nutri && m.nutri.pesoIdeal && !m.nutri.pesoPredito) m.nutri.pesoPredito = m.nutri.pesoIdeal;
   if (!m.examHistory) m.examHistory = {};
   if (!m.gasometriaHistory) m.gasometriaHistory = {};
@@ -796,13 +824,14 @@ export const mergePatientData = (def, db) => {
   if (!m.hd_acesso) m.hd_acesso = def.hd_acesso;
   if (!m.hd_anotacoes) m.hd_anotacoes = def.hd_anotacoes;
   if (!m.hd_insumos) m.hd_insumos = def.hd_insumos;
+
   // historico_bh sempre como ARRAY: corrige silenciosamente qualquer corrupção na carga.
-  // Se veio como mapa (ex.: {0:{...}} ou {"2026-10-07":{...}}), recupera os itens por Object.values.
   if (m.historico_bh !== undefined && !Array.isArray(m.historico_bh)) {
     m.historico_bh = (m.historico_bh && typeof m.historico_bh === "object")
       ? Object.values(m.historico_bh).filter(h => h && typeof h === "object" && !Array.isArray(h))
       : [];
-  }  
+  }
+
   return m;
 };
 

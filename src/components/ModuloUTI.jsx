@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 import {
-  getManausDateStr, formatDateDDMM, getLast10Days, calculateTotals,
+  getManausDateStr, formatDateDDMM, getLast10Days, calculateTotals, mergePatientData,
   safeNumber, defaultPatient, ensureBHStructure, calculateAge, calcularMetasNutricionais, calcularNutricaoDerivada,
   getDaysD0, getDaysD1, getTempoVMText, getTempoVMNumber,calculateEvacDays,
   calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, calculateNoraDose,
@@ -105,22 +105,6 @@ const ORIGENS_ENFERMAGEM = [
   'auto_higiene_oral',
   'auto_higiene_intima'
 ];
-
-// Esta função garante que, se o banco de dados não tiver algum campo (ex: exames novos), 
-// o sistema use o valor padrão e não trave a tela.
-const mergePatientData = (base, incoming) => {
-  return {
-    ...base,
-    ...incoming,
-    // Garantimos que objetos internos não sumam
-    neuro: { ...(base.neuro || {}), ...(incoming.neuro || {}) },
-    cardio: { ...(base.cardio || {}), ...(incoming.cardio || {}) },
-    resp: { ...(base.resp || {}), ...(incoming.resp || {}) },
-    bh: { ...(base.bh || {}), ...(incoming.bh || {}) },
-    saps3: { ...(base.saps3 || {}), ...(incoming.saps3 || {}) },
-    exames: { ...(base.exames || {}), ...(incoming.exames || {}) }
-  };
-};
 
 // AUDITORIA DE ESCRITA — registra no console toda gravação em leitos_uti,
 // para identificar QUAL caminho apaga dados quando o sumiço voltar.
@@ -414,8 +398,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     if (localEditTimeoutRef.current) clearTimeout(localEditTimeoutRef.current);
     localEditTimeoutRef.current = setTimeout(() => {
       localEditRef.current = false;
-      console.log('[SYS4U] Trava de edição local liberada (5s de inatividade). Listener reativado.');
-    }, 5000);
+    }, 3000); // teto: 3s, independente de novas edições
   };
 
   // A Função do Auditor (Botão de Destravar)
@@ -791,6 +774,13 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     return () => unsubscribe();
   }, [db]); // Importante: adicionamos db como dependência para segurança
 
+  // 🛡️ Na montagem do componente, garante que a trava de edição local comece limpa.
+  // Um localEditRef travado impede o listener de aplicar os dados do servidor.
+  useEffect(() => {
+    localEditRef.current = false;
+    editCountRef.current = 0;
+  }, []);
+
   // ==============================================================
   // LISTENER ÚNICO DA COLEÇÃO leitos_uti (pacientes + leitosConfig + censo)
   // ==============================================================
@@ -816,13 +806,40 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
       // 3) Pacientes — trava dupla: por edição local ativa OU por eco pendente
       setPatients(prev => {
-        if (localEditRef.current) return prev;
-        if (isEcoDoProprioWrite) return prev;
+        // 🛡️ PRIMEIRA CARGA: se o estado local ainda está todo vazio (defaults),
+        // aceita o snapshot mesmo com edição local ou eco pendente. Sem isso,
+        // um localEditRef travado ou um write pendente deixa a tela em "leito vazio".
+        const estadoVazio = prev.every(p => !p?.nome);
+
+        if (!estadoVazio) {
+          if (localEditRef.current) return prev;
+          if (isEcoDoProprioWrite) return prev;
+        }
+
+        // 🛡️ Snapshot vazio não apaga leitos já carregados
+        if (firestoreBeds.length === 0) {
+          if (prev.length > 0 && !estadoVazio) {
+            console.warn("[SYS4U] Snapshot vazio ignorado — mantendo estado local");
+            return prev;
+          }
+          return prev;
+        }
+
         const updatedPatients = firestoreBeds.map(bedData => {
           const index = parseInt(bedData.id.replace('bed_', '')) - 1;
           const merged = mergePatientData(defaultPatient(index), bedData);
           return syncLabsFromHistory(merged);
         });
+
+        // 🛡️ Se o snapshot não trouxe nenhum paciente com nome, e o estado local
+        // já tem pacientes, preserva o local (evita "leito vazio" por cache frio).
+        const snapshotTemPaciente = updatedPatients.some(p => p?.nome);
+        const localTemPaciente = prev.some(p => p?.nome);
+        if (!snapshotTemPaciente && localTemPaciente) {
+          console.warn("[SYS4U] Snapshot sem pacientes ignorado — mantendo estado local");
+          return prev;
+        }
+
         return updatedPatients;
       });
     }, (error) => {
@@ -1197,6 +1214,9 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
         payloadBH.bh = pacienteSeguro.bh;
         if (pacienteSeguro.bh.vitals !== undefined) payloadBH.vitals = pacienteSeguro.bh.vitals;
       }
+      ["neuro", "medical", "cardio", "gastro", "nutri", "enfermagem", "hd_acesso"].forEach(cat => {
+        if (pacienteSeguro[cat] !== undefined) payloadBH[cat] = pacienteSeguro[cat];
+      });
       if (pacienteSeguro.historico_bh !== undefined) payloadBH.historico_bh = pacienteSeguro.historico_bh;
       // bh_previous só entra no payload se REALMENTE diferir do servidor.
       // Um save() de FiO2/PEEP não pode reescrever o balanço do dia anterior.
@@ -1414,6 +1434,12 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       const alvo = JSON.parse(JSON.stringify(pac || {}));
       if (!alvo[categoria]) alvo[categoria] = {};
       alvo[categoria][campo] = valor;
+
+      // Garante que campo vazio seja gravado como string vazia (não removido
+      // pelo JSON.stringify), senão o merge:true do Firestore mantém o valor antigo.
+      if (valor === undefined || valor === null) {
+        alvo[categoria][campo] = "";
+      }
 
       // 🔄 SINCRONIZAÇÃO DE MÃO DUPLA (SHILEY <-> HEMODIÁLISE)
 
@@ -5234,7 +5260,15 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     setPatients(up);
   };
 
-  const handleBlurSave = () => save(patientsRef.current[activeTab], "Auto-save on blur");
+  const handleBlurSave = (logMsg = "Auto-save on blur") => {
+    const pac = patientsRef.current[activeTab];
+    if (!pac) return;
+    const payload = JSON.parse(JSON.stringify(pac));
+    delete payload.bh;
+    delete payload.vitals;
+    delete payload.bh_previous;
+    save(payload, logMsg);
+  };
 
   // Adiciona uma nova lesão à lista
   const addLesao = () => {
