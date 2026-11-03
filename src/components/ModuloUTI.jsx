@@ -1253,6 +1253,30 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
           }
         } catch (e) { console.warn("[SYS4U] Não foi possível unir bh no save:", e); }
       }
+
+      // 🛡️ NUTRIÇÃO: uma vez admitida, o `admitido:true` nunca pode ser rebaixado
+      // por um save disparado de outro domínio com estado defasado.
+      if (payloadBH.nutri && typeof payloadBH.nutri === 'object') {
+        try {
+          const snapNutri = await getDoc(doc(db, "leitos_uti", docId));
+          const nutriServidor = snapNutri.exists() ? snapNutri.data().nutri : null;
+          if (nutriServidor && nutriServidor.admitido === true && payloadBH.nutri.admitido !== true) {
+            payloadBH.nutri = { ...payloadBH.nutri, admitido: true };
+          }
+        } catch (e) { console.warn("[SYS4U] Não foi possível preservar admitido da nutrição:", e); }
+      }
+
+      if (payloadBH.admissaoNutricao) {
+        try {
+          const snapCofre = await getDoc(doc(db, "leitos_uti", docId));
+          const cofreServidor = snapCofre.exists() ? snapCofre.data().admissaoNutricao : null;
+          if (cofreServidor && typeof cofreServidor === 'object' && Object.keys(cofreServidor).length > 0) {
+            // Cofre já existe no servidor → preserva (é imutável)
+            payloadBH.admissaoNutricao = cofreServidor;
+          }
+        } catch (e) { console.warn("[SYS4U] Não foi possível preservar o cofre nutricional:", e); }
+      }
+      
       auditarEscrita("save()", docId, payloadBH, { merge: true });
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
       // 🔓 Destrava APÓS o commit com uma margem de segurança.
@@ -3639,7 +3663,15 @@ ${conduta}
       return alert("⚠️ O Peso Atual é OBRIGATÓRIO.\nSem esta informação, é impossível traçar as metas calóricas e proteicas do paciente na UTI.");
     }
 
-    const r = patients[activeTab] ? JSON.parse(JSON.stringify(patients[activeTab])) : {};
+    // 🔒 Trava de edição local — impede o listener de reverter o admitido:true
+    editCountRef.current += 1;
+    localEditRef.current = true;
+    scheduleLocalEditRelease();
+
+    // ✅ Base SÍNCRONA a partir do REF (nunca da prop/estado defasado)
+    const r = patientsRef.current[activeTab]
+      ? JSON.parse(JSON.stringify(patientsRef.current[activeTab]))
+      : {};
 
     // ===== VALORES CALCULADOS (antropometria + NRS 2002) =====
     const deriv = calcularNutricaoDerivada(nutriAdmissionData, r);
@@ -3651,7 +3683,6 @@ ${conduta}
       pesoCorrigido: deriv.pesoCorrigido !== null ? +deriv.pesoCorrigido.toFixed(1) : null,
       nrsEscore: deriv.nrsEscore,
       nrsClassificacao: deriv.nrsClassificacao,
-      // ===== AVALIAÇÃO ANTROPOMÉTRICA DO BRAÇO =====
       cmb: deriv.cmb !== null ? +deriv.cmb.toFixed(1) : null,
       amb: deriv.amb !== null ? +deriv.amb.toFixed(1) : null,
       adequacaoPCT: deriv.adequacaoPCT !== null ? +deriv.adequacaoPCT.toFixed(1) : null,
@@ -3660,18 +3691,17 @@ ${conduta}
       classificacaoPCT: deriv.classificacaoPCT,
       classificacaoCMB: deriv.classificacaoCMB,
       classificacaoAMB: deriv.classificacaoAMB,
-      // ===== IMC =====
       imc: deriv.imc !== null ? +deriv.imc.toFixed(1) : null,
       classificacaoIMC: deriv.classificacaoIMC,
       sarcopeniaRisco: deriv.sarcopeniaRisco,
       classificacaoSarcopenia: deriv.classificacaoSarcopenia,
-      // ===== METAS NUTRICIONAIS AUTOMÁTICAS =====
       metaCalTotal: metas.metaCaloricaTotal !== null ? Math.round(metas.metaCaloricaTotal) : null,
       metaProtTotal: metas.metaProteicaTotal !== null ? Math.round(metas.metaProteicaTotal) : null,
       fatorCalorico: metas.fatorCalorico,
       aumentarPeso: !!nutriAdmissionData.aumentarPeso
     };
 
+    // Cofre imutável (nunca sobrescrito depois da 1ª admissão)
     if (!r.admissaoNutricao) {
       r.admissaoNutricao = {
         ...nutriAdmissionData,
@@ -3680,6 +3710,7 @@ ${conduta}
       };
     }
 
+    // Prontuário ativo
     r.nutri = {
       ...(r.nutri || {}),
       ...nutriAdmissionData,
@@ -3687,15 +3718,22 @@ ${conduta}
       admitido: true
     };
 
-    // Persiste a etnia na RAIZ do paciente (campo novo no Firestore)
     if (nutriAdmissionData.etnia) {
       r.etnia = nutriAdmissionData.etnia;
     }
 
-    const up = [...patients];
-    up[activeTab] = r;
-    setPatients(up);
+    // 1) Ref síncrono
+    patientsRef.current[activeTab] = r;
 
+    // 2) Estado (partindo do base, nunca do prev)
+    setPatients(prev => {
+      const novos = [...prev];
+      novos[activeTab] = r;
+      patientsRef.current[activeTab] = r;
+      return novos;
+    });
+
+    // 3) Grava UMA vez — com o admitido:true já presente no ref
     if (typeof save === "function") {
       save(r, `Nutrição: Admissão Finalizada (Peso: ${nutriAdmissionData.peso}kg | Risco: ${deriv.nrsClassificacao || "N/A"})`);
     }
