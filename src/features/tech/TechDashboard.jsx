@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bone, ShieldAlert, Droplets, UserCheck, Clock, Printer, Scale, X, PlusCircle, HeartPulse, Ambulance,
          Activity, Unlock, Lock, AlertTriangle, CheckCircle, Edit3, Calendar, Coffee, ArrowRight, CheckCircle2,
-         ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package,
+         ClipboardList, Utensils, ShowerHead, RefreshCw, Smile, ShieldPlus, Bandage, Wind, Package, Trash2,
          FileText, Copy, Syringe, Scissors, Snowflake, TestTube, ChevronDown, ChevronRight } from 'lucide-react';
 import { BH_HOURS, BH_GAINS, BH_LOSSES } from '../../constants/clinicalLists';
 import { calculateAge, formatDateDDMM, getManausDateStr, safeNumber, getHoraRealKey, } from '../../utils/core';
@@ -45,6 +45,9 @@ const TechDashboard = ({
   const [showCVCModal, setShowCVCModal] = useState(false);
   const [showSVDModal, setShowSVDModal] = useState(false);
   const [listaProfissionais, setListaProfissionais] = useState([]);
+
+  const [showRegistrosTech, setShowRegistrosTech] = useState(false);
+
   // Modal de HGT < 80 — correção com GH50%
   const [modalHGT, setModalHGT] = useState(null);
   const [correcaoGH50, setCorrecaoGH50] = useState(null);
@@ -87,6 +90,22 @@ const TechDashboard = ({
     return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`;
   };
 
+  // Exclusão genérica — TechDashboard usa clone + save(), não updateNested
+  const excluirRegistroTecnico = (fonte, id, indiceFallback) => {
+    const up = [...patients];
+    const p = JSON.parse(JSON.stringify(up[activeTab]));
+    if (!p.enfermagem || !Array.isArray(p.enfermagem[fonte])) return;
+
+    const lista = p.enfermagem[fonte];
+    p.enfermagem[fonte] = id
+      ? lista.filter(r => r.id !== id)
+      : lista.filter((_, i) => i !== indiceFallback);
+
+    up[activeTab] = p;
+    setPatients(up);
+    save(up[activeTab], `Enfermagem: EXCLUIU registro de ${fonte}`);
+  };
+
   // =========================================================================
   // ESTADOS E FUNÇÕES DO MODAL DE DIETA VO
   // =========================================================================
@@ -108,6 +127,7 @@ const TechDashboard = ({
 
     // Cria o registro com a data exata do clique, mas salva o horário e tipo informados
     const novoRegistro = {
+      id: `dieta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horarioRefeicao: modalDieta.horario,
       tipoRefeicao: modalDieta.refeicao,
@@ -142,6 +162,7 @@ const TechDashboard = ({
     if (!p.enfermagem.historico_banho) p.enfermagem.historico_banho = [];
 
     const novoRegistro = {
+      id: `banho_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalBanho.horario,
       tipo: modalBanho.tipo
@@ -173,6 +194,7 @@ const TechDashboard = ({
     if (!p.enfermagem.historico_decubito) p.enfermagem.historico_decubito = [];
 
     const novoRegistro = {
+      id: `decubito_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalDecubito.horario,
       posicao: modalDecubito.posicao
@@ -202,6 +224,7 @@ const TechDashboard = ({
     if (!p.enfermagem.historico_higiene_oral) p.enfermagem.historico_higiene_oral = [];
 
     p.enfermagem.historico_higiene_oral.push({
+      id: `higieneoral_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalHigieneOral.horario
     });
@@ -220,6 +243,7 @@ const TechDashboard = ({
     if (!p.enfermagem.historico_raio_x) p.enfermagem.historico_raio_x = [];
 
     p.enfermagem.historico_raio_x.push({
+      id: `raiox_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalRaioX.horario
     });
@@ -238,6 +262,7 @@ const TechDashboard = ({
     if (!p.enfermagem.historico_higiene_intima) p.enfermagem.historico_higiene_intima = [];
 
     p.enfermagem.historico_higiene_intima.push({
+      id: `higieneintima_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalHigieneIntima.horario
     });
@@ -266,6 +291,7 @@ const TechDashboard = ({
     if (!p.enfermagem.historico_aspiracao_vas) p.enfermagem.historico_aspiracao_vas = [];
 
     p.enfermagem.historico_aspiracao_vas.push({
+      id: `aspiracao_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalAspiracao.horario,
       quantidade: modalAspiracao.quantidade,
@@ -299,6 +325,7 @@ const salvarFralda = () => {
 
     // 1. Salva no histórico individual da fralda
     p.enfermagem.historico_fralda.push({
+      id: `fralda_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalFralda.horario,
       evacuacao: modalFralda.evacuacao,
@@ -382,6 +409,7 @@ const salvarFralda = () => {
     if (!p.enfermagem.historico_curativo) p.enfermagem.historico_curativo = [];
 
     p.enfermagem.historico_curativo.push({
+      id: `curativo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalCurativo.horario,
       tipo: modalCurativo.tipo,
@@ -411,6 +439,7 @@ const salvarFralda = () => {
 
     // 1. Salva no histórico do botão
     p.enfermagem.historico_acesso.push({
+      id: `acesso_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalAcesso.horario,
       local: modalAcesso.local,
@@ -439,6 +468,7 @@ const salvarFralda = () => {
 
     // UM registro só, com todas as áreas unidas na mesma linha
     p.enfermagem.historico_tricotomia.push({
+      id: `tricotomia_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalTricotomia.horario,
       local: locaisTexto
@@ -457,6 +487,7 @@ const salvarFralda = () => {
     if (!p.enfermagem.historico_crioterapia) p.enfermagem.historico_crioterapia = [];
 
     p.enfermagem.historico_crioterapia.push({
+      id: `crioterapia_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalCrioterapia.horario
     });
@@ -475,6 +506,7 @@ const salvarFralda = () => {
 
     // 1. Salva no histórico do botão
     p.enfermagem.historico_insulina.push({
+      id: `insulina_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horario: modalInsulina.horario,
       tipo: modalInsulina.tipo,
@@ -537,6 +569,7 @@ const salvarFralda = () => {
     if (!p.enfermagem.historico_rcp_pcr) p.enfermagem.historico_rcp_pcr = [];
 
     const novoRegistro = {
+      id: `rcp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
       horarioPCR: modalRCPTecnico.horarioPCR,
       tempoRCP: modalRCPTecnico.tempoRCP,
@@ -1390,15 +1423,24 @@ const salvarFralda = () => {
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 print:hidden animate-fadeIn">
         
         {/* BOTÃO QUE ABRE/FECHA A SEÇÃO */}
-        <button 
-          onClick={(e) => { e.preventDefault(); if (!canAccessRegistros) return; setRegistrosOpen(!registrosOpen); }} 
-          disabled={!canAccessRegistros}
-          className={`flex items-center gap-2 font-bold w-full text-left ${canAccessRegistros ? 'text-slate-700 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
-        >
-          {registrosOpen ? <ChevronDown size={20} className="text-indigo-600" /> : <ChevronRight size={20} className="text-slate-400" />} 
-          <ClipboardList className={registrosOpen ? "text-indigo-600" : "text-slate-400"} size={18} />
-          Registros Diários
-        </button>
+        <div className="flex items-center justify-between gap-2 w-full">
+          <button
+            onClick={(e) => { e.preventDefault(); if (!canAccessRegistros) return; setRegistrosOpen(!registrosOpen); }}
+            disabled={!canAccessRegistros}
+            className={`flex items-center gap-2 font-bold text-left flex-1 ${canAccessRegistros ? 'text-slate-700 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+          >
+            {registrosOpen ? <ChevronDown size={20} className="text-indigo-600" /> : <ChevronRight size={20} className="text-slate-400" />}
+            <ClipboardList className={registrosOpen ? "text-indigo-600" : "text-slate-400"} size={18} />
+            Registros Diários
+          </button>
+
+          <button
+            onClick={(e) => { e.preventDefault(); setShowRegistrosTech(true); }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 rounded-lg text-xs font-bold shadow-sm transition-colors print:hidden shrink-0"
+          >
+            <ClipboardList size={14} /> Ver Registros do Dia
+          </button>
+        </div>
         
         {/* CONTEÚDO QUE APARECE QUANDO ESTÁ ABERTO */}
         {registrosOpen && (
@@ -3640,6 +3682,172 @@ const salvarFralda = () => {
         handleBlurSave={handleBlurSave}
         listaProfissionais={listaProfissionais}
       />
+
+      {/* MODAL: REGISTROS DO DIA (TECNOLOGIA / ENFERMAGEM) */}
+      {showRegistrosTech && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fadeIn border-4 border-indigo-500/20">
+
+            <div className="bg-indigo-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><ClipboardList size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">Registros do Dia</h2>
+              </div>
+              <button onClick={() => setShowRegistrosTech(false)} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-5 bg-slate-50 overflow-y-auto space-y-3">
+              {(() => {
+                // DIA LÓGICO (07h às 06h) — mesmo critério do BH
+                const diaLogico = (d) => {
+                  if (!d || isNaN(d.getTime())) return null;
+                  const c = new Date(d);
+                  if (c.getHours() < 7) c.setDate(c.getDate() - 1);
+                  return `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, '0')}-${String(c.getDate()).padStart(2, '0')}`;
+                };
+
+                const hojeKey = diaLogico(new Date());
+                const enf = currentPatient.enfermagem || {};
+
+                // Mapa: array → rótulo e campos de data/hora de cada um
+                const FONTES = [
+                  { key: 'historico_dieta_vo', tipo: 'Dieta VO', campoData: 'dataHoraRegistro', campoHora: 'horarioRefeicao' },
+                  { key: 'historico_banho', tipo: 'Banho', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_decubito', tipo: 'Mudança de Decúbito', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_higiene_oral', tipo: 'Higiene Oral', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_higiene_intima', tipo: 'Higiene Íntima', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_raio_x', tipo: 'Raio-X', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_aspiracao_vas', tipo: 'Aspiração VAS', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_fralda', tipo: 'Troca de Fralda', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_curativo', tipo: 'Curativo', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_acesso', tipo: 'Acesso Periférico', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_tricotomia', tipo: 'Tricotomia', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_crioterapia', tipo: 'Crioterapia', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_insulina', tipo: 'Insulina', campoData: 'dataHoraRegistro', campoHora: 'horario' },
+                  { key: 'historico_rcp_pcr', tipo: 'RCP / PCR', campoData: 'dataHoraRegistro', campoHora: 'horarioPCR' },
+                  { key: 'historicoSaidaProcedimento', tipo: 'Saída p/ Procedimento', campoData: 'registradoEm', campoHora: 'horarioSaida' },
+                ];
+
+                // Coleta e filtra pelo dia lógico
+                const registros = FONTES.flatMap(fonte => {
+                  const lista = Array.isArray(enf[fonte.key]) ? enf[fonte.key] : [];
+                  return lista.map((r, i) => {
+                    const dataRef = r?.[fonte.campoData] || r?.dataHoraRegistro || '';
+                    return {
+                      ...r,
+                      _rotulo: fonte.tipo,
+                      _hora: r?.[fonte.campoHora] || r?.horario || '',
+                      _dataRef: dataRef,
+                      _source: fonte.key,
+                      _index: i
+                    };
+                  });
+                })
+                  .filter(r => {
+                    const chave = diaLogico(new Date(r._dataRef));
+                    // Fallback: registros antigos com campo `data` (DD/MM/AAAA) vindo de outros módulos
+                    if (!chave && r?.data) {
+                      const p = String(r.data).split(/[\/-]/);
+                      if (p.length === 3) {
+                        const iso = p[0].length === 4 ? r.data : `${p[2]}-${p[1]}-${p[0]}`;
+                        return diaLogico(new Date(`${iso}T${r._hora || '00:00'}:00`)) === hojeKey;
+                      }
+                    }
+                    return chave === hojeKey;
+                  })
+                  .sort((a, b) => (a._hora || '').localeCompare(b._hora || ''));
+
+                if (registros.length === 0) {
+                  return (
+                    <div className="text-center py-10 text-slate-400">
+                      <ClipboardList size={40} className="mx-auto mb-3 opacity-40" />
+                      <p className="font-bold">Nenhum registro hoje.</p>
+                    </div>
+                  );
+                }
+
+                const descrever = (r) => {
+                  switch (r._source) {
+                    case 'historico_dieta_vo': {
+                      const tipos = [];
+                      if (r.tiposOferecidos?.solida) tipos.push('sólida');
+                      if (r.tiposOferecidos?.liquida) tipos.push('líquida');
+                      const cons = r.consumo?.solida ?? r.consumo?.liquida ?? 'N/I';
+                      return `${r.tipoRefeicao || 'Refeição'}${tipos.length ? ` (${tipos.join(' + ')})` : ''} — consumeu ${cons}%`;
+                    }
+                    case 'historico_banho':
+                      return `Banho ${r.tipo || 'não especificado'}`;
+                    case 'historico_decubito':
+                      return `Posição: ${r.posicao || 'N/I'}`;
+                    case 'historico_higiene_oral':
+                      return 'Higiene oral realizada';
+                    case 'historico_higiene_intima':
+                      return 'Higiene íntima realizada';
+                    case 'historico_raio_x':
+                      return 'Raio-X realizado';
+                    case 'historico_aspiracao_vas':
+                      return `${r.quantidade || 'N/I'} / ${r.caracteristica || 'N/I'}`;
+                    case 'historico_fralda':
+                      if (r.evacuacao === 'Sim') {
+                        return `Evacuação: Sim (${r.quantidade || 'N/I'})${r.diarreica ? ' — DIARREICA' : ''}`;
+                      }
+                      return 'Apenas diurese / seca';
+                    case 'historico_curativo':
+                      return `${r.tipo || 'Curativo'}${r.localizacao ? ` em ${r.localizacao}` : ''}`;
+                    case 'historico_acesso':
+                      return `${r.calibre || 'Cateter'} em ${r.local || 'N/I'}`;
+                    case 'historico_tricotomia':
+                      return `Locais: ${r.local || 'N/I'}`;
+                    case 'historico_crioterapia':
+                      return 'Crioterapia aplicada';
+                    case 'historico_insulina':
+                      return `${r.tipo || 'Insulina'} — ${r.dose || 'N/I'} UI`;
+                    case 'historico_rcp_pcr':
+                      return `PCR às ${r.horarioPCR || 'N/I'} — RCP ${r.tempoRCP || 'N/I'} min. Desfecho: ${r.desfecho || 'N/I'}`;
+                    case 'historicoSaidaProcedimento':
+                      return `${r.procedimento || 'Procedimento'}${r.horarioChegada ? ` — retorno ${r.horarioChegada}` : ''}${r.equipe ? `. ${r.equipe}` : ''}`;
+                    default:
+                      return r.observacao || '—';
+                  }
+                };
+
+                return registros.map((r) => (
+                  <div key={r.id || `${r._source}-${r._index}`} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+                    <div className="flex justify-between items-center mb-1 gap-2">
+                      <span className="font-black text-indigo-700 text-sm uppercase">{r._rotulo}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-bold text-slate-400">{r._hora}</span>
+                        <button
+                          onClick={() => {
+                            if (!window.confirm(`Excluir o registro "${r._rotulo}" de ${r._hora || 'sem horário'}?\n\nEsta ação não pode ser desfeita.`)) return;
+                            excluirRegistroTecnico(r._source, r.id, r._index);
+                          }}
+                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Excluir registro"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-600 whitespace-pre-wrap">{descrever(r)}</p>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            <div className="p-4 bg-white border-t border-slate-200 shrink-0">
+              <button type="button" onClick={() => setShowRegistrosTech(false)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl shadow-lg transition-all uppercase tracking-wider">
+                Fechar
+              </button>
+            </div>
+
+          </div>
+        </div>
+        </ModalPortal>
+      )}
 
       </fieldset>
     </div>
