@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shield, UserPlus, UserCheck, Plus, X, Edit3, AlertTriangle, ShieldAlert, HeartPulse, Bot, Copy,
 Syringe, Activity, AlertCircle, CheckCircle, ClipboardSignature, Loader2, BrainCircuit, ClipboardList, History,
-Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast, Slice,
+Droplets, Ambulance, Bandage, Milk, Droplet, Wind, ChevronDown, ChevronRight, TestTube, Podcast, Slice, Trash2,
 CheckCircle2, Printer, BriefcaseMedical } from 'lucide-react';
 import { collection, onSnapshot, addDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -41,6 +41,8 @@ const NursingDashboard = ({
   // Controla o reset VISUAL dos campos de data após retirada confirmada (não toca no Firebase)
   const [resetVisualDispositivo, setResetVisualDispositivo] = useState({ cvc: false, shiley: false, svd: false });
   
+  const [showRegistrosEnf, setShowRegistrosEnf] = useState(false);
+
   const [modalCVC, setModalCVC] = useState({
     isOpen: false,
     horario: '',
@@ -336,7 +338,7 @@ const NursingDashboard = ({
 
   const temManutencaoPendente = dispositivosPendentes.length > 0;
 
-  // Placeholders para botões de Ação (Modais serão criados em seguida)
+  // Placeholders para botões de Ação
   const handleAcaoEnfermagem = (tipo) => {
     if (tipo === 'Curativo') {
       const hoje = new Date().toISOString().split('T')[0];
@@ -515,6 +517,7 @@ const NursingDashboard = ({
     
     // 🔥 TAMBÉM salva em um histórico independente de curativos (para evolução)
     const registroCurativo = {
+      id: `curativo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'Curativo',
       data: dataRegistro,
       horario: modalCurativo.horario,
@@ -532,12 +535,29 @@ const NursingDashboard = ({
   const salvarAcessoPeriferico = () => {
     if (!modalAcessoPeriferico.horario || !modalAcessoPeriferico.local || !modalAcessoPeriferico.calibre) return;
 
+    // 1) ESTADO ATUAL — a UI existente continua lendo destes campos
     updateNested("enfermagem", "avpLocal", modalAcessoPeriferico.local);
     updateNested("enfermagem", "avpCalibre", modalAcessoPeriferico.calibre);
     updateNested("enfermagem", "avpHorario", modalAcessoPeriferico.horario);
+
     const hoje = new Date();
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
     updateNested("enfermagem", "avpData", dataISO);
+
+    // 2) HISTÓRICO — novo array que alimenta o modal "Registros do Dia"
+    const registro = {
+      id: `avp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      tipo: 'Acesso Periférico',
+      data: dataISO,
+      horario: modalAcessoPeriferico.horario,
+      local: modalAcessoPeriferico.local,
+      calibre: modalAcessoPeriferico.calibre
+    };
+    const historicoAtual = Array.isArray(currentPatient.enfermagem?.historicoAcessoPeriferico)
+      ? currentPatient.enfermagem.historicoAcessoPeriferico
+      : [];
+    updateNested("enfermagem", "historicoAcessoPeriferico", [...historicoAtual, registro]);
+
     handleBlurSave(`Enfermagem: Acesso Periférico em ${modalAcessoPeriferico.local} - ${modalAcessoPeriferico.calibre}`);
     setModalAcessoPeriferico({ ...modalAcessoPeriferico, isOpen: false });
   };
@@ -569,6 +589,7 @@ const NursingDashboard = ({
     const todasBarreirasOK = barreirasFeitas === totalBarreiras;
 
     const registro = {
+      id: `cvc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'Inserção CVC',
       data: dataISO,
       horario: modalCVC.horario,
@@ -662,6 +683,7 @@ const NursingDashboard = ({
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
     const manutencao = {
+      id: `manut_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: modalManutencaoCVC.dispositivo === 'Shiley' ? 'Manutenção Shiley' : 'Manutenção CVC',
       dispositivo: modalManutencaoCVC.dispositivo,
       data: dataISO,
@@ -721,6 +743,7 @@ const NursingDashboard = ({
     const cumpridos = itensArray.filter(i => i.cumprida).length;
 
     const registro = {
+      id: `svd_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'Passagem SVD',
       data: dataISO,
       horario: modalSVD.horario,
@@ -781,6 +804,7 @@ const NursingDashboard = ({
     const cumpridos = itensArray.filter(i => i.cumprida).length;
 
     const registro = {
+      id: `manutsvd_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'Manutenção SVD',
       data: dataISO,
       horario: modalManutencaoSVD.horario,
@@ -811,6 +835,7 @@ const NursingDashboard = ({
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
     const registro = {
+      id: `gaso_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'Gasometria',
       data: dataISO,
       horario: modalGasometria.horario,
@@ -832,6 +857,7 @@ const NursingDashboard = ({
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
     const registro = {
+      id: `hemo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'Hemotransfusão',
       data: dataISO,
       horarioInicio: modalHemotransfusao.horarioInicio,
@@ -881,6 +907,7 @@ const NursingDashboard = ({
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
     const registro = {
+      id: `ecg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'ECG',
       data: dataISO,
       horario: modalECG.horario,
@@ -902,6 +929,7 @@ const NursingDashboard = ({
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
     const registro = {
+      id: `fleet_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'Fleet Enema',
       data: dataISO,
       horario: modalFleetEnema.horario
@@ -922,6 +950,7 @@ const NursingDashboard = ({
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
     const registro = {
+      id: `npt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'NPT',
       data: dataISO,
       horario: modalNPT.horario,
@@ -943,6 +972,7 @@ const NursingDashboard = ({
     const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
     const registro = {
+      id: `aspiracao_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'Aspiração Traqueal',
       data: dataISO,
       horario: modalAspiracao.horario,
@@ -974,6 +1004,7 @@ const NursingDashboard = ({
 
     // Registro completo do procedimento
     const registroTQT = {
+      id: `tqt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'TQT',
       data: dataRegistro,
       horario: modalTQT.horario,
@@ -1044,6 +1075,7 @@ const NursingDashboard = ({
     const { horarioParada, horarioInicioRCP } = modalRCP;
     
     const registro = {
+      id: `rcp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       tipo: 'RCP',
       data: new Date().toISOString().slice(0, 10),
       horarioInicioRCP: modalRCP.horarioInicioRCP || '',
@@ -1550,11 +1582,19 @@ return (
         <fieldset disabled={!isEditable} className="min-w-0 border-0 p-0 m-0">
         <>
           {/* ======================================================== */}
-          {/* CABEÇALHO DA ABA: IDENTIFICAÇÃO E BOTÃO REABRIR          */}
+          {/* CABEÇALHO DA ABA: IDENTIFICAÇÃO E BOTÕES DE VISUALIZAÇÃO */}
           {/* ======================================================== */}
-          <div className="flex justify-end mb-2 mt-4 print:hidden">
-            
-            {/* BOTÃO DE REABRIR/VER ADMISSÃO DA ENFERMAGEM */}
+          <div className="flex justify-end items-center gap-2 mb-2 mt-4 print:hidden">
+
+            {/* REGISTROS DO DIA */}
+            <button
+              onClick={(e) => { e.preventDefault(); setShowRegistrosEnf(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-blue-50 hover:border-blue-300 rounded-lg text-sm font-bold shadow-sm transition-colors print:hidden"
+            >
+              <ClipboardList size={16} /> Ver Registros do Dia
+            </button>
+
+            {/* VER ADMISSÃO DA ENFERMAGEM */}
             <button
               onClick={(e) => { e.preventDefault(); handleViewNursingAdmission(); }}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold shadow-sm transition-colors print:hidden"
@@ -4003,7 +4043,183 @@ return (
             </div>
           </div>
         </ModalPortal>
-)}
+      )}
+
+      {/* MODAL: REGISTROS DO DIA (ENFERMAGEM) */}
+      {showRegistrosEnf && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-blue-500/20">
+
+            {/* CABEÇALHO */}
+            <div className="bg-blue-700 p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><ClipboardList size={20} /></div>
+                <h2 className="text-lg font-black tracking-wide">Registros do Dia</h2>
+              </div>
+              <button onClick={() => setShowRegistrosEnf(false)} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* CORPO */}
+            <div className="p-5 bg-slate-50 overflow-y-auto space-y-3">
+              {(() => {
+                const getHorario = (r) =>
+                  r.horario || r.horarioInicio || r.horarioSaida || r.horarioInicioRCP || '';
+
+                const getLogicalDayKey = (dataStr, horario) => {
+                  let d;
+                  if (dataStr && dataStr.includes('T')) {
+                    d = new Date(dataStr);
+                  } else if (dataStr && /^\d{4}-\d{2}-\d{2}$/.test(dataStr)) {
+                    const h = (horario || '00:00').split(':');
+                    d = new Date(`${dataStr}T${h[0] || '00'}:${h[1] || '00'}:00`);
+                  } else if (dataStr && /^\d{2}\/\d{2}\/\d{4}$/.test(dataStr)) {
+                    const [dia, mes, ano] = dataStr.split('/');
+                    const h = (horario || '00:00').split(':');
+                    d = new Date(`${ano}-${mes}-${dia}T${h[0] || '00'}:${h[1] || '00'}:00`);
+                  } else if (dataStr && /^\d{2}-\d{2}-\d{4}$/.test(dataStr)) {
+                    const [dia, mes, ano] = dataStr.split('-');
+                    const h = (horario || '00:00').split(':');
+                    d = new Date(`${ano}-${mes}-${dia}T${h[0] || '00'}:${h[1] || '00'}:00`);
+                  } else {
+                    return null;
+                  }
+                  if (isNaN(d.getTime())) return null;
+                  if (d.getHours() < 7) d.setDate(d.getDate() - 1);
+                  const ano = d.getFullYear();
+                  const mes = String(d.getMonth() + 1).padStart(2, '0');
+                  const dia = String(d.getDate()).padStart(2, '0');
+                  return `${ano}-${mes}-${dia}`;
+                };
+
+                const hojeKey = getLogicalDayKey(new Date().toISOString());
+                const enf = currentPatient.enfermagem || {};
+
+                // 🔑 Cada array é mapeado com sua CHAVE de origem (_source),
+                // para que a exclusão saiba de qual array remover o item.
+                const FONTES = [
+                  'historicoAcessoPeriferico', 'historicoCurativos', 'historicoCVC',
+                  'historicoManutencaoCVC', 'historicoManutencaoShiley', 'historicoSVD',
+                  'historicoManutencaoSVD', 'historicoGasometria', 'historicoHemotransfusao',
+                  'historicoECG', 'historicoFleetEnema', 'historicoNPT', 'historicoAspiracao',
+                  'historicoTQT', 'historicoSaidaProcedimento', 'historicoRCP',
+                ];
+
+                const registros = FONTES.flatMap(fonte =>
+                  (Array.isArray(enf[fonte]) ? enf[fonte] : []).map((r, i) => ({
+                    ...r,
+                    _source: fonte,
+                    _index: i
+                  }))
+                )
+                  .filter(r => r && r.data && getLogicalDayKey(r.data, getHorario(r)) === hojeKey)
+                  .sort((a, b) => getHorario(a).localeCompare(getHorario(b)));
+
+                if (registros.length === 0) {
+                  return (
+                    <div className="text-center py-10 text-slate-400">
+                      <ClipboardList size={40} className="mx-auto mb-3 opacity-40" />
+                      <p className="font-bold">Nenhum registro de enfermagem hoje.</p>
+                    </div>
+                  );
+                }
+
+                const descrever = (r) => {
+                  switch (r.tipo) {
+                    case 'Acesso Periférico':
+                      return `Punção periférica em ${r.local || 'N/I'}${r.calibre ? ` (${r.calibre})` : ''}`;
+                    case 'Curativo':
+                      return `${r.tipoCurativo || 'Curativo'} em ${r.local || 'N/A'}${r.observacao ? `. Obs.: ${r.observacao}` : ''}`;
+                    case 'Inserção CVC':
+                      return `${r.tipoCateter || 'Cateter'} em ${r.localInserção || 'N/A'}. Barreiras: ${r.barreiras?.resumo || 'N/I'}`;
+                    case 'Manutenção CVC':
+                    case 'Manutenção Shiley':
+                      return `${r.dispositivo || 'CVC'}${r.trocaCurativo ? ' com troca de curativo' : ''}`;
+                    case 'Passagem SVD':
+                      return `SVD (${r.genero || 'N/I'}). Itens: ${r.itens?.resumo || 'N/I'}`;
+                    case 'Manutenção SVD':
+                      return `SVD ${r.tipoSonda || ''}. Itens: ${r.itens?.resumo || 'N/I'}`;
+                    case 'Gasometria':
+                      return `Gasometria ${r.tipoGasometria || ''}`;
+                    case 'Hemotransfusão':
+                      return `${r.hemocomponente || 'Hemocomponente'} — bolsa ${r.numeroBolsa || 'N/I'}`;
+                    case 'ECG':
+                      return `ECG${r.posicionamentoV3R ? ' com V3R' : ''}`;
+                    case 'Fleet Enema':
+                      return 'Fleet Enema administrado';
+                    case 'NPT':
+                      return `NPT${r.acessoCentralExclusivo ? ' em acesso central exclusivo' : ''}`;
+                    case 'Aspiração Traqueal':
+                      return `Aspiração via ${r.viaAerea || 'N/I'}: ${r.quantidade || ''} / ${r.caracteristica || ''}`;
+                    case 'TQT':
+                      return `TQT — cânula ${r.tipoCannula || 'N/I'} nº ${r.numeroCannula || 'N/I'}`;
+                    case 'SaidaProcedimento':
+                      return `Saída para ${r.procedimento || 'procedimento'}${r.horarioChegada ? ` — retorno ${r.horarioChegada}` : ''}`;
+                    case 'RCP':
+                      return `RCP ${r.horarioInicioRCP || ''}–${r.horarioFimRCP || ''}. Desfecho: ${r.desfecho || 'N/I'}`;
+                    default:
+                      return r.observacao || '—';
+                  }
+                };
+
+                return registros.map((r, idx) => (
+                  <div key={r.id || `${r._source}-${r._index}`} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+                    <div className="flex justify-between items-center mb-1 gap-2">
+                      <span className="font-black text-blue-700 text-sm uppercase">
+                        {r.tipo === 'SaidaProcedimento' ? 'Saída p/ Procedimento' : r.tipo}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-bold text-slate-400">{getHorario(r)}</span>
+                        <button
+                          onClick={() => {
+                            if (!window.confirm(`Excluir o registro "${r.tipo === 'SaidaProcedimento' ? 'Saída p/ Procedimento' : r.tipo}" de ${getHorario(r)}?\n\nEsta ação não pode ser desfeita.`)) return;
+                            const listaAtual = Array.isArray(currentPatient.enfermagem?.[r._source])
+                              ? currentPatient.enfermagem[r._source]
+                              : [];
+
+                            let novaLista;
+                            if (r.id) {
+                              // ✅ Exclusão por ID — imune a reordenação/índices
+                              novaLista = listaAtual.filter(item => item?.id !== r.id);
+                            } else {
+                              // 🔙 LEGADO: registros antigos sem id usam o índice.
+                              // Compensa o encolhimento do array desde a montagem da lista.
+                              const removidosAntes = registros
+                                .slice(0, idx)
+                                .filter(x => !x.id && x._source === r._source).length;
+                              const alvo = r._index - removidosAntes;
+                              novaLista = listaAtual.filter((_, i) => i !== alvo);
+                            }
+
+                            updateNested("enfermagem", r._source, novaLista);
+                            handleBlurSave(`Enfermagem: EXCLUIU registro de ${r.tipo} (${getHorario(r)})`);
+                          }}
+                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Excluir registro"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-600 whitespace-pre-wrap">{descrever(r)}</p>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* RODAPÉ */}
+            <div className="p-4 bg-white border-t border-slate-200 shrink-0">
+              <button type="button" onClick={() => setShowRegistrosEnf(false)} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl shadow-lg transition-all uppercase tracking-wider">
+                Fechar
+              </button>
+            </div>
+
+          </div>
+        </div>
+        </ModalPortal>
+      )}
 
     </div>
   );
