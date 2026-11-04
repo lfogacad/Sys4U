@@ -255,6 +255,55 @@ const LISTAS_MOBILIZACAO = {
     handleBlurSave("Fisioterapia: Excluiu registro de troca de via aérea");
   };
 
+  // Exclusão de Titulação de PEEP — usa updateP (mesmo caminho da gravação)
+  const excluirTitulacaoPeep = (id) => {
+    if (!window.confirm("Excluir este registro de titulação de PEEP?")) return;
+    const historico = Array.isArray(currentPatient?.physio?.historicoTitulacaoPeep)
+      ? currentPatient.physio.historicoTitulacaoPeep
+      : [];
+    const novoHistorico = historico.filter(t => t.id !== id);
+    updateP('physio', {
+      ...(currentPatient.physio || {}),
+      historicoTitulacaoPeep: novoHistorico
+    });
+    handleBlurSave("Fisioterapia: Excluiu registro de Titulação de PEEP");
+  };
+
+  // Exclusão genérica dos procedimentos diários (usa id; fallback por índice para legado)
+  const excluirProcedimentoDiario = (id, indiceFallback) => {
+    if (!window.confirm("Excluir este registro do dia?\n\nEsta ação não pode ser desfeita.")) return;
+    const lista = Array.isArray(currentPatient?.physio?.procedimentosDiarios)
+      ? currentPatient.physio.procedimentosDiarios
+      : [];
+    const nova = id
+      ? lista.filter(r => r.id !== id)
+      : lista.filter((_, i) => i !== indiceFallback);
+    updateNested("physio", "procedimentosDiarios", nova);
+    handleBlurSave("Fisioterapia: Excluiu registro de procedimento diário");
+  };
+
+  // Exclusão de Checklist IOT — usa save() porque o salvarIOT grava assim
+  const excluirIOT = (id) => {
+    if (!window.confirm("Excluir este Checklist de IOT?")) return;
+    const lista = Array.isArray(currentPatient?.physio?.historicoIOT)
+      ? currentPatient.physio.historicoIOT
+      : [];
+    const nova = lista.filter(r => r.id !== id);
+
+    const atualizado = JSON.parse(JSON.stringify(currentPatient));
+    if (!atualizado.physio) atualizado.physio = {};
+    atualizado.physio.historicoIOT = nova;
+    // Mantém o último registro coerente (se o excluído era o último)
+    atualizado.physio.ultimoIOT = nova.length > 0 ? nova[nova.length - 1] : null;
+
+    setPatients(prev => {
+      const novos = [...prev];
+      novos[activeTab] = atualizado;
+      return novos;
+    });
+    save(atualizado, "Fisioterapia: Excluiu Checklist de IOT");
+  };
+
   // Gera a tabela dinâmica: desce de 2 em 2 até 6 (PEEP par) ou 5 (PEEP ímpar)
   const gerarLinhasTitulacao = (peepInicial) => {
     const inicio = parseInt(peepInicial, 10);
@@ -595,6 +644,7 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
 
   // Cria a estrutura para salvar no histórico de procedimentos da fisioterapia
   const novoRegistro = {
+    id: `aspiracao_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     tipo: "Aspiração Traqueal",
     data: new Date().toISOString(),
     horario: modalAspiracaoFisio.horario,
@@ -637,6 +687,7 @@ const handleFluxoO2Change = (novoFluxo, suporteAtual) => {
   const textoProcedimento = `Sessão de VNI em modo ${modalVNI.modo} (${paramText}). Tempo de utilização: ${modalVNI.tempo} ${modalVNI.unidadeTempo}. Durante a terapia: FR ${modalVNI.fr} irpm e SpO2 ${modalVNI.spo2}%.`;
 
   const novoRegistro = {
+    id: `vni_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     tipo: "Sessão de VNI",
     data: new Date().toISOString(),
     horario: modalVNI.horario,
@@ -690,6 +741,7 @@ const salvarIOT = async () => {
   const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
   const registro = {
+    id: `iot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     tipo: 'Checklist IOT',
     data: dataISO,
     horario: modalIOT.horario,
@@ -769,6 +821,7 @@ const salvarIOT = async () => {
   const textoProcedimento = `Teste de Respiração Espontânea (TRE) em modo ${modalTRE.modo} (${paramText}). Duração: ${modalTRE.duracao} minutos. Índice de Tobin (IRRS): ${modalTRE.irrs || "-"}. Desfecho: ${modalTRE.desfecho.toUpperCase()}${cuffText}.`;
 
   const novoRegistro = {
+    id: `tre_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     tipo: "TRE",
     data: new Date().toISOString(),
     horario: modalTRE.horario,
@@ -840,6 +893,7 @@ const TRE_CHECKLIST = [
   const textoProcedimento = `Mobilização Precoce (${m.tipoExercicio || "Tipo não especificado"}). ` + (textoBlocos.length > 0 ? textoBlocos.join(". ") + "." : "Nenhum exercício detalhado.");
 
   const novoRegistro = {
+    id: `mobilizacao_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     tipo: "Mobilização",
     data: new Date().toISOString(),
     horario: m.horario,
@@ -878,6 +932,7 @@ const TRE_CHECKLIST = [
   }
 
   const novoRegistro = {
+    id: `extubacao_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     tipo: "Protocolo de Extubação",
     data: new Date().toISOString(),
     horario: ex.horario,
@@ -3698,13 +3753,12 @@ const TRE_CHECKLIST = [
         </ModalPortal>
       )}
 
-      {/* MODAL: REGISTROS DO DIA */}
+      {/* MODAL: REGISTROS DO DIA (FISIOTERAPIA) */}
       {showRegistrosFisio && (
         <ModalPortal>
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fade-in border-4 border-cyan-500/20">
 
-            {/* CABEÇALHO */}
             <div className="bg-cyan-700 p-4 text-white flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-full"><ClipboardList size={20} /></div>
@@ -3715,15 +3769,8 @@ const TRE_CHECKLIST = [
               </button>
             </div>
 
-            {/* CORPO */}
             <div className="p-5 bg-slate-50 overflow-y-auto space-y-3">
               {(() => {
-                // DIA LÓGICO (07h às 06h) — mesmo critério do BH.
-                // Suporta 4 formatos de data nos registros:
-                //  - ISO completo        (ex.: VNI/Aspiração: "2026-10-12T14:30:00.000Z")
-                //  - YYYY-MM-DD          (ex.: Checklist IOT: data="2026-10-12", horario="14:30")
-                //  - DD/MM/AAAA          (ex.: Troca TOT/TQT: data="12/10/2026", horario="14:30")
-                //  - DD-MM-AAAA          (ex.: Titulação PEEP: data="12-10-2026", horario="14:30")
                 const getLogicalDayKey = (dataStr, horario) => {
                   let d;
                   if (dataStr && dataStr.includes('T')) {
@@ -3731,12 +3778,9 @@ const TRE_CHECKLIST = [
                   } else if (dataStr && /^\d{4}-\d{2}-\d{2}$/.test(dataStr)) {
                     const h = (horario || '00:00').split(':');
                     d = new Date(`${dataStr}T${h[0] || '00'}:${h[1] || '00'}:00`);
-                  } else if (dataStr && /^\d{2}\/\d{2}\/\d{4}$/.test(dataStr)) {
-                    const [dia, mes, ano] = dataStr.split('/');
-                    const h = (horario || '00:00').split(':');
-                    d = new Date(`${ano}-${mes}-${dia}T${h[0] || '00'}:${h[1] || '00'}:00`);
-                  } else if (dataStr && /^\d{2}-\d{2}-\d{4}$/.test(dataStr)) {
-                    const [dia, mes, ano] = dataStr.split('-');
+                  } else if (dataStr && /^\d{2}[\/-]\d{2}[\/-]\d{4}$/.test(dataStr)) {
+                    const sep = dataStr.includes('/') ? '/' : '-';
+                    const [dia, mes, ano] = dataStr.split(sep);
                     const h = (horario || '00:00').split(':');
                     d = new Date(`${ano}-${mes}-${dia}T${h[0] || '00'}:${h[1] || '00'}:00`);
                   } else {
@@ -3744,21 +3788,27 @@ const TRE_CHECKLIST = [
                   }
                   if (isNaN(d.getTime())) return null;
                   if (d.getHours() < 7) d.setDate(d.getDate() - 1);
-                  const ano = d.getFullYear();
-                  const mes = String(d.getMonth() + 1).padStart(2, '0');
-                  const dia = String(d.getDate()).padStart(2, '0');
-                  return `${ano}-${mes}-${dia}`;
+                  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
                 };
 
                 const hojeKey = getLogicalDayKey(new Date().toISOString());
+                const fisio = currentPatient.physio || {};
 
-                // Junta os registros diários + IOT + trocas de via aérea + titulação de PEEP
-                const registros = [
-                  ...(currentPatient.physio?.procedimentosDiarios || []),
-                  ...(currentPatient.physio?.historicoIOT || []),
-                  ...(currentPatient.physio?.historicoTrocaVA || []),
-                  ...(currentPatient.physio?.historicoTitulacaoPeep || []),
-                ]
+                const FONTES = [
+                  'procedimentosDiarios',
+                  'historicoIOT',
+                  'historicoTrocaVA',
+                  'historicoTitulacaoPeep',
+                ];
+
+                const registros = FONTES.flatMap(fonte =>
+                  (Array.isArray(fisio[fonte]) ? fisio[fonte] : []).map((r, i) => ({
+                    ...r,
+                    data: r?.data || r?.dataISO || '',
+                    _source: fonte,
+                    _index: i
+                  }))
+                )
                   .filter(r => r && r.data && getLogicalDayKey(r.data, r.horario) === hojeKey)
                   .sort((a, b) => (a.horario || "").localeCompare(b.horario || ""));
 
@@ -3771,9 +3821,7 @@ const TRE_CHECKLIST = [
                   );
                 }
 
-                return registros.map((r, idx) => {
-                  // Monta o texto de exibição: usa textoFormatado se existir,
-                  // senão monta a partir dos campos (caso da Troca TOT/TQT)
+                const montarTexto = (r) => {
                   let texto = r.textoFormatado || "";
                   if (!texto && r.tipo === "Troca de TOT/TQT") {
                     const inter = (r.intercorrencias || []).length
@@ -3781,13 +3829,34 @@ const TRE_CHECKLIST = [
                       : "";
                     texto = `Troca de ${r.tipo} (cânula nº ${r.numeroCannula || '-'}). Motivo: ${r.motivo || 'N/I'}.${inter}${r.observacao ? ` Observação: ${r.observacao}` : ''}`;
                   }
+                  return texto;
+                };
+
+                // Dispatcher: cada origem desfaz o array pelo caminho correto
+                const executarExclusao = (r) => {
+                  if (r._source === 'historicoTrocaVA') return excluirTrocaVA(r.id);
+                  if (r._source === 'historicoTitulacaoPeep') return excluirTitulacaoPeep(r.id);
+                  if (r._source === 'historicoIOT') return excluirIOT(r.id);
+                  return excluirProcedimentoDiario(r.id, r._index);
+                };
+
+                return registros.map((r) => {
+                  const texto = montarTexto(r);
+                  const rotulo = r.tipo === "TitulacaoPEEP" ? "Titulação de PEEP" : r.tipo;
                   return (
-                    <div key={idx} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-black text-cyan-700 text-sm uppercase">
-                          {r.tipo === "TitulacaoPEEP" ? "Titulação de PEEP" : r.tipo}
-                        </span>
-                        <span className="text-xs font-bold text-slate-400">{r.horario}</span>
+                    <div key={r.id || `${r._source}-${r._index}`} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+                      <div className="flex justify-between items-center mb-1 gap-2">
+                        <span className="font-black text-cyan-700 text-sm uppercase">{rotulo}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs font-bold text-slate-400">{r.horario}</span>
+                          <button
+                            onClick={() => executarExclusao(r)}
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Excluir registro"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-sm text-slate-600 whitespace-pre-wrap">{texto || "—"}</p>
                     </div>
@@ -3796,7 +3865,6 @@ const TRE_CHECKLIST = [
               })()}
             </div>
 
-            {/* RODAPÉ */}
             <div className="p-4 bg-white border-t border-slate-200 shrink-0">
               <button type="button" onClick={() => setShowRegistrosFisio(false)} className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-black rounded-xl shadow-lg transition-all uppercase tracking-wider">
                 Fechar
