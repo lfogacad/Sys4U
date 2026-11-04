@@ -86,6 +86,16 @@ const mesclarPreenchendoVazios = (atual, backup) => {
       continue;
     }
 
+    // 🛡️ bh_previous: é um snapshot COMPLETO de um dia fechado.
+    // Se o atual está vazio/nulo, restaura o do backup integralmente —
+    // nunca mescla campo a campo (misturaria dias diferentes).
+    if (chave === 'bh_previous') {
+      if (estaVazio(saida.bh_previous) && !estaVazio(vBackup)) {
+        saida.bh_previous = vBackup;
+      }
+      continue;
+    }
+
     // 🛡️ historico_bh: mescla por DATA (array) — recupera dias que faltam
     if (chave === 'historico_bh' && Array.isArray(vBackup)) {
       const atuais = Array.isArray(saida.historico_bh) ? saida.historico_bh : [];
@@ -95,9 +105,11 @@ const mesclarPreenchendoVazios = (atual, backup) => {
       continue;
     }
 
-    // ... lógica genérica original (inalterada) ...
-    if (saida[chave] === undefined) {
-      saida[chave] = vBackup;
+    // Lógica genérica: preenche o que está vazio (undefined, null, '' ou objeto vazio)
+    if (estaVazio(saida[chave])) {
+      if (!estaVazio(vBackup)) {
+        saida[chave] = vBackup;
+      }
     } else if (
       vBackup && typeof vBackup === 'object' && !Array.isArray(vBackup) &&
       saida[chave] && typeof saida[chave] === 'object' && !Array.isArray(saida[chave])

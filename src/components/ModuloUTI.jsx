@@ -996,29 +996,55 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
 
           if (!bhServidor || !bhServidor.date || bhServidor.date >= logicalToday) return;
 
-          // 🧹 SANITIZAÇÃO: reconstrói o BH apenas com chaves HH:MM válidas.
-          // Isso remove qualquer resíduo de estrutura corrompida antes de arquivar.
           const bhLimpo = sanitizarBH(bhServidor);
 
+          // 🛡️ REGRA DE OURO: só considera "já arquivado" se o registro existir
+          // E tiver dados reais (gains/losses/vitals não vazios).
           const historicoServidor = Array.isArray(dados.historico_bh) ? dados.historico_bh : [];
-          const jaExiste = historicoServidor.some(h => h && h.date === bhServidor.date);
+          const registroExistente = historicoServidor.find(h => h && h.date === bhServidor.date);
+          const registroTemDados = registroExistente && (
+            Object.keys(registroExistente.gains || {}).length > 0 ||
+            Object.keys(registroExistente.losses || {}).length > 0 ||
+            Object.keys(registroExistente.vitals || {}).length > 0
+          );
 
-          if (jaExiste) {
-            batchWrites.push({
-              ref: docSnap.ref,
-              dados: {
-                bh_previous: bhLimpo,
-                bh: construirBHzero(logicalToday, bhLimpo, dados)
-              }
-            });
-            return;
+          const bhTemDados = (
+            Object.keys(bhLimpo.gains || {}).length > 0 ||
+            Object.keys(bhLimpo.losses || {}).length > 0 ||
+            Object.keys(bhLimpo.vitals || {}).length > 0
+          );
+
+          let historicoFinal = [...historicoServidor];
+
+          if (registroTemDados) {
+            console.log(`[SYS4U] ${docSnap.id}: dia ${bhServidor.date} já arquivado com dados.`);
+          } else if (bhTemDados) {
+            if (registroExistente) {
+              historicoFinal = historicoFinal.map(h =>
+                h && h.date === bhServidor.date ? bhLimpo : h
+              );
+              console.log(`[SYS4U] ${docSnap.id}: dia ${bhServidor.date} SUBSTITUÍDO (registro vazio → dados reais).`);
+            } else {
+              historicoFinal.push(bhLimpo);
+              console.log(`[SYS4U] ${docSnap.id}: dia ${bhServidor.date} INSERIDO no histórico.`);
+            }
+          } else {
+            console.log(`[SYS4U] ${docSnap.id}: dia ${bhServidor.date} sem lançamentos — não arquivado.`);
           }
 
-          historicoServidor.push(bhLimpo);
+          historicoFinal.sort((a, b) => {
+            const conv = (d) => {
+              if (!d) return "";
+              const p = String(d).split("-");
+              return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : String(d);
+            };
+            return conv(a?.date).localeCompare(conv(b?.date));
+          });
+
           batchWrites.push({
             ref: docSnap.ref,
             dados: {
-              historico_bh: historicoServidor,
+              historico_bh: historicoFinal,
               bh_previous: bhLimpo,
               bh: construirBHzero(logicalToday, bhLimpo, dados)
             }
@@ -1067,6 +1093,7 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     };
 
     const construirBHzero = (logicalToday, bhServidor, dados) => {
+      // ✅ accumulated CUMULATIVO (toda a internação) — regra confirmada pelo usuário
       const { accumulated: saldoAnterior } = calculateTotals(bhServidor, dados?.nutri?.peso);
       return {
         date: logicalToday,
@@ -1081,7 +1108,13 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
       };
     };
 
+    // 🕐 CORREÇÃO CRÍTICA: roda na montagem E a cada 5 minutos.
+    // Antes rodava só quando [db] mudava — se a aba ficasse aberta durante
+    // a madrugada, a virada das 07:00 nunca disparava e o bh.date travava.
     automatizarFechamentoBH();
+    const intervalo = setInterval(automatizarFechamentoBH, 5 * 60 * 1000);
+
+    return () => clearInterval(intervalo);
   }, [db]);
 
   // Efeito para buscar a fila de espera da UTI em tempo real
