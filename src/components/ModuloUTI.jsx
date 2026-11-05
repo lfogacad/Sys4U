@@ -126,17 +126,28 @@ const auditarEscrita = (origem, docId, payload, extra = {}) => {
   );
 };
 
-// Une o BH local com o do servidor, mas SÓ aceita horas que pertencem ao dia
-// assistencial corrente (07:00 de D-1 até 06:59 de D). Horas fora dessa janela
-// são lixo de viradas anteriores e são descartadas.
+// Une o BH local com o do servidor.
+// REGRA CRÍTICA: só aceita horas coerentes com o dia assistencial atual.
+// Horas < 07 pertencem ao dia D; horas >= 07 pertencem ao dia D-1.
+// Como o BH não guarda data por célula, o critério é:
+//   - se bh.date === logicalToday → aceitar tudo que é HH:MM válido
+//   - se bh.date < logicalToday  → REJEITAR tudo (o BH é de um dia anterior
+//     e seria reintroduzido por engano; deve ser arquivado pela virada)
 const unirMapasBH = (localBH, serverBH) => {
   const saida = { ...localBH };
 
-  // Dia assistencial: horas >= 07:00 pertencem a D-1; horas < 07:00 pertencem a D.
-  // Ambas são válidas. O que NÃO é válido é uma célula cuja data real não bate
-  // com o dia arquivado — e como o BH não guarda data por célula, usamos a
-  // regra de consistência: a célula só é aceita se a chave for HH:MM válida.
   const horaValida = (h) => /^\d{1,2}:\d{2}$/.test(String(h).trim());
+
+  // 🔒 GUARD DE DIA: se o servidor tem um BH de dia ANTERIOR ao local,
+  // o servidor é lixo estagnado — não pode contaminar o local.
+  const dataLocal = localBH?.date || "";
+  const dataServidor = serverBH?.date || "";
+  if (dataServidor && dataLocal && dataServidor < dataLocal) {
+    console.warn("[SYS4U] unirMapasBH: servidor tem BH de dia anterior — ignorado", {
+      dataServidor, dataLocal
+    });
+    return saida; // local vence integralmente
+  }
 
   ["gains", "losses", "vitals", "irrigation"].forEach(cat => {
     const localCat = localBH[cat];
@@ -152,7 +163,7 @@ const unirMapasBH = (localBH, serverBH) => {
 
     const catOut = { ...localCat };
     Object.keys(serverCat).forEach(hora => {
-      if (!horaValida(hora)) return; // descarta chave inválida
+      if (!horaValida(hora)) return;
       const localHora = localCat[hora];
       const serverHora = serverCat[hora];
       if (localHora === undefined) { catOut[hora] = serverHora; return; }
@@ -231,7 +242,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const localEditRef = useRef(false);
   const editCountRef = useRef(0);
   const currentPatientRef = useRef(null);
-  const bhViradaGlobalRef = useRef(null); // data lógica da última virada executada
   const localEditTimeoutRef = useRef(null);
   const atbSaveTimerRef = useRef(null);
   const saveEmVooRef = useRef(false);
@@ -973,150 +983,6 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     return () => unsub();
   }, [currentPatient?.cpf]);
 
-  // ==============================================================
-  // AUTOMAÇÃO DO BALANÇO HÍDRICO (O "Capataz" — virada GLOBAL, 1x/dia)
-  // ==============================================================
-  useEffect(() => {
-    if (!db) return;
-
-    const automatizarFechamentoBH = async () => {
-      const logicalToday = getLogicalDate();
-      if (bhViradaGlobalRef.current === logicalToday) return;
-      bhViradaGlobalRef.current = logicalToday;
-
-      console.log(`[SYS4U] Verificando virada de BH para ${logicalToday} (todos os leitos)`);
-
-      try {
-        const snap = await getDocs(collection(db, "leitos_uti"));
-        const batchWrites = [];
-
-        snap.forEach((docSnap) => {
-          const dados = docSnap.data();
-          const bhServidor = dados.bh || null;
-
-          if (!bhServidor || !bhServidor.date || bhServidor.date >= logicalToday) return;
-
-          const bhLimpo = sanitizarBH(bhServidor);
-
-          // 🛡️ REGRA DE OURO: só considera "já arquivado" se o registro existir
-          // E tiver dados reais (gains/losses/vitals não vazios).
-          const historicoServidor = Array.isArray(dados.historico_bh) ? dados.historico_bh : [];
-          const registroExistente = historicoServidor.find(h => h && h.date === bhServidor.date);
-          const registroTemDados = registroExistente && (
-            Object.keys(registroExistente.gains || {}).length > 0 ||
-            Object.keys(registroExistente.losses || {}).length > 0 ||
-            Object.keys(registroExistente.vitals || {}).length > 0
-          );
-
-          const bhTemDados = (
-            Object.keys(bhLimpo.gains || {}).length > 0 ||
-            Object.keys(bhLimpo.losses || {}).length > 0 ||
-            Object.keys(bhLimpo.vitals || {}).length > 0
-          );
-
-          let historicoFinal = [...historicoServidor];
-
-          if (registroTemDados) {
-            console.log(`[SYS4U] ${docSnap.id}: dia ${bhServidor.date} já arquivado com dados.`);
-          } else if (bhTemDados) {
-            if (registroExistente) {
-              historicoFinal = historicoFinal.map(h =>
-                h && h.date === bhServidor.date ? bhLimpo : h
-              );
-              console.log(`[SYS4U] ${docSnap.id}: dia ${bhServidor.date} SUBSTITUÍDO (registro vazio → dados reais).`);
-            } else {
-              historicoFinal.push(bhLimpo);
-              console.log(`[SYS4U] ${docSnap.id}: dia ${bhServidor.date} INSERIDO no histórico.`);
-            }
-          } else {
-            console.log(`[SYS4U] ${docSnap.id}: dia ${bhServidor.date} sem lançamentos — não arquivado.`);
-          }
-
-          historicoFinal.sort((a, b) => {
-            const conv = (d) => {
-              if (!d) return "";
-              const p = String(d).split("-");
-              return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : String(d);
-            };
-            return conv(a?.date).localeCompare(conv(b?.date));
-          });
-
-          batchWrites.push({
-            ref: docSnap.ref,
-            dados: {
-              historico_bh: historicoFinal,
-              bh_previous: bhLimpo,
-              bh: construirBHzero(logicalToday, bhLimpo, dados)
-            }
-          });
-        });
-
-        if (batchWrites.length === 0) {
-          console.log(`[SYS4U] Nenhum leito pendente de virada para ${logicalToday}.`);
-          return;
-        }
-
-        const batch = writeBatch(db);
-        batchWrites.forEach(w => batch.set(w.ref, w.dados, { merge: true }));
-        await batch.commit();
-
-        console.log(`[SYS4U] Virada concluída: ${batchWrites.length} leito(s).`);
-
-        setPatients(prev => prev.map(p => {
-          const w = batchWrites.find(b => b.ref.id === p.id);
-          return w ? { ...p, ...w.dados } : p;
-        }));
-      } catch (error) {
-        console.error("[SYS4U] Erro crítico na virada global do BH:", error);
-        bhViradaGlobalRef.current = null;
-      }
-    };
-
-    // Reconstrói o BH mantendo apenas chaves HH:MM válidas em cada categoria.
-    const sanitizarBH = (bh) => {
-      if (!bh || typeof bh !== "object") return bh;
-      const limpar = (mapa) => {
-        if (!mapa || typeof mapa !== "object") return {};
-        const out = {};
-        Object.keys(mapa).forEach((h) => {
-          if (/^\d{1,2}:\d{2}$/.test(String(h).trim())) out[h] = mapa[h];
-        });
-        return out;
-      };
-      return {
-        ...bh,
-        gains: limpar(bh.gains),
-        losses: limpar(bh.losses),
-        vitals: limpar(bh.vitals),
-        irrigation: limpar(bh.irrigation)
-      };
-    };
-
-    const construirBHzero = (logicalToday, bhServidor, dados) => {
-      // ✅ accumulated CUMULATIVO (toda a internação) — regra confirmada pelo usuário
-      const { accumulated: saldoAnterior } = calculateTotals(bhServidor, dados?.nutri?.peso);
-      return {
-        date: logicalToday,
-        gains: {},
-        losses: {},
-        vitals: {},
-        irrigation: {},
-        customGains: bhServidor.customGains || [],
-        customLosses: bhServidor.customLosses || [],
-        accumulated: saldoAnterior || 0,
-        insensibleLoss: 0
-      };
-    };
-
-    // 🕐 CORREÇÃO CRÍTICA: roda na montagem E a cada 5 minutos.
-    // Antes rodava só quando [db] mudava — se a aba ficasse aberta durante
-    // a madrugada, a virada das 07:00 nunca disparava e o bh.date travava.
-    automatizarFechamentoBH();
-    const intervalo = setInterval(automatizarFechamentoBH, 5 * 60 * 1000);
-
-    return () => clearInterval(intervalo);
-  }, [db]);
-
   // Efeito para buscar a fila de espera da UTI em tempo real
   useEffect(() => {
     if (!db) return;
@@ -1198,47 +1064,6 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     const pacienteSeguro = JSON.parse(JSON.stringify(updatedPatient));
     const contagemNoInicio = editCountRef.current; // edições que existiam quando o save começou
 
-    // 🔄 SINCRONIZAÇÃO BH HISTÓRICO → bh_previous
-    // Só sincroniza se o bh_previous local estiver VAZIO ou sem data.
-    // Um bh_previous já preenchido é fonte de verdade (foi gravado pela virada
-    // automática) — o histórico local pode estar defasado e não pode vencê-lo.
-    const dataBHPrev = pacienteSeguro.bh_previous?.date;
-    const bhPrevLocalTemConteudo = pacienteSeguro.bh_previous
-      && typeof pacienteSeguro.bh_previous === 'object'
-      && Object.keys(pacienteSeguro.bh_previous).length > 0;
-
-    if (!bhPrevLocalTemConteudo && dataBHPrev && Array.isArray(pacienteSeguro.historico_bh)) {
-      const itemHistorico = pacienteSeguro.historico_bh.find(h => h.date === dataBHPrev);
-      if (itemHistorico) {
-        pacienteSeguro.bh_previous = JSON.parse(JSON.stringify(itemHistorico));
-      }
-    }
-
-    // Sincroniza também o estado em memória (sem isso, a UI só atualizaria após F5)
-    if (pacienteSeguro.bh_previous && JSON.stringify(updatedPatient.bh_previous || null) !== JSON.stringify(pacienteSeguro.bh_previous)) {
-      setPatients(prev => {
-        const copia = [...prev];
-        if (copia[activeTab]) copia[activeTab] = { ...copia[activeTab], bh_previous: pacienteSeguro.bh_previous };
-        return copia;
-      });
-    }
-
-    // 🧹 VALIDAÇÃO: bh_previous com data divergente do bh atual é lixo.
-    // O bh_previous deve ser sempre o dia imediatamente anterior ao bh.date.
-    if (pacienteSeguro.bh_previous?.date && pacienteSeguro.bh?.date) {
-      const dPrev = new Date(pacienteSeguro.bh_previous.date + "T12:00:00");
-      const dAtual = new Date(pacienteSeguro.bh.date + "T12:00:00");
-      const diffDias = Math.round((dAtual - dPrev) / 86400000);
-      if (diffDias !== 1) {
-        console.warn("[SYS4U] bh_previous com data inconsistente — descartando", {
-          prev: pacienteSeguro.bh_previous.date,
-          atual: pacienteSeguro.bh.date,
-          diffDias
-        });
-        pacienteSeguro.bh_previous = undefined;
-      }
-    }
-
     try {
       // Normalização do ID
       let idBruto = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
@@ -1255,6 +1080,7 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       delete payloadBH.admissionData;
       delete payloadBH.admissaoMedica;
       delete payloadBH.historiaClinica;
+      delete payloadBH.bh_previous;
       if (pacienteSeguro.bh !== undefined) {
         payloadBH.bh = pacienteSeguro.bh;
         if (pacienteSeguro.bh.vitals !== undefined) payloadBH.vitals = pacienteSeguro.bh.vitals;
@@ -1262,29 +1088,12 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       ["neuro", "medical", "cardio", "gastro", "nutri", "enfermagem", "hd_acesso"].forEach(cat => {
         if (pacienteSeguro[cat] !== undefined) payloadBH[cat] = pacienteSeguro[cat];
       });
-      if (pacienteSeguro.historico_bh !== undefined) payloadBH.historico_bh = pacienteSeguro.historico_bh;
-      // bh_previous só entra no payload se REALMENTE diferir do servidor.
-      // Um save() de FiO2/PEEP não pode reescrever o balanço do dia anterior.
-      if (pacienteSeguro.bh_previous !== undefined) {
-        const bhPrevServidor = (await getDoc(doc(db, "leitos_uti", docId))).data()?.bh_previous;
-        if (JSON.stringify(bhPrevServidor ?? null) !== JSON.stringify(pacienteSeguro.bh_previous ?? null)) {
-          payloadBH.bh_previous = pacienteSeguro.bh_previous;
-        } else {
-          delete payloadBH.bh_previous;
-        }
-      }
-      // Dentro do save(), ANTES do setDoc — mescla o histórico do estado com o do servidor
-      if (payloadBH.historico_bh !== undefined && Array.isArray(payloadBH.historico_bh)) {
-        try {
-          const snapServidor = await getDoc(doc(db, "leitos_uti", docId));
-          const historicoServidor = snapServidor.exists() ? snapServidor.data().historico_bh : null;
-          if (Array.isArray(historicoServidor) && historicoServidor.length > 0) {
-            const datasLocais = new Set(payloadBH.historico_bh.map(h => h && h.date).filter(Boolean));
-            const soNoServidor = historicoServidor.filter(h => h && h.date && !datasLocais.has(h.date));
-            if (soNoServidor.length > 0) payloadBH.historico_bh = [...payloadBH.historico_bh, ...soNoServidor];
-          }
-        } catch (e) { console.warn("[SYS4U] Não foi possível mesclar historico_bh no save:", e); }
-      }
+      
+      // 🛡️ HISTÓRICO: mesma regra do bh_previous — o SAVE NÃO TEM AUTORIDADE.
+      // O historico_bh é escrito exclusivamente pela função viradaBH (index.js).
+      // Removemos do payload e NÃO mesclamos: qualquer merge a partir do estado
+      // local reintroduziria registros já depurados (o bug da diarreia de 4 dias).
+      delete payloadBH.historico_bh;
 
       // 🛡️ UNIÃO DO BH COM O SERVIDOR: impede que um estado obsoleto apague
       // horas/células gravadas por outra aba/dispositivo.
@@ -1330,7 +1139,7 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       Object.keys(payloadBH).forEach((chave) => {
         if (payloadBH[chave] === undefined) delete payloadBH[chave];
       });
-            
+
       auditarEscrita("save()", docId, payloadBH, { merge: true });
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
       // 🔓 Destrava APÓS o commit com uma margem de segurança.

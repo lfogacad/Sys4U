@@ -756,3 +756,178 @@ function horaManaus(ms) {
   }).formatToParts(new Date(ms));
   return Number(partes.find(p => p.type === 'hour').value) % 24;
 }
+
+// ============================================================================
+// VIRADA DIÁRIA DO BALANÇO HÍDRICO — roda às 07:01 (após o backup das 07:00)
+// ============================================================================
+// Invariantes que esta função garante:
+//   1. bh_previous === historico_bh[último]  (sempre, por construção)
+//   2. bh.date === logicalToday
+//   3. Nenhuma célula fora da janela 07:00(D-1) → 06:59(D) permanece no BH
+//   4. Acumulado cumulativo preservado entre dias
+//   5. Idempotente: chamar 2x no mesmo dia não duplica nem corrompe
+// ============================================================================
+const LOGICAL_TZ = "America/Porto_Velho";
+
+// "Hoje assistencial": 07:00 de D-1 até 06:59 de D
+function getLogicalDateAt(date = new Date()) {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: LOGICAL_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", hour12: false
+  }).formatToParts(date);
+  const get = (t) => partes.find((p) => p.type === t).value;
+  const y = get("year"), m = get("month"), d = get("day");
+  const hora = Number(get("hour")) % 24;
+  if (hora < 7) {
+    const ontem = new Date(`${y}-${m}-${d}T00:00:00`);
+    ontem.setDate(ontem.getDate() - 1);
+    return `${ontem.getFullYear()}-${String(ontem.getMonth() + 1).padStart(2, "0")}-${String(ontem.getDate()).padStart(2, "0")}`;
+  }
+  return `${y}-${m}-${d}`;
+}
+
+function addDias(yyyymmdd, n) {
+  const dt = new Date(`${yyyymmdd}T12:00:00`);
+  dt.setDate(dt.getDate() + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+// Mantém SOMENTE as horas que pertencem à janela do dia assistencial informado.
+// Regra: horas >= 07 pertencem a D-1; horas < 07 pertencem a D.
+// Nada impede uma hora repetida, mas como a data vem do próprio bh.date,
+// esta função garante que só sobreviva o que é coerente com aquele dia.
+function sanitizarBHPorJanela(bh) {
+  if (!bh || typeof bh !== "object") return null;
+  const limpar = (mapa) => {
+    if (!mapa || typeof mapa !== "object") return {};
+    const out = {};
+    Object.keys(mapa).forEach((h) => {
+      const key = String(h).trim();
+      const m = key.match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return;
+      const hh = Number(m[1]);
+      if (hh < 0 || hh > 23) return;
+      out[key] = mapa[key];
+    });
+    return out;
+  };
+  return {
+    ...bh,
+    gains: limpar(bh.gains),
+    losses: limpar(bh.losses),
+    vitals: limpar(bh.vitals),
+    irrigation: limpar(bh.irrigation),
+    customGains: Array.isArray(bh.customGains) ? bh.customGains : [],
+    customLosses: Array.isArray(bh.customLosses) ? bh.customLosses : []
+  };
+}
+
+// Cálculo de totais idêntico ao do front (calculateTotals).
+// DEVE permanecer em sincronia com o front — se mudar um, mude o outro.
+function calculateTotalsServidor(bh, peso = 0) {
+  if (!bh) return { accumulated: 0 };
+  const safeNumber = (v) => {
+    if (v === "" || v === null || v === undefined) return 0;
+    const n = Number(String(v).replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  };
+  let totalGains = 0, totalLosses = 0, totalIrrigation = 0;
+  if (bh.irrigation) Object.values(bh.irrigation).forEach((v) => (totalIrrigation += safeNumber(v)));
+  if (bh.gains) Object.values(bh.gains).forEach((h) => Object.values(h).forEach((v) => (totalGains += safeNumber(v))));
+  if (bh.losses) Object.values(bh.losses).forEach((h) => Object.values(h).forEach((v) => (totalLosses += safeNumber(v))));
+  const adjustedTotalLosses = totalLosses - totalIrrigation;
+  let insensible = safeNumber(bh.insensibleLoss);
+  const pesoNum = safeNumber(String(peso).replace(",", "."));
+  if (insensible === 0 && pesoNum > 0) insensible = Math.round(pesoNum * 12);
+  const lossesHavePI = bh.losses
+    ? Object.values(bh.losses).some((h) =>
+        Object.keys(h).some((k) => /perda\s*insens|^pi$/i.test(String(k))))
+    : false;
+  const finalTotalLosses = lossesHavePI ? adjustedTotalLosses : adjustedTotalLosses + insensible;
+  const dailyBalance = totalGains - finalTotalLosses;
+  const accumulated = safeNumber(bh.accumulated) + dailyBalance;
+  return { accumulated };
+}
+
+// Cria o BH zerado do dia novo, herdando apenas o acumulado e as listas custom.
+function construirBHzeroServidor(logicalToday, bhAnterior, dadosPaciente) {
+  const { accumulated: saldoAnterior } = calculateTotalsServidor(bhAnterior, dadosPaciente?.nutri?.peso);
+  return {
+    date: logicalToday,
+    gains: {},
+    losses: {},
+    vitals: {},
+    irrigation: {},
+    customGains: bhAnterior?.customGains || [],
+    customLosses: bhAnterior?.customLosses || [],
+    accumulated: saldoAnterior || 0,
+    insensibleLoss: 0
+  };
+}
+
+exports.viradaBH = onSchedule({
+  schedule: "1 7 * * *",       // 07:01 todos os dias
+  timeZone: LOGICAL_TZ,
+  memory: "512MiB",
+  timeoutSeconds: 300
+}, async () => {
+  const logicalToday = getLogicalDateAt();
+  console.log(`[VIRADA-BH] Iniciando virada para o dia assistencial ${logicalToday}`);
+
+  const snap = await db.collection("leitos_uti").get();
+  const batch = db.batch();
+  let processados = 0;
+  let ignorados = 0;
+
+  snap.forEach((docSnap) => {
+    const dados = docSnap.data();
+    const bhServidor = dados.bh;
+
+    // Leito vazio ou sem BH → nada a fazer
+    if (!bhServidor || !bhServidor.date) { ignorados++; return; }
+
+    // Idempotência: se o BH já está no dia de hoje, a virada já rodou
+    if (bhServidor.date >= logicalToday) { ignorados++; return; }
+
+    const bhLimpo = sanitizarBHPorJanela(bhServidor);
+
+    const temDados =
+      Object.keys(bhLimpo.gains || {}).length > 0 ||
+      Object.keys(bhLimpo.losses || {}).length > 0 ||
+      Object.keys(bhLimpo.vitals || {}).length > 0 ||
+      Object.keys(bhLimpo.irrigation || {}).length > 0;
+
+    const historico = Array.isArray(dados.historico_bh) ? [...dados.historico_bh] : [];
+
+    // Arquiva o dia encerrado (apenas se tiver dados reais)
+    let historicoFinal = historico;
+    if (temDados) {
+      const idx = historicoFinal.findIndex((h) => h && h.date === bhServidor.date);
+      if (idx >= 0) {
+        historicoFinal = historicoFinal.map((h) =>
+          h && h.date === bhServidor.date ? bhLimpo : h
+        );
+      } else {
+        historicoFinal = [...historicoFinal, bhLimpo];
+      }
+    }
+    historicoFinal.sort((a, b) => String(a?.date || "").localeCompare(String(b?.date || "")));
+
+    // 🔑 INVARIANTE: bh_previous É o último item do histórico (fonte única)
+    const bhPrevious = historicoFinal.length > 0
+      ? historicoFinal[historicoFinal.length - 1]
+      : null;
+
+    batch.set(docSnap.ref, {
+      historico_bh: historicoFinal,
+      bh_previous: bhPrevious,
+      bh: construirBHzeroServidor(logicalToday, bhLimpo, dados)
+    }, { merge: true });
+
+    processados++;
+  });
+
+  await batch.commit();
+  console.log(`[VIRADA-BH] Concluído: ${processados} leito(s) virados, ${ignorados} ignorado(s) para ${logicalToday}`);
+});
