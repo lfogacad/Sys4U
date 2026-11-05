@@ -1138,7 +1138,14 @@ const TRE_CHECKLIST = [
     );
   }
 
-  if (!currentPatient.physio?.admitido && !currentPatient.physio?.suporte) {
+    const temAdmissaoFisio = !!(
+    currentPatient.physio?.admitido ||
+    currentPatient.admissaoFisioterapia?.dataRegistroAdmissao ||
+    currentPatient.physio?.auscultaPulmonar ||
+    currentPatient.physio?.condutas
+  );
+
+  if (!temAdmissaoFisio && !currentPatient.physio?.suporte) {
     return (
       <div className="flex flex-col items-center justify-center p-12 bg-white border-2 border-dashed border-cyan-200 rounded-2xl animate-fadeIn mt-4">
         <div className="w-20 h-20 bg-cyan-50 text-cyan-500 rounded-full flex items-center justify-center mb-4 shadow-inner">

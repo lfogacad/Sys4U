@@ -1321,7 +1321,16 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
           }
         } catch (e) { console.warn("[SYS4U] Não foi possível preservar o cofre nutricional:", e); }
       }
-      
+
+      // 🛡️ SANEAMENTO FINAL: remove qualquer chave com valor `undefined`.
+      // O Firestore rejeita `undefined` e derruba o write inteiro —
+      // o que fazia a UI reverter e "perder" dados (gasometria, admissão etc.).
+      // Esta passagem não altera nenhum valor válido, apenas descarta
+      // chaves indefinidas antes da gravação.
+      Object.keys(payloadBH).forEach((chave) => {
+        if (payloadBH[chave] === undefined) delete payloadBH[chave];
+      });
+            
       auditarEscrita("save()", docId, payloadBH, { merge: true });
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
       // 🔓 Destrava APÓS o commit com uma margem de segurança.
@@ -5397,6 +5406,7 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     delete payload.bh;
     delete payload.vitals;
     delete payload.bh_previous;
+    // Garante que o JSON não carregue `undefined` como string "undefined"
     save(payload, logMsg);
   };
 
