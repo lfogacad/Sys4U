@@ -60,7 +60,7 @@ export const EXAM_ROWS = [
   export const BH_GAINS = [
     "Dieta Oral",
     "Dieta SNE/GTT",
-    "Água (VO/SNE)",
+    "Água (VO/SNE/GTT)",
     "Soro Basal",
     "Diluição EV",
     "Volume",
