@@ -235,7 +235,6 @@ const OverviewTab = ({
           const escStr = (v) => String(v ?? "").trim().toLowerCase();
 
           // Uma perda está "positiva" quando o valor registrado indica ocorrência real.
-          // Regra: "sim"/"s" → sim; qualquer número > 0 → sim; "0", "", "-", "não" → não.
           const valorPositivo = (v) => {
             const s = escStr(v);
             if (!s) return false;
@@ -244,143 +243,198 @@ const OverviewTab = ({
             if (s.includes("+")) return true;
             const num = parseFloat(s.replace(",", "."));
             if (!isNaN(num)) return num > 0;
-            return false; // texto sem sentido numérico ("ausente", "nega", etc.)
+            return false;
           };
 
-          // ============================================================
-          // REGRA DO DIA ASSISTENCIAL: o BH roda de 06h a 06h.
-          // As horas 00h–05h gravadas no bh_previous pertencem a HOJE.
-          // ============================================================
-          const EH_MADRUGADA = (h) => Number(String(h).split(":")[0]) < 7;
+          const pad2 = (n) => String(n).padStart(2, "0");
 
-          // ---------- 1. EVACUAÇÃO ----------
-          // Procura evacuação num BH. somenteMadrugada=true restringe às horas 00-05.
-          const evacNoBH = (bh, somenteMadrugada) => {
-            if (!bh || !bh.losses) return null;
-            const horas = Object.keys(bh.losses).sort().reverse();
-            for (const h of horas) {
-              if (somenteMadrugada && !EH_MADRUGADA(h)) continue;
-              const cel = bh.losses[h] || {};
-              if (valorPositivo(cel["Evacuação"] ?? cel["Evacuacao"] ?? cel["Fezes"])) return h;
+          // Converte a date de um item (aceita ISO, DD/MM/AAAA e DD-MM-AAAA)
+          const dateParaISO = (dateStr) => {
+            if (!dateStr) return null;
+            const s = String(dateStr).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            const mBarra = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (mBarra) {
+              const [, d, m, a] = mBarra;
+              return `${a}-${pad2(m)}-${pad2(d)}`;
+            }
+            const mTraco = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+            if (mTraco) {
+              const [, d, m, a] = mTraco;
+              return `${a}-${pad2(m)}-${pad2(d)}`;
             }
             return null;
           };
 
-          // Histórico: quantos dias atrás foi a evacuação mais recente
-          const acharEvacNoHistorico = () => {
-            const hist = currentPatient.historico_bh;
-            if (!Array.isArray(hist) || !hist.length) return null;
-            const ordenado = [...hist]
-              .filter((item) => item && item.date)
-              .sort((a, b) => parseDateForSort(b.date) - parseDateForSort(a.date));
-            const hoje = new Date();
-            hoje.setHours(0, 0, 0, 0);
-            for (const item of ordenado) {
-              if (!evacNoBH(item, false)) continue;
-              let dRef = null;
-              if (/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
-                const [y, m, d] = item.date.split("-");
-                dRef = new Date(Number(y), Number(m) - 1, Number(d));
-              } else {
-                const m = item.date.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
-                if (m) {
-                  const ano = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])) : new Date().getFullYear();
-                  dRef = new Date(ano, Number(m[2]) - 1, Number(m[1]));
-                }
-              }
-              if (!dRef) continue;
-              return Math.round((hoje.getTime() - dRef.getTime()) / 86400000);
-            }
-            return null;
+          // ============================================================
+          // ÂNCORA DE "HOJE" — usa a data do BH ABERTO (fonte de verdade
+          // controlada pelo viradaBH no servidor, fuso America/Porto_Velho).
+          // Só cai no relógio local se o bh.date não existir.
+          // ============================================================
+          const hojeISO = (() => {
+            const isoBH = dateParaISO(currentPatient?.bh?.date);
+            if (isoBH) return isoBH;
+            const d = new Date();
+            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+          })();
+
+          const somarDiasISO = (iso, delta) => {
+            if (!iso) return null;
+            const d = new Date(`${iso}T12:00:00`);
+            if (isNaN(d.getTime())) return null;
+            d.setDate(d.getDate() + delta);
+            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
           };
 
-          let evacResult = "-";
-          let isConstipado = false;
+          const diffDiasISO = (isoA, isoB) => {
+            if (!isoA || !isoB) return null;
+            const a = new Date(`${isoA}T12:00:00`);
+            const b = new Date(`${isoB}T12:00:00`);
+            if (isNaN(a.getTime()) || isNaN(b.getTime())) return null;
+            return Math.round((a.getTime() - b.getTime()) / 86400000);
+          };
 
-          if (evacNoBH(currentPatient.bh, false)) {
-            evacResult = "Hoje";
-          } else if (evacNoBH(currentPatient.bh_previous, true)) {
-            // madrugada (00-05) do bh_previous = dia assistencial de HOJE
-            evacResult = "Hoje";
-          } else if (evacNoBH(currentPatient.bh_previous, false)) {
-            evacResult = "1 dia";
-          } else {
-            const diasHist = acharEvacNoHistorico();
-            if (diasHist !== null) {
-              evacResult = diasHist === 0 ? "Hoje" : diasHist === 1 ? "1 dia" : `${diasHist} dias`;
-            } else {
-              const manual = currentPatient.gastro?.dataUltimaEvacuacao;
-              evacResult = manual
-                ? (typeof calculateEvacDays === "function" ? calculateEvacDays(manual) : "-")
-                : "-";
-            }
-          }
+          const historico = Array.isArray(currentPatient?.historico_bh) ? currentPatient.historico_bh : [];
 
-          const diasNum = parseInt(String(evacResult).replace(/\D/g, ""), 10);
-          const temDiaComputavel = !isNaN(diasNum) && !String(evacResult).toLowerCase().includes("hoje");
-          if (temDiaComputavel && diasNum > 2) isConstipado = true;
+          const itemDoDia = (isoAlvo) => {
+            if (!isoAlvo) return null;
+            return historico.find((item) => item && dateParaISO(item.date) === isoAlvo) || null;
+          };
 
-          // ---------- 2. VÔMITOS E DIARREIA ----------
+          // ============================================================
+          // MODELO A — dia assistencial 07:00(D) → 06:59(D+1).
+          // No item date="DD":
+          //   • horas 00–06 pertencem ao dia calendário DD+1
+          //   • horas 07–23 pertencem ao dia calendário DD
+          // ============================================================
+          const diaCalendarioDaHora = (itemISO, hora) => {
+            const h = Number(String(hora).split(":")[0]);
+            if (isNaN(h)) return null;
+            return h < 7 ? somarDiasISO(itemISO, 1) : itemISO;
+          };
+
+          // ---------- HELPERS DE LEITURA ----------
           const lerPerda = (cel, perda) => {
             if (!cel) return undefined;
             if (perda === "Vômitos") return cel["Vômitos"] ?? cel["Vômito"] ?? cel["Vomitos"] ?? cel["Vomito"];
             if (perda === "Diarreia") return cel["Diarreia"] ?? cel["Diarreias"];
+            if (perda === "Evacuação") return cel["Evacuação"] ?? cel["Evacuacao"] ?? cel["Fezes"];
             return cel[perda];
           };
 
-          const temPerdaEmHoras = (bh, perda, filtroHora) => {
+          const temPerdaNoBH = (bh, perda) => {
             if (!bh || !bh.losses) return false;
             for (const h of Object.keys(bh.losses)) {
-              if (filtroHora && !filtroHora(h)) continue;
-              const cel = bh.losses[h] || {};
-              if (valorPositivo(lerPerda(cel, perda))) return true;
+              if (valorPositivo(lerPerda(bh.losses[h] || {}, perda))) return true;
             }
             return false;
           };
 
-          // Hoje = BH atual + madrugada (00-05) do bh_previous
-          const perdaHoje = (perda) =>
-            temPerdaEmHoras(currentPatient.bh, perda, null) ||
-            temPerdaEmHoras(currentPatient.bh_previous, perda, EH_MADRUGADA);
+          // Existe registro positivo de `perda` no dia calendário `isoAlvo`?
+          const temPerdaNoDiaCalendario = (perda, isoAlvo, incluirBHAtual = false) => {
+            if (!isoAlvo) return false;
 
-          // Ontem = bh_previous EXCETO a madrugada
-          const perdaOntem = (perda) =>
-            temPerdaEmHoras(currentPatient.bh_previous, perda, (h) => !EH_MADRUGADA(h));
-
-          const diasPerdaNoHistorico = (perda) => {
-            const hist = currentPatient.historico_bh;
-            if (!Array.isArray(hist) || !hist.length) return null;
-            let menor = null;
-            for (const item of hist) {
-              if (!item || !item.losses) continue;
-              if (!temPerdaEmHoras(item, perda, null)) continue;
-              let dRef = null;
-              if (/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
-                const [y, m, d] = item.date.split("-");
-                dRef = new Date(Number(y), Number(m) - 1, Number(d));
-              } else {
-                const mm = String(item.date).match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
-                if (mm) {
-                  const ano = mm[3] ? (mm[3].length === 2 ? 2000 + Number(mm[3]) : Number(mm[3])) : new Date().getFullYear();
-                  dRef = new Date(ano, Number(mm[2]) - 1, Number(mm[1]));
-                }
+            // 1) Item do próprio dia — só horas >= 07
+            const itemProprio = itemDoDia(isoAlvo);
+            if (itemProprio && itemProprio.losses) {
+              for (const h of Object.keys(itemProprio.losses)) {
+                if (Number(String(h).split(":")[0]) < 7) continue;
+                if (valorPositivo(lerPerda(itemProprio.losses[h] || {}, perda))) return true;
               }
-              if (!dRef) continue;
-              const hoje = new Date();
-              hoje.setHours(0, 0, 0, 0);
-              const d = Math.round((hoje.getTime() - dRef.getTime()) / 86400000);
-              if (d < 0) continue;
-              if (menor === null || d < menor) menor = d;
             }
-            return menor;
+
+            // 2) Item do dia anterior — só madrugada (00–06) de isoAlvo
+            const itemAnterior = itemDoDia(somarDiasISO(isoAlvo, -1));
+            if (itemAnterior && itemAnterior.losses) {
+              for (const h of Object.keys(itemAnterior.losses)) {
+                if (Number(String(h).split(":")[0]) >= 7) continue;
+                if (valorPositivo(lerPerda(itemAnterior.losses[h] || {}, perda))) return true;
+              }
+            }
+
+            // 3) BH aberto — pertence ao dia assistencial corrente (horas >= 07)
+            if (incluirBHAtual && currentPatient?.bh?.losses) {
+              for (const h of Object.keys(currentPatient.bh.losses)) {
+                if (Number(String(h).split(":")[0]) < 7) continue;
+                if (valorPositivo(lerPerda(currentPatient.bh.losses[h] || {}, perda))) return true;
+              }
+            }
+
+            return false;
           };
 
+          // ============================================================
+          // 1. ÚLT. EVACUAÇÃO
+          // ============================================================
+          let evacDias = null;
+
+          // Hoje — bh aberto (horas >= 07)
+          if (currentPatient?.bh?.losses) {
+            for (const h of Object.keys(currentPatient.bh.losses)) {
+              if (Number(String(h).split(":")[0]) < 7) continue;
+              if (valorPositivo(lerPerda(currentPatient.bh.losses[h] || {}, "Evacuação"))) {
+                evacDias = 0;
+                break;
+              }
+            }
+          }
+
+          // Madrugada de hoje — item de ontem, horas < 07
+          if (evacDias === null) {
+            const itemOntem = itemDoDia(somarDiasISO(hojeISO, -1));
+            if (itemOntem && itemOntem.losses) {
+              for (const h of Object.keys(itemOntem.losses)) {
+                if (Number(String(h).split(":")[0]) >= 7) continue;
+                if (valorPositivo(lerPerda(itemOntem.losses[h] || {}, "Evacuação"))) {
+                  evacDias = 0;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Dias anteriores — varre o histórico do mais recente ao mais antigo
+          if (evacDias === null) {
+            const itensOrdenados = [...historico]
+              .filter((it) => it && dateParaISO(it.date))
+              .sort((a, b) => String(dateParaISO(b.date)).localeCompare(String(dateParaISO(a.date))));
+
+            for (const item of itensOrdenados) {
+              if (!item.losses) continue;
+              const isoItem = dateParaISO(item.date);
+              let menorDiff = null;
+              for (const h of Object.keys(item.losses)) {
+                if (!valorPositivo(lerPerda(item.losses[h] || {}, "Evacuação"))) continue;
+                const diaCal = diaCalendarioDaHora(isoItem, h);
+                const diff = diffDiasISO(hojeISO, diaCal);
+                if (diff === null || diff < 0) continue;
+                if (menorDiff === null || diff < menorDiff) menorDiff = diff;
+              }
+              if (menorDiff !== null) {
+                evacDias = menorDiff;
+                break;
+              }
+            }
+          }
+
+          let evacResult = "-";
+          if (evacDias !== null) {
+            evacResult = evacDias === 0 ? "Hoje" : evacDias === 1 ? "1 dia" : `${evacDias} dias`;
+          } else {
+            const manual = currentPatient?.gastro?.dataUltimaEvacuacao;
+            evacResult = manual
+              ? (typeof calculateEvacDays === "function" ? calculateEvacDays(manual) : "-")
+              : "-";
+          }
+
+          const isConstipado = evacDias !== null && evacDias > 2;
+
+          // ============================================================
+          // 2. VÔMITOS E DIARREIA — só "Hoje" ou "Ontem"
+          // ============================================================
           const montarTextoPerda = (perda) => {
-            if (perdaHoje(perda)) return "Hoje";
-            if (perdaOntem(perda)) return "Ontem";
-            const dHist = diasPerdaNoHistorico(perda);
-            if (dHist === 0) return "Hoje";
-            if (dHist === 1) return "Ontem";
+            if (temPerdaNoDiaCalendario(perda, hojeISO, true)) return "Hoje";
+            if (temPerdaNoDiaCalendario(perda, somarDiasISO(hojeISO, -1), false)) return "Ontem";
             return "";
           };
 
