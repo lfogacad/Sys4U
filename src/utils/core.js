@@ -832,6 +832,15 @@ export const mergePatientData = (def, db) => {
       : [];
   }
 
+  // 🛡️ bh_previous: nunca deixa o default null sobrescrever um valor real
+  // nem o contrário. Se o banco tem bh_previous, ele é a fonte de verdade.
+  if (!m.bh_previous && Array.isArray(m.historico_bh) && m.historico_bh.length > 0) {
+    const ordenado = [...m.historico_bh].sort(
+      (a, b) => String(a?.date || "").localeCompare(String(b?.date || ""))
+    );
+    m.bh_previous = ordenado[ordenado.length - 1];
+  }
+    
   return m;
 };
 

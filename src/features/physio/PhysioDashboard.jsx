@@ -469,6 +469,17 @@ const LISTAS_MOBILIZACAO = {
     carregarEquipeMedica();
   }, []);  
 
+  // 🛡️ Preserva rascunhos em andamento quando o listener traz dados do servidor.
+  // Sem isso, um snapshot do Firestore apaga o que ainda não foi commitado.
+  useEffect(() => {
+    setGasoDraft(prev => {
+      const chaves = Object.keys(prev);
+      if (chaves.length === 0) return prev;   // nada pendente → não mexe
+      // Mantém intacto o que está em edição; o servidor não vence o rascunho.
+      return prev;
+    });
+  }, [currentPatient?.id]);
+
   const onSuporteChange = (novoSuporte) => {
     updateNested("physio", "suporte", novoSuporte);
     updateNested("physio", "parametro", "");
@@ -2010,34 +2021,52 @@ const TRE_CHECKLIST = [
                             onKeyDown={(e) => handleGasoKeyDown(e, rowIndex, colIndex)}
                             onBlur={() => {
                               const draftCell = gasoDraft[col]?.[param];
-                              // Sem edição pendente nesta célula → não faz nada (evita save "vazio")
                               if (draftCell === undefined) return;
-                              // Monta a versão MAIS RECENTE do paciente a partir do estado atual
+
+                              // 🔒 Trava o listener de snapshot enquanto gravamos.
+                              // `typeof` protege contra variável não declarada neste componente.
+                              if (typeof localEditRef !== "undefined" && localEditRef) {
+                                localEditRef.current = true;
+                              }
+
+                              let payloadParaSalvar = null;
+
                               setPatients(prev => {
                                 const up = [...prev];
                                 const p = JSON.parse(JSON.stringify(up[activeTab] || {}));
                                 if (!p.gasometriaHistory) p.gasometriaHistory = {};
                                 if (!p.gasometriaHistory[col]) p.gasometriaHistory[col] = {};
+
+                                // 1) Grava a célula editada
                                 p.gasometriaHistory[col][param] = draftCell;
-                                // Recalcula P/F (mesma lógica de antes, agora só no blur)
-                                const pao2Str = p.gasometriaHistory[col]["PaO2"];
-                                const fio2Str = p.gasometriaHistory[col]["FiO2"];
-                                if (pao2Str && fio2Str) {
-                                  const pao2 = parseFloat(String(pao2Str).replace(',', '.'));
-                                  let fio2 = parseFloat(String(fio2Str).replace(',', '.'));
-                                  if (!isNaN(pao2) && !isNaN(fio2) && fio2 > 0) {
-                                    const decimalFio2 = fio2 >= 1 ? fio2 / 100 : fio2;
-                                    p.gasometriaHistory[col]["P/F"] = (pao2 / decimalFio2).toFixed(0);
-                                  }
-                                } else if (p.gasometriaHistory[col]["Relação P/F"]) {
+
+                                // 2) Aplica TODOS os rascunhos pendentes desta coluna
+                                const draftsDaColuna = gasoDraft[col] || {};
+                                Object.keys(draftsDaColuna).forEach((outroParam) => {
+                                  p.gasometriaHistory[col][outroParam] = draftsDaColuna[outroParam];
+                                });
+
+                                // 3) Recalcula P/F com os valores JÁ atualizados
+                                const num = (v) => parseFloat(String(v ?? '').replace(',', '.'));
+                                const pao2 = num(p.gasometriaHistory[col]["PaO2"]);
+                                const fio2Raw = num(p.gasometriaHistory[col]["FiO2"]);
+
+                                if (!isNaN(pao2) && !isNaN(fio2Raw) && fio2Raw > 0) {
+                                  const fio2Dec = fio2Raw >= 1 ? fio2Raw / 100 : fio2Raw;
+                                  p.gasometriaHistory[col]["P/F"] = (pao2 / fio2Dec).toFixed(0);
+                                } else {
                                   p.gasometriaHistory[col]["P/F"] = "";
                                 }
+
                                 up[activeTab] = p;
-                                // ÚNICA gravação: no blur, com a versão fresca que contém a digitação
-                                save(p, `Gasometria: Editou ${param} (Ref: ${col})`);
+                                payloadParaSalvar = p;
                                 return up;
                               });
-                              // Limpa o rascunho desta célula
+
+                              if (payloadParaSalvar) {
+                                save(payloadParaSalvar, `Gasometria: Editou ${param} (Ref: ${col})`);
+                              }
+
                               setGasoDraft(prev => {
                                 const next = { ...prev, [col]: { ...(prev[col] || {}) } };
                                 delete next[col][param];

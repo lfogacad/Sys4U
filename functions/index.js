@@ -931,3 +931,62 @@ exports.viradaBH = onSchedule({
   await batch.commit();
   console.log(`[VIRADA-BH] Concluído: ${processados} leito(s) virados, ${ignorados} ignorado(s) para ${logicalToday}`);
 });
+
+// ============================================================================
+// RECONCILIAÇÃO ÚNICA: reconstroi bh_previous = historico_bh[último]
+// Rodar UMA vez para limpar contaminações históricas.
+// Não deve ser agendada — o viradaBH já garante a invariante diariamente.
+// ============================================================================
+exports.reconciliarBhPrevious = onRequest({ timeoutSeconds: 300, memory: "512MiB" }, async (req, res) => {
+  try {
+    const snap = await db.collection("leitos_uti").get();
+    const batch = db.batch();
+    let corrigidos = 0;
+    const relatorio = [];
+
+    snap.forEach((docSnap) => {
+      const dados = docSnap.data();
+      const historico = Array.isArray(dados.historico_bh) ? dados.historico_bh : [];
+
+      if (historico.length === 0) {
+        relatorio.push({ doc: docSnap.id, acao: "sem historico — ignorado" });
+        return;
+      }
+
+      // Ordena por data para garantir que o último é o mais recente
+      const historicoOrdenado = [...historico].sort(
+        (a, b) => String(a?.date || "").localeCompare(String(b?.date || ""))
+      );
+      const ultimo = historicoOrdenado[historicoOrdenado.length - 1];
+
+      // Compara o bh_previous atual com o que deveria ser
+      const atual = dados.bh_previous;
+      const iguais = JSON.stringify(atual ?? null) === JSON.stringify(ultimo ?? null);
+
+      if (!iguais) {
+        batch.set(docSnap.ref, { bh_previous: ultimo }, { merge: true });
+        corrigidos++;
+        relatorio.push({
+          doc: docSnap.id,
+          acao: "corrigido",
+          de: atual?.date || null,
+          para: ultimo?.date || null
+        });
+      } else {
+        relatorio.push({ doc: docSnap.id, acao: "já correto" });
+      }
+    });
+
+    if (corrigidos > 0) await batch.commit();
+
+    res.status(200).json({
+      ok: true,
+      corrigidos,
+      total: snap.size,
+      relatorio
+    });
+  } catch (err) {
+    console.error("[RECONCILIAR-BH] Erro:", err);
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
