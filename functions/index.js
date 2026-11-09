@@ -932,7 +932,7 @@ exports.viradaBH = onSchedule({
       historico_bh: historicoFinal,
       bh_previous: bhPrevious,
       bh: construirBHzeroServidor(logicalToday, bhLimpo, dados)
-    }, { merge: true });
+    }, { mergeFields: ["historico_bh", "bh_previous", "bh"] });
 
     processados++;
   });
@@ -981,7 +981,14 @@ exports.reconciliarBhPrevious = onRequest({ timeoutSeconds: 300, memory: "512MiB
             losses0500: ultimo?.losses?.["05:00"],
             bhPreviousAtual_losses0500: atual?.losses?.["05:00"]
           });
-          batch.set(docSnap.ref, { bh_previous: ultimo }, { merge: true });
+        // ⚠️ mergeFields substitui o campo por inteiro — merge:true mescla
+        // recursivamente e PRESERVA chaves antigas (células vazias, Evacuação
+        // fantasma), que é exatamente a contaminação a remover.
+        batch.set(
+          docSnap.ref,
+          { bh_previous: ultimo },
+          { mergeFields: ["bh_previous"] }
+        );
         corrigidos++;
         relatorio.push({
           doc: docSnap.id,
