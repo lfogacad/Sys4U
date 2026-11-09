@@ -398,6 +398,40 @@ export const calcularMetasNutricionais = (peso, classificacaoIMC, aumentarPeso) 
   return { metaProteicaTotal, metaCaloricaTotal, fatorCalorico };
 };
 
+// ============================================================
+// DIETA ENTERAL — cálculo de volume e vazão
+// BIC: vazão (mL/h) = volumeTotal / 24
+// Gravitacional: mL por vez = volumeTotal / vezesPorDia
+// ============================================================
+export function calcularAdministracaoEnteral(nutri) {
+  const volume = parseFloat(String(nutri?.volumeTotalEnteral ?? "").replace(",", "."));
+  const vezes = parseInt(String(nutri?.vezesPorDiaEnteral ?? ""), 10);
+  const modo = nutri?.modoEnteral || "";
+
+  const temVolume = !isNaN(volume) && volume > 0;
+
+  if (modo === "BIC") {
+    const vazao = temVolume ? volume / 24 : null;
+    return {
+      vazao: vazao !== null ? vazao.toFixed(1).replace(".", ",") : "",
+      porVez: "",
+      resumo: vazao !== null ? `${volume} mL em 24h → ${vazao.toFixed(1).replace(".", ",")} mL/h` : ""
+    };
+  }
+
+  if (modo === "Gravitacional") {
+    const temVezes = !isNaN(vezes) && vezes > 0;
+    const porVez = (temVolume && temVezes) ? volume / vezes : null;
+    return {
+      vazao: "",
+      porVez: porVez !== null ? porVez.toFixed(1).replace(".", ",") : "",
+      resumo: porVez !== null ? `${volume} mL/dia em ${vezes}x → ${porVez.toFixed(1).replace(".", ",")} mL por vez` : ""
+    };
+  }
+
+  return { vazao: "", porVez: "", resumo: "" };
+}
+
 export const limparHDMedica = (e) => {
   if (e) e.preventDefault();
   if (!window.confirm("ATENÇÃO: Deseja apagar toda a Prescrição Médica e a Evolução da Nefrologia?")) return;
@@ -840,7 +874,7 @@ export const mergePatientData = (def, db) => {
     );
     m.bh_previous = ordenado[ordenado.length - 1];
   }
-    
+
   return m;
 };
 

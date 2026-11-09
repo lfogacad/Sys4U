@@ -19,7 +19,7 @@ import {
   getManausDateStr, formatDateDDMM, getLast10Days, calculateTotals, mergePatientData,
   safeNumber, defaultPatient, ensureBHStructure, calculateAge, calcularMetasNutricionais, calcularNutricaoDerivada,
   getDaysD0, getDaysD1, getTempoVMText, getTempoVMNumber,calculateEvacDays,
-  calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, calculateNoraDose,
+  calculateGlasgowTotal, renderValue, calculateDiurese12hMlKgH, calculateNoraDose, calcularAdministracaoEnteral,
   calculateCreatinineClearance, syncLabsFromHistory, extractTextFromPdf, getHoraRealKey,
   analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, formatExamName
 } from '../utils/core';
@@ -3516,6 +3516,9 @@ ${conduta}
       via: "",
       tipoDietaEnteral: "",
       vazaoEnteral: "",
+      modoEnteral: "",
+      volumeTotalEnteral: "",
+      vezesPorDiaEnteral: "",
       vazaoParenteral: "",
       viasMistas: [],      
       caracteristicasDieta: []
@@ -3529,8 +3532,21 @@ ${conduta}
     const p = currentPatient;
     if (!p) return;
 
-    // Procura na gaveta correta (priorizando o cofre imutável)
-    const cofre = p.admissaoNutricao || p.nutri || {};
+    const cofreBase = p.admissaoNutricao || {};
+    const ativo = p.nutri || {};
+    // Campo de valor real no cofre vence; senão cai no prontuário ativo.
+    const pick = (k) => {
+      const vCofre = cofreBase[k];
+      const temCofre = vCofre !== undefined && vCofre !== null && String(vCofre).trim() !== "";
+      return temCofre ? vCofre : (ativo[k] !== undefined ? ativo[k] : "");
+    };
+    const cofre = {
+      ...ativo,
+      ...cofreBase,
+      modoEnteral: pick("modoEnteral"),
+      volumeTotalEnteral: pick("volumeTotalEnteral"),
+      vezesPorDiaEnteral: pick("vezesPorDiaEnteral")
+    };
 
     setNutriAdmissionData({
       // ===== DADOS BÁSICOS =====
@@ -3558,6 +3574,9 @@ ${conduta}
       via: cofre.via || "",
       // ===== VIA DE ADMINISTRAÇÃO — subopções =====
       tipoDietaEnteral: cofre.tipoDietaEnteral || "",
+      modoEnteral: cofre.modoEnteral || "",
+      volumeTotalEnteral: cofre.volumeTotalEnteral || "",
+      vezesPorDiaEnteral: cofre.vezesPorDiaEnteral || "",
       vazaoEnteral: cofre.vazaoEnteral || "",
       vazaoParenteral: cofre.vazaoParenteral || "",
       viasMistas: Array.isArray(cofre.viasMistas) ? [...cofre.viasMistas] : [],      

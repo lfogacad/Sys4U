@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Scale, Utensils, Lock, ClipboardSignature, CheckSquare, Square, Activity, History, X, BarChart2 } from 'lucide-react';
 import { CARACTERISTICAS_DIETA, CONSISTENCIA_ALIMENTAR, FORMULAS_ENTERAIS } from '../../constants/clinicalLists';
-import { calculateEvacDays, calcularNutricaoDerivada, calcularMetasNutricionais } from '../../utils/core';
+import { calculateEvacDays, calcularNutricaoDerivada, calcularMetasNutricionais, calcularAdministracaoEnteral } from '../../utils/core';
 
 const NutriDashboard = ({
   currentPatient,
@@ -615,9 +615,12 @@ const NutriDashboard = ({
             </div>
 
             {currentPatient.nutri?.via === "Enteral" && (
-              <div className="grid grid-cols-2 gap-3 mt-2 animate-fadeIn">
+              <div className="mt-2 p-3 bg-lime-50/50 border border-lime-200 rounded-xl animate-fadeIn">
+                <label className="block text-xs font-bold text-gray-500 mb-2">Administração Enteral</label>
+
+                {/* Fórmula */}
                 <select
-                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200 bg-white"
+                  className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200 bg-white mb-3"
                   value={currentPatient.nutri?.tipoDietaEnteral || ""}
                   onChange={(e) => updateNested("nutri", "tipoDietaEnteral", e.target.value)}
                   onBlur={() => handleBlurSave("Nutrição: Editou Tipo/Fórmula da Dieta Enteral")}
@@ -627,13 +630,85 @@ const NutriDashboard = ({
                     <option key={f} value={f}>{f}</option>
                   ))}
                 </select>
-                <input
-                  placeholder="Vazão (ml/h) — Enteral"
-                  className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
-                  value={currentPatient.nutri?.vazaoEnteral || ""}
-                  onChange={(e) => updateNested("nutri", "vazaoEnteral", e.target.value)}
-                  onBlur={() => handleBlurSave("Nutrição: Editou Vazão Enteral")}
-                />
+
+                {/* Modo de administração */}
+                <label className="block text-xs font-bold text-gray-500 mb-1">Modo de Administração</label>
+                <div className="flex gap-2 mb-3">
+                  {['BIC', 'Gravitacional'].map((modo) => {
+                    const ativo = (currentPatient.nutri?.modoEnteral || "") === modo;
+                    return (
+                      <button
+                        key={modo}
+                        type="button"
+                        onClick={() => {
+                          updateNested("nutri", "modoEnteral", modo);
+                          if (modo === "BIC") updateNested("nutri", "vezesPorDiaEnteral", "");
+                        }}
+                        onBlur={() => handleBlurSave(`Nutrição: Alterou modo de administração enteral (${modo})`)}
+                        className={`flex-1 px-3 py-2 rounded-lg border-2 text-xs font-bold transition-all ${
+                          ativo
+                            ? 'border-lime-600 bg-lime-100 text-lime-800'
+                            : 'border-slate-200 bg-white text-slate-500 hover:border-lime-300'
+                        }`}
+                      >
+                        {modo === 'BIC' ? '💧 BIC (bomba)' : '⬇️ Gravitacional'}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Volume total + campos por modo */}
+                <div className="grid grid-cols-2 gap-3 mb-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Volume Total (mL/dia)</label>
+                    <input
+                      inputMode="decimal"
+                      placeholder="Ex: 1440"
+                      className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                      value={currentPatient.nutri?.volumeTotalEnteral || ""}
+                      onChange={(e) => updateNested("nutri", "volumeTotalEnteral", e.target.value)}
+                      onBlur={() => handleBlurSave("Nutrição: Editou Volume Total Enteral")}
+                    />
+                  </div>
+
+                  {currentPatient.nutri?.modoEnteral === 'Gravitacional' ? (
+                    <div className="animate-fadeIn">
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">Vezes por dia</label>
+                      <input
+                        inputMode="numeric"
+                        placeholder="Ex: 6"
+                        className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                        value={currentPatient.nutri?.vezesPorDiaEnteral || ""}
+                        onChange={(e) => updateNested("nutri", "vezesPorDiaEnteral", e.target.value)}
+                        onBlur={() => handleBlurSave("Nutrição: Editou nº de administrações enterais")}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">Vazão (mL/h)</label>
+                      <input
+                        readOnly
+                        placeholder="—"
+                        className="w-full p-2 border rounded text-xs font-bold text-lime-800 bg-lime-50 outline-none cursor-default"
+                        value={(() => {
+                          const calc = calcularAdministracaoEnteral(currentPatient.nutri);
+                          return currentPatient.nutri?.modoEnteral === 'BIC' ? calc.vazao : (currentPatient.nutri?.vazaoEnteral || "");
+                        })()}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Resultado calculado */}
+                {(() => {
+                  const calc = calcularAdministracaoEnteral(currentPatient.nutri);
+                  if (!calc.resumo) return null;
+                  return (
+                    <div className="p-2 bg-white border border-lime-200 rounded-lg text-[11px] text-lime-800 font-bold animate-fadeIn">
+                      ✓ {calc.resumo}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -674,9 +749,11 @@ const NutriDashboard = ({
                 </div>
 
                 {(currentPatient.nutri?.viasMistas || []).includes('Enteral') && (
-                  <div className="grid grid-cols-2 gap-3 mb-3 animate-fadeIn">
+                  <div className="p-3 bg-white border border-lime-200 rounded-lg mb-3 animate-fadeIn">
+                    <label className="block text-xs font-bold text-gray-500 mb-2">Administração Enteral</label>
+
                     <select
-                      className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200 bg-white"
+                      className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200 bg-white mb-3"
                       value={currentPatient.nutri?.tipoDietaEnteral || ""}
                       onChange={(e) => updateNested("nutri", "tipoDietaEnteral", e.target.value)}
                       onBlur={() => handleBlurSave("Nutrição: Editou Tipo/Fórmula Enteral da Dieta Mista")}
@@ -686,13 +763,82 @@ const NutriDashboard = ({
                         <option key={f} value={f}>{f}</option>
                       ))}
                     </select>
-                    <input
-                      placeholder="Vazão (ml/h) — Enteral"
-                      className="p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
-                      value={currentPatient.nutri?.vazaoEnteral || ""}
-                      onChange={(e) => updateNested("nutri", "vazaoEnteral", e.target.value)}
-                      onBlur={() => handleBlurSave("Nutrição: Editou Vazão Enteral da Dieta Mista")}
-                    />
+
+                    <label className="block text-xs font-bold text-gray-500 mb-1">Modo de Administração</label>
+                    <div className="flex gap-2 mb-3">
+                      {['BIC', 'Gravitacional'].map((modo) => {
+                        const ativo = (currentPatient.nutri?.modoEnteral || "") === modo;
+                        return (
+                          <button
+                            key={modo}
+                            type="button"
+                            onClick={() => {
+                              updateNested("nutri", "modoEnteral", modo);
+                              if (modo === "BIC") updateNested("nutri", "vezesPorDiaEnteral", "");
+                            }}
+                            onBlur={() => handleBlurSave(`Nutrição: Alterou modo enteral da dieta mista (${modo})`)}
+                            className={`flex-1 px-3 py-2 rounded-lg border-2 text-xs font-bold transition-all ${
+                              ativo
+                                ? 'border-lime-600 bg-lime-100 text-lime-800'
+                                : 'border-slate-200 bg-white text-slate-500 hover:border-lime-300'
+                            }`}
+                          >
+                            {modo === 'BIC' ? '💧 BIC (bomba)' : '⬇️ Gravitacional'}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 mb-1">Volume Total (mL/dia)</label>
+                        <input
+                          inputMode="decimal"
+                          placeholder="Ex: 1440"
+                          className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                          value={currentPatient.nutri?.volumeTotalEnteral || ""}
+                          onChange={(e) => updateNested("nutri", "volumeTotalEnteral", e.target.value)}
+                          onBlur={() => handleBlurSave("Nutrição: Editou Volume Total Enteral (Mista)")}
+                        />
+                      </div>
+
+                      {currentPatient.nutri?.modoEnteral === 'Gravitacional' ? (
+                        <div className="animate-fadeIn">
+                          <label className="block text-[10px] font-bold text-gray-500 mb-1">Vezes por dia</label>
+                          <input
+                            inputMode="numeric"
+                            placeholder="Ex: 6"
+                            className="w-full p-2 border rounded text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-lime-200"
+                            value={currentPatient.nutri?.vezesPorDiaEnteral || ""}
+                            onChange={(e) => updateNested("nutri", "vezesPorDiaEnteral", e.target.value)}
+                            onBlur={() => handleBlurSave("Nutrição: Editou nº de adm. enterais (Mista)")}
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-500 mb-1">Vazão (mL/h)</label>
+                          <input
+                            readOnly
+                            placeholder="—"
+                            className="w-full p-2 border rounded text-xs font-bold text-lime-800 bg-lime-50 outline-none cursor-default"
+                            value={(() => {
+                              const calc = calcularAdministracaoEnteral(currentPatient.nutri);
+                              return currentPatient.nutri?.modoEnteral === 'BIC' ? calc.vazao : (currentPatient.nutri?.vazaoEnteral || "");
+                            })()}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {(() => {
+                      const calc = calcularAdministracaoEnteral(currentPatient.nutri);
+                      if (!calc.resumo) return null;
+                      return (
+                        <div className="p-2 bg-lime-50 border border-lime-200 rounded-lg text-[11px] text-lime-800 font-bold animate-fadeIn">
+                          ✓ {calc.resumo}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
