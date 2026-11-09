@@ -972,8 +972,16 @@ exports.reconciliarBhPrevious = onRequest({ timeoutSeconds: 300, memory: "512MiB
       const atual = dados.bh_previous;
       const iguais = JSON.stringify(atual ?? null) === JSON.stringify(ultimo ?? null);
 
-      if (!iguais) {
-        batch.set(docSnap.ref, { bh_previous: ultimo }, { merge: true });
+        if (!iguais) {
+          console.log("[RECONCILIAR]", {
+            doc: docSnap.id,
+            dataDoUltimo: ultimo?.date,
+            totalItensHistorico: historico.length,
+            ultimoTemChavesLosses: Object.keys(ultimo?.losses || {}).length,
+            losses0500: ultimo?.losses?.["05:00"],
+            bhPreviousAtual_losses0500: atual?.losses?.["05:00"]
+          });
+          batch.set(docSnap.ref, { bh_previous: ultimo }, { merge: true });
         corrigidos++;
         relatorio.push({
           doc: docSnap.id,
