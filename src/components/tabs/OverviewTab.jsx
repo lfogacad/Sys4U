@@ -70,6 +70,49 @@ const OverviewTab = ({
     return 0;
   };
 
+// Formata número com vírgula decimal, sem ",0" desnecessário
+const fmtNum = (n) => {
+  if (n === null || n === undefined || isNaN(n)) return "";
+  return Number(n).toFixed(1).replace(".", ",").replace(/,0$/, "");
+};
+
+// Monta o resumo da administração enteral a partir do objeto nutri
+const resumoEnteral = (nutri) => {
+  if (!nutri) return null;
+  const modo = nutri.modoEnteral || "";
+  const vol = parseFloat(String(nutri.volumeTotalEnteral ?? "").replace(",", "."));
+  const vezes = parseInt(String(nutri.vezesPorDiaEnteral ?? "").trim(), 10);
+  const temVol = !isNaN(vol) && vol > 0;
+  const temVezes = !isNaN(vezes) && vezes > 0;
+
+  if (modo === "BIC") {
+    const vazao = temVol ? vol / 24 : null;
+    return {
+      modo: "BIC",
+      volume: "",
+      detalhe: vazao !== null ? `${fmtNum(vazao)} mL/h` : ""
+    };
+  }
+
+  if (modo === "Gravitacional") {
+    const porVez = (temVol && temVezes) ? vol / vezes : null;
+    return {
+      modo: "Gravitacional",
+      volume: temVol ? `${fmtNum(vol)} mL/dia` : "",
+      detalhe: (porVez !== null && temVezes)
+        ? `${vezes}x de ${fmtNum(porVez)} mL`
+        : ""
+    };
+  }
+
+  // Legado: sem modo definido, exibe a vazão antiga se houver
+  return {
+    modo: "",
+    volume: "",
+    detalhe: nutri.vazaoEnteral ? `${nutri.vazaoEnteral} mL/h` : ""
+  };
+};
+
   return (
     <div className="space-y-6 animate-fadeIn text-left">
     <div className="flex gap-2 mb-4 border-b border-slate-200 pb-3">
@@ -197,33 +240,64 @@ const OverviewTab = ({
           <h4 className="font-bold text-lime-800 mb-2 flex items-center gap-2"><Utensils size={16} /> Nutrição</h4>
           <p className="text-sm">Via: <b>{currentPatient.nutri?.via || "Aguarda Avaliação"}</b></p>
           {currentPatient.nutri?.via === "Oral" && <p className="text-xs text-lime-600 mt-1">Consistência: <b>{currentPatient.fono?.consistencia || "-"}</b></p>}
-          {currentPatient.nutri?.via === "Enteral" && (
-            <div className="text-xs text-lime-600 mt-1 space-y-0.5">
-              <p>Fórmula: <b>{currentPatient.nutri?.tipoDietaEnteral || currentPatient.nutri?.tipoDieta || "-"}</b></p>
-              <p>Vazão: <b>{currentPatient.nutri?.vazaoEnteral || "-"} ml/h</b></p>
-            </div>
-          )}
+          {currentPatient.nutri?.via === "Enteral" && (() => {
+            const r = resumoEnteral(currentPatient.nutri);
+            return (
+              <div className="text-xs text-lime-600 mt-1 space-y-0.5">
+                <p>Fórmula: <b>{currentPatient.nutri?.tipoDietaEnteral || currentPatient.nutri?.tipoDieta || "-"}</b></p>
+                {r?.modo === "BIC" && (
+                  <p>Vazão: <b>{r.detalhe || "-"}</b></p>
+                )}
+                {r?.modo === "Gravitacional" && (
+                  <>
+                    <p>Volume Total: <b>{r.volume || "-"}</b></p>
+                    <p>Administração: <b>{r.detalhe || "-"}</b></p>
+                  </>
+                )}
+                {!r?.modo && (
+                  <p>Vazão: <b>{r?.detalhe || "-"}</b></p>
+                )}
+              </div>
+            );
+          })()}
           {currentPatient.nutri?.via === "Parenteral" && (
             <div className="text-xs text-lime-600 mt-1 space-y-0.5">
               <p>Vazão: <b>{currentPatient.nutri?.vazaoParenteral || "-"} ml/h</b></p>
             </div>
           )}
-          {currentPatient.nutri?.via === "Mista" && (
-            <div className="text-xs text-lime-600 mt-1 space-y-1">
-              {(currentPatient.nutri?.viasMistas || []).includes('Enteral') && (
-                <p>Enteral: <b>{currentPatient.nutri?.tipoDietaEnteral || "-"}</b> • <b>{currentPatient.nutri?.vazaoEnteral || "-"} ml/h</b></p>
-              )}
-              {(currentPatient.nutri?.viasMistas || []).includes('Parenteral') && (
-                <p>Parenteral: <b>{currentPatient.nutri?.vazaoParenteral || "-"} ml/h</b></p>
-              )}
-              {(currentPatient.nutri?.viasMistas || []).includes('Oral') && (
-                <p>VO (Consistência): <b>{currentPatient.fono?.consistencia || "-"}</b></p>
-              )}
-              {(currentPatient.nutri?.viasMistas || []).length === 0 && (
-                <p>Vias não especificadas</p>
-              )}
-            </div>
-          )}
+          {currentPatient.nutri?.via === "Mista" && (() => {
+            const r = resumoEnteral(currentPatient.nutri);
+            return (
+              <div className="text-xs text-lime-600 mt-1 space-y-1">
+                {(currentPatient.nutri?.viasMistas || []).includes('Enteral') && (
+                  <div className="pb-1 border-b border-lime-200/70">
+                    <p>Enteral: <b>{currentPatient.nutri?.tipoDietaEnteral || "-"}</b></p>
+                    {r?.modo === "BIC" && (
+                      <p className="pl-2">Vazão: <b>{r.detalhe || "-"}</b></p>
+                    )}
+                    {r?.modo === "Gravitacional" && (
+                      <>
+                        <p className="pl-2">Volume Total: <b>{r.volume || "-"}</b></p>
+                        <p className="pl-2">Administração: <b>{r.detalhe || "-"}</b></p>
+                      </>
+                    )}
+                    {!r?.modo && (
+                      <p className="pl-2">Vazão: <b>{r?.detalhe || "-"}</b></p>
+                    )}
+                  </div>
+                )}
+                {(currentPatient.nutri?.viasMistas || []).includes('Parenteral') && (
+                  <p>Parenteral: <b>{currentPatient.nutri?.vazaoParenteral || "-"} ml/h</b></p>
+                )}
+                {(currentPatient.nutri?.viasMistas || []).includes('Oral') && (
+                  <p>VO (Consistência): <b>{currentPatient.fono?.consistencia || "-"}</b></p>
+                )}
+                {(currentPatient.nutri?.viasMistas || []).length === 0 && (
+                  <p>Vias não especificadas</p>
+                )}
+              </div>
+            );
+          })()}
           {currentPatient.nutri?.caracteristicasDieta?.length > 0 && (
             <div className="mt-1 pt-1 border-t border-lime-200">
               <p className="text-[11px] text-lime-700 font-medium">Caract.: {currentPatient.nutri.caracteristicasDieta.join(", ")}</p>
