@@ -809,15 +809,21 @@ function sanitizarBHPorJanela(bh) {
       if (!m) return;
       const hh = Number(m[1]);
       if (hh < 0 || hh > 23) return;
+
       const celulas = mapa[key];
-      // Remove a hora se TODAS as células estiverem vazias.
-      // \"0\" é conteúdo válido (ex.: Diurese zerada) e é preservado.
       if (!celulas || typeof celulas !== "object") return;
-      const temConteudo = Object.values(celulas).some(
-        (v) => String(v ?? "").trim() !== ""
-      );
-      if (!temConteudo) return;
-      out[key] = celulas;
+
+      // 🧹 Remove as células VAZIAS dentro da hora, mantendo só as preenchidas.
+      // "0" é conteúdo válido (ex.: Diurese zerada) e é preservado.
+      // Se sobrar alguma célula, mantém a hora; se não sobrar nenhuma, descarta a hora.
+      const celulasLimpa = {};
+      Object.keys(celulas).forEach((k) => {
+        const valor = celulas[k];
+        if (String(valor ?? "").trim() !== "") celulasLimpa[k] = valor;
+      });
+
+      if (Object.keys(celulasLimpa).length === 0) return;
+      out[key] = celulasLimpa;
     });
     return out;
   };
