@@ -809,7 +809,15 @@ function sanitizarBHPorJanela(bh) {
       if (!m) return;
       const hh = Number(m[1]);
       if (hh < 0 || hh > 23) return;
-      out[key] = mapa[key];
+      const celulas = mapa[key];
+      // Remove a hora se TODAS as células estiverem vazias.
+      // \"0\" é conteúdo válido (ex.: Diurese zerada) e é preservado.
+      if (!celulas || typeof celulas !== "object") return;
+      const temConteudo = Object.values(celulas).some(
+        (v) => String(v ?? "").trim() !== ""
+      );
+      if (!temConteudo) return;
+      out[key] = celulas;
     });
     return out;
   };
