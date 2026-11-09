@@ -129,7 +129,8 @@ const TechDashboard = ({
     const novoRegistro = {
       id: `dieta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       dataHoraRegistro: new Date().toISOString(),
-      horarioRefeicao: modalDieta.horario,
+      horario: modalDieta.horario,               // ← novo, compatível com addEvent
+      horarioRefeicao: modalDieta.horario,       // ← mantido para registros antigos/histórico
       tipoRefeicao: modalDieta.refeicao,
       tiposOferecidos: modalDieta.tipos,
       consumo: modalDieta.consumo
@@ -398,6 +399,7 @@ const salvarFralda = () => {
     "Dreno de Tórax": ["Hemitórax Direito", "Hemitórax Esquerdo", "Mediastino"],
     "Dreno Abdominal": ["Flanco Direito", "Flanco Esquerdo", "Fossa Ilíaca Direita", "Fossa Ilíaca Esquerda", "Pélvico", "Epigástrio"],
     "Ferida Operatória": ["Abdominal", "Torácica", "Craniana", "Cervical", "MMSS", "MMII", "Outro"],
+    "TQT": ["TQT"],
     "Úlcera por Pressão": ["Sacral", "Calcâneo D", "Calcâneo E", "Isquiática D", "Isquiática E", "Trocantérica D", "Trocantérica E", "Occipital"]
   };
 
@@ -732,12 +734,51 @@ const salvarFralda = () => {
     };
 
     // Extraindo dados dos modais
-    addEvent(enf.historico_dieta_vo, (i) => {
-      let txt = `Dieta VO (${i.tipoRefeicao}).`;
-      if (i.tiposOferecidos?.solida) txt += ` Sólida: ${i.consumo?.solida}% consumido.`;
-      if (i.tiposOferecidos?.liquida) txt += ` Líquida: ${i.consumo?.liquida}% consumido.`;
-      return txt;
-    });
+    // ==============================================================
+    // DIETA VO — registro do modal de consumo oral
+    // ATENÇÃO: o modal grava 'horarioRefeicao' (não 'horario'), então
+    // este bloco NÃO usa addEvent (que filtra por item.horario).
+    // ==============================================================
+    if (Array.isArray(enf.historico_dieta_vo)) {
+      const descreverConsumo = (pct) => {
+        if (pct === null || pct === undefined) return null;
+        const n = Number(pct);
+        if (isNaN(n)) return null;
+        if (n === 100) return "aceitou integralmente (sem sobras)";
+        if (n === 75) return "aceitou 75% (sobra de 1/4)";
+        if (n === 50) return "aceitou 50% (sobra de metade)";
+        if (n === 25) return "aceitou 25% (sobra de 3/4)";
+        if (n === 0) return "recusou integralmente";
+        return `aceitou ${n}%`;
+      };
+
+      enf.historico_dieta_vo.forEach((i) => {
+        if (!dentroDoPlantao(i.dataHoraRegistro)) return;
+
+        const horario = i.horarioRefeicao || i.horario || "";
+        if (!horario) return;
+
+        const partes = [];
+        if (i.tiposOferecidos?.solida) {
+          const d = descreverConsumo(i.consumo?.solida);
+          if (d) partes.push(`sólida ${d}`);
+        }
+        if (i.tiposOferecidos?.liquida) {
+          const d = descreverConsumo(i.consumo?.liquida);
+          if (d) partes.push(`líquida ${d}`);
+        }
+
+        const refeicao = i.tipoRefeicao || "refeição";
+        let txt = `Dieta VO — ${refeicao}`;
+        if (partes.length === 0) {
+          txt += `: oferta registrada sem avaliação de consumo.`;
+        } else {
+          txt += `: ${partes.join("; ")}.`;
+        }
+
+        eventos.push({ horario, texto: txt });
+      });
+    }
     addEvent(enf.historico_banho, (i) => `Banho: ${i.tipo}.`);
     addEvent(enf.historico_decubito, (i) => `Mudança de Decúbito: ${i.posicao}.`);
     addEvent(enf.historico_higiene_oral, () => `Higiene Oral realizada.`);
@@ -3772,11 +3813,32 @@ const salvarFralda = () => {
                 const descrever = (r) => {
                   switch (r._source) {
                     case 'historico_dieta_vo': {
-                      const tipos = [];
-                      if (r.tiposOferecidos?.solida) tipos.push('sólida');
-                      if (r.tiposOferecidos?.liquida) tipos.push('líquida');
-                      const cons = r.consumo?.solida ?? r.consumo?.liquida ?? 'N/I';
-                      return `${r.tipoRefeicao || 'Refeição'}${tipos.length ? ` (${tipos.join(' + ')})` : ''} — consumeu ${cons}%`;
+                      const descreverConsumo = (pct) => {
+                        if (pct === null || pct === undefined) return null;
+                        const n = Number(pct);
+                        if (isNaN(n)) return null;
+                        if (n === 100) return '100% (aceitou tudo)';
+                        if (n === 75) return '75% (sobra 1/4)';
+                        if (n === 50) return '50% (sobra metade)';
+                        if (n === 25) return '25% (sobra 3/4)';
+                        if (n === 0) return '0% (recusou)';
+                        return `${n}%`;
+                      };
+
+                      const partes = [];
+                      if (r.tiposOferecidos?.solida) {
+                        const d = descreverConsumo(r.consumo?.solida);
+                        partes.push(`sólida ${d || 'sem avaliação'}`);
+                      }
+                      if (r.tiposOferecidos?.liquida) {
+                        const d = descreverConsumo(r.consumo?.liquida);
+                        partes.push(`líquida ${d || 'sem avaliação'}`);
+                      }
+
+                      const refeicao = r.tipoRefeicao || 'Refeição';
+                      return partes.length
+                        ? `${refeicao} — ${partes.join(' | ')}`
+                        : `${refeicao} — oferta registrada sem avaliação de consumo`;
                     }
                     case 'historico_banho':
                       return `Banho ${r.tipo || 'não especificado'}`;
