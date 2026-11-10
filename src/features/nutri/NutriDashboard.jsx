@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Scale, Utensils, Lock, ClipboardSignature, CheckSquare, Square, Activity, History, X, BarChart2 } from 'lucide-react';
+import { Scale, Utensils, Lock, ClipboardSignature, CheckSquare, Square, CalendarDays, ChevronDown, ChevronRight,
+         Activity, History, X, BarChart2, Save, LineChart } from 'lucide-react';
 import { CARACTERISTICAS_DIETA, CONSISTENCIA_ALIMENTAR, FORMULAS_ENTERAIS } from '../../constants/clinicalLists';
 import { calculateEvacDays, calcularNutricaoDerivada, calcularMetasNutricionais, calcularAdministracaoEnteral } from '../../utils/core';
+import { ModalPortal } from '../../components/ModuloUTI';
 
 const NutriDashboard = ({
   currentPatient,
@@ -19,6 +21,127 @@ const NutriDashboard = ({
   // Estado para controlar o modal de histórico de consumo
   const [modalConsumo, setModalConsumo] = useState({ isOpen: false, tipo: null }); // 'alimentos' ou 'suplementos'
 
+  // =========================================================================
+  // ESTADOS E FUNÇÕES DO HISTÓRICO DE MÉTRICAS NUTRICIONAIS
+  // =========================================================================
+  const [showHistoricoMetricas, setShowHistoricoMetricas] = useState(false);
+  const [dataDetalheMetrica, setDataDetalheMetrica] = useState(null); // ISO "AAAA-MM-DD" ou null
+  const [metricasSelecionadas, setMetricasSelecionadas] = useState([
+    "peso", "imc", "circBraco", "circPanturrilha"
+  ]);
+
+  // Catálogo de métricas disponíveis para o gráfico
+  const METRICAS_DISPONIVEIS = [
+    { key: "peso", label: "Peso (kg)", cor: "#65a30d" },
+    { key: "imc", label: "IMC (kg/m²)", cor: "#0284c7" },
+    { key: "circBraco", label: "Circ. Braço (cm)", cor: "#c2410c" },
+    { key: "circPanturrilha", label: "Circ. Panturrilha (cm)", cor: "#7c3aed" },
+    { key: "pct", label: "PCT (mm)", cor: "#db2777" },
+    { key: "cmb", label: "CMB (cm)", cor: "#0891b2" },
+    { key: "amb", label: "AMB (cm²)", cor: "#ca8a04" },
+    { key: "altura", label: "Altura (cm)", cor: "#475569" }
+  ];
+
+  // Data local em ISO (AAAA-MM-DD) — usa o fuso do navegador, não UTC
+  const dataLocalISO = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+
+  // Salva o snapshot atual das métricas no histórico do paciente
+  const salvarMetricasNutricionais = () => {
+    const p = patients[activeTab];
+    if (!p || !p.nome) {
+      alert("Não há paciente ativo neste leito.");
+      return;
+    }
+
+    const nutri = p.nutri || {};
+    const deriv = typeof calcularNutricaoDerivada === "function"
+      ? calcularNutricaoDerivada(nutri, p)
+      : {};
+
+    // Se nada foi preenchido, não cria registro vazio
+    const temAlgumDado = [
+      nutri.peso, nutri.altura, nutri.circBraco, nutri.circPanturrilha,
+      nutri.pct, nutri.alturaJoelho
+    ].some((v) => String(v ?? "").trim() !== "");
+
+    if (!temAlgumDado) {
+      alert("Preencha ao menos uma medida antropométrica antes de salvar.");
+      return;
+    }
+
+    const snapshot = {
+      id: `metrica_${Date.now()}`,
+      data: dataLocalISO(),
+      registradoEm: new Date().toISOString(),
+      peso: nutri.peso || "",
+      tipoMedicaoPeso: nutri.tipoMedicaoPeso || "",
+      altura: nutri.altura || "",
+      tipoMedicaoAltura: nutri.tipoMedicaoAltura || "",
+      alturaJoelho: nutri.alturaJoelho || "",
+      circBraco: nutri.circBraco || "",
+      circPanturrilha: nutri.circPanturrilha || "",
+      pct: nutri.pct || "",
+      imc: deriv.imc ?? nutri.imc ?? null,
+      classificacaoIMC: deriv.classificacaoIMC || nutri.classificacaoIMC || "",
+      cmb: deriv.cmb ?? null,
+      amb: deriv.amb ?? null,
+      adequacaoPCT: deriv.adequacaoPCT ?? null,
+      adequacaoCMB: deriv.adequacaoCMB ?? null,
+      adequacaoAMB: deriv.adequacaoAMB ?? null,
+      classificacaoPCT: deriv.classificacaoPCT || "",
+      classificacaoCMB: deriv.classificacaoCMB || "",
+      classificacaoAMB: deriv.classificacaoAMB || "",
+      classificacaoSarcopenia: deriv.classificacaoSarcopenia || "",
+      nrsEscore: deriv.nrsEscore ?? nutri.nrsEscore ?? null,
+      nrsClassificacao: deriv.nrsClassificacao || nutri.nrsClassificacao || "",
+      amputacoes: Array.isArray(nutri.amputacoes) ? [...nutri.amputacoes] : []
+    };
+
+    const up = JSON.parse(JSON.stringify(patients));
+    const alvo = up[activeTab];
+    if (!alvo.nutri) alvo.nutri = {};
+    if (!Array.isArray(alvo.nutri.historico_metricas)) alvo.nutri.historico_metricas = [];
+
+    // Mesmo dia → substitui o registro (evita 2 do mesmo dia no gráfico)
+    const idxMesmoDia = alvo.nutri.historico_metricas.findIndex(
+      (m) => m && m.data === snapshot.data
+    );
+    if (idxMesmoDia >= 0) {
+      const confirmar = window.confirm(
+        `Já existe um registro de métricas em ${snapshot.data.split("-").reverse().join("-")}.\n\nDeseja substituí-lo pelos valores atuais?`
+      );
+      if (!confirmar) return;
+      alvo.nutri.historico_metricas[idxMesmoDia] = snapshot;
+    } else {
+      alvo.nutri.historico_metricas.push(snapshot);
+    }
+
+    // Mantém ordenado por data crescente
+    alvo.nutri.historico_metricas.sort((a, b) => String(a.data).localeCompare(String(b.data)));
+
+    setPatients(up);
+    if (typeof save === "function") {
+      save(alvo, `Nutrição: Registrou métricas antropométricas (${snapshot.data.split("-").reverse().join("-")})`);
+    }
+    alert(`✅ Métricas salvas em ${snapshot.data.split("-").reverse().join("-")}.`);
+  };
+
+
+  // Cor de fundo conforme a classificação nutricional
+  const corClassificacao = (txt) => {
+    const s = String(txt || "").toLowerCase();
+    if (!s) return "text-slate-400";
+    if (s.includes("grave") || s.includes("desnutri")) return "text-red-700";
+    if (s.includes("risco") || s.includes("moderad")) return "text-amber-700";
+    if (s.includes("obes") || s.includes("sobrepeso")) return "text-orange-700";
+    if (s.includes("eutrof") || s.includes("normal") || s.includes("adequado")) return "text-emerald-700";
+    return "text-slate-700";
+  };
+  
+  
   // =========================================================================
   // CÁLCULO DAS MÉDIAS DE CONSUMO ORAL
   // =========================================================================
@@ -274,9 +397,29 @@ const NutriDashboard = ({
 
       {/* BLOCO 1: ANTROPOMETRIA E METAS (LARGURA TOTAL) */}
       <div className="p-4 border rounded-xl bg-lime-50/20">
-        <h4 className="font-bold text-lime-800 mb-4 flex items-center gap-2">
-          <Scale size={18} /> Antropometria e Metas
-        </h4>
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <h4 className="font-bold text-lime-800 flex items-center gap-2">
+            <Scale size={18} /> Antropometria e Metas
+          </h4>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={salvarMetricasNutricionais}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-lime-600 hover:bg-lime-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors print:hidden"
+              title="Salvar snapshot das métricas atuais no histórico"
+            >
+              <Save size={14} /> Salvar Métricas
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); setShowHistoricoMetricas(true); }}
+              className="p-1.5 bg-white border border-lime-300 text-lime-700 hover:bg-lime-50 rounded-lg transition-colors print:hidden"
+              title="Ver histórico de métricas e evolução"
+            >
+              <LineChart size={16} />
+            </button>
+          </div>
+        </div>
 
         {/* MEDIDAS PRINCIPAIS */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -1019,6 +1162,349 @@ const NutriDashboard = ({
               </div>
             </div>
           </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL: HISTÓRICO DE MÉTRICAS NUTRICIONAIS                                */}
+      {/* ========================================================================= */}
+      {showHistoricoMetricas && (() => {
+        const registros = Array.isArray(currentPatient?.nutri?.historico_metricas)
+          ? [...currentPatient.nutri.historico_metricas].sort((a, b) => String(a.data).localeCompare(String(b.data)))
+          : [];
+
+        const fmtData = (iso) => {
+          if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || "-";
+          const [a, m, d] = iso.split("-");
+          return `${d}-${m}-${a}`;
+        };
+
+        // Alterna métrica no gráfico
+        const toggleMetrica = (key) => {
+          setMetricasSelecionadas(prev =>
+            prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+          );
+        };
+
+        // Monta os dados do gráfico para as métricas selecionadas
+        const seriesAtivas = METRICAS_DISPONIVEIS.filter(m => metricasSelecionadas.includes(m.key));
+
+        // Escala vertical: min/max globais entre as séries ativas
+        const todosValores = seriesAtivas.flatMap(s =>
+          registros
+            .map(r => parseFloat(String(r[s.key] ?? "").replace(",", ".")))
+            .filter(v => !isNaN(v))
+        );
+        const vMin = todosValores.length ? Math.min(...todosValores) : 0;
+        const vMax = todosValores.length ? Math.max(...todosValores) : 1;
+        const pad = (vMax - vMin) * 0.1 || 1;
+        const yMin = Math.max(0, vMin - pad);
+        const yMax = vMax + pad;
+
+        const W = 640, H = 260;
+        const PAD_L = 46, PAD_R = 16, PAD_T = 16, PAD_B = 42;
+        const plotW = W - PAD_L - PAD_R;
+        const plotH = H - PAD_T - PAD_B;
+
+        const xDe = (i) => PAD_L + (registros.length <= 1 ? plotW / 2 : (i / (registros.length - 1)) * plotW);
+        const yDe = (v) => PAD_T + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
+
+        return (
+          <ModalPortal>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-2 sm:p-4 text-left">
+              <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-fadeIn border-4 border-lime-500/20">
+                <div className="bg-lime-700 p-4 text-white flex justify-between items-center shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-white/20 p-2 rounded-full"><LineChart size={20} /></div>
+                    <div>
+                      <h2 className="text-lg font-black tracking-wide leading-tight">Histórico de Métricas</h2>
+                      <p className="text-lime-200 text-xs">{registros.length} registro(s)</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowHistoricoMetricas(false)} className="p-1 hover:bg-white/20 rounded-xl transition-colors">
+                    <X size={24} />
+                  </button>
+                </div>
+
+                <div className="p-5 bg-slate-50 overflow-y-auto space-y-5 flex-1 min-h-0">
+
+                  {registros.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400">
+                      <LineChart size={44} className="mx-auto mb-3 opacity-40" />
+                      <p className="font-bold">Nenhum registro ainda.</p>
+                      <p className="text-xs mt-1">Use "Salvar Métricas" para criar o primeiro ponto.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* CHECKBOXES DE MÉTRICAS */}
+                      <div className="bg-white p-3 rounded-xl border border-slate-200">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase block mb-2">
+                          Métricas no gráfico
+                        </label>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                          {METRICAS_DISPONIVEIS.map(m => {
+                            const ativa = metricasSelecionadas.includes(m.key);
+                            return (
+                              <label key={m.key} className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer hover:text-lime-700">
+                                <input
+                                  type="checkbox"
+                                  className="w-3.5 h-3.5 rounded focus:ring-lime-500"
+                                  style={{ accentColor: m.cor }}
+                                  checked={ativa}
+                                  onChange={() => toggleMetrica(m.key)}
+                                />
+                                <span className="inline-block w-2 h-2 rounded-full" style={{ background: m.cor }} />
+                                {m.label}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* GRÁFICO DE LINHAS — SVG puro */}
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 overflow-x-auto">
+                        {seriesAtivas.length === 0 ? (
+                          <p className="text-center text-sm text-slate-400 py-10">
+                            Selecione ao menos uma métrica acima.
+                          </p>
+                        ) : (
+                          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto min-w-[520px]">
+                            {/* Grid horizontal */}
+                            {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
+                              const y = PAD_T + plotH * f;
+                              const val = yMax - (yMax - yMin) * f;
+                              return (
+                                <g key={i}>
+                                  <line x1={PAD_L} y1={y} x2={W - PAD_R} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                                  <text x={PAD_L - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#94a3b8" fontWeight="bold">
+                                    {val.toFixed(1)}
+                                  </text>
+                                </g>
+                              );
+                            })}
+
+                            {/* Eixo X — rótulos de data */}
+                            {registros.map((r, i) => (
+                              <text
+                                key={r.id || i}
+                                x={xDe(i)} y={H - PAD_B + 14}
+                                textAnchor="middle" fontSize="9" fill="#64748b" fontWeight="bold"
+                              >
+                                {fmtData(r.data).slice(0, 5)}
+                              </text>
+                            ))}
+
+                            {/* Séries */}
+                            {seriesAtivas.map(s => {
+                              const pontos = registros
+                                .map((r, i) => {
+                                  const v = parseFloat(String(r[s.key] ?? "").replace(",", "."));
+                                  return isNaN(v) ? null : { x: xDe(i), y: yDe(v), v, r };
+                                })
+                                .filter(Boolean);
+
+                              if (pontos.length === 0) return null;
+
+                              const path = pontos.map((p, k) => `${k === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+
+                              return (
+                                <g key={s.key}>
+                                  <path d={path} fill="none" stroke={s.cor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                                  {pontos.map((p, k) => (
+                                    <circle key={k} cx={p.x} cy={p.y} r="3.5" fill="#fff" stroke={s.cor} strokeWidth="2">
+                                      <title>{`${s.label}: ${p.v} — ${fmtData(p.r.data)}`}</title>
+                                    </circle>
+                                  ))}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        )}
+
+                        {/* Legenda */}
+                        {seriesAtivas.length > 0 && (
+                          <div className="flex flex-wrap gap-3 mt-2 pt-2 border-t border-slate-100">
+                            {seriesAtivas.map(s => (
+                              <span key={s.key} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                                <span className="inline-block w-3 h-0.5 rounded" style={{ background: s.cor }} />
+                                {s.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* LISTA DE DATAS SALVAS — clicáveis */}
+                      <div className="bg-white p-3 rounded-xl border border-slate-200">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase block mb-2">
+                          Datas registradas <span className="text-slate-400 normal-case">(clique para ver os dados)</span>
+                        </label>
+                        <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                          {[...registros].reverse().map((r) => {
+                            const aberto = dataDetalheMetrica === r.data;
+                            return (
+                              <button
+                                key={r.id || r.data}
+                                type="button"
+                                onClick={() => setDataDetalheMetrica(aberto ? null : r.data)}
+                                className={`w-full text-left p-2 rounded-lg border transition-all ${
+                                  aberto
+                                    ? "bg-lime-50 border-lime-400 shadow-sm"
+                                    : "bg-slate-50 border-slate-100 hover:border-lime-300 hover:bg-lime-50/40"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                                      <CalendarDays size={12} className="text-lime-600" />
+                                      {fmtData(r.data)}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500 truncate">
+                                      {r.peso ? `Peso ${r.peso}kg` : ""}
+                                      {r.imc ? ` · IMC ${Number(r.imc).toFixed(1)}` : ""}
+                                      {r.classificacaoIMC ? ` · ${r.classificacaoIMC}` : ""}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {r.nrsClassificacao && (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
+                                        {r.nrsClassificacao}
+                                      </span>
+                                    )}
+                                    {aberto ? <ChevronDown size={14} className="text-lime-700" /> : <ChevronRight size={14} className="text-slate-400" />}
+                                  </div>
+                                </div>
+
+                                {/* DETALHE EXPANDIDO */}
+                                {aberto && (() => {
+                                  const det = r;
+                                  const num = (v, dec = 1, un = "") => {
+                                    const n = parseFloat(String(v ?? "").replace(",", "."));
+                                    return isNaN(n) ? "—" : `${n.toFixed(dec)}${un}`;
+                                  };
+                                  const linha = (ind, valor, adeq, clas) => (
+                                    <tr className="border-b border-slate-100 last:border-0">
+                                      <td className="p-1.5 font-bold text-slate-700">{ind}</td>
+                                      <td className="p-1.5 text-center font-bold text-slate-700">{valor}</td>
+                                      <td className="p-1.5 text-center text-slate-600">{adeq}</td>
+                                      <td className={`p-1.5 text-center font-bold ${corClassificacao(clas)}`}>{clas || "—"}</td>
+                                    </tr>
+                                  );
+
+                                  return (
+                                    <div className="mt-2 pt-2 border-t border-lime-200 space-y-2 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+
+                                      {/* MEDIDAS PRINCIPAIS */}
+                                      <div className="grid grid-cols-2 gap-1.5">
+                                        <div className="bg-white rounded-lg p-1.5 border border-lime-200">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase">Peso</p>
+                                          <p className="text-xs font-black text-lime-900">{num(det.peso, 1, " kg")}</p>
+                                          {det.tipoMedicaoPeso && <p className="text-[8px] text-slate-400 font-bold">{det.tipoMedicaoPeso}</p>}
+                                        </div>
+                                        <div className="bg-white rounded-lg p-1.5 border border-lime-200">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase">Altura</p>
+                                          <p className="text-xs font-black text-lime-900">{num(det.altura, 1, " cm")}</p>
+                                          {det.tipoMedicaoAltura && <p className="text-[8px] text-slate-400 font-bold">{det.tipoMedicaoAltura}</p>}
+                                        </div>
+                                        <div className="bg-white rounded-lg p-1.5 border border-lime-200">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase">IMC</p>
+                                          <p className="text-xs font-black text-lime-900">{num(det.imc, 1, " kg/m²")}</p>
+                                          {det.classificacaoIMC && <p className={`text-[8px] font-bold ${corClassificacao(det.classificacaoIMC)}`}>{det.classificacaoIMC}</p>}
+                                        </div>
+                                        <div className="bg-white rounded-lg p-1.5 border border-red-200">
+                                          <p className="text-[9px] font-bold text-red-400 uppercase">NRS 2002</p>
+                                          <p className="text-xs font-black text-red-800">
+                                            {det.nrsEscore !== null && det.nrsEscore !== undefined ? `Escore ${det.nrsEscore}` : "—"}
+                                          </p>
+                                          {det.nrsClassificacao && <p className="text-[8px] font-bold text-red-600 leading-tight">{det.nrsClassificacao}</p>}
+                                        </div>
+                                      </div>
+
+                                      {/* MEDIDAS ANTROPOMÉTRICAS */}
+                                      <div className="grid grid-cols-2 gap-1.5">
+                                        <div className="bg-white rounded-lg p-1.5 border border-lime-200">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase">Altura Joelho</p>
+                                          <p className="text-xs font-black text-lime-900">{num(det.alturaJoelho, 1, " cm")}</p>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-1.5 border border-lime-200">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase">Circ. Braço</p>
+                                          <p className="text-xs font-black text-lime-900">{num(det.circBraco, 1, " cm")}</p>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-1.5 border border-lime-200">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase">Circ. Panturrilha</p>
+                                          <p className="text-xs font-black text-lime-900">{num(det.circPanturrilha, 1, " cm")}</p>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-1.5 border border-lime-200">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase">PCT</p>
+                                          <p className="text-xs font-black text-lime-900">{num(det.pct, 1, " mm")}</p>
+                                        </div>
+                                      </div>
+
+                                      {/* AMPUTAÇÕES */}
+                                      {Array.isArray(det.amputacoes) && det.amputacoes.length > 0 && (
+                                        <div className="bg-white rounded-lg p-1.5 border border-red-200">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Amputações</p>
+                                          <div className="flex flex-wrap gap-1">
+                                            {det.amputacoes.map((a) => (
+                                              <span key={a} className="px-1.5 py-0.5 rounded bg-red-50 border border-red-200 text-red-700 text-[9px] font-bold">
+                                                {typeof AMPUTACAO_LABELS !== "undefined" && AMPUTACAO_LABELS[a] ? AMPUTACAO_LABELS[a] : a}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* TABELA ESTADO NUTRICIONAL */}
+                                      <div>
+                                        <p className="text-[9px] font-bold text-slate-500 uppercase mb-1">Estado Nutricional</p>
+                                        <div className="overflow-x-auto bg-white rounded-lg border border-slate-200">
+                                          <table className="w-full text-[10px]">
+                                            <thead>
+                                              <tr className="bg-lime-100 text-lime-900">
+                                                <th className="p-1.5 text-left font-bold">Indicador</th>
+                                                <th className="p-1.5 text-center font-bold">Valor</th>
+                                                <th className="p-1.5 text-center font-bold">Adeq.</th>
+                                                <th className="p-1.5 text-center font-bold">Classificação</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {linha("IMC", num(det.imc, 1, " kg/m²"), "—", det.classificacaoIMC)}
+                                              {linha("PCT", num(det.pct, 1, " mm"), det.adequacaoPCT !== null && det.adequacaoPCT !== undefined ? `${num(det.adequacaoPCT, 1)}%` : "—", det.classificacaoPCT)}
+                                              {linha("CMB", num(det.cmb, 1, " cm"), det.adequacaoCMB !== null && det.adequacaoCMB !== undefined ? `${num(det.adequacaoCMB, 1)}%` : "—", det.classificacaoCMB)}
+                                              {linha("AMB", num(det.amb, 1, " cm²"), det.adequacaoAMB !== null && det.adequacaoAMB !== undefined ? `${num(det.adequacaoAMB, 1)}%` : "—", det.classificacaoAMB)}
+                                              {linha("Sarcopenia (CP)", num(det.circPanturrilha, 1, " cm"), "—", det.classificacaoSarcopenia)}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+
+                                      <p className="text-[8px] text-slate-400 font-bold leading-tight">
+                                        Salvo em {det.registradoEm ? new Date(det.registradoEm).toLocaleString("pt-BR", { timeZone: "America/Manaus" }) : fmtData(det.data)}
+                                      </p>
+                                    </div>
+                                  );
+                                })()}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="p-4 bg-white border-t border-slate-200 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowHistoricoMetricas(false)}
+                    className="w-full py-3 bg-lime-700 hover:bg-lime-800 text-white font-black rounded-xl shadow-lg transition-all uppercase tracking-wider"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </ModalPortal>
         );
       })()}
 

@@ -5358,12 +5358,19 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     if (enf.cvcLocal && !enf.cvcRetiradaData) dispositivosAtivos.push("Acesso Central (CVC)");
     if (enf.shileyLocal && !enf.shileyRetiradaData) dispositivosAtivos.push("Cateter de Shiley");
 
+    // 🔒 Trava ANTES de qualquer diálogo — o botão não pode ser reclicado
+    // durante o window.confirm, que é bloqueante e não desabilita o React.
+    if (isDischarging) return;
+    setIsDischarging(true);
+
     if (dispositivosAtivos.length > 0) {
       const confirmar = window.confirm(
         `⚠️ DISPOSITIVOS SEM DATA DE RETIRADA:\n- ${dispositivosAtivos.join('\n- ')}\n\nDeseja registrar a retirada como HOJE para fechar os indicadores?`
       );
-      if (!confirmar) return;
-      
+      if (!confirmar) {
+        setIsDischarging(false);   // libera o botão se o usuário desistir
+        return;
+      }
       const hojeStr = new Date().toISOString().split('T')[0];
       if (enf.svd && !enf.svdRetiradaData) enf.svdRetiradaData = hojeStr;
       if (enf.cvcLocal && !enf.cvcRetiradaData) enf.cvcRetiradaData = hojeStr;
@@ -5402,7 +5409,10 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       };
 
       // 3. Salvamento no Histórico
-      await addDoc(historicoRef, {
+      // ID determinístico: a mesma internação (cpf + dataEntrada) gera o MESMO
+      // documento. Um segundo clique sobrescreve em vez de duplicar.
+      const idHistorico = `hist_${String(pacienteAtual.cpf || "semcpf").replace(/\D/g, "")}_${pacienteAtual.dataInternacao || "semdata"}`;
+      await setDoc(doc(db, "internacoes_historico", idHistorico), {
         nomePaciente: pacienteAtual.nome,
         cpf: pacienteAtual.cpf || "000.000.000-00",
         dataEntrada: pacienteAtual.dataInternacao,
