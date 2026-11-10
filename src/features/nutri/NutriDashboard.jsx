@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { doc, updateDoc } from 'firebase/firestore';
 import { Scale, Utensils, Lock, ClipboardSignature, CheckSquare, Square, CalendarDays, ChevronDown, ChevronRight,
          Activity, History, X, BarChart2, Save, LineChart } from 'lucide-react';
 import { CARACTERISTICAS_DIETA, CONSISTENCIA_ALIMENTAR, FORMULAS_ENTERAIS } from '../../constants/clinicalLists';
 import { calculateEvacDays, calcularNutricaoDerivada, calcularMetasNutricionais, calcularAdministracaoEnteral } from '../../utils/core';
 import { ModalPortal } from '../../components/ModuloUTI';
+import { db } from '../../config/firebase';
 
 const NutriDashboard = ({
   currentPatient,
@@ -49,7 +51,7 @@ const NutriDashboard = ({
   };
 
   // Salva o snapshot atual das métricas no histórico do paciente
-  const salvarMetricasNutricionais = () => {
+  const salvarMetricasNutricionais = async () => {
     const p = patients[activeTab];
     if (!p || !p.nome) {
       alert("Não há paciente ativo neste leito.");
@@ -61,7 +63,6 @@ const NutriDashboard = ({
       ? calcularNutricaoDerivada(nutri, p)
       : {};
 
-    // Se nada foi preenchido, não cria registro vazio
     const temAlgumDado = [
       nutri.peso, nutri.altura, nutri.circBraco, nutri.circPanturrilha,
       nutri.pct, nutri.alturaJoelho
@@ -100,33 +101,58 @@ const NutriDashboard = ({
       amputacoes: Array.isArray(nutri.amputacoes) ? [...nutri.amputacoes] : []
     };
 
-    const up = JSON.parse(JSON.stringify(patients));
-    const alvo = up[activeTab];
-    if (!alvo.nutri) alvo.nutri = {};
-    if (!Array.isArray(alvo.nutri.historico_metricas)) alvo.nutri.historico_metricas = [];
-
-    // Mesmo dia → substitui o registro (evita 2 do mesmo dia no gráfico)
-    const idxMesmoDia = alvo.nutri.historico_metricas.findIndex(
-      (m) => m && m.data === snapshot.data
-    );
+    // Lista atual do histórico (local) — para substituição do mesmo dia
+    const historicoAtual = Array.isArray(nutri.historico_metricas) ? [...nutri.historico_metricas] : [];
+    const idxMesmoDia = historicoAtual.findIndex((m) => m && m.data === snapshot.data);
     if (idxMesmoDia >= 0) {
       const confirmar = window.confirm(
         `Já existe um registro de métricas em ${snapshot.data.split("-").reverse().join("-")}.\n\nDeseja substituí-lo pelos valores atuais?`
       );
       if (!confirmar) return;
-      alvo.nutri.historico_metricas[idxMesmoDia] = snapshot;
+      historicoAtual[idxMesmoDia] = snapshot;
     } else {
-      alvo.nutri.historico_metricas.push(snapshot);
+      historicoAtual.push(snapshot);
     }
+    historicoAtual.sort((a, b) => String(a.data).localeCompare(String(b.data)));
 
-    // Mantém ordenado por data crescente
-    alvo.nutri.historico_metricas.sort((a, b) => String(a.data).localeCompare(String(b.data)));
-
+    // 1) Atualiza o estado local imediatamente (UI responde na hora)
+    const up = patients.map((item, i) =>
+      i === activeTab
+        ? { ...item, nutri: { ...(item.nutri || {}), historico_metricas: historicoAtual } }
+        : item
+    );
     setPatients(up);
-    if (typeof save === "function") {
-      save(alvo, `Nutrição: Registrou métricas antropométricas (${snapshot.data.split("-").reverse().join("-")})`);
+    if (typeof patientsRef !== "undefined" && patientsRef?.current) {
+      patientsRef.current[activeTab] = up[activeTab];
     }
-    alert(`✅ Métricas salvas em ${snapshot.data.split("-").reverse().join("-")}.`);
+
+    // 2) Grava DIRETO no Firestore, sem passar pela fila do save().
+    //    updateDoc com notação de ponto garante que apenas este campo é tocado —
+    //    nada mais do documento é sobrescrito.
+    try {
+      const idBruto = p.id !== undefined ? p.id : p.leito;
+      const apenasNumero = String(idBruto).replace(/bed_/g, "");
+      const docId = `bed_${apenasNumero === "0" ? "1" : apenasNumero}`;
+
+      await updateDoc(doc(db, "leitos_uti", docId), {
+        "nutri.historico_metricas": historicoAtual,
+        "nutri.admitido": true
+      });
+
+      if (typeof registrarLogAuditoria === "function") {
+        registrarLogAuditoria(
+          "NUTRIÇÃO: MÉTRICAS SALVAS",
+          `Snapshot antropométrico registrado em ${snapshot.data.split("-").reverse().join("-")}`,
+          `Leito ${activeTab + 1}`,
+          p.nome
+        );
+      }
+
+      alert(`✅ Métricas salvas em ${snapshot.data.split("-").reverse().join("-")}.`);
+    } catch (err) {
+      console.error("[MÉTRICAS] Falha ao gravar no Firestore:", err);
+      alert("Erro ao gravar as métricas na nuvem. Verifique a conexão e tente novamente.");
+    }
   };
 
 
