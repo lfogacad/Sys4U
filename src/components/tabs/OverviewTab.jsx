@@ -3,6 +3,8 @@ import { Activity, ChevronDown, ChevronRight, Wind, Utensils, Brain, HeartPulse,
 import { BH_HOURS } from '../../constants/clinicalLists';
 import ModuloCulturas from '../ModuloCulturas';
 import VisitaMultiTab from './VisitaMultiTab';
+import PainelMetasDia from '../PainelMetasDia';
+import { useMetasDia } from '../../hooks/useMetasDia';
 
 const OverviewTab = ({
   viewMode,
@@ -33,6 +35,8 @@ const OverviewTab = ({
   userProfile,
   updateP
 }) => {
+  const metas = useMetasDia({ currentPatient, updateP, handleBlurSave, userProfile });
+  
   // Se o ModuloUTI não mandar o viewMode, ou não for overview, esconde.
   if (viewMode && viewMode !== "overview") return null;
   if (!currentPatient) return null;
@@ -696,24 +700,12 @@ const resumoEnteral = (nutri) => {
             </div>
           </fieldset>
         
-        <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
-          <div className="flex justify-between mb-2">
-            <h4 className="text-xs font-bold text-yellow-600 uppercase">Anotações / Pendências</h4>
-            {["Médico", "Desenvolvedor", "Admin"].includes(userProfile?.perfil) && <Edit3 size={12} className="text-yellow-600" />}
-          </div>
-          
-          {["Médico", "Desenvolvedor", "Admin"].includes(userProfile?.perfil) ? (
-            <textarea 
-              value={currentPatient.anotacoes || ""} 
-              onChange={(e) => updateP("anotacoes", e.target.value)} 
-              onBlur={() => typeof handleBlurSave === 'function' ? handleBlurSave("Visita Multi: Editou Anotações / Pendências") : null}
-              className="w-full bg-transparent border-0 outline-none text-sm text-slate-700 resize-y min-h-[100px] focus:ring-0" 
-              placeholder="Evolução, condutas, pendências..." 
-            />
-          ) : (
-            <p className="text-sm whitespace-pre-wrap min-h-[50px] text-left">{currentPatient.anotacoes || "Sem pendências."}</p>
-          )}
-        </div>
+      <div className="mt-4">
+        <PainelMetasDia
+          {...metas}
+          compacto
+        />
+      </div>
       </div>
       </>
       ) : (
@@ -724,7 +716,36 @@ const resumoEnteral = (nutri) => {
           save={save}
           calculateDiurese12hMlKgH={calculateDiurese12hMlKgH}
         />
-      )}      
+      )}
+      {metas.modalCancelamento && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-md shadow-xl">
+            <h4 className="font-bold text-slate-800 mb-3">Informe a justificativa</h4>
+            <textarea
+              value={metas.modalCancelamento.justificativa || ''}
+              onChange={(e) => metas.setModalCancelamento({ ...metas.modalCancelamento, justificativa: e.target.value })}
+              className="w-full p-2.5 border border-slate-300 rounded-xl text-sm min-h-[80px] outline-none focus:ring-2 focus:ring-teal-300"
+              placeholder="Motivo..."
+            />
+            <div className="flex gap-2 justify-end mt-3">
+              <button
+                onClick={() => metas.setModalCancelamento(null)}
+                className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-sm text-slate-600"
+              >Voltar</button>
+              <button
+                onClick={() => {
+                  const { id, acao, justificativa } = metas.modalCancelamento;
+                  if (acao === 'cancelar' || acao === 'cancelar_ontem') metas.cancelarMeta(id, justificativa);
+                  else if (acao === 'rejeitar') metas.rejeitarMeta(id, justificativa);
+                  metas.setModalCancelamento(null);
+                }}
+                disabled={metas.modalCancelamento.exigeJustificativa && !(metas.modalCancelamento.justificativa || '').trim()}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-sm disabled:opacity-50"
+              >Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}    
     </div>
   );
 };

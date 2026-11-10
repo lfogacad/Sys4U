@@ -252,7 +252,7 @@ const gerarResumoSSVV = (patient, isFem, bhAlvo) => {
 // ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
-const VisitaMultiTab = ({ currentPatient, save, userProfile, calculateDiurese12hMlKgH }) => {
+const VisitaMultiTab = ({ currentPatient, save, userProfile, calculateDiurese12hMlKgH, apenasPainelMetas = false }) => {
   const hoje = new Date();
   const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
   const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
