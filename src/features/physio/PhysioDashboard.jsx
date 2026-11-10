@@ -93,6 +93,8 @@ const [modalTRE, setModalTRE] = useState({
   desfecho: ""           // Sucesso, Falha
 });
 
+  const [alertaTRE, setAlertaTRE] = useState({ isOpen: false, naoCumpridos: [] });
+
   const [modalMobilizacao, setModalMobilizacao] = useState({
   isOpen: false,
   horario: "08:00",
@@ -852,6 +854,46 @@ const salvarIOT = async () => {
   setModalTRE(prev => ({ ...prev, isOpen: false }));
 };
 
+  // Registra a suspensão do TRE quando o checklist não é cumprido
+  const suspenderTRE = () => {
+    const naoCumpridos = alertaTRE.naoCumpridos || [];
+
+    const horario = modalTRE.horario || "";
+    const listaCriterios = naoCumpridos
+      .map(id => TRE_CHECKLIST.find(c => c.id === id)?.label)
+      .filter(Boolean)
+      .join("; ");
+
+    const textoProcedimento =
+      `Teste de Respiração Espontânea (TRE) SUSPENSO — critérios de segurança não cumpridos. ` +
+      `Itens não atendidos (${naoCumpridos.length}): ${listaCriterios || "não informado"}. ` +
+      `Conduta: extubação suspensa e reavaliação em 24h.`;
+
+    const novoRegistro = {
+      id: `tre_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      tipo: "TRE",
+      data: new Date().toISOString(),
+      horario,
+      detalhes: {
+        ...modalTRE,
+        checklistNaoCumprido: naoCumpridos,
+        suspenso: true
+      },
+      textoFormatado: textoProcedimento
+    };
+
+    const historicoAtual = currentPatient.physio?.procedimentosDiarios || [];
+    updateNested("physio", "procedimentosDiarios", [...historicoAtual, novoRegistro]);
+
+    if (typeof handleBlurSave === "function") {
+      handleBlurSave(`Fisioterapia: TRE SUSPENSO às ${horario || "-"} — ${naoCumpridos.length} critério(s) não cumprido(s)`);
+    }
+
+    // Fecha o diálogo e o modal de TRE, resetando o estado
+    setAlertaTRE({ isOpen: false, naoCumpridos: [] });
+    setModalTRE(prev => ({ ...prev, isOpen: false, step: 1, checklist: {} }));
+  };
+
 const TRE_CHECKLIST = [
   { id: 'causa', label: 'Causa da falência respiratória controlada' },
   { id: 'pao2', label: 'PaO2 ≥ 60mmHg com FiO2 ≤ 0,4' },
@@ -1295,9 +1337,12 @@ const TRE_CHECKLIST = [
                   e.preventDefault(); 
                   const agora = new Date();
                   const horaStr = String(agora.getHours()).padStart(2, '0');
+                  const minArred = String(Math.floor(agora.getMinutes() / 15) * 15).padStart(2, '0');
                   setModalTRE({
                     isOpen: true,
-                    horario: `${horaStr}:00`,
+                    step: 1,
+                    checklist: {},
+                    horario: `${horaStr}:${minArred}`,
                     cuffLeakFeito: false, cuffLeakResultado: "",
                     modo: "", o2: "", ps: "", peep: "", fio2: "",
                     duracao: "", irrs: "", desfecho: ""
@@ -3300,7 +3345,29 @@ const TRE_CHECKLIST = [
                   <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-amber-800 text-xs font-bold text-center mb-4">
                     Responda aos critérios de segurança antes de iniciar o TRE.
                   </div>
-                  
+
+                  {/* HORÁRIO */}
+                  <div className="bg-white p-3 border border-slate-200 rounded-xl shadow-sm">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário do TRE</label>
+                    <div className="flex items-center justify-center gap-2">
+                      <select
+                        className="w-20 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-xl cursor-pointer appearance-none"
+                        value={modalTRE.horario ? modalTRE.horario.split(':')[0] : "08"}
+                        onChange={(e) => setModalTRE(prev => ({ ...prev, horario: `${e.target.value}:${prev.horario ? prev.horario.split(':')[1] : '00'}` }))}
+                      >
+                        {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
+                      </select>
+                      <span className="text-2xl font-black text-slate-300 pb-1">:</span>
+                      <select
+                        className="w-20 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-xl cursor-pointer appearance-none"
+                        value={modalTRE.horario ? modalTRE.horario.split(':')[1] : "00"}
+                        onChange={(e) => setModalTRE(prev => ({ ...prev, horario: `${prev.horario ? prev.horario.split(':')[0] : '08'}:${e.target.value}` }))}
+                      >
+                        {['00', '15', '30', '45'].map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
                   {TRE_CHECKLIST.map((item, idx) => (
                     <div key={item.id} className="bg-white p-3 border border-slate-200 rounded-xl shadow-sm flex flex-col gap-2">
                       <span className="text-[11px] font-bold text-slate-700 leading-tight">
@@ -3330,19 +3397,6 @@ const TRE_CHECKLIST = [
                 // FASE 2: MODAL ORIGINAL (PARÂMETROS E DESFECHO)
                 // =====================================================================
                 <div className="space-y-6">
-                  {/* HORÁRIO */}
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block text-center">Horário</label>
-                    <div className="flex items-center justify-center gap-2 bg-white p-2 border border-slate-200 rounded-2xl shadow-inner">
-                      <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTRE.horario ? modalTRE.horario.split(':')[0] : "08"} onChange={(e) => setModalTRE({ ...modalTRE, horario: `${e.target.value}:${modalTRE.horario ? modalTRE.horario.split(':')[1] : '00'}` })}>
-                        {Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')).map(h => <option key={h} value={h}>{h}h</option>)}
-                      </select>
-                      <span className="text-3xl font-black text-slate-300 pb-1">:</span>
-                      <select className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 font-black text-center text-2xl cursor-pointer appearance-none" value={modalTRE.horario ? modalTRE.horario.split(':')[1] : "00"} onChange={(e) => setModalTRE({ ...modalTRE, horario: `${modalTRE.horario ? modalTRE.horario.split(':')[0] : '00'}:${e.target.value}` })}>
-                        {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                    </div>
-                  </div>
                   {/* CUFF LEAK TEST */}
                   <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
                     <div className="flex items-center justify-between mb-2">
@@ -3446,24 +3500,19 @@ const TRE_CHECKLIST = [
                   <button 
                     type="button"
                     onClick={() => {
-                      const checklistValues = Object.values(modalTRE.checklist || {});
-                      const unansweredCount = TRE_CHECKLIST.length - checklistValues.length;
-
+                      const checklist = modalTRE.checklist || {};
+                      const unansweredCount = TRE_CHECKLIST.length - Object.keys(checklist).length;
                       if (unansweredCount > 0) {
                         alert("Por favor, responda todos os itens do checklist antes de prosseguir.");
                         return;
                       }
+                      const naoCumpridos = TRE_CHECKLIST
+                        .filter(item => checklist[item.id] === 'Não')
+                        .map(item => item.id);
 
-                      const naoCount = checklistValues.filter(val => val === 'Não').length;
-
-                      if (naoCount === 1) {
-                        if (window.confirm("Sugiro avaliação com equipe multi. Deseja prosseguir?")) {
-                          setModalTRE({ ...modalTRE, step: 2 });
-                        }
-                      } else if (naoCount >= 2) {
-                        if (window.confirm("Sugiro suspender extubação e reavaliar em 24h. Deseja prosseguir?")) {
-                          setModalTRE({ ...modalTRE, step: 2 });
-                        }
+                      if (naoCumpridos.length > 0) {
+                        // Não cumpre critérios → abre diálogo Suspender / Seguir
+                        setAlertaTRE({ isOpen: true, naoCumpridos });
                       } else {
                         setModalTRE({ ...modalTRE, step: 2 });
                       }
@@ -3491,6 +3540,66 @@ const TRE_CHECKLIST = [
             </div>
           </div>
         </div>
+        </ModalPortal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* DIÁLOGO: TRE COM CRITÉRIOS NÃO CUMPRIDOS                                  */}
+      {/* ========================================================================= */}
+      {alertaTRE.isOpen && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 text-left">
+            <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-fadeIn border-2 border-amber-400/40">
+              <div className="bg-amber-500 p-4 text-white flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-full"><AlertTriangle size={20} /></div>
+                <h3 className="text-base font-black tracking-wide">Critérios não cumpridos</h3>
+              </div>
+
+              <div className="p-5 space-y-3">
+                <p className="text-sm text-slate-600 font-semibold leading-snug">
+                  {alertaTRE.naoCumpridos.length === 1
+                    ? "1 item do checklist não foi cumprido."
+                    : `${alertaTRE.naoCumpridos.length} itens do checklist não foram cumpridos.`}{" "}
+                  Recomenda-se suspender a extubação e reavaliar em 24h.
+                </p>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+                  <ul className="space-y-1">
+                    {alertaTRE.naoCumpridos.map(id => {
+                      const item = TRE_CHECKLIST.find(c => c.id === id);
+                      if (!item) return null;
+                      return (
+                        <li key={id} className="text-[11px] font-bold text-amber-800 flex gap-1.5">
+                          <span className="text-amber-500 shrink-0">•</span>
+                          <span>{item.label}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-2">
+                <button
+                  type="button"
+                  onClick={suspenderTRE}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl shadow-sm transition-all uppercase tracking-wider text-xs"
+                >
+                  Suspender
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAlertaTRE({ isOpen: false, naoCumpridos: [] });
+                    setModalTRE(prev => ({ ...prev, step: 2 }));
+                  }}
+                  className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black rounded-xl transition-all uppercase tracking-wider text-xs"
+                >
+                  Seguir
+                </button>
+              </div>
+            </div>
+          </div>
         </ModalPortal>
       )}
 

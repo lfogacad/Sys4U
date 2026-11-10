@@ -4492,6 +4492,7 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
     // 🧠 6. PARÂMETROS DO MAPA DE SUPORTE VENTILATÓRIO
     // ==============================================================
     let paramText = "-";
+    let ajustesDiaText = "";
     if (phy.vmFlowsheet && phy.vmFlowsheet.length > 0) {
       const lastEntry = phy.vmFlowsheet[phy.vmFlowsheet.length - 1];
       const modo = lastEntry.modo || phy.parametro || "-";
@@ -4502,6 +4503,13 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
       if (lastEntry.ie) paramText += ` | I:E: ${lastEntry.ie}`;
       if (lastEntry.ps) paramText += ` | PS: ${lastEntry.ps}`;
       if (lastEntry.pc) paramText += ` | PC: ${lastEntry.pc}`;
+
+      // 📝 Ajustes do dia (coluna do dia corrente do VM Flowsheet).
+      // Normaliza quebras de linha do textarea para manter o relatório em linha única.
+      const ajustesBruto = String(lastEntry.ajustesDia || "").trim();
+      if (ajustesBruto) {
+        ajustesDiaText = ajustesBruto.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ");
+      }
     } else {
       paramText = `Modo: ${phy.parametro || "-"} | PEEP: ${phy.peep || "-"} | FiO2: ${phy.fiO2 || "-"}%`;
     }
@@ -4590,7 +4598,9 @@ const generateNursingAI_Evolution = async (intercorrencias, condutas, cuidadosEn
     evo += `--- SUPORTE VENTILATÓRIO ---\n`;
     evo += `Suporte Atual: ${phy.suporte || "Não informado"}\n`;
     evo += `Tempo de VM: ${getTempoVMText(p) || "-"}\n`;
-    evo += `Parâmetros: ${paramText}\n\n`;
+    evo += `Parâmetros: ${paramText}\n`;
+    if (ajustesDiaText) evo += `Ajustes do Dia: ${ajustesDiaText}\n`;
+    evo += `\n`;
 
     evo += `--- GASOMETRIA ---\n`;
     evo += `${gasoTxt}\n`;
