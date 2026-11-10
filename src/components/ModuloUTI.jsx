@@ -1118,6 +1118,18 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
             payloadBH.nutri = { ...payloadBH.nutri, admitido: true };
           }
         } catch (e) { console.warn("[SYS4U] Não foi possível preservar admitido da nutrição:", e); }
+          // 🛡️ HISTÓRICO DE MÉTRICAS: preserva o do servidor se o local não trouxe
+          if (nutriServidor && Array.isArray(nutriServidor.historico_metricas)) {
+            if (!Array.isArray(payloadBH.nutri.historico_metricas)) {
+              payloadBH.nutri.historico_metricas = nutriServidor.historico_metricas;
+            } else {
+              const mapa = new Map();
+              [...nutriServidor.historico_metricas, ...payloadBH.nutri.historico_metricas]
+                .forEach(m => { if (m && m.id) mapa.set(m.id, m); });
+              payloadBH.nutri.historico_metricas = Array.from(mapa.values())
+                .sort((a, b) => String(a.data).localeCompare(String(b.data)));
+            }
+          }
       }
 
       if (payloadBH.admissaoNutricao) {

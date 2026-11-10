@@ -1901,10 +1901,10 @@ return (
                 
                 {currentPatient.enfermagem?.cvcLocal && (
                   <div className="mt-2 animate-fadeIn">
-                    <label className="block text-[10px] font-bold text-red-500 uppercase">Data de Retirada (CVC/PICC)</label>
+                    <label className="block text-[10px] font-bold text-violet-600 uppercase">Data de Retirada (CVC/PICC)</label>
                     <input 
                       type="date" 
-                      className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none text-sm" 
+                      className="w-full p-2 border border-slate-200 rounded bg-white focus:ring-2 focus:ring-violet-300 outline-none"
                       value={resetVisualDispositivo.cvc ? "" : (currentPatient.enfermagem?.cvcRetiradaData || "")} 
                       onChange={(e) => updateNested("enfermagem", "cvcRetiradaData", e.target.value)} 
                       onBlur={() => confirmarRetirada({ key: 'cvc', nome: 'CVC/PICC', dataInser: 'cvcData', retiradaData: 'cvcRetiradaData', localCampo: 'cvcLocal', historicoCampo: 'historicoPeriodoCVC' })}
@@ -1956,10 +1956,10 @@ return (
                 
                 {currentPatient.enfermagem?.shileyLocal && (
                   <div className="mt-2">
-                    <label className="block text-[10px] font-bold text-red-500 uppercase">Data de Retirada (Shiley)</label>
+                    <label className="block text-[10px] font-bold text-violet-600 uppercase">Data de Retirada (Shiley)</label>
                     <input 
                       type="date" 
-                      className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
+                      className="w-full p-2 border border-slate-200 rounded bg-white focus:ring-2 focus:ring-violet-300 outline-none"
                       value={resetVisualDispositivo.shiley ? "" : (currentPatient.enfermagem?.shileyRetiradaData || "")} 
                       onChange={(e) => updateNested("enfermagem", "shileyRetiradaData", e.target.value)} 
                       onBlur={() => confirmarRetirada({ key: 'shiley', nome: 'Shiley', dataInser: 'shileyData', retiradaData: 'shileyRetiradaData', localCampo: 'shileyLocal', historicoCampo: 'historicoPeriodoShiley' })}
@@ -2003,10 +2003,10 @@ return (
                   {/* Só mostra a data de retirada se a SVD tiver uma data de inserção */}
                   {currentPatient.enfermagem?.svdData && (
                     <div className="mt-2">
-                      <label className="block text-[10px] font-bold text-red-500 uppercase">Data de Retirada (SVD)</label>
+                      <label className="block text-[10px] font-bold text-violet-600 uppercase">Data de Retirada (SVD)</label>
                       <input 
                         type="date" 
-                        className="w-full p-2 border border-red-200 rounded bg-red-50 focus:ring-2 focus:ring-red-500 outline-none" 
+                        className="w-full p-2 border border-slate-200 rounded bg-white focus:ring-2 focus:ring-violet-300 outline-none" 
                         value={resetVisualDispositivo.svd ? "" : (currentPatient.enfermagem?.svdRetiradaData || "")}
                         onChange={(e) => updateNested("enfermagem", "svdRetiradaData", e.target.value)} 
                         onBlur={() => confirmarRetirada({ key: 'svd', nome: 'SVD', dataInser: 'svdData', retiradaData: 'svdRetiradaData', historicoCampo: 'historicoPeriodoSVD' })}
