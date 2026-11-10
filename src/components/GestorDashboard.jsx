@@ -993,6 +993,8 @@ useEffect(() => {
   const [snapshotsLista, setSnapshotsLista] = useState([]);
   const [snapshotSelecionado, setSnapshotSelecionado] = useState('');
   const [restaurarModo, setRestaurarModo] = useState('vazios'); // 'vazios' | 'sobrescrever'
+  const [leitoRestaurar, setLeitoRestaurar] = useState('');       // '' = todos
+  const [limparLeitoVazio, setLimparLeitoVazio] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [msgBackup, setMsgBackup] = useState('');
@@ -1438,17 +1440,33 @@ useEffect(() => {
     if (!snapshotSelecionado) return;
     const sSel = snapshotsLista.find(s => s.id === snapshotSelecionado);
     const horaBackup = formatarDataHoraBR(sSel?.criadoEm);
+
+    const alvoTexto = leitoRestaurar
+      ? `APENAS o Leito ${leitoRestaurar.replace('bed_', '')}`
+      : 'TODOS os leitos';
+
+    let detalheModo = '';
+    if (restaurarModo === 'vazios') {
+      detalheModo = 'Somente os campos vazios/faltantes serão preenchidos. Dados atuais NÃO serão sobrescritos.';
+    } else if (limparLeitoVazio) {
+      detalheModo = 'Os leitos serão SUBSTITUÍDOS pelo conteúdo do backup. Leitos vazios no backup terão o paciente REMOVIDO.';
+    } else {
+      detalheModo = 'Os leitos serão SUBSTITUÍDOS pelo conteúdo do backup.';
+    }
+
     const aceito = window.confirm(
-      `Restaurar os leitos a partir do backup de ${horaBackup}?\n\n` +
-      (restaurarModo === 'vazios'
-        ? 'Somente os campos vazios/faltantes serão preenchidos. Dados atuais NÃO serão sobrescritos.'
-        : 'Os documentos dos leitos serão SUBSTITUÍDOS pelo conteúdo do backup.')
+      `Restaurar ${alvoTexto} a partir do backup de ${horaBackup}?\n\n${detalheModo}`
     );
     if (!aceito) return;
+
     setIsRestoring(true);
     setMsgBackup('');
     try {
-      const restaurados = await restaurarSnapshot(snapshotSelecionado, { apenasCamposVazios: restaurarModo === 'vazios' });
+      const restaurados = await restaurarSnapshot(snapshotSelecionado, {
+        apenasCamposVazios: restaurarModo === 'vazios',
+        leitosAlvo: leitoRestaurar ? [leitoRestaurar] : [],
+        substituirLeitoVazio: restaurarModo !== 'vazios' && limparLeitoVazio
+      });
       setMsgBackup(`${restaurados.length} leito(s) restaurado(s) a partir de ${horaBackup}`);
     } catch (err) {
       console.error('Erro ao restaurar backup:', err);
@@ -15105,15 +15123,37 @@ const imprimirRelatorioGeladeira = () => {
                     ))}
                   </select>
 
+                  <select
+                    value={leitoRestaurar}
+                    onChange={(e) => setLeitoRestaurar(e.target.value)}
+                    className="w-full mt-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700"
+                  >
+                    <option value="">Todos os leitos</option>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={`bed_${n}`}>Leito {n}</option>
+                    ))}
+                  </select>
+
                   <div className="mt-3 space-y-1.5">
                     <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
                       <input type="radio" checked={restaurarModo === 'vazios'} onChange={() => setRestaurarModo('vazios')} className="w-3.5 h-3.5 text-blue-600" />
-                      Só preencher o que está vazio/faltando (recomendado)
+                      Só preencher o que está vazio/faltando (seguro)
                     </label>
                     <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
                       <input type="radio" checked={restaurarModo === 'sobrescrever'} onChange={() => setRestaurarModo('sobrescrever')} className="w-3.5 h-3.5 text-blue-600" />
-                      Sobrescrever os leitos com o backup
+                      Substituir pelo conteúdo do backup (pode apagar dados recentes)
                     </label>
+                    {restaurarModo === 'sobrescrever' && (
+                      <label className="flex items-center gap-2 text-xs font-bold text-red-600 cursor-pointer pl-5">
+                        <input
+                          type="checkbox"
+                          checked={limparLeitoVazio}
+                          onChange={(e) => setLimparLeitoVazio(e.target.checked)}
+                          className="w-3.5 h-3.5 accent-red-600"
+                        />
+                        Remover o paciente se o leito estava vazio no backup
+                      </label>
+                    )}
                   </div>
 
                   <button

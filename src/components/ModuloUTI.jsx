@@ -1120,13 +1120,38 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     const contagemNoInicio = editCountRef.current; // edições que existiam quando o save começou
 
     try {
-      // Normalização do ID
-      let idBruto = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
-      const apenasNumero = String(idBruto).replace(/bed_/g, "");
-      let numeroFinal = apenasNumero;
-      if (numeroFinal === "0") numeroFinal = "1"; 
+    // Normalização do ID
+    let idBruto = pacienteSeguro.id !== undefined ? pacienteSeguro.id : pacienteSeguro.leito;
+    const apenasNumero = String(idBruto).replace(/bed_/g, "");
+    let numeroFinal = apenasNumero;
+    if (numeroFinal === "0") numeroFinal = "1";
 
-      const docId = `bed_${numeroFinal}`;
+    // 🛡️ GUARDA DE INTEGRIDADE: o `leito` do paciente tem de bater com o `id`.
+    // Se não bater, o payload veio de uma cópia defasada de outro leito —
+    // aborta a escrita para não contaminar o documento errado.
+    const leitoPayload = Number(
+      String(pacienteSeguro.leito !== undefined ? pacienteSeguro.leito : numeroFinal)
+        .replace(/bed_/g, "")
+        .replace(/\D/g, "")
+    );
+    const leitoDoId = Number(String(numeroFinal).replace(/\D/g, ""));
+    if (
+      Number.isFinite(leitoPayload) && leitoPayload > 0 &&
+      Number.isFinite(leitoDoId) && leitoDoId > 0 &&
+      leitoPayload !== leitoDoId
+    ) {
+      console.error("[SAVE-BLOQUEADO] Divergência id/leito no payload", {
+        id: pacienteSeguro.id,
+        leito: pacienteSeguro.leito,
+        docIdDestino: `bed_${numeroFinal}`,
+        nome: pacienteSeguro.nome,
+        logMsg
+      });
+      saveEmVooRef.current = false;
+      return;
+    }
+
+    const docId = `bed_${numeroFinal}`;
       
       // Grava no Prontuário Físico (Leito Atual) — só os campos DEFINIDOS, com merge.
       // Paciente novo (admissão) pode não ter historico_bh/bh_previous ainda — incluir
@@ -1276,14 +1301,23 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       const pendente = savePendenteRef.current;
       savePendenteRef.current = null;
       if (pendente) {
-        const refAtual = patientsRef.current[activeTab];
-        // Usa o ref se ele for MAIS RECENTE que o snapshot pendente.
-        // Compara pelo tamanho serializado como heurística barata de recência.
+        // 🛡️ SEGURANÇA: só reaproveita patientsRef.current se ele for DO MESMO paciente.
+        // Antes, `patientsRef.current[activeTab]` devolvia o paciente da aba ativa,
+        // que pode ser outro leito — e o payload cruzado gravava no documento errado.
+        const idPendente = pendente.updatedPatient?.id;
+        const refAtual = (patientsRef.current || []).find(
+          (p) => p && p.id === idPendente
+        );
         const usarRef = refAtual
           && JSON.stringify(refAtual).length >= JSON.stringify(pendente.updatedPatient).length;
         const payloadAtualizado = usarRef
           ? JSON.parse(JSON.stringify(refAtual))
           : pendente.updatedPatient;
+        console.log("[SAVE-PENDENTE]", {
+          idPendente,
+          origem: usarRef ? "patientsRef (mesmo id)" : "payload original",
+          logMsg: pendente.logMsg
+        });
         save(payloadAtualizado, pendente.logMsg);
       }
     }

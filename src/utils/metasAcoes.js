@@ -114,54 +114,118 @@ export const nomeLegivelMeta = (meta) => {
   return base || desc || '—';
 };
 
-// Mapeia o cargo real (moduloadmin) para a categoria interna
+// Mapeia o cargo real (moduloadmin) para a categoria interna.
+// Usa comparação normalizada (sem acento, sem caixa) para tolerar variações.
 export const cargoParaCategoria = (cargo) => {
+  const norm = String(cargo || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
   const mapa = {
-    'Médico': 'medicoPlantonista',
-    'RT Médico': 'medicoRotina',
-    'Desenvolvedor': 'medicoRotina',
-    'Enfermeiro': 'enfermeiroPlantonista',
-    'Gerente de Enfermagem': 'enfermeiroPlantonista',
-    'Téc. em Enf.': 'tecnicoEnfermagem',
-    'Nutricionista': 'nutricionista',
-    'Fisioterapeuta': 'fisioterapeutaPlantonista',
-    'RT da Fisioterapia': 'fisioterapeutaPlantonista'
+    'medico': 'medicoPlantonista',
+    'rt medico': 'medicoRotina',
+    'desenvolvedor': 'medicoRotina',
+    'enfermeiro': 'enfermeiroPlantonista',
+    'gerente de enfermagem': 'enfermeiroPlantonista',
+    'tec. em enf.': 'tecnicoEnfermagem',
+    'tec em enf': 'tecnicoEnfermagem',
+    'tecnico de enfermagem': 'tecnicoEnfermagem',
+    'nutricionista': 'nutricionista',
+    'fisioterapeuta': 'fisioterapeutaPlantonista',
+    'rt da fisioterapia': 'fisioterapeutaPlantonista'
   };
-  return mapa[String(cargo || '')] || null;
+  return mapa[norm] || null;
 };
 
-// Normaliza o cargo para minúsculas e verifica se é médico/dev (acesso irrestrito)
-// Todo perfil médico (RT, plantonista, nefrologista, diarista) tem acesso irrestrito.
-// Cobre também variações de grafia e perfis administrativos de TI.
+/// Acesso irrestrito: médicos, nefrologistas, dev, RT, plantonistas, intensivistas.
 const ehAcessoIrrestrito = (cargoLower) =>
   /medic|médic|nefrolog|desenvolvedor|developer|\bdev\b|rt\b|plantonista|intensivista/.test(cargoLower);
 
-// Concatena cargoLocal + perfil para não perder a informação quando um dos dois falta.
+
+// Concatena cargoLocal + perfil (um dos dois sempre vem preenchido).
 const resolverCargo = (userProfile) =>
   `${userProfile?.cargoLocal || ''} ${userProfile?.perfil || ''}`.toLowerCase().trim();
 
 /**
- * Pode CONFIRMAR ou REJEITAR uma meta "aguardando".
- * Regra: médico/dev irrestrito; manuais só o criador;
- * automáticas só a categoria de origem.
+ * Determina a categoria REAL de quem está logado.
+ * Usa `perfil` como fonte primária (sempre presente) e `cargoLocal` quando existir.
+ * `categoriaAtiva` (aba visível) é apenas último recurso — nunca a identidade.
  */
-export const podeConfirmarMeta = (meta, userProfile) => {
+export const determinarCategoriaAutor = (userProfile, categoriaAtiva) => {
+  // 1) Tenta o mapeamento exato no perfil
+  const porPerfil = cargoParaCategoria(userProfile?.perfil);
+  if (porPerfil) return porPerfil;
+
+  // 2) Tenta o mapeamento exato no cargoLocal
+  const porCargo = cargoParaCategoria(userProfile?.cargoLocal);
+  if (porCargo) return porCargo;
+
+  // 3) Fallback por padrão textual (tolerância a variações de grafia)
+  const texto = `${userProfile?.perfil || ''} ${userProfile?.cargoLocal || ''}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (!texto) {
+    console.warn('[META-AUTORIA] Sem perfil nem cargo no userProfile', userProfile);
+    return categoriaAtiva || 'medicoRotina';
+  }
+
+  if (/tec/.test(texto) && /enf/.test(texto)) return 'tecnicoEnfermagem';
+  if (/gerente|coordena/.test(texto) && /enf/.test(texto)) return 'enfermeiroPlantonista';
+  if (/enfermeir|enfermagem/.test(texto)) return 'enfermeiroPlantonista';
+  if (/fisiot/.test(texto)) return 'fisioterapeutaPlantonista';   // ← sobe para cá
+  if (/nutric/.test(texto)) return 'nutricionista';
+  if (/psic/.test(texto)) return 'psicologo';
+  if (/fono/.test(texto)) return 'fonoaudiologo';
+  if (/nefrolog/.test(texto)) return 'medicoRotina';              // nefrologista é médico
+  if (/rt\b|rotina/.test(texto)) {                                 // ← depois
+    // 'RT da Fisioterapia' já caiu em /fisiot/ acima; aqui é RT Médico
+    return 'medicoRotina';
+  }
+  if (/plantonista|plantao/.test(texto)) return 'medicoPlantonista';
+  if (/medic|intensivista|diarista/.test(texto)) return 'medicoRotina';
+  if (/desenvolvedor|developer|\bdev\b/.test(texto)) return 'medicoRotina';
+
+  console.warn('[META-AUTORIA] Perfil não reconhecido, usando aba ativa', {
+    perfil: userProfile?.perfil,
+    cargoLocal: userProfile?.cargoLocal,
+    categoriaAtiva
+  });
+  return categoriaAtiva || 'medicoRotina';
+};
+
+/**
+ * Regra única de permissão, compartilhada por podeConfirmarMeta e podeManipularMeta.
+ */
+const avaliarPermissaoMeta = (meta, userProfile) => {
   if (!meta) return false;
   const origem = meta.origem || '';
   const cargo = resolverCargo(userProfile);
 
+  // Acesso irrestrito (médicos, nefrologistas, dev)
   if (ehAcessoIrrestrito(cargo)) return true;
 
   if (origem === 'manual') {
-    const categoriaUsuario = cargoParaCategoria(userProfile?.cargoLocal);
-    if (!categoriaUsuario) return false;
+    // 🛡️ FONTE CORRETA: perfil → cargoLocal → fallback textual.
+    // Antes usava só `cargoLocal` (undefined no seu perfil) e bloqueava tudo.
+    const categoriaUsuario = determinarCategoriaAutor(userProfile, null);
     const criador = meta.adicionadoPor || meta.criadoPor || '';
-    // Autoridade de enfermagem: o enfermeiro também gerencia as manuais do técnico
-    const lideraEnfermagem = categoriaUsuario === 'enfermeiroPlantonista';
-    const criouTecnico = criador === 'tecnicoEnfermagem';
-    return criador === categoriaUsuario || (lideraEnfermagem && criouTecnico);
+
+    if (criador === categoriaUsuario) return true;
+
+    // Autoridade de enfermagem: enfermeiro gerencia manuais do técnico
+    if (categoriaUsuario === 'enfermeiroPlantonista' && criador === 'tecnicoEnfermagem') {
+      return true;
+    }
+
+    return false;
   }
 
+  // Metas automáticas: só a categoria de origem gerencia
   if (/\b(enfermeir|enfermagem)/.test(cargo)) return ORIGENS_ENFERMAGEM.some(p => origem.startsWith(p));
   if (/\bnutric/.test(cargo))                 return ORIGENS_NUTRI.some(p => origem.startsWith(p));
   if (/\bfisiot/.test(cargo))                 return ORIGENS_FISIO.some(p => origem.startsWith(p));
@@ -169,32 +233,12 @@ export const podeConfirmarMeta = (meta, userProfile) => {
   return false;
 };
 
-/**
- * Pode MARCAR REALIZADO ou CANCELAR uma meta "pendente".
- * Mesma regra de escopo, mas aplicada ao estado pendente.
- */
+export const podeConfirmarMeta = (meta, userProfile) => {
+  return avaliarPermissaoMeta(meta, userProfile);
+};
+
 export const podeManipularMeta = (meta, userProfile) => {
-  if (!meta) return false;
-  const origem = meta.origem || '';
-  const cargo = resolverCargo(userProfile);
-
-  if (ehAcessoIrrestrito(cargo)) return true;
-
-  if (origem === 'manual') {
-    const categoriaUsuario = cargoParaCategoria(userProfile?.cargoLocal);
-    if (!categoriaUsuario) return false;
-    const criador = meta.adicionadoPor || meta.criadoPor || '';
-    // Autoridade de enfermagem: o enfermeiro também gerencia as manuais do técnico
-    const lideraEnfermagem = categoriaUsuario === 'enfermeiroPlantonista';
-    const criouTecnico = criador === 'tecnicoEnfermagem';
-    return criador === categoriaUsuario || (lideraEnfermagem && criouTecnico);
-  }
-
-  if (/\b(enfermeir|enfermagem)/.test(cargo)) return ORIGENS_ENFERMAGEM.some(p => origem.startsWith(p));
-  if (/\bnutric/.test(cargo))                 return ORIGENS_NUTRI.some(p => origem.startsWith(p));
-  if (/\bfisiot/.test(cargo))                 return ORIGENS_FISIO.some(p => origem.startsWith(p));
-
-  return false;
+  return avaliarPermissaoMeta(meta, userProfile);
 };
 
 /**

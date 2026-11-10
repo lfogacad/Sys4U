@@ -9,7 +9,8 @@ import {
   cargoParaCategoria,
   podeConfirmarMeta as podeConfirmarMetaUtil,
   podeManipularMeta as podeManipularMetaUtil,
-  nomeLegivelMeta
+  nomeLegivelMeta,
+  determinarCategoriaAutor
 } from '../../utils/metasAcoes';
 
 /* ============================================================
@@ -620,20 +621,35 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   });
 
   // ---------- PERSISTÊNCIA ----------
-  // Guarda: não salva na montagem nem quando o objeto é idêntico ao último salvo.
+  // Travas de mount/assinatura para não salvar na abertura da aba
   const ultimoSalvoRef = useRef(null);
   const montadoRef = useRef(false);
+  // Congela id/leito/nome no mount: se a prop `currentPatient` mudar
+  // de leito durante a sessão, o save continua apontando para o paciente correto.
+  const pacienteBaseRef = useRef(null);
 
   const salvarVisita = (novaVisita) => {
     if (!save || !currentPatient) return;
     // Bloqueia o primeiro save (mount) — só salva após mudança real do usuário
     if (!montadoRef.current) return;
+
     const assinatura = JSON.stringify(novaVisita);
     if (ultimoSalvoRef.current === assinatura) return;
     ultimoSalvoRef.current = assinatura;
 
+    if (pacienteBaseRef.current === null && currentPatient?.id) {
+      pacienteBaseRef.current = {
+        id: currentPatient.id,
+        leito: currentPatient.leito,
+        nome: currentPatient.nome
+      };
+    }
+
+    const base = pacienteBaseRef.current || {};
     const pacienteAtualizado = {
       ...currentPatient,
+      id: base.id ?? currentPatient.id,
+      leito: base.leito ?? currentPatient.leito,
       visita: { ...(currentPatient.visita || {}), [dataISO]: novaVisita }
     };
     save(pacienteAtualizado, `Visita Multi ${dataBR}`);
@@ -976,7 +992,7 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
       id: `meta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       descricao: tipo && tipo !== 'Outro' ? `${tipo} — ${descricao}` : descricao,
       origem: 'manual', status: 'pendente', criadoEm: dataISO,
-      adicionadoPor: cargoParaCategoria(userProfile?.cargoLocal) || categoriaAtiva,
+      adicionadoPor: determinarCategoriaAutor(userProfile, categoriaAtiva),
       confirmadoPor: null, dataConfirmacao: null,
       dataRealizado: null, marcadoPor: null, marcadoEm: null,
       dataCancelamento: null, canceladoPor: null, justificativaCancelamento: null
