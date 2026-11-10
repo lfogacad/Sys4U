@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getTempoVMText, calculateCreatinineClearance } from '../../utils/core';
 import { CONSISTENCIA_ALIMENTAR, FORMULAS_ENTERAIS, NUTRI_ENTERAL_INFO, NUTRI_PARENTERAL_INFO } from '../../constants/clinicalLists';
+import {
+  ORIGENS_NUTRI,
+  ORIGENS_FISIO,
+  ORIGENS_ENFERMAGEM,
+  LABEL_CATEGORIA,
+  cargoParaCategoria,
+  podeConfirmarMeta as podeConfirmarMetaUtil,
+  podeManipularMeta as podeManipularMetaUtil,
+  nomeLegivelMeta
+} from '../../utils/metasAcoes';
 
 /* ============================================================
    VisitaMultiTab — Visita Multidisciplinar (Sys4U / UTI)
@@ -256,22 +266,7 @@ const VisitaMultiTab = ({ currentPatient, save, userProfile, calculateDiurese12h
   const fimDiaCalendario = new Date();
   fimDiaCalendario.setHours(0, 0, 0, 0);  
 
-  // ===== MAPEIA O CARGO DO PROFISSIONAL PARA A SUB-ABA INICIAL =====
-  const cargoParaCategoria = (cargo) => {
-    const mapa = {
-      'Médico': 'medicoPlantonista',
-      'RT Médico': 'medicoRotina',
-      'Desenvolvedor': 'medicoRotina',
-      'Enfermeiro': 'enfermeiroPlantonista',
-      'Gerente de Enfermagem': 'enfermeiroPlantonista',
-      'Téc. em Enf.': 'tecnicoEnfermagem',
-      'Nutricionista': 'nutricionista',
-      'Fisioterapeuta': 'fisioterapeutaPlantonista',
-      'RT da Fisioterapia': 'fisioterapeutaPlantonista'
-    };
-    return mapa[cargo] || 'medicoRotina'; // qualquer outro cai no Médico RT
-  };
-  const [categoriaAtiva, setCategoriaAtiva] = useState(() => cargoParaCategoria(userProfile?.cargoLocal));
+  const [categoriaAtiva, setCategoriaAtiva] = useState(() => cargoParaCategoria(userProfile?.cargoLocal) || 'medicoRotina');
   const [modalCancelamento, setModalCancelamento] = useState(null);
   const [novaMeta, setNovaMeta] = useState({ tipo: 'SVD', descricao: '' });
   const jaGeradasRef = useRef(false);
@@ -569,6 +564,10 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     ]
   };
 
+  // Wrappers locais — injetam o userProfile nas versões do util
+  const podeConfirmarMeta = (meta) => podeConfirmarMetaUtil(meta, userProfile);
+  const podeManipularMeta = (meta) => podeManipularMetaUtil(meta, userProfile);
+
   const sugerirMetaEnfermeiro = (texto, origem) => {
     // Higiene oral/íntima: meta criada JÁ como 'pendente' (confirmada), não 'aguardando'
     sugerirMeta(texto, origem, 'pendente');
@@ -621,8 +620,18 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   });
 
   // ---------- PERSISTÊNCIA ----------
+  // Guarda: não salva na montagem nem quando o objeto é idêntico ao último salvo.
+  const ultimoSalvoRef = useRef(null);
+  const montadoRef = useRef(false);
+
   const salvarVisita = (novaVisita) => {
     if (!save || !currentPatient) return;
+    // Bloqueia o primeiro save (mount) — só salva após mudança real do usuário
+    if (!montadoRef.current) return;
+    const assinatura = JSON.stringify(novaVisita);
+    if (ultimoSalvoRef.current === assinatura) return;
+    ultimoSalvoRef.current = assinatura;
+
     const pacienteAtualizado = {
       ...currentPatient,
       visita: { ...(currentPatient.visita || {}), [dataISO]: novaVisita }
@@ -934,9 +943,15 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     });
   };
 
-  // Persiste a visita sempre que ela mudar (efeito colateral fora do updater do setVisita)
+  // Marca como montado após o primeiro render (libera os saves reais)
+  useEffect(() => {
+    montadoRef.current = true;
+  }, []);
+
+  // Persiste apenas quando `visita` muda de fato, comparando assinatura
   useEffect(() => {
     salvarVisita(visita);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visita]);
 
   const sugerirMeta = (descricao, origem, statusInicial = 'aguardando') => {
@@ -960,7 +975,8 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     atualizarMetas(lista => [...lista, {
       id: `meta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       descricao: tipo && tipo !== 'Outro' ? `${tipo} — ${descricao}` : descricao,
-      origem: 'manual', status: 'pendente', criadoEm: dataISO, adicionadoPor: categoriaAtiva,
+      origem: 'manual', status: 'pendente', criadoEm: dataISO,
+      adicionadoPor: cargoParaCategoria(userProfile?.cargoLocal) || categoriaAtiva,
       confirmadoPor: null, dataConfirmacao: null,
       dataRealizado: null, marcadoPor: null, marcadoEm: null,
       dataCancelamento: null, canceladoPor: null, justificativaCancelamento: null
@@ -1045,79 +1061,15 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-const ORIGENS_NUTRI = [
-  'auto_mudar_via',
-  'auto_adicionar_via',
-  'auto_mudar_consistencia',
-  'auto_mudar_caracteristica',
-  'auto_ajustar_vazao',
-  'auto_aumentar_calorico',
-  'auto_aumentar_proteico'
-];
-
-// Origens de metas sugeridas pela Fisioterapia (para permissão de confirmação)
-const ORIGENS_FISIO = [
-  'auto_corrigir_assincronias',
-  'auto_tre'
-];
-
-// Origens das metas sugeridas pela Enfermagem (manipuláveis só por enfermeiro/médico/desenvolvedor)
-const ORIGENS_ENFERMAGEM = [
-  'auto_sacar_cvc',
-  'auto_sacar_shiley',
-  'auto_sacar_svd',
-  'auto_curativo',
-  'auto_higiene_oral',
-  'auto_higiene_intima'
-];
-
   // Permissão baseada SOMENTE no cargo real atribuído no moduloadmin.
   const cargo = (
     (userProfile?.cargoLocal || userProfile?.perfil || '') + ''
   ).toLowerCase();
 
-  const podeConfirmarMeta = (meta) => {
-    if (!meta) return false; // meta ainda não existe (sugestão não criada) → sem permissão
-    const origem = meta.origem || '';
-    // Metas manuais: qualquer profissional pode confirmar/rejeitar
-    if (origem === 'manual') return true;
-    // Enfermagem: Enfermeiro e Gerente de Enfermagem (NÃO Téc. em Enf.)
-    if (/\b(enfermeir|enfermagem)/.test(cargo)) {
-      return ORIGENS_ENFERMAGEM.some(prefixo => origem.startsWith(prefixo));
-    }
-    // Nutrição
-    if (/\bnutric/.test(cargo)) {
-      return ORIGENS_NUTRI.some(prefixo => origem.startsWith(prefixo));
-    }
-    // Fisioterapia (inclui RT da Fisioterapia — cai aqui ANTES do super-admin)
-    if (/\bfisiot/.test(cargo)) {
-      return ORIGENS_FISIO.some(prefixo => origem.startsWith(prefixo));
-    }
-    // Médico / RT Médico / Nefrologista / Desenvolvedor: todas as metas
-    if (cargo.includes('medic') || cargo.includes('nefrologist') || cargo.includes('desenvolvedor') || cargo.includes('dev')) return true;
-    return false;
-  };
-
-  const podeManipularMeta = (meta) => {
-    if (!meta) return false;
-    const origem = meta.origem || '';
-    if (origem === 'manual') return true;
-    if (/\b(enfermeir|enfermagem)/.test(cargo)) {
-      return ORIGENS_ENFERMAGEM.some(prefixo => origem.startsWith(prefixo));
-    }
-    if (/\bnutric/.test(cargo)) {
-      return ORIGENS_NUTRI.some(prefixo => origem.startsWith(prefixo));
-    }
-    if (/\bfisiot/.test(cargo)) {
-      return ORIGENS_FISIO.some(prefixo => origem.startsWith(prefixo));
-    }
-    if (cargo.includes('medic') || cargo.includes('nefrologist') || cargo.includes('desenvolvedor') || cargo.includes('dev')) return true;
-    return false;
-  };
-
   const podeManipularEnfermagem = () =>
-    /\b(enfermeir|enfermagem)/.test(cargo) || cargo.includes('medic') ||
-    cargo.includes('nefrologist') || cargo.includes('desenvolvedor') || cargo.includes('dev');
+    /\b(enfermeir|enfermagem)/.test(cargo) ||
+    cargo.includes('medic') || cargo.includes('nefrologist') ||
+    cargo.includes('desenvolvedor') || cargo.includes('dev');
 
   // ============================================================
   return (
@@ -2591,8 +2543,7 @@ const ORIGENS_ENFERMAGEM = [
               <div key={m.id} className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex-wrap">
                 <div className="flex items-center gap-2 flex-wrap">
                   <BadgeStatusMeta status={m.status} />
-                  <span className="text-sm font-semibold text-slate-700">{m.descricao}</span>
-                  {m.status === 'aguardando' && <span className="text-[10px] text-amber-600 italic">sugerida automaticamente</span>}
+                  <span className="text-sm font-semibold text-slate-700">{nomeLegivelMeta(m)}</span>
                   {m.status === 'cancelado' && (
                     <span className="text-xs text-slate-500 italic w-full">Justificativa: {m.justificativaCancelamento}</span>
                   )}

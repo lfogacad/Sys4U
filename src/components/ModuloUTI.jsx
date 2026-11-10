@@ -24,6 +24,10 @@ import {
   analyzeTextWithGemini, normalizeName, calculateSAPS3Score, getMissingSAPS3, formatExamName
 } from '../utils/core';
 import {
+  LABEL_CATEGORIA, ROTULO_ORIGEM, cargoParaCategoria, nomeLegivelMeta, podeConfirmarMeta as podeConfirmarMetaUtil,
+  podeManipularMeta as podeManipularMetaUtil
+} from '../utils/metasAcoes';
+import {
   EXAM_ROWS,
   BH_HOURS,
   BRADEN_OPTIONS,
@@ -871,6 +875,57 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
     return () => unsubscribe();
   }, [db]);
 
+  // ==============================================================
+  // LISTENER DEDICADO DE METAS — sincroniza o Painel de Metas em
+  // tempo real quando a Visita Multi (dentro da OverviewTab) grava
+  // pela mesma função `save`. O listener principal é bloqueado pelas
+  // travas localEditRef / hasPendingWrites; este não.
+  // ==============================================================
+  useEffect(() => {
+    if (!db) return;
+
+    const unsubscribe = onSnapshot(collection(db, "leitos_uti"), (snapshot) => {
+      setPatients(prev => {
+        let mudou = false;
+
+        const proximo = prev.map((paciente) => {
+          if (!paciente?.id) return paciente;
+
+          const bedId = `bed_${String(paciente.id).replace(/bed_/g, '')}`;
+          const docSnap = snapshot.docs.find(d => d.id === bedId);
+          if (!docSnap) return paciente;
+
+          const metasFirestore = docSnap.data()?.visita?.[dataISO]?.metas;
+          if (!Array.isArray(metasFirestore)) return paciente;
+
+          const metasLocais = paciente.visita?.[dataISO]?.metas;
+          // Sem diferença real → devolve o mesmo objeto (nenhum re-render)
+          if (JSON.stringify(metasLocais || []) === JSON.stringify(metasFirestore)) {
+            return paciente;
+          }
+
+          mudou = true;
+          return {
+            ...paciente,
+            visita: {
+              ...(paciente.visita || {}),
+              [dataISO]: {
+                ...(paciente.visita?.[dataISO] || {}),
+                metas: metasFirestore
+              }
+            }
+          };
+        });
+
+        return mudou ? proximo : prev;
+      });
+    }, (error) => {
+      console.error("[SYS4U] Erro no listener de metas:", error);
+    });
+
+    return () => unsubscribe();
+  }, [db, dataISO]);
+
   // BUSCA OS EVENTOS ADVERSOS NO FIREBASE
   useEffect(() => {
     if (viewMode === 'auditoria') { // Só busca se o usuário abrir a tela de Gestão de Risco
@@ -1255,12 +1310,27 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     return empty;
   };
 
-  // Atualiza as metas do dia de um paciente específico (por índice) e persiste via save
-  const atualizarMetasPaciente = (idx, updater) => {
+  const cargoParaCategoriaModulo = (cargo) => {
+    const mapa = {
+      'Médico': 'medicoPlantonista', 'RT Médico': 'medicoRotina', 'Desenvolvedor': 'medicoRotina',
+      'Enfermeiro': 'enfermeiroPlantonista', 'Gerente de Enfermagem': 'enfermeiroPlantonista',
+      'Téc. em Enf.': 'tecnicoEnfermagem',
+      'Nutricionista': 'nutricionista',
+      'Fisioterapeuta': 'fisioterapeutaPlantonista', 'RT da Fisioterapia': 'fisioterapeutaPlantonista'
+    };
+    return mapa[cargo] || null;
+  };
+
+  // Atualiza as metas do dia de um paciente específico (por ID) e persiste via save
+  const atualizarMetasPaciente = (pacienteId, updater) => {
     setPatients(prev => {
+      const idx = prev.findIndex(p => p && p.id === pacienteId);
+      if (idx === -1) {
+        console.warn("[SYS4U] Paciente não encontrado para atualizar metas:", pacienteId);
+        return prev;
+      }
       const copia = prev.map(p => ({ ...p }));
       const paciente = copia[idx];
-      if (!paciente) return prev;
       if (!paciente.visita) paciente.visita = {};
       if (!paciente.visita[dataISO]) paciente.visita[dataISO] = {};
       const metas = paciente.visita[dataISO].metas || [];
@@ -1270,9 +1340,9 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     });
   };
 
-  // CONFIRMAR meta de um paciente (mesma lógica da Visita Multi)
-  const confirmarMetaPaciente = (idx, id) => {
-    atualizarMetasPaciente(idx, metas => metas.map(m =>
+  // CONFIRMAR meta de um paciente
+  const confirmarMetaPaciente = (pacienteId, id) => {
+    atualizarMetasPaciente(pacienteId, metas => metas.map(m =>
       m.id === id ? {
         ...m,
         status: 'pendente',
@@ -1282,9 +1352,9 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     ));
   };
 
-  // CANCELAR meta de um paciente (mesma lógica da Visita Multi)
-  const cancelarMetaPaciente = (idx, id, justificativa) => {
-    atualizarMetasPaciente(idx, metas => metas.map(m =>
+  // CANCELAR meta de um paciente
+  const cancelarMetaPaciente = (pacienteId, id, justificativa) => {
+    atualizarMetasPaciente(pacienteId, metas => metas.map(m =>
       m.id === id ? {
         ...m,
         status: 'cancelado',
@@ -1295,9 +1365,9 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     ));
   };
 
-  // MARCAR REALIZADO de um paciente (mesma lógica da Visita Multi)
-  const marcarRealizadoPaciente = (idx, id) => {
-    atualizarMetasPaciente(idx, metas => metas.map(m =>
+  // MARCAR REALIZADO de um paciente
+  const marcarRealizadoPaciente = (pacienteId, id) => {
+    atualizarMetasPaciente(pacienteId, metas => metas.map(m =>
       m.id === id ? {
         ...m,
         status: 'realizado',
@@ -1308,23 +1378,26 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
     ));
   };
 
-  const podeConfirmarMeta = (meta) => {
-    if (!meta) return false;
-    const origem = meta.origem || '';
-    if (origem === 'manual') return true;
-    const perfil = (userProfile?.perfil || '').toLowerCase();
-    if (/\b(enfermeir|enfermagem)/.test(perfil)) {
-      return ORIGENS_ENFERMAGEM.some(prefixo => origem.startsWith(prefixo));
-    }
-    if (/\bnutric/.test(perfil)) {
-      return ORIGENS_NUTRI.some(prefixo => origem.startsWith(prefixo));
-    }
-    if (/\bfisiot/.test(perfil)) {
-      return ORIGENS_FISIO.some(prefixo => origem.startsWith(prefixo));
-    }
-    if (/\bmedic/.test(perfil) || /\bnefrologist/.test(perfil) || /\bdesenvolvedor/.test(perfil) || /\bdev\b/.test(perfil)) return true;
-    return false;
+  // REJEITAR meta de um paciente (para o botão de rejeitar no modal)
+  const rejeitarMetaPaciente = (pacienteId, id, justificativa) => {
+    atualizarMetasPaciente(pacienteId, metas => metas.map(m => {
+      if (m.id !== id) return m;
+      const ehAutomatica = (m.origem || '').startsWith('auto_');
+      return {
+        ...m,
+        status: ehAutomatica ? 'rejeitada' : 'cancelado',
+        dataCancelamento: dataISO,
+        canceladoPor: userProfile?.nome || 'Equipe',
+        justificativaCancelamento: justificativa
+          ? `Rejeitada: ${justificativa}`
+          : (ehAutomatica ? 'Rejeitada (meta automática)' : 'Rejeitada pela equipe médica')
+      };
+    }));
   };
+
+  // Permissões — wrappers sobre o util compartilhado
+  const podeConfirmarMeta = (meta) => podeConfirmarMetaUtil(meta, userProfile);
+  const podeManipularMeta = (meta) => podeManipularMetaUtil(meta, userProfile);
 
   const updateNested = (categoria, campo, valor) => {
     // MARCA EDIÇÃO LOCAL: impede o listener unificado de sobrescrever a digitação
@@ -7114,16 +7187,15 @@ const userRole = userProfile?.role || userProfile?.perfil;
               {pacientesInternados.length === 0 ? (
                 <p className="text-sm text-slate-400 italic">Nenhum paciente internado.</p>
               ) : (
-                pacientesInternados.map((p, idx) => {
+                pacientesInternados.map((p) => {
+                  const pacienteId = p.id;
                   const metasHoje = (p.visita?.[dataISO]?.metas || [])
-                    .filter(m => m.status === 'pendente' || m.status === 'realizado' || m.status === 'cancelado');
+                    .filter(m => m.status === 'aguardando' || m.status === 'pendente' || m.status === 'realizado' || m.status === 'cancelado' || m.status === 'rejeitada');
                   const pendentes = metasHoje.filter(m => m.status === 'pendente');
                   const realizadas = metasHoje.filter(m => m.status === 'realizado');
                   const canceladas = metasHoje.filter(m => m.status === 'cancelado' || m.status === 'rejeitada');
-
                   return (
-                    <div key={p.id || idx} className="border border-slate-200 rounded-xl overflow-hidden">
-                      {/* Cabeçalho do paciente */}
+                    <div key={pacienteId} className="border border-slate-200 rounded-xl overflow-hidden">
                       <div className="bg-slate-50 px-4 py-3 flex items-center justify-between border-b border-slate-200">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
@@ -7135,61 +7207,79 @@ const userRole = userProfile?.role || userProfile?.perfil;
                           {metasHoje.length} meta(s) · {pendentes.length} pendente(s)
                         </span>
                       </div>
-
-                      {/* Lista de metas confirmadas */}
                       <div className="divide-y divide-slate-100">
                         {metasHoje.length === 0 && (
                           <p className="px-4 py-3 text-xs text-slate-400 italic">
-                            Nenhuma meta confirmada para hoje.
+                            Nenhuma meta para hoje.
                           </p>
                         )}
-
                         {metasHoje.map(meta => {
-                          const cancelandoEsta = cancelandoMeta?.idx === idx && cancelandoMeta?.id === meta.id;
+                          const cancelandoEsta = cancelandoMeta?.pacienteId === pacienteId && cancelandoMeta?.id === meta.id;
                           return (
                             <div key={meta.id} className="px-4 py-2.5">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm text-slate-700 font-medium truncate">{meta.descricao}</p>
+                                  <p className="text-sm text-slate-700 font-medium truncate">{nomeLegivelMeta(meta)}</p>
                                   <div className="flex items-center gap-2 mt-0.5">
                                     <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                                       meta.status === 'realizado' ? 'bg-green-100 text-green-700'
-                                      : meta.status === 'cancelado' ? 'bg-red-100 text-red-600'
-                                      : 'bg-amber-100 text-amber-700'
+                                      : meta.status === 'cancelado' || meta.status === 'rejeitada' ? 'bg-red-100 text-red-600'
+                                      : meta.status === 'aguardando' ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-blue-100 text-blue-700'
                                     }`}>
-                                      {meta.status}
+                                      {meta.status === 'aguardando' ? 'aguardando' : meta.status}
                                     </span>
                                     <span className="text-[9px] text-slate-400 uppercase">
-                                      {meta.origem === 'manual' ? 'Manual' : meta.origem}
+                                      {meta.origem === 'manual'
+                                        ? `Manual · ${LABEL_CATEGORIA[meta.adicionadoPor] || meta.adicionadoPor || 'Equipe'}`
+                                        : 'Sugerida pelo sistema'}
                                     </span>
                                     {meta.confirmadoPor && (
                                       <span className="text-[9px] text-slate-400">· confirmada por {meta.confirmadoPor}</span>
                                     )}
                                   </div>
                                 </div>
-
-                                {/* AÇÕES: só MARCAR REALIZADO e CANCELAR */}
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  {meta.status === 'pendente' && podeConfirmarMeta(meta) && (
-                                    <button
-                                      onClick={() => marcarRealizadoPaciente(idx, meta.id)}
-                                      className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors"
-                                      title="Marcar como realizada"
-                                    >
-                                      Realizada
-                                    </button>
+                                  {/* AGUARDANDO → Confirmar / Rejeitar */}
+                                  {meta.status === 'aguardando' && podeConfirmarMeta(meta) && (
+                                    <>
+                                      <button
+                                        onClick={() => confirmarMetaPaciente(pacienteId, meta.id)}
+                                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors"
+                                        title="Confirmar meta"
+                                      >
+                                        Confirmar
+                                      </button>
+                                      <button
+                                        onClick={() => rejeitarMetaPaciente(pacienteId, meta.id, '')}
+                                        className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-colors"
+                                        title="Rejeitar meta"
+                                      >
+                                        Rejeitar
+                                      </button>
+                                    </>
                                   )}
-                                  {meta.status === 'pendente' && podeConfirmarMeta(meta) && (
-                                    <button
-                                      onClick={() => {
-                                        setCancelandoMeta({ idx, id: meta.id });
-                                        setJustificativaCancelamento("");
-                                      }}
-                                      className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-colors"
-                                      title="Cancelar com justificativa"
-                                    >
-                                      Cancelar
-                                    </button>
+                                  {/* PENDENTE → Realizada / Cancelar */}
+                                  {meta.status === 'pendente' && podeManipularMeta(meta) && (
+                                    <>
+                                      <button
+                                        onClick={() => marcarRealizadoPaciente(pacienteId, meta.id)}
+                                        className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors"
+                                        title="Marcar como realizada"
+                                      >
+                                        Realizada
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setCancelandoMeta({ pacienteId, id: meta.id });
+                                          setJustificativaCancelamento("");
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-colors"
+                                        title="Cancelar com justificativa"
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </>
                                   )}
                                   {meta.status === 'realizado' && (
                                     <span className="text-[10px] font-bold text-green-600">✓ Realizada</span>
@@ -7199,8 +7289,6 @@ const userRole = userProfile?.role || userProfile?.perfil;
                                   )}
                                 </div>
                               </div>
-
-                              {/* CAMPO DE JUSTIFICATIVA PARA CANCELAMENTO */}
                               {cancelandoEsta && (
                                 <div className="mt-2 border-l-2 border-red-200 pl-3 animate-fadeIn">
                                   <label className="block text-[10px] font-bold text-red-600 uppercase mb-1">
@@ -7220,7 +7308,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                                           alert("Informe a justificativa para cancelar a meta.");
                                           return;
                                         }
-                                        cancelarMetaPaciente(idx, meta.id, justificativaCancelamento.trim());
+                                        cancelarMetaPaciente(pacienteId, meta.id, justificativaCancelamento.trim());
                                         setCancelandoMeta(null);
                                         setJustificativaCancelamento("");
                                       }}
