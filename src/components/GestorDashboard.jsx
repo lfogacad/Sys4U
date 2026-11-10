@@ -14875,7 +14875,15 @@ const imprimirRelatorioGeladeira = () => {
                         <option value="">Selecione o profissional...</option>
                         
                         {listaProfissionais
-                          .filter(prof => prof.categoria === categoriaAtiva)
+                          .filter(prof => {
+                            // Na aba Téc. Hemodiálise não há profissionais próprios:
+                            // o quadro é coberto pelos Téc. Enfermagem.
+                            if (categoriaAtiva === "Téc. Hemodiálise") {
+                              return prof.categoria === "Téc. Enfermagem";
+                            }
+                            return prof.categoria === categoriaAtiva;
+                          })
+                          .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || "")))
                           .map((prof) => (
                             <option key={prof.id} value={prof.nome}>
                               {prof.nome}

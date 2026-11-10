@@ -6332,7 +6332,7 @@ const userRole = userProfile?.role || userProfile?.perfil;
                   <button
                     key={`side-${p.id || idx}`}
                     onClick={() => setActiveTab(idx)}
-                    className={`flex-shrink-0 w-9 h-9 rounded-lg font-bold transition-all border flex flex-col items-center justify-center relative text-xs ${
+                    className={`flex-shrink-0 w-11 h-11 rounded-xl font-bold transition-all border flex flex-col items-center justify-center relative text-sm ${
                       isActive
                         ? "bg-gradient-to-bl from-teal-400 to-blue-600 border-transparent text-white shadow-md"
                         : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm"
