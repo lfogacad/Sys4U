@@ -3050,7 +3050,12 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
           if (last > prev) hemodinamicaStatus = "Hemodinamicamente instável"; 
         }
       }
-      const dvaText = usaDVA ? `em uso de DVA (${currentPatient.cardio.drogasDVA?.join(", ")})` : "sem uso de DVA";
+      // DVA: Noradrenalina sempre por último (padrão de leitura da evolução)
+      const drogasDVAOrdenadasEvo = [...(currentPatient.cardio?.drogasDVA || [])].sort((a, b) => {
+        const ehNora = (d) => String(d || "").toLowerCase().includes("noradrenalina");
+        return (ehNora(a) ? 1 : 0) - (ehNora(b) ? 1 : 0);
+      });
+      const dvaText = usaDVA ? `em uso de DVA (${drogasDVAOrdenadasEvo.join(", ")})` : "sem uso de DVA";
 
       // 5. RENAL 
       const diureseNum = parseFloat(calculateDiurese12hMlKgH(currentPatient));
@@ -3309,9 +3314,17 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
             const sedacaoList = currentPatient.neuro?.sedacao && currentPatient.neuro?.drogasSedacao?.length > 0 
               ? currentPatient.neuro.drogasSedacao.join(", ") 
               : "Sem uso de sedativos em bomba";
-              
-            const dvaList = currentPatient.cardio?.dva && currentPatient.cardio?.drogasDVA?.length > 0 
-              ? currentPatient.cardio.drogasDVA.join(", ") 
+
+            // DVA: a Noradrenalina é sempre a ÚLTIMA da lista,
+            // pois logo após ela é concatenada a dose (mcg/kg/min).
+            const drogasDVAOrdenadas = [...(currentPatient.cardio?.drogasDVA || [])].sort((a, b) => {
+              const ehNora = (d) => String(d || "").toLowerCase().includes("noradrenalina");
+              const aNora = ehNora(a) ? 1 : 0;
+              const bNora = ehNora(b) ? 1 : 0;
+              return aNora - bNora;
+            });
+            const dvaList = currentPatient.cardio?.dva && drogasDVAOrdenadas.length > 0 
+              ? drogasDVAOrdenadas.join(", ") 
               : "Sem uso de drogas vasoativas";
             
             // Busca a dose mais recente de Noradrenalina no BH
