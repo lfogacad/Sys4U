@@ -1111,25 +1111,30 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
       // 🛡️ NUTRIÇÃO: uma vez admitida, o `admitido:true` nunca pode ser rebaixado
       // por um save disparado de outro domínio com estado defasado.
       if (payloadBH.nutri && typeof payloadBH.nutri === 'object') {
+        let nutriServidor = null;
         try {
           const snapNutri = await getDoc(doc(db, "leitos_uti", docId));
-          const nutriServidor = snapNutri.exists() ? snapNutri.data().nutri : null;
+          nutriServidor = snapNutri.exists() ? snapNutri.data().nutri : null;
+
           if (nutriServidor && nutriServidor.admitido === true && payloadBH.nutri.admitido !== true) {
             payloadBH.nutri = { ...payloadBH.nutri, admitido: true };
           }
-        } catch (e) { console.warn("[SYS4U] Não foi possível preservar admitido da nutrição:", e); }
-          // 🛡️ HISTÓRICO DE MÉTRICAS: preserva o do servidor se o local não trouxe
+
+          // 🛡️ HISTÓRICO DE MÉTRICAS: preserva o do servidor se o local não trouxe.
+          // O merge do Firestore é RASO em objetos aninhados — sem esta união, um
+          // save de outro domínio com `nutri` defasado apaga o histórico inteiro.
           if (nutriServidor && Array.isArray(nutriServidor.historico_metricas)) {
             if (!Array.isArray(payloadBH.nutri.historico_metricas)) {
               payloadBH.nutri.historico_metricas = nutriServidor.historico_metricas;
             } else {
               const mapa = new Map();
               [...nutriServidor.historico_metricas, ...payloadBH.nutri.historico_metricas]
-                .forEach(m => { if (m && m.id) mapa.set(m.id, m); });
+                .forEach((m) => { if (m && m.id) mapa.set(m.id, m); });
               payloadBH.nutri.historico_metricas = Array.from(mapa.values())
                 .sort((a, b) => String(a.data).localeCompare(String(b.data)));
             }
           }
+        } catch (e) { console.warn("[SYS4U] Não foi possível preservar nutrição:", e); }
       }
 
       if (payloadBH.admissaoNutricao) {
