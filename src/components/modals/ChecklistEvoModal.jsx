@@ -190,9 +190,16 @@ const ChecklistEvoModal = ({
         
         {/* CABEÇALHO */}
         <div className="p-4 bg-slate-800 text-white flex justify-between items-center shrink-0">
-          <h3 className="font-bold flex items-center gap-2">
-            <ShieldAlert size={18} className="text-amber-400" />
-            {fase === 1 ? "EVOLUÇÃO MÉDICA" : "Checklist Obrigatório: CCIH e Risco"}
+          <h3 className="font-bold flex items-center gap-2 flex-wrap min-w-0">
+            <ShieldAlert size={18} className="text-amber-400 shrink-0" />
+            <span className="shrink-0">
+              {fase === 1 ? "EVOLUÇÃO MÉDICA" : "Checklist Obrigatório: CCIH e Risco"}
+            </span>
+            {fase === 1 && currentPatient?.nome && (
+              <span className="text-amber-300 text-sm font-semibold truncate">
+                — {currentPatient.nome}
+              </span>
+            )}
           </h3>
           <button onClick={() => { flushRascunho(); setShowChecklistEvo(false); }} className="text-slate-400 hover:text-white transition-colors">
             <X size={20} />
