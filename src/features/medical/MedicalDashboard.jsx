@@ -5,6 +5,7 @@ import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, P
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
 import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, analyzeOliguriaForSOFA, 
          calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
+import ModalCulturaRapida from '../../componentes/ModalCulturaRapida';
 import ModalSugestaoATB from "../../components/modals/ModalSugestaoATB";
 import SofaDashboard from '../../features/medical/SofaDashboard';
 import { ModalPortal } from '../../components/ModuloUTI';
@@ -54,6 +55,9 @@ const MedicalDashboard = ({
     data: '',
     novoInfiltrado: null
   });
+
+  const [modalCulturaRapida, setModalCulturaRapida] = useState(false);
+
   // Estado local da História Clínica (digitação instantânea, sem depender do servidor)
   const [historiaLocal, setHistoriaLocal] = useState(currentPatient.historiaClinica || "");
   const historiaTimer = useRef(null);
@@ -155,6 +159,22 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
 
       {/* BOTÃO DE REABRIR ADMISSÃO + IMAGEM TÓRAX */}
       <div className="flex justify-end mb-6 print:hidden gap-2">
+        {/* NOVO: + CULTURA */}
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            setModalCulturaRapida(true);
+          }}
+          disabled={!isEditable}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition shadow-sm ${
+            !isEditable
+              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+              : "bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200"
+          }`}
+          title="Registrar coleta de cultura (CCIH)"
+        >
+          <Plus size={16} /> Cultura
+        </button>
         {/* NOVO: + IMAGEM TÓRAX */}
         <button
           onClick={(e) => {
@@ -805,6 +825,13 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
         onClose={() => setShowSugestaoModal(false)}
         currentPatient={currentPatient}
         onApply={handleApplySugestaoATB}
+      />
+
+      <ModalCulturaRapida
+        isOpen={modalCulturaRapida}
+        onClose={() => setModalCulturaRapida(false)}
+        currentPatient={currentPatient}
+        updateNested={updateNested}
       />
       
     </fieldset>

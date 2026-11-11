@@ -19,7 +19,16 @@ const ModuloCulturas = ({ currentPatient, updateNested, apiKey }) => {
 
   // 1. EXTRAÇÃO SEGURA
   const culturas = currentPatient?.culturas?.lista || [];
-  const culturasValidas = culturas.filter(c => c && c.tipo && c.tipo.trim() !== "");
+  // Ordena por data de coleta (mais recente primeiro).
+  // A string ISO AAAA-MM-DD compara lexicograficamente igual a cronologicamente,
+  // então não é necessário fazer parse de data.
+  const culturasValidas = culturas
+    .filter(c => c && c.tipo && c.tipo.trim() !== "")
+    .sort((a, b) => {
+      const porData = String(b.dataColeta || '').localeCompare(String(a.dataColeta || ''));
+      if (porData !== 0) return porData;
+      return String(a.tipo || '').localeCompare(String(b.tipo || ''));
+    });
 
   const dataHojeISO = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Manaus' }).format(new Date());
 

@@ -27,6 +27,7 @@ import {
   LABEL_CATEGORIA, ROTULO_ORIGEM, cargoParaCategoria, nomeLegivelMeta, podeConfirmarMeta as podeConfirmarMetaUtil,
   podeManipularMeta as podeManipularMetaUtil
 } from '../utils/metasAcoes';
+import { inserirCulturasDoDia } from '../utils/culturasAcoes';
 import {
   EXAM_ROWS,
   BH_HOURS,
@@ -3527,41 +3528,18 @@ ${conduta}
             // =========================================================================
             try {
               if (dadosDoTimeout?.culturaColetadaHoje && dadosDoTimeout?.culturasTipos?.length > 0) {
-                
-                let historicoCulturas = [];
-                // 1. Lê da gaveta correta ("lista")
-                if (currentPatient.culturas && Array.isArray(currentPatient.culturas.lista)) {
-                  historicoCulturas = [...currentPatient.culturas.lista];
-                }
-
-                const hojeISO = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Manaus' }).format(new Date());
-
-                // 2. Adiciona as novas
-                dadosDoTimeout.culturasTipos.forEach(tipo => {
-                  let nomeMaterial = tipo;
-                  if (tipo === "Outro" && dadosDoTimeout.culturaOutroDetalhe) {
-                    nomeMaterial = `Outro (${dadosDoTimeout.culturaOutroDetalhe})`;
-                  }
-
-                  const jaExisteNoMesmoDia = historicoCulturas.some(
-                    c => c.tipo === nomeMaterial && c.dataColeta === hojeISO
-                  );
-
-                  if (!jaExisteNoMesmoDia) {
-                    historicoCulturas.push({
-                      id: `cult_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                      tipo: nomeMaterial,
-                      dataColeta: hojeISO,
-                      status: "Pendente",
-                      germe: "",
-                      analiseIA: "",
-                      dataResultado: ""
-                    });
-                  }
+                const { listaFinal, adicionadas, ignoradas } = inserirCulturasDoDia({
+                  listaAtual: currentPatient?.culturas?.lista || [],
+                  tipos: dadosDoTimeout.culturasTipos,
+                  outroDetalhe: dadosDoTimeout.culturaOutroDetalhe,
+                  origem: 'evolucao'
                 });
-
-                // 3. Salva na gaveta nomeada "lista" (O Firebase vai amar isso)
-                updateNested("culturas", "lista", historicoCulturas);
+                if (adicionadas.length > 0) {
+                  updateNested("culturas", "lista", listaFinal);
+                }
+                if (ignoradas.length > 0) {
+                  console.info('[CCIH] Culturas já registradas hoje (ignoradas):', ignoradas);
+                }
               }
             } catch (ccihError) {
               console.error("Erro ao registrar cultura:", ccihError);
