@@ -5,7 +5,7 @@ import { AlertCircle, Edit3, X, Sparkles, PlusCircle, ClipboardCheck, Loader2, P
 import { BH_HOURS, OPCOES_DVA, GLASGOW_AO, GLASGOW_RV, GLASGOW_RM, RASS_OPTS, OPCOES_SEDATIVOS } from '../../constants/clinicalLists';
 import { getAutoSOFA2, getSOFAMortality, calculateNoraDose, getBestGlasgowForSOFA, analyzeOliguriaForSOFA, 
          calculateGlasgowTotal, formatDateDDMM, getDaysD0 } from '../../utils/core';
-import ModalCulturaRapida from '../../componentes/ModalCulturaRapida';
+import ModalCulturaRapida from '../../components/ModalCulturaRapida';
 import ModalSugestaoATB from "../../components/modals/ModalSugestaoATB";
 import SofaDashboard from '../../features/medical/SofaDashboard';
 import { ModalPortal } from '../../components/ModuloUTI';

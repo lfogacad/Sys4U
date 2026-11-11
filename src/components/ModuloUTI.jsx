@@ -64,12 +64,12 @@ import PhysioEvoModal from './modals/PhysioEvoModal';
 import ChecklistEvoModal from './modals/ChecklistEvoModal';
 import NoraModal from './modals/NoraModal';
 import NutriAdmissionModal from './modals/NutriAdmissionModal';
-
 // --- PORTAL PARA MODAIS ---
-export const ModalPortal = ({ children }) => {
-  if (typeof document === 'undefined') return null;
-  return createPortal(children, document.body);
-};
+// Extraído para ./ModalPortal.jsx para evitar import cíclico
+// (ModuloUTI → MedicalDashboard → ModalCulturaRapida → ModuloUTI).
+// Reexportado aqui para manter compatibilidade com os imports existentes.
+import ModalPortalComponent from './ModalPortal';
+export const ModalPortal = ModalPortalComponent;
 
 // ÍCONE PERSONALIZADO DE ENFERMAGEM
 function NurseCap(props) {

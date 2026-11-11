@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Microscope, X, CheckCircle, AlertTriangle } from 'lucide-react';
-import ModalPortal from './ModalPortal';
+import { ModalPortal } from './ModuloUTI';
 import {
   TIPOS_CULTURA_PADRAO,
   dataHojeAmazonas,
