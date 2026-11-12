@@ -5467,14 +5467,33 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
     const tinhaShiley = !!(enf.shileyData && !enf.shileyRetiradaData);
     const ignorarEstatistica = pacienteAtual.ignorarEstatistica === true;
 
-    // 1. Função Auxiliar de Cálculo (Garante que não retorne NaN)
+    // Normaliza qualquer data (ISO pura, timestamp ISO ou Date) para
+    // "AAAA-MM-DD" no fuso LOCAL, sem hora. Evita o deslocamento de UTC.
+    const paraDataLocalISO = (val) => {
+      if (!val) return null;
+      let d;
+      if (val instanceof Date) d = val;
+      else if (/^\d{4}-\d{2}-\d{2}$/.test(String(val))) {
+        const [y, m, dd] = String(val).split('-').map(Number);
+        d = new Date(y, m - 1, dd);          // meia-noite LOCAL
+      } else {
+        d = new Date(val);                    // timestamp ou DD/MM/AAAA
+      }
+      if (isNaN(d.getTime())) return null;
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    // Diferença em DIAS DE CALENDÁRIO (local), não em horas.
     const calcularDias = (ini, fim) => {
-      if (!ini) return 0;
-      const dataIni = new Date(ini);
-      const dataFim = fim ? new Date(fim) : new Date();
-      const diffTime = dataFim - dataIni;
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays < 0 ? 0 : diffDays + 1; // Padrão D1, D2...
+      const a = paraDataLocalISO(ini);
+      const b = paraDataLocalISO(fim) || paraDataLocalISO(new Date());
+      if (!a || !b) return 0;
+      const [ay, am, ad] = a.split('-').map(Number);
+      const [by, bm, bd] = b.split('-').map(Number);
+      const dIni = new Date(ay, am - 1, ad);
+      const dFim = new Date(by, bm - 1, bd);
+      const diff = Math.round((dFim - dIni) / 86400000);
+      return diff < 0 ? 0 : diff + 1;   // mantém o padrão D1, D2...
     };
 
     // 2. Auditoria de Dispositivos
@@ -5496,7 +5515,8 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         setIsDischarging(false);   // libera o botão se o usuário desistir
         return;
       }
-      const hojeStr = new Date().toISOString().split('T')[0];
+      const _dHoje = new Date();
+      const hojeStr = `${_dHoje.getFullYear()}-${String(_dHoje.getMonth() + 1).padStart(2, '0')}-${String(_dHoje.getDate()).padStart(2, '0')}`;
       if (enf.svd && !enf.svdRetiradaData) enf.svdRetiradaData = hojeStr;
       if (enf.cvcLocal && !enf.cvcRetiradaData) enf.cvcRetiradaData = hojeStr;
       if (enf.shileyLocal && !enf.shileyRetiradaData) enf.shileyRetiradaData = hojeStr;
@@ -5506,18 +5526,28 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
 
     try {
       const historicoRef = collection(db, "internacoes_historico");
-      const hojeISO = new Date().toISOString();
 
-      // --- 🧠 MOTOR DE INDICADORES OTIMIZADO (COM BUSCA BLINDADA DE SAPS) ---
-      
+      // ============================================================
+      // 📅 DATAS — todas no fuso LOCAL, sem deslocamento de UTC.
+      // toISOString() adianta o dia entre 20h e 23h59 em Manaus (UTC-4).
+      // ============================================================
+      const _agora = new Date();
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const hojeISO = `${_agora.getFullYear()}-${pad2(_agora.getMonth() + 1)}-${pad2(_agora.getDate())}`; // AAAA-MM-DD local
+      const agoraTimestamp = _agora.toISOString(); // ISO completo, só para auditoria
+
+      // ============================================================
+      // 🧠 MOTOR DE INDICADORES OTIMIZADO (COM BUSCA BLINDADA DE SAPS)
+      // ============================================================
+
       // Tenta achar a mortalidade em qualquer lugar do prontuário antes de fechar o pacote
-      const sapsEncontrado = pacienteAtual.saps3?.lockedProb || 
-                             pacienteAtual.backupProntuario?.saps3?.lockedProb || 
-                             pacienteAtual.saps3?.probabilidade || 
+      const sapsEncontrado = pacienteAtual.saps3?.lockedProb ||
+                             pacienteAtual.backupProntuario?.saps3?.lockedProb ||
+                             pacienteAtual.saps3?.probabilidade ||
                              pacienteAtual.saps3?.probabilidadeMortalidade || 0;
-                             
-      const scoreEncontrado = pacienteAtual.saps3?.lockedScore || 
-                              pacienteAtual.backupProntuario?.saps3?.lockedScore || 
+
+      const scoreEncontrado = pacienteAtual.saps3?.lockedScore ||
+                              pacienteAtual.backupProntuario?.saps3?.lockedScore ||
                               pacienteAtual.saps3?.score || 0;
 
       const indicadores_finais = {
@@ -5526,8 +5556,8 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         totalDiasSVD: enf.svd ? calcularDias(enf.svdData, enf.svdRetiradaData) : 0,
         totalDiasCVC: enf.cvcLocal ? calcularDias(enf.cvcData, enf.cvcRetiradaData) : 0,
         totalDiasShiley: enf.shileyLocal ? calcularDias(enf.shileyData, enf.shileyRetiradaData) : 0,
-        saps3Score: scoreEncontrado, // <-- Agora envia o valor real salvo
-        mortalidadePrevista: sapsEncontrado, // <-- Agora envia a probabilidade real salva
+        saps3Score: scoreEncontrado, // <-- Envia o valor real salvo
+        mortalidadePrevista: sapsEncontrado, // <-- Envia a probabilidade real salva
         pacienteIdentificado: pacienteAtual.identificacaoCorreta || "auditado_positivo",
         foiObito: dischargeDestination === 'Óbito' ? 1 : 0,
         resultado: dischargeDestination === 'Óbito' ? 'Óbito' : 'Vivo'
@@ -5541,7 +5571,8 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
         nomePaciente: pacienteAtual.nome,
         cpf: pacienteAtual.cpf || "000.000.000-00",
         dataEntrada: pacienteAtual.dataInternacao,
-        dataSaida: hojeISO,
+        dataSaida: hojeISO,              // data PURA (AAAA-MM-DD), fuso local
+        dataSaidaTimestamp: agoraTimestamp, // hora real da alta em campo separado
         desfecho: dischargeDestination,
         leitoFinal: pacienteAtual.id,
         indicadores: indicadores_finais,
@@ -5558,42 +5589,42 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
           dataSaida: hojeISO
         }, { merge: true });
       }
-            
+
       // ==========================================
       // 4. LIMPEZA DO LEITO ATIVO (BLINDADA)
       // ==========================================
-      
+
       // Puxa o template vazio
       const empty = defaultPatient(activeTab);
-      
+
       // 🔥 TRAVA DE SEGURANÇA 1: Garante que a cama vazia não perca sua "placa de identificação"
       empty.id = pacienteAtual.id;
-      
+
       // 🔥 TRAVA DE SEGURANÇA 2: Atualiza a tela sem quebrar a ordem ou apagar os leitos vizinhos
-      setPatients(listaAnterior => 
-        listaAnterior.map(paciente => 
+      setPatients(listaAnterior =>
+        listaAnterior.map(paciente =>
           paciente.id === pacienteAtual.id ? empty : paciente
         )
       );
-      
+
       // 🔥 TRAVA DE SEGURANÇA 3: Descobre o nome certo do documento para não duplicar o "bed_"
       const docId = pacienteAtual.id.includes('bed_') ? pacienteAtual.id : `bed_${pacienteAtual.id}`;
-      
+
       // Sobrescreve o documento correto no Firebase com os dados vazios
       await setDoc(doc(db, "leitos_uti", docId), empty);
 
       // =========================================================================
       // 💡 AUDITORIA: Registro Seguro da Saída / Desfecho
       // =========================================================================
-      const auditoriaFn = typeof registrarLogAuditoria === "function" 
-        ? registrarLogAuditoria 
+      const auditoriaFn = typeof registrarLogAuditoria === "function"
+        ? registrarLogAuditoria
         : (typeof registarLogAuditoria === "function" ? registarLogAuditoria : null);
-      
+
       if (auditoriaFn) {
         auditoriaFn(
-          "SAÍDA DE PACIENTE / DESFECHO", 
-          `Desfecho clínico registrado: ${dischargeDestination}`, 
-          `Leito ${activeTab + 1}`, 
+          "SAÍDA DE PACIENTE / DESFECHO",
+          `Desfecho clínico registrado: ${dischargeDestination}`,
+          `Leito ${activeTab + 1}`,
           pacienteAtual.nome
         );
       }
@@ -5603,25 +5634,27 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       setDischargeDestination("");
       setNotificacaoAlta(`✅ Saída concluída! O leito de ${pacienteAtual.nome} agora está livre e limpo.`);
 
-      // 🔽 ADICIONAR: Correção retroativa do censo diário
-      const hojeDataStr = new Date().toISOString().split('T')[0];
-      if (dischargeDate < hojeDataStr && !ignorarEstatistica) {
+      // 🔽 Correção retroativa do censo diário
+      // Comparação em datas PURAS (AAAA-MM-DD) — string ISO compara cronologicamente.
+      const dischargeDateISO = paraDataLocalISO(dischargeDate);
+      if (dischargeDateISO && dischargeDateISO < hojeISO && !ignorarEstatistica) {
         try {
           const batch = writeBatch(db);
-          const dataInicio = new Date(`${dischargeDate}T12:00:00`);
-          const dataFim = new Date(`${hojeDataStr}T12:00:00`);
+          const dataInicio = new Date(`${dischargeDateISO}T12:00:00`);
+          const dataFim = new Date(`${hojeISO}T12:00:00`);
           dataFim.setDate(dataFim.getDate() - 1); // até ontem
 
           const datasCorrigir = [];
           let dataCorrente = new Date(dataInicio);
           while (dataCorrente <= dataFim) {
-            datasCorrigir.push(dataCorrente.toISOString().split('T')[0]);
+            const _c = dataCorrente;
+            datasCorrigir.push(`${_c.getFullYear()}-${pad2(_c.getMonth() + 1)}-${pad2(_c.getDate())}`);
             dataCorrente.setDate(dataCorrente.getDate() + 1);
           }
 
           if (datasCorrigir.length > 0) {
             console.log(`Corrigindo censo de ${datasCorrigir[0]} até ${datasCorrigir[datasCorrigir.length - 1]}...`);
-            
+
             const censoSnap = await getDocs(query(
               collection(db, "censo_diario"),
               where("data", ">=", datasCorrigir[0]),

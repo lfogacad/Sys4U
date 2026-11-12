@@ -33,7 +33,9 @@ const MORSE_LABELS = {
 };
 
 const ModalChecklistEnfermagem = ({ isOpen, onClose, currentPatient, updateNested, handleBlurSave, onGenerateAI }) => {
-  const today = new Date().toISOString().split('T')[0];
+  // Data local (America/Manaus) — evita o deslocamento de toISOString() (UTC)
+  const _hoje = new Date();
+  const today = `${_hoje.getFullYear()}-${String(_hoje.getMonth() + 1).padStart(2, '0')}-${String(_hoje.getDate()).padStart(2, '0')}`;
 
   // Estados Braden e Morse mapeados com as chaves exatas do Firebase
   const [bradenData, setBradenData] = useState({ percepcaoSensorial: '', umidade: '', atividade: '', mobilidade: '', nutricao: '', friccaoCisalhamento: '' });

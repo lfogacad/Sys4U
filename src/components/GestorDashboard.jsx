@@ -3309,7 +3309,8 @@ useEffect(() => {
 
         // --- PARTE 2: EVENTOS ADVERSOS (BASEADO NA SUA CONST) ---
         // Pegamos apenas o YYYY-MM-DD de hoje
-        const hojeISO = new Date().toISOString().split('T')[0]; 
+        const _hoje = new Date();
+        const hojeISO = `${_hoje.getFullYear()}-${String(_hoje.getMonth() + 1).padStart(2, '0')}-${String(_hoje.getDate()).padStart(2, '0')}`;
         
         const eventosSnap = await getDocs(collection(db, "eventos_adversos"));
         let countEventosHoje = 0;

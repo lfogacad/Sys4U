@@ -119,7 +119,8 @@ const diureseStats = typeof analyzeOliguriaForSOFA === 'function' ? analyzeOligu
 
     const handleApplySugestaoATB = (drugs) => {
     const currentAtbs = currentPatient.antibiotics || [];
-    const today = new Date().toISOString().split('T')[0];
+    const _hoje = new Date();
+    const today = `${_hoje.getFullYear()}-${String(_hoje.getMonth() + 1).padStart(2, '0')}-${String(_hoje.getDate()).padStart(2, '0')}`;
     
     // Mapeia os remédios sugeridos com a dose no nome
     const newAtbs = drugs.map(d => ({
