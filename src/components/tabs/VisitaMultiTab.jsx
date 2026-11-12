@@ -921,18 +921,41 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   }, [visita.fisioterapeutaPlantonista?.sincronismo]);
 
   // ---------- FISIO: GASOMETRIA DO DIA ANTERIOR (todas por horário) ----------
-  const ontemGasoKey = `${String(ontem.getDate()).padStart(2, '0')}/${String(ontem.getMonth() + 1).padStart(2, '0')}/${ontem.getFullYear()}`;
+  // As chaves do gasometriaHistory são "DD/MM - HH:MM" (sem ano).
+  // A data confiável está em _data ("AAAA-MM-DD"), então filtramos por ela.
+  const ontemGasoISO = ontemISO; // já existe above: "AAAA-MM-DD" de ontem
   const gasometriasOntem = Object.entries(currentPatient?.gasometriaHistory || {})
-    .filter(([chave]) => chave.startsWith(ontemGasoKey))
-    .map(([chave, dados]) => ({
-      chave,
-      hora: dados?._hora || (chave.split(' - ')[1] || ''),
-      dados: dados || {}
-    }))
+    .filter(([chave, dados]) => {
+      // 1) Fonte principal: o carimbo _data do próprio registro
+      const dataRegistro = dados?._data;
+      if (dataRegistro) return dataRegistro === ontemGasoISO;
+
+      // 2) Fallback: chave "DD/MM - HH:MM" (registros antigos sem _data)
+      const dd = String(ontem.getDate()).padStart(2, '0');
+      const mm = String(ontem.getMonth() + 1).padStart(2, '0');
+      return chave.startsWith(`${dd}/${mm} -`) || chave.startsWith(`${dd}/${mm}/`);
+    })
+    .map(([chave, dados]) => {
+      // fallback da data: se _data não existir, reconstrói a partir da chave
+      const dataISO = dados?._data || (() => {
+        const m = String(chave).match(/^(\d{2})\/(\d{2})/);
+        if (!m) return '';
+        return `${ontem.getFullYear()}-${m[2]}-${m[1]}`;
+      })();
+      return {
+        chave,
+        dataISO,
+        hora: dados?._hora || (chave.split(' - ')[1] || ''),
+        dados: dados || {}
+      };
+    })
     .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
 
   // ---------- FISIO: IMS DO DIA ANTERIOR ----------
-  const imsOntem = currentPatient?.physio?.icuMobilityScale?.[ontemGasoKey] ||
+  // icuMobilityScale é um mapa indexado por "DD/MM/AAAA" (ex.: "11/11/2026").
+  // O campo .ims guarda o valor atual como fallback.
+  const ontemIMSBuscaKey = `${String(ontem.getDate()).padStart(2, '0')}/${String(ontem.getMonth() + 1).padStart(2, '0')}/${ontem.getFullYear()}`;
+  const imsOntem = currentPatient?.physio?.icuMobilityScale?.[ontemIMSBuscaKey] ||
     currentPatient?.physio?.icuMobilityScale?.ims || '';
 
   // ---------- FISIO: SUPORTE VENTILATÓRIO + ÚLTIMA COLUNA DO MAPA ----------
