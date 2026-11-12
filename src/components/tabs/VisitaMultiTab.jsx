@@ -443,10 +443,41 @@ const antibioticosEmUso = (currentPatient?.antibiotics || [])
 
 // Exames do dia anterior (examHistory)
 const examesOntem = currentPatient?.examHistory?.[ontemISO] || {};
-const EXAMES_RELEVANTES = ['Hemoglobina', 'Leucócitos', 'Plaquetas', 'Ureia', 'Creatinina', 'Na (Sódio)', 'K (Potássio)', 'PCR'];
-const examesRelevantes = EXAMES_RELEVANTES
-  .map(nome => ({ nome, valor: examesOntem[nome] || '—' }))
-  .filter(e => e.valor !== '—');
+
+  // ==========================================================
+  // SÉRIE DE EXAMES — dois resultados mais recentes do examHistory
+  // (mais antigo → mais recente), para mostrar a evolução.
+  // ==========================================================
+  const EXAMES_RELEVANTES_LISTA = ['Hemoglobina', 'Leucócitos', 'Plaquetas', 'Ureia', 'Creatinina', 'Na (Sódio)', 'K (Potássio)', 'PCR'];
+
+  // Datas do examHistory ordenadas da mais recente para a mais antiga
+  const datasExames = Object.keys(currentPatient?.examHistory || {})
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort((a, b) => b.localeCompare(a));
+
+  // As duas mais recentes, devolvidas em ordem cronológica (antiga → recente)
+  const duasUltimasDatas = datasExames.slice(0, 2).reverse();
+
+  const fmtDataExame = (iso) => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}`;
+  };
+
+  // Monta a série de um exame: [{ valor, data }, ...] com até 2 pontos preenchidos
+  const montarSerieExame = (nomeExame) => {
+    return duasUltimasDatas
+      .map(data => ({
+        data,
+        valor: currentPatient?.examHistory?.[data]?.[nomeExame] || null
+      }))
+      .filter(p => p.valor !== null && String(p.valor).trim() !== '');
+  };
+
+  // Lista final: cada exame com sua série de até 2 valores
+  const examesSerie = EXAMES_RELEVANTES_LISTA
+    .map(nome => ({ nome, serie: montarSerieExame(nome) }))
+    .filter(e => e.serie.length > 0);
 
 // Clearance de creatinina (função de core.js)
 const clearanceCreat = calculateCreatinineClearance(currentPatient);
@@ -1379,16 +1410,28 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
               )}
             </div>
 
-            {/* 4. EXAMES DE RELEVÂNCIA (dia anterior) */}
+          {/* 4. EXAMES DE RELEVÂNCIA (evolução dos 2 últimos resultados) */}
             <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50">
-              <h5 className="font-bold text-sm text-indigo-800 mb-3">🧪 Exames de Relevância (Dia Anterior)</h5>
-              {examesRelevantes.length > 0 ? (
+              <h5 className="font-bold text-sm text-indigo-800 mb-3">🧪 Exames de Relevância (Evolução)</h5>
+              {examesSerie.length > 0 ? (
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {examesRelevantes.map(ex => (
+                    {examesSerie.map(ex => (
                       <div key={ex.nome} className="p-2 bg-white border border-indigo-200 rounded-lg text-center">
                         <p className="text-[10px] font-bold text-slate-500 uppercase">{ex.nome}</p>
-                        <p className="text-base font-black text-indigo-700">{ex.valor}</p>
+                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                          {ex.serie.map((p, idx) => (
+                            <React.Fragment key={p.data}>
+                              {idx > 0 && (
+                                <span className="text-indigo-400 font-black text-sm">›</span>
+                              )}
+                              <span className="inline-flex items-baseline gap-0.5">
+                                <span className="text-base font-black text-indigo-700">{p.valor}</span>
+                                <span className="text-[9px] font-bold text-slate-400">({fmtDataExame(p.data)})</span>
+                              </span>
+                            </React.Fragment>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1422,7 +1465,7 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
                   )}
                 </>
               ) : (
-                <p className="text-sm text-slate-400 italic">Nenhum exame de relevância registrado no dia anterior.</p>
+                <p className="text-sm text-slate-400 italic">Nenhum exame de relevância registrado.</p>
               )}
             </div>
 
