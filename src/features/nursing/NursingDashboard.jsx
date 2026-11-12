@@ -284,27 +284,33 @@ const NursingDashboard = ({
   const hojeData = new Date();
   const hojeISO = `${hojeData.getFullYear()}-${String(hojeData.getMonth() + 1).padStart(2, '0')}-${String(hojeData.getDate()).padStart(2, '0')}`;
 
+  const cvcData = currentPatient?.enfermagem?.cvcData;
   const cvcRetirada = currentPatient?.enfermagem?.cvcRetiradaData;
-  const cvcJaFoiRetirado = cvcRetirada && cvcRetirada <= hojeISO;
+  // "Já foi retirado" = não há CVC ativo OU há data de retirada já vencida.
+  // Checar cvcData junto evita que a tela mostre "CVC ativo" para um
+  // paciente cujo ciclo foi encerrado e as datas foram zeradas.
+  const cvcJaFoiRetirado = !cvcData || (cvcRetirada && cvcRetirada <= hojeISO);
 
   const cvcPrecisaManut = !cvcJaFoiRetirado && precisaManutencaoHoje(
-    currentPatient?.enfermagem?.cvcData,
+    cvcData,
     currentPatient?.enfermagem?.historicoManutencaoCVC
   );
 
+  const shileyData = currentPatient?.enfermagem?.shileyData;
   const shileyRetirada = currentPatient?.enfermagem?.shileyRetiradaData;
-  const shileyJaFoiRetirado = shileyRetirada && shileyRetirada <= hojeISO;
+  const shileyJaFoiRetirado = !shileyData || (shileyRetirada && shileyRetirada <= hojeISO);
 
   const shileyPrecisaManut = !shileyJaFoiRetirado && precisaManutencaoHoje(
-    currentPatient?.enfermagem?.shileyData,
+    shileyData,
     currentPatient?.enfermagem?.historicoManutencaoShiley
   );
 
+  const svdData = currentPatient?.enfermagem?.svdData;
   const svdRetirada = currentPatient?.enfermagem?.svdRetiradaData;
-  const svdJaFoiRetirado = svdRetirada && svdRetirada <= hojeISO;
+  const svdJaFoiRetirado = !svdData || (svdRetirada && svdRetirada <= hojeISO);
 
   const svdPrecisaManut = !svdJaFoiRetirado && precisaManutencaoHoje(
-    currentPatient?.enfermagem?.svdData,
+    svdData,
     currentPatient?.enfermagem?.historicoManutencaoSVD
   );
 
@@ -473,8 +479,12 @@ const NursingDashboard = ({
       updateNested("enfermagem", dispositivo.localCampo, "");
     }
 
-    // NÃO limpa cvcData/cvcRetiradaData no Firebase (mantém para as calculadoras).
-    // Apenas marca o reset visual para esvaziar os campos no JSX.
+    // ZERA as datas ativas no Firebase — o ciclo foi encerrado e arquivado
+    // no histórico. Sem isso, o F5 relê o Firestore e o campo reaparece.
+    updateNested("enfermagem", dispositivo.dataInser, "");
+    updateNested("enfermagem", dispositivo.retiradaData, "");
+
+    // Espelho visual: esvazia os inputs antes do Firestore refletir
     setResetVisualDispositivo(prev => ({ ...prev, [dispositivo.key]: true }));
 
     if (typeof registrarLogAuditoria === "function") {
@@ -2000,8 +2010,8 @@ return (
                     disabled={!isEditable} 
                   />
                   
-                  {/* Só mostra a data de retirada se a SVD tiver uma data de inserção */}
-                  {currentPatient.enfermagem?.svdData && (
+                  {/* Só mostra a data de retirada se a SVD tiver data de inserção E não estiver em reset visual */}
+                  {currentPatient.enfermagem?.svdData && !resetVisualDispositivo.svd && (
                     <div className="mt-2">
                       <label className="block text-[10px] font-bold text-violet-600 uppercase">Data de Retirada (SVD)</label>
                       <input 

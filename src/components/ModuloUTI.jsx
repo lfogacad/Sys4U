@@ -4015,7 +4015,7 @@ ${conduta}
       // Shiley / Traqueostomia (só se NÃO foi retirado hoje)
       ...(p.enfermagem?.shileyLocal && p.enfermagem?.shileyRetiradaData !== hojeISO ? [`- Cateter de Shiley em ${p.enfermagem.shileyLocal}`] : []),
       // SVD (só se NÃO foi retirado hoje)
-      ...(p.enfermagem?.svd && p.enfermagem?.svdRetiradaData !== hojeISO ? ['- Sonda Vesical de Demora (SVD) em uso'] : []),
+      ...(p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData ? ['- Sonda Vesical de Demora (SVD) em uso'] : []),
       // SNE
       ...(p.enfermagem?.sneData ? [`- Sonda Nasoenteral (SNE) a ${p.enfermagem.sneCm || 'NT'}cm`] : []),
       // Dreno
@@ -5496,6 +5496,31 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       return diff < 0 ? 0 : diff + 1;   // mantém o padrão D1, D2...
     };
 
+    // Soma os dias de um dispositivo: ciclos arquivados no histórico + ciclo ativo.
+    // Preserva o indicador mesmo depois de a retirada zerar as datas ativas.
+    const calcularDiasDispositivo = (enf, temFlag, campoInser, campoRetirada, campoHistorico) => {
+      if (!enf) return 0;
+      let total = 0;
+
+      // Ciclos já encerrados e arquivados
+      const hist = Array.isArray(enf[campoHistorico]) ? enf[campoHistorico] : [];
+      hist.forEach(c => {
+        const ini = c?.inicio ?? c?.insercao ?? c?.dataInsercao;
+        const fim = c?.fim ?? c?.retirada ?? c?.dataRetirada;
+        if (ini && fim) total += calcularDias(ini, fim);
+      });
+
+      // Ciclo ativo (ainda não confirmado como retirado)
+      const ativoIni = enf[campoInser];
+      const ativoFim = enf[campoRetirada];
+      if (ativoIni) {
+        // Se já tem data de retirada, soma o período; se está ativo, soma até hoje
+        total += calcularDias(ativoIni, ativoFim || undefined);
+      }
+
+      return total;
+    };
+
     // 2. Auditoria de Dispositivos
     let dispositivosAtivos = [];
     if (enf.svd && !enf.svdRetiradaData) dispositivosAtivos.push("Sonda Vesical (SVD)");
@@ -5553,9 +5578,12 @@ Documento gerado eletronicamente e registrado nos indicadores de performance da 
       const indicadores_finais = {
         permanenciaTotal: calcularDias(pacienteAtual.dataInternacao, hojeISO),
         totalDiasVM: typeof getTempoVMNumber === 'function' ? getTempoVMNumber(pacienteAtual) : 0,
-        totalDiasSVD: enf.svd ? calcularDias(enf.svdData, enf.svdRetiradaData) : 0,
-        totalDiasCVC: enf.cvcLocal ? calcularDias(enf.cvcData, enf.cvcRetiradaData) : 0,
-        totalDiasShiley: enf.shileyLocal ? calcularDias(enf.shileyData, enf.shileyRetiradaData) : 0,
+        // Soma os ciclos já arquivados no histórico + o ciclo ativo (se houver).
+        // Depois de confirmar uma retirada, as datas ativas são zeradas, então
+        // o total precisa vir do histórico para não perder o dado.
+        totalDiasSVD: calcularDiasDispositivo(enf, 'svd', 'svdData', 'svdRetiradaData', 'historicoPeriodoSVD'),
+        totalDiasCVC: calcularDiasDispositivo(enf, 'cvc', 'cvcData', 'cvcRetiradaData', 'historicoPeriodoCVC'),
+        totalDiasShiley: calcularDiasDispositivo(enf, 'shiley', 'shileyData', 'shileyRetiradaData', 'historicoPeriodoShiley'),
         saps3Score: scoreEncontrado, // <-- Envia o valor real salvo
         mortalidadePrevista: sapsEncontrado, // <-- Envia a probabilidade real salva
         pacienteIdentificado: pacienteAtual.identificacaoCorreta || "auditado_positivo",
