@@ -19,8 +19,9 @@ export const ORIGENS_NUTRI = [
 
 // Origens de metas sugeridas pela Fisioterapia
 export const ORIGENS_FISIO = [
-  'auto_corrigir_assincronias',
-  'auto_tre'
+'auto_corrigir_assincronias',
+'auto_tre',
+'auto_otimizar_oxigenacao'
 ];
 
 // Origens de metas sugeridas pela Enfermagem
@@ -71,6 +72,7 @@ export const ROTULO_ORIGEM = {
   auto_sacar_svd: 'Sacar SVD',
   auto_tre: 'Tentativa de TRE',
   auto_corrigir_assincronias: 'Corrigir Assincronias',
+  auto_otimizar_oxigenacao: 'Otimizar oxigenação / revisar suporte',
   auto_controle_glicemico: 'Controle glicêmico',
   auto_retorno_sne: 'Estimular esvaziamento gástrico',
   auto_aumentar_calorico: 'Aumentar aporte calórico',
@@ -199,36 +201,41 @@ export const determinarCategoriaAutor = (userProfile, categoriaAtiva) => {
 };
 
 /**
- * Regra única de permissão, compartilhada por podeConfirmarMeta e podeManipularMeta.
+ * Regra única de permissão, compartilhada por confirmar / rejeitar /
+ * realizar / cancelar. O parâmetro `acao` existe só para clareza futura —
+ * a matriz de permissão é a mesma para as quatro ações.
+ *
+ * REGRA: cada categoria governa APENAS as metas automáticas da sua origem.
+ * Médicos/dev/RT têm acesso irrestrito.
  */
-const avaliarPermissaoMeta = (meta, userProfile) => {
+const avaliarPermissaoMeta = (meta, userProfile, acao = 'confirmar') => {
   if (!meta) return false;
   const origem = meta.origem || '';
   const cargo = resolverCargo(userProfile);
 
-  // Acesso irrestrito (médicos, nefrologistas, dev)
+  // Acesso irrestrito (médicos, nefrologistas, dev, RT, plantonistas, intensivistas)
   if (ehAcessoIrrestrito(cargo)) return true;
 
+  const categoriaUsuario = determinarCategoriaAutor(userProfile, null);
+
+  // Metas manuais: o autor governa as suas; enfermeiro governa as do técnico
   if (origem === 'manual') {
-    // 🛡️ FONTE CORRETA: perfil → cargoLocal → fallback textual.
-    // Antes usava só `cargoLocal` (undefined no seu perfil) e bloqueava tudo.
-    const categoriaUsuario = determinarCategoriaAutor(userProfile, null);
     const criador = meta.adicionadoPor || meta.criadoPor || '';
-
     if (criador === categoriaUsuario) return true;
-
-    // Autoridade de enfermagem: enfermeiro gerencia manuais do técnico
-    if (categoriaUsuario === 'enfermeiroPlantonista' && criador === 'tecnicoEnfermagem') {
-      return true;
-    }
-
+    if (categoriaUsuario === 'enfermeiroPlantonista' && criador === 'tecnicoEnfermagem') return true;
     return false;
   }
 
-  // Metas automáticas: só a categoria de origem gerencia
-  if (/\b(enfermeir|enfermagem)/.test(cargo)) return ORIGENS_ENFERMAGEM.some(p => origem.startsWith(p));
-  if (/\bnutric/.test(cargo))                 return ORIGENS_NUTRI.some(p => origem.startsWith(p));
-  if (/\bfisiot/.test(cargo))                 return ORIGENS_FISIO.some(p => origem.startsWith(p));
+  // Metas automáticas: somente a categoria de origem governa
+  if (ORIGENS_FISIO.some(p => origem.startsWith(p))) {
+    return categoriaUsuario === 'fisioterapeutaPlantonista';
+  }
+  if (ORIGENS_NUTRI.some(p => origem.startsWith(p))) {
+    return categoriaUsuario === 'nutricionista';
+  }
+  if (ORIGENS_ENFERMAGEM.some(p => origem.startsWith(p))) {
+    return categoriaUsuario === 'enfermeiroPlantonista' || categoriaUsuario === 'tecnicoEnfermagem';
+  }
 
   return false;
 };
@@ -240,6 +247,10 @@ export const podeConfirmarMeta = (meta, userProfile) => {
 export const podeManipularMeta = (meta, userProfile) => {
   return avaliarPermissaoMeta(meta, userProfile);
 };
+
+export const podeRealizarMeta = (meta, userProfile) => avaliarPermissaoMeta(meta, userProfile, 'realizar');
+
+export const podeCancelarMeta = (meta, userProfile) => avaliarPermissaoMeta(meta, userProfile, 'cancelar');
 
 /**
  * Rótulo legível para exibição da origem da meta.

@@ -9,6 +9,8 @@ import {
   cargoParaCategoria,
   podeConfirmarMeta as podeConfirmarMetaUtil,
   podeManipularMeta as podeManipularMetaUtil,
+  podeRealizarMeta as podeRealizarMetaUtil,
+  podeCancelarMeta as podeCancelarMetaUtil,
   nomeLegivelMeta,
   determinarCategoriaAutor
 } from '../../utils/metasAcoes';
@@ -599,6 +601,8 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   // Wrappers locais — injetam o userProfile nas versões do util
   const podeConfirmarMeta = (meta) => podeConfirmarMetaUtil(meta, userProfile);
   const podeManipularMeta = (meta) => podeManipularMetaUtil(meta, userProfile);
+  const podeRealizarMetaLocal = (meta) => podeRealizarMetaUtil(meta, userProfile);
+  const podeCancelarMetaLocal = (meta) => podeCancelarMetaUtil(meta, userProfile);
 
   const sugerirMetaEnfermeiro = (texto, origem) => {
     // Higiene oral/íntima: meta criada JÁ como 'pendente' (confirmada), não 'aguardando'
@@ -950,6 +954,25 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
       };
     })
     .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+
+  // ---------- FISIO: cria a meta automática de otimização de oxigenação ----------
+  // Idempotente: sugerirMeta já ignora se a origem já existe na lista.
+  // Usa useEffect para não disparar setState durante o render.
+  const pfBaixoDetectado = gasometriasOntem.some(g => {
+    const pf = parseFloat(String(g.dados?.['P/F'] || '').replace(',', '.'));
+    return !isNaN(pf) && pf < 150;
+  });
+
+  useEffect(() => {
+    if (pfBaixoDetectado) {
+      sugerirMeta(
+        'Otimizar oxigenação / revisar suporte',
+        'auto_otimizar_oxigenacao',
+        'aguardando'
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pfBaixoDetectado]);
 
   // ---------- FISIO: IMS DO DIA ANTERIOR ----------
   // icuMobilityScale é um mapa indexado por "DD/MM/AAAA" (ex.: "11/11/2026").
@@ -1839,6 +1862,18 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
                   <LinhaInfo rotulo="Vc (mL/kg)" valor={vcMlKg !== null ? vcMlKg : '—'} />
                   <LinhaInfo rotulo="P platô" valor={ultimaVM?.pPlato || '—'} />
                   <LinhaInfo rotulo="Driving Pressure" valor={ultimaVM?.dp || '—'} />
+
+                  {/* Vol tidal: programado (vc) e medido (vtPc, quando existir) */}
+                  {ultimaVM?.vc && (
+                    <LinhaInfo rotulo="Vol tidal (programado)" valor={`${ultimaVM.vc} mL`} />
+                  )}
+                  {ultimaVM?.vtPc && (
+                    <LinhaInfo rotulo="Vol tidal (medido)" valor={`${ultimaVM.vtPc} mL`} />
+                  )}
+                  {/* Pressão de suporte — só quando preenchida (PSV / espontâneo) */}
+                  {ultimaVM?.ps && (
+                    <LinhaInfo rotulo="Pressão de suporte" valor={`${ultimaVM.ps} cmH₂O`} />
+                  )}
                 </div>
               )}
               {/* Sincronismo (campo novo do fisio) */}
@@ -1958,11 +1993,78 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
                   ))}
                 </div>
               )}
-              {gasometriasOntem.some(g => g.dados['P/F'] && parseFloat(String(g.dados['P/F']).replace(',', '.')) < 150) && (
-                <p className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  🎯 P/F &lt; 150 detectado — meta sugerida: <b>Otimizar oxigenação / revisar suporte</b> (aguardando confirmação médica)
-                </p>
-              )}
+              {pfBaixoDetectado && (() => {
+                const meta = metas.find(m => m.origem === 'auto_otimizar_oxigenacao');
+                return (
+                  <div className="mt-3 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <p>
+                      🎯 P/F &lt; 150 detectado — meta sugerida: <b>{nomeLegivelMeta(meta) || 'Otimizar oxigenação / revisar suporte'}</b>{' '}
+                      {meta?.status === 'aguardando' && <span>(aguardando confirmação)</span>}
+                      {meta?.status === 'pendente' && <span className="text-emerald-700">(confirmada ✓)</span>}
+                      {meta?.status === 'realizado' && <span className="text-emerald-700">(realizada ✓)</span>}
+                      {meta?.status === 'rejeitada' && <span className="text-red-600">(rejeitada ✗)</span>}
+                      {meta?.status === 'cancelado' && <span className="text-slate-600">(cancelada ✗)</span>}
+                    </p>
+
+                    {/* Aguardando → Confirmar / Rejeitar */}
+                    {meta?.status === 'aguardando' && podeConfirmarMeta(meta) && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <button
+                          onClick={() => confirmarMeta(meta.id)}
+                          className="px-4 py-2 rounded-lg text-xs font-bold bg-cyan-600 hover:bg-cyan-700 text-white"
+                        >✓ Confirmar meta</button>
+                        <button
+                          onClick={() => rejeitarMeta(meta.id, '')}
+                          className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500 hover:bg-red-600 text-white"
+                        >✗ Rejeitar</button>
+                      </div>
+                    )}
+
+                    {/* Pendente → Realizar / Cancelar */}
+                    {meta?.status === 'pendente' && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {podeRealizarMetaLocal(meta) && (
+                          <button
+                            onClick={() => marcarRealizado(meta.id)}
+                            className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                          >✓ Marcar como realizada</button>
+                        )}
+                        {podeCancelarMetaLocal(meta) && (
+                          <button
+                            onClick={() => cancelarMeta(meta.id, 'Otimização de oxigenação não necessária')}
+                            className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-500 hover:bg-slate-600 text-white"
+                          >✗ Cancelar meta</button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Realizado / Cancelado → aberto para qualquer profissional ver */}
+                    {meta?.status === 'realizado' && (
+                      <div className="mt-2">
+                        <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          ✓ Realizada {meta.dataRealizado ? `em ${meta.dataRealizado.split('-').reverse().join('-')}` : ''}
+                          {meta.marcadoPor ? ` · ${meta.marcadoPor}` : ''}
+                        </span>
+                      </div>
+                    )}
+                    {meta?.status === 'rejeitada' && (
+                      <div className="mt-2">
+                        <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700 border border-red-300">
+                          ✗ Rejeitada {meta.dataCancelamento ? `em ${meta.dataCancelamento.split('-').reverse().join('-')}` : ''}
+                        </span>
+                      </div>
+                    )}
+                    {meta?.status === 'cancelado' && (
+                      <div className="mt-2">
+                        <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 border border-slate-300">
+                          ✗ Cancelada {meta.dataCancelamento ? `em ${meta.dataCancelamento.split('-').reverse().join('-')}` : ''}
+                          {meta.canceladoPor ? ` · ${meta.canceladoPor}` : ''}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* BLOCO E — IMS DO DIA ANTERIOR + METAS DE MOBILIZAÇÃO */}
