@@ -925,31 +925,46 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
   }, [visita.fisioterapeutaPlantonista?.sincronismo]);
 
   // ---------- FISIO: GASOMETRIA DO DIA ANTERIOR (todas por horário) ----------
-  // As chaves do gasometriaHistory são "DD/MM - HH:MM" (sem ano).
-  // A data confiável está em _data ("AAAA-MM-DD"), então filtramos por ela.
-  const ontemGasoISO = ontemISO; // já existe above: "AAAA-MM-DD" de ontem
+  // Formatos de chave conhecidos no gasometriaHistory:
+  //   "11/11 - 08:33"   → gasometria da fisio (DD/MM - HH:MM)
+  //   "13/11 (Adm)"     → gasometria de admissão (DD/MM (Adm))
+  //   "_data" no registro → fonte mais confiável, quando existir
+  const ontemGasoISO = ontemISO;
+  const _ddOntem = String(ontem.getDate()).padStart(2, '0');
+  const _mmOntem = String(ontem.getMonth() + 1).padStart(2, '0');
+
   const gasometriasOntem = Object.entries(currentPatient?.gasometriaHistory || {})
     .filter(([chave, dados]) => {
-      // 1) Fonte principal: o carimbo _data do próprio registro
+      // 1) Fonte principal: _data do próprio registro
       const dataRegistro = dados?._data;
       if (dataRegistro) return dataRegistro === ontemGasoISO;
 
-      // 2) Fallback: chave "DD/MM - HH:MM" (registros antigos sem _data)
-      const dd = String(ontem.getDate()).padStart(2, '0');
-      const mm = String(ontem.getMonth() + 1).padStart(2, '0');
-      return chave.startsWith(`${dd}/${mm} -`) || chave.startsWith(`${dd}/${mm}/`);
+      // 2) Fallback pela chave: aceita "DD/MM " (espaço), "DD/MM -" e "DD/MM/"
+      return chave.startsWith(`${_ddOntem}/${_mmOntem} `)
+          || chave.startsWith(`${_ddOntem}/${_mmOntem}-`)
+          || chave.startsWith(`${_ddOntem}/${_mmOntem}/`);
     })
     .map(([chave, dados]) => {
-      // fallback da data: se _data não existir, reconstrói a partir da chave
       const dataISO = dados?._data || (() => {
         const m = String(chave).match(/^(\d{2})\/(\d{2})/);
         if (!m) return '';
         return `${ontem.getFullYear()}-${m[2]}-${m[1]}`;
       })();
+
+      // Rótulo de hora: reconhece "(Adm)" como admissão
+      const tipoAdmissao = /\(\s*adm\s*\)/i.test(chave) || String(dados?._tipo || '').toLowerCase() === 'admissao';
+      const horaDaChave = (() => {
+        const m = String(chave).match(/-\s*(\d{1,2}[:h]\d{2})/);
+        if (m) return m[1].replace('h', ':');
+        if (tipoAdmissao) return 'Admissão';
+        return '';
+      })();
+
       return {
         chave,
         dataISO,
-        hora: dados?._hora || (chave.split(' - ')[1] || ''),
+        hora: dados?._hora || horaDaChave,
+        tipoAdmissao,
         dados: dados || {}
       };
     })
@@ -1978,7 +1993,10 @@ const metasOntemImg = [...metasSolicitacaoImg, ...raioXOntem];
                 <div className="space-y-3">
                   {gasometriasOntem.map(g => (
                     <div key={g.chave} className="border border-slate-200 rounded-lg bg-white p-3">
-                      <p className="text-xs font-bold text-slate-500 mb-2">🕐 {g.hora || 'Horário indefinido'}</p>
+                      <p className="text-xs font-bold text-slate-500 mb-2">
+                        {g.tipoAdmissao ? '🏥 Admissão' : '🕐'} {g.hora || 'Horário indefinido'}
+                        {g.tipoAdmissao && g.hora && g.hora !== 'Admissão' ? ` (${g.hora})` : ''}
+                      </p>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">
                         <LinhaInfo rotulo="pH" valor={g.dados.pH || '—'} />
                         <LinhaInfo rotulo="pCO2" valor={g.dados.pCO2 || '—'} />
