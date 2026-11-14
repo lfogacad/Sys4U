@@ -6,6 +6,7 @@ import { CARACTERISTICAS_DIETA, CONSISTENCIA_ALIMENTAR, FORMULAS_ENTERAIS } from
 import { calculateEvacDays, calcularNutricaoDerivada, calcularMetasNutricionais, calcularAdministracaoEnteral } from '../../utils/core';
 import { ModalPortal } from '../../components/ModuloUTI';
 import { db } from '../../config/firebase';
+import { instanteRefeicao, dataRefeicaoBR } from '../../utils/consumo';
 
 const NutriDashboard = ({
   currentPatient,
@@ -211,16 +212,27 @@ const NutriDashboard = ({
   const mediaSuplementos = countSuplementos > 0 ? Math.round(somaSuplementos / countSuplementos) : 0;
 
   // ---------- CONSUMO ORAL DO DIA ANTERIOR (janela clínica 07h ontem → 06h hoje) ----------
-  const inicioJanela = new Date();
-  inicioJanela.setDate(inicioJanela.getDate() - 1);
-  inicioJanela.setHours(7, 0, 0, 0);
-  const fimJanela = new Date();
-  fimJanela.setHours(6, 0, 0, 0);
+  // INTERPRETAÇÃO B: usa o HORÁRIO DA OFERTA (reg.horario = "HH:MM") combinado
+  // com a data em que o registro foi digitado. Assim:
+  //   • dieta das 19h de ontem registrada hoje 00:40  → pertence a ONTEM
+  //   • dieta das 07:30 de hoje registrada hoje 08:00 → pertence a HOJE
+  // Registros antigos sem `horario` caem no fallback dataHoraRegistro.
+
+  const _hojeConsumo = new Date();
+  const _inicioJanelaConsumo = new Date(_hojeConsumo);
+  _inicioJanelaConsumo.setDate(_inicioJanelaConsumo.getDate() - 1);
+  _inicioJanelaConsumo.setHours(7, 0, 0, 0);
+  const _fimJanelaConsumo = new Date(_hojeConsumo);
+  _fimJanelaConsumo.setHours(6, 0, 0, 0);
 
   const historicoDietaOntem = historicoDieta.filter(reg => {
-    const dt = reg.dataHoraRegistro ? new Date(reg.dataHoraRegistro) : null;
-    return dt && !isNaN(dt.getTime()) && dt >= inicioJanela && dt < fimJanela;
+    const instante = instanteRefeicao(reg);
+    return instante && instante >= _inicioJanelaConsumo && instante < _fimJanelaConsumo;
   });
+
+  // Mantém os nomes antigos para os usos abaixo (modal, dataMinima)
+  const inicioJanela = _inicioJanelaConsumo;
+  const fimJanela = _fimJanelaConsumo;
 
   let somaAlimentosOntem = 0, countAlimentosOntem = 0;
   let somaSuplementosOntem = 0, countSuplementosOntem = 0;
@@ -237,24 +249,34 @@ const NutriDashboard = ({
   const mediaSuplementosOntem = countSuplementosOntem > 0 ? Math.round(somaSuplementosOntem / countSuplementosOntem) : 0;
 
   // Função para agrupar o histórico por data para o Modal
+  // Usa o INSTANTE DA OFERTA (mesma regra do card), não a hora do clique.
   const getGroupedHistory = (tipo) => {
-    // 'tipo' agora é a CATEGORIA: 'alimentos' ou 'suplementos'
     const filtered = historicoDieta.filter(h =>
       tipo === 'suplementos' ? ehSuplemento(h) : !ehSuplemento(h)
     );
     const groups = {};
-    
+
     filtered.forEach(item => {
-      const dateStr = item.dataHoraRegistro ? new Date(item.dataHoraRegistro).toLocaleDateString('pt-BR') : 'Sem data';
+      const dateStr = dataRefeicaoBR(item); // DD-MM-AAAA
       if (!groups[dateStr]) groups[dateStr] = [];
       groups[dateStr].push(item);
     });
 
+    Object.keys(groups).forEach(k => {
+      groups[k].sort((a, b) => {
+        const ia = instanteRefeicao(a);
+        const ib = instanteRefeicao(b);
+        if (!ia) return 1;
+        if (!ib) return -1;
+        return ib - ia;
+      });
+    });
+
     const sortedDates = Object.keys(groups).sort((a, b) => {
-      if(a === 'Sem data') return 1;
-      if(b === 'Sem data') return -1;
-      const [d1, m1, y1] = a.split('/');
-      const [d2, m2, y2] = b.split('/');
+      if (a === 'Sem data') return 1;
+      if (b === 'Sem data') return -1;
+      const [d1, m1, y1] = a.split('-');
+      const [d2, m2, y2] = b.split('-');
       return new Date(`${y2}-${m2}-${d2}`) - new Date(`${y1}-${m1}-${d1}`);
     });
 
@@ -271,25 +293,39 @@ const NutriDashboard = ({
 };
 
   // Função para agrupar o histórico por data para o Modal (filtrado pela janela)
+  // INTERPRETAÇÃO B: filtra e agrupa pelo INSTANTE DA OFERTA (horario + data do registro),
+  // não pela hora do clique. Registro das 19h de ontem digitado 00:40 de hoje entra como ontem.
   const getGroupedHistoryFiltrado = (tipo, dataMinima) => {
-    // 'tipo' agora é a CATEGORIA: 'alimentos' ou 'suplementos' (mesma regra da getGroupedHistory)
-    const filtered = historicoDieta.filter(h =>
-      (tipo === 'suplementos' ? ehSuplemento(h) : !ehSuplemento(h)) &&
-      h.dataHoraRegistro && new Date(h.dataHoraRegistro) >= dataMinima
-    );
+    const filtered = historicoDieta.filter(h => {
+      if (tipo === 'suplementos' ? !ehSuplemento(h) : ehSuplemento(h)) return false;
+      const instante = instanteRefeicao(h);
+      return !!instante && instante >= dataMinima;
+    });
+
     const groups = {};
-    
+
     filtered.forEach(item => {
-      const dateStr = item.dataHoraRegistro ? new Date(item.dataHoraRegistro).toLocaleDateString('pt-BR') : 'Sem data';
+      const dateStr = dataRefeicaoBR(item); // DD-MM-AAAA
       if (!groups[dateStr]) groups[dateStr] = [];
       groups[dateStr].push(item);
     });
 
+    // Ordena dentro de cada dia pelo instante da oferta (mais recente primeiro)
+    Object.keys(groups).forEach(k => {
+      groups[k].sort((a, b) => {
+        const ia = instanteRefeicao(a);
+        const ib = instanteRefeicao(b);
+        if (!ia) return 1;
+        if (!ib) return -1;
+        return ib - ia;
+      });
+    });
+
     const sortedDates = Object.keys(groups).sort((a, b) => {
-      if(a === 'Sem data') return 1;
-      if(b === 'Sem data') return -1;
-      const [d1, m1, y1] = a.split('/');
-      const [d2, m2, y2] = b.split('/');
+      if (a === 'Sem data') return 1;
+      if (b === 'Sem data') return -1;
+      const [d1, m1, y1] = a.split('-');
+      const [d2, m2, y2] = b.split('-');
       return new Date(`${y2}-${m2}-${d2}`) - new Date(`${y1}-${m1}-${d1}`);
     });
 
