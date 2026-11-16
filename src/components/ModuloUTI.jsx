@@ -143,8 +143,11 @@ const unirMapasBH = (localBH, serverBH) => {
 
   const horaValida = (h) => /^\d{1,2}:\d{2}$/.test(String(h).trim());
 
-  // 🔒 GUARD DE DIA: se o servidor tem um BH de dia ANTERIOR ao local,
-  // o servidor é lixo estagnado — não pode contaminar o local.
+  // 🔒 GUARD DE DIA — bidirecional.
+  //   • servidor ANTERIOR ao local → servidor é lixo estagnado (não contamina o local)
+  //   • servidor POSTERIOR ao local → o LOCAL é lixo estagnado de uma aba aberta
+  //     durante a virada; o servidor (resultado da virada diária) prevalece.
+  // Sem o segundo caso, uma aba velha ressuscita bh.date e o setDoc sobrescreve.
   const dataLocal = localBH?.date || "";
   const dataServidor = serverBH?.date || "";
   if (dataServidor && dataLocal && dataServidor < dataLocal) {
@@ -152,6 +155,14 @@ const unirMapasBH = (localBH, serverBH) => {
       dataServidor, dataLocal
     });
     return saida; // local vence integralmente
+  }
+  if (dataServidor && dataLocal && dataServidor > dataLocal) {
+    console.warn("[SYS4U] unirMapasBH: LOCAL tem BH de dia anterior — servidor prevalece", {
+      dataServidor, dataLocal
+    });
+    // O servidor já zerou o dia; qualquer célula local é de um dia que já foi
+    // arquivado. Retorna o BH do servidor integralmente para não ressuscitar o dia.
+    return { ...serverBH };
   }
 
   ["gains", "losses", "vitals", "irrigation"].forEach(cat => {
@@ -1186,6 +1197,21 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
             payloadBH.bh = unirMapasBH(payloadBH.bh, bhServidor);
             if (payloadBH.bh.vitals !== undefined) payloadBH.vitals = payloadBH.bh.vitals;
           }
+          // 🛡️ TRAVA DE DATA DO BH — o SERVIDOR é a fonte única da verdade.
+          // O front nunca deve regravar bh.date: se uma aba estava aberta na
+          // virada diária, o estado local carrega a data antiga e o setDoc com
+          // merge sobrescreve o "bh" inteiro (merge é por campo, não profundo).
+          // Regra: bh.date do payload SEMPRE passa a ser o do servidor.
+          if (bhServidor?.date) {
+            if (payloadBH.bh?.date && payloadBH.bh.date !== bhServidor.date) {
+              console.warn("[SYS4U] save(): bh.date local divergente — corrigido pelo servidor", {
+                local: payloadBH.bh.date,
+                servidor: bhServidor.date,
+                docId
+              });
+            }
+            payloadBH.bh = { ...(payloadBH.bh || {}), date: bhServidor.date };
+          }
         } catch (e) { console.warn("[SYS4U] Não foi possível unir bh no save:", e); }
       }
 
@@ -1238,6 +1264,8 @@ const uniqueGasoCols = [...custom].sort((a, b) => parseDateForSort(b) - parseDat
         if (payloadBH[chave] === undefined) delete payloadBH[chave];
       });
 
+      // Não envia bh.date — o valor do servidor já foi aplicado acima.
+      // Sem isto, qualquer corrida entre abas ressuscita a data antiga.
       auditarEscrita("save()", docId, payloadBH, { merge: true });
       await setDoc(doc(db, "leitos_uti", docId), payloadBH, { merge: true });
       // 🔓 Destrava APÓS o commit com uma margem de segurança.

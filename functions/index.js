@@ -770,28 +770,33 @@ function horaManaus(ms) {
 // ============================================================================
 const LOGICAL_TZ = "America/Porto_Velho";
 
-// "Hoje assistencial": 07:00 de D-1 até 06:59 de D
+// "Hoje assistencial": 07:00 de D-1 até 06:59 de D (fuso America/Porto_Velho)
+// Constrói e lê tudo em UTC por aritmética de string, sem depender do fuso
+// do container (Cloud Functions roda em UTC por padrão).
 function getLogicalDateAt(date = new Date()) {
   const partes = new Intl.DateTimeFormat("en-CA", {
     timeZone: LOGICAL_TZ,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", hour12: false
   }).formatToParts(date);
+
   const get = (t) => partes.find((p) => p.type === t).value;
-  const y = get("year"), m = get("month"), d = get("day");
+  const y = get("year");
+  const m = get("month");
+  const d = get("day");
   const hora = Number(get("hour")) % 24;
-  if (hora < 7) {
-    const ontem = new Date(`${y}-${m}-${d}T00:00:00`);
-    ontem.setDate(ontem.getDate() - 1);
-    return `${ontem.getFullYear()}-${String(ontem.getMonth() + 1).padStart(2, "0")}-${String(ontem.getDate()).padStart(2, "0")}`;
-  }
-  return `${y}-${m}-${d}`;
+
+  const hoje = `${y}-${m}-${d}`;
+  return hora < 7 ? somarDias(hoje, -1) : hoje;
 }
 
-function addDias(yyyymmdd, n) {
-  const dt = new Date(`${yyyymmdd}T12:00:00`);
-  dt.setDate(dt.getDate() + n);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+// Aritmética de data 100% em UTC — imune ao fuso do container.
+// Não usa setDate/getDate em horário local (que muda de fuso).
+function somarDias(yyyymmdd, n) {
+  const [y, m, d] = yyyymmdd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)); // âncora no meio-dia UTC
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
 // Mantém SOMENTE as horas que pertencem à janela do dia assistencial informado.
@@ -898,12 +903,17 @@ exports.viradaBH = onSchedule({
   snap.forEach((docSnap) => {
     const dados = docSnap.data();
     const bhServidor = dados.bh;
+    console.log(`[VIRADA-BH] leito=${docSnap.id} bh.date=${bhServidor?.date || '∅'} logicalToday=${logicalToday}`);
 
     // Leito vazio ou sem BH → nada a fazer
     if (!bhServidor || !bhServidor.date) { ignorados++; return; }
 
-    // Idempotência: se o BH já está no dia de hoje, a virada já rodou
-    if (bhServidor.date >= logicalToday) { ignorados++; return; }
+    // Idempotência: se o BH já está no dia assistencial de hoje, nada a fazer.
+    // Comparação de igualdade estrita (não >=) para que:
+    //   • BH de dias anteriores SEMPRE rode a virada
+    //   • BH "no futuro" (bug de outra execução) também seja corrigido
+    //     e reancorado no dia certo, em vez de ficar travado para sempre.
+    if (bhServidor.date === logicalToday) { ignorados++; return; }
 
     const bhLimpo = sanitizarBHPorJanela(bhServidor);
 
