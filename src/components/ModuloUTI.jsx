@@ -3081,11 +3081,36 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         }
       });
 
-      // Helper: constrói status por episódio
-      const buildEpisodio = (ep, singular, multiLabel, normalLabel) => {
-        if (ep === 0) return normalLabel;
-        if (ep === 1) return `apresentou um episódio de ${singular}`;
-        return multiLabel; // 2+ episódios: volta ao comportamento antigo
+      // Helper: monta a frase dos episódios SEM repetir o prefixo.
+      // ep === 1 → entra na lista "apresentou um episódio de X, Y e Z"
+      // ep >= 2 → vira estado/adjetivo (ex.: "febril", "taquicárdico")
+      const montarStatusEpisodios = (itens, normalLabel = "", opts = {}) => {
+        const {
+          prefixoSingular = "apresentou um episódio de",
+          prefixoMultiplo = "apresentou episódios de"
+        } = opts;
+
+        const unicos = [];
+        const persist = [];
+        itens.forEach(({ ep, singular, multiLabel }) => {
+          if (ep === 1) unicos.push(singular);
+          else if (ep >= 2) persist.push(multiLabel);
+        });
+
+        const blocos = [];
+        if (unicos.length === 1) {
+          blocos.push(`${prefixoSingular} ${unicos[0]}`);
+        } else if (unicos.length > 1) {
+          const lista = unicos.length === 2
+            ? `${unicos[0]} e ${unicos[1]}`
+            : `${unicos.slice(0, -1).join(", ")} e ${unicos[unicos.length - 1]}`;
+          blocos.push(`${prefixoMultiplo} ${lista}`);
+        }
+        persist.forEach((p) => {
+          if (p && !blocos.includes(p)) blocos.push(p);
+        });
+
+        return blocos.length === 0 ? normalLabel : blocos.join(" e ");
       };
 
       // TEMPERATURA
@@ -3093,10 +3118,10 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       if (epFebre === 0 && epHipotermia === 0) {
         tempStatus = "afebril";
       } else {
-        const parts = [];
-        if (epFebre > 0) parts.push(buildEpisodio(epFebre, "febre", "febril", ""));
-        if (epHipotermia > 0) parts.push(buildEpisodio(epHipotermia, "hipotermia", isFem ? "hipotérmica" : "hipotérmico", ""));
-        tempStatus = parts.join(" e ");
+        tempStatus = montarStatusEpisodios([
+          { ep: epFebre, singular: "febre", multiLabel: "febril" },
+          { ep: epHipotermia, singular: "hipotermia", multiLabel: isFem ? "hipotérmica" : "hipotérmico" }
+        ], "afebril");
       }
 
       // SPO2
@@ -3105,43 +3130,30 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         if (epSpo2Rasa === 0 && epSpo2Baixa === 0) {
           spo2Status = "mantendo boa SpO2";
         } else {
-          const parts = [];
-          if (epSpo2Baixa > 0) parts.push(buildEpisodio(epSpo2Baixa, "baixa SpO2", "com baixa SpO2", ""));
-          if (epSpo2Rasa > 0) parts.push(buildEpisodio(epSpo2Rasa, "SpO2 rasa", "com SpO2 rasa", ""));
-          spo2Status = parts.join(" e ");
+          spo2Status = montarStatusEpisodios([
+            { ep: epSpo2Baixa, singular: "baixa SpO2", multiLabel: "com baixa SpO2" },
+            { ep: epSpo2Rasa, singular: "SpO2 rasa", multiLabel: "com SpO2 rasa" }
+          ], "mantendo boa SpO2");
         }
       }
 
       // FC
-      let fcStatus;
-      if (epTaquicardia === 0 && epBradicardia === 0) {
-        fcStatus = isFem ? "eucárdica" : "eucárdico";
-      } else {
-        const parts = [];
-        if (epTaquicardia > 0) parts.push(buildEpisodio(epTaquicardia, "taquicardia", isFem ? "taquicárdica" : "taquicárdico", ""));
-        if (epBradicardia > 0) parts.push(buildEpisodio(epBradicardia, "bradicardia", isFem ? "bradicárdica" : "bradicárdico", ""));
-        fcStatus = parts.join(" e ");
-      }
+      const fcStatus = montarStatusEpisodios([
+        { ep: epTaquicardia, singular: "taquicardia", multiLabel: isFem ? "taquicárdica" : "taquicárdico" },
+        { ep: epBradicardia, singular: "bradicardia", multiLabel: isFem ? "bradicárdica" : "bradicárdico" }
+      ], isFem ? "eucárdica" : "eucárdico");
 
       // PA
-      let paStatus;
-      if (epHipotensao === 0 && epHipertensao === 0) {
-        paStatus = "com bom controle pressórico";
-      } else {
-        const parts = [];
-        if (epHipotensao > 0) parts.push(buildEpisodio(epHipotensao, "hipotensão", isFem ? "hipotensa" : "hipotenso", ""));
-        if (epHipertensao > 0) parts.push(buildEpisodio(epHipertensao, "hipertensão", isFem ? "hipertensa" : "hipertenso", ""));
-        paStatus = parts.join(" e ");
-      }
+      const paStatus = montarStatusEpisodios([
+        { ep: epHipotensao, singular: "hipotensão", multiLabel: isFem ? "hipotensa" : "hipotenso" },
+        { ep: epHipertensao, singular: "hipertensão", multiLabel: isFem ? "hipertensa" : "hipertenso" }
+      ], "com bom controle pressórico");
 
-      // FR (novo)
-      let frStatus = "";
-      if (epTaquipneia > 0 || epBradipneia > 0) {
-        const parts = [];
-        if (epTaquipneia > 0) parts.push(buildEpisodio(epTaquipneia, "taquipneia", isFem ? "taquipneica" : "taquipneico", ""));
-        if (epBradipneia > 0) parts.push(buildEpisodio(epBradipneia, "bradipneia", isFem ? "bradipneica" : "bradipneico", ""));
-        frStatus = parts.join(" e ");
-      }
+      // FR (novo) — entra na mesma frase da SpO2, por isso usa o conector "com"
+      const frStatus = montarStatusEpisodios([
+        { ep: epTaquipneia, singular: "taquipneia", multiLabel: isFem ? "taquipneica" : "taquipneico" },
+        { ep: epBradipneia, singular: "bradipneia", multiLabel: isFem ? "bradipneica" : "bradipneico" }
+      ], "", { prefixoSingular: "com", prefixoMultiplo: "com" });
 
       // 2. ESTADO GERAL E NEURO
       const egSalvo = dadosDoTimeout?.estadoGeral || currentPatient.medical?.estadoGeral || "REG";
@@ -3438,6 +3450,7 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       [HEMODINÂMICA], [DVA], [FC], [PA].
       [DIURESE], [FUNÇÃO RENAL].
       ${mantemSe} [TEMPERATURA], [LEUCOMETRIA] e [ATB].
+      [VIA DIETA] e [GLICEMIA], [EVACUAÇÃO]. [TGI]
       DADOS CLÍNICOS REAIS:
       - [ESTADO GERAL]: ${egExtenso}
       ${dadosConsciencia}- [SEDAÇÃO]: ${sedacaoText}
@@ -3476,7 +3489,37 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
           }
 
           if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-            const aiEvolucaoClinica = data.candidates[0].content.parts[0].text.trim();
+            let aiEvolucaoClinica = data.candidates[0].content.parts[0].text.trim();
+
+            // ---------- GARANTIA DETERMINÍSTICA DA GLICEMIA ----------
+            // A IA pode omitir a frase de glicemia mesmo recebendo o dado no prompt
+            // (o formato obrigatório não tem slot dedicado a ela). Quando isso ocorre,
+            // inserimos a frase à força logo após a menção à via de dieta.
+            if (glicemiaStatus) {
+              const normalizar = (s) => String(s || "")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "");
+
+              if (!normalizar(aiEvolucaoClinica).includes(normalizar(glicemiaStatus))) {
+                // Procura a primeira frase que cita a dieta: "Dieta ... ."
+                const m = aiEvolucaoClinica.match(/dieta[^.!?\n]*[.!?]/i);
+                if (m && typeof m.index === "number") {
+                  const inicio = m.index;
+                  const fim = inicio + m[0].length;
+                  const semPonto = m[0].replace(/[.!?]\s*$/, "");
+                  aiEvolucaoClinica =
+                    aiEvolucaoClinica.slice(0, inicio) +
+                    `${semPonto}, ${glicemiaStatus}.` +
+                    aiEvolucaoClinica.slice(fim);
+                } else {
+                  // Sem menção à dieta no texto: acrescenta ao final do bloco
+                  const frase = glicemiaStatus.charAt(0).toUpperCase() + glicemiaStatus.slice(1);
+                  aiEvolucaoClinica += ` ${frase}.`;
+                }
+                console.warn("[EVOLUCAO] Glicemia ausente na saída da IA — inserida pelo carimbador.");
+              }
+            }
             
             // =========================================================================
             // 🧠 CARIMBADOR AUTOMÁTICO: MONTAGEM DO DOCUMENTO FINAL COM ESTRUTURA FIXA
