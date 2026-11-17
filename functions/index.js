@@ -702,21 +702,23 @@ exports.backupLeitosHorario = onSchedule({
 });
 
 // ============================================================================
-// LIMPEZA DE BACKUPS — apaga snapshots com mais de 30 dias (roda 1x/dia às 03h)
+// LIMPEZA DE BACKUPS — retenção escalonada
 // ============================================================================
 // Política:
-//   • > 30 dias   → apaga o snapshot inteiro (doc + subcoleção)
-//   • 8 a 30 dias → mantém só o das 07h (Porto Velho); apaga os demais horários
-//   • ≤ 7 dias    → mantém todos
+//   • últimas 24h ..... mantém 100% (backup de hora em hora)
+//   • 24h a 7 dias .... mantém 1 snapshot a cada 6h (00h, 06h, 12h, 18h)
+//   • acima de 7 dias . apaga
 //
-// Correções aplicadas:
-//   1. memory 512MiB — o default de 256MiB causava OOM (273MiB usados),
-//      o container era morto pelo Cloud Run e o Scheduler registrava 503
-//   2. Intl.DateTimeFormat criado UMA vez no módulo, não a cada documento
-//   3. Exclusão em chunks de 450 (Firestore limita 500 escritas por commit)
-//   4. Erro em um snapshot não aborta o job inteiro
-//   5. Log por snapshot (docId, motivo, contagem) para diagnóstico
+// Roda de hora em hora para que a janela de 24h seja fiel. Cada execução
+// apaga no máximo MAX_APAGAR_POR_EXECUCAO snapshots, drenando o passivo
+// histórico sem estourar tempo nem memória.
 // ============================================================================
+
+const RETENCAO_HORARIA_MS = 24 * 60 * 60 * 1000;      // 24 horas
+const RETENCAO_6H_MS      = 7 * 24 * 60 * 60 * 1000;  // 7 dias
+const INTERVALO_6H        = 6;                        // horas âncora: 0, 6, 12, 18
+const MAX_APAGAR_POR_EXECUCAO = 60;                   // freio por execução
+const CHUNK_DELETE            = 450;                  // limite do Firestore é 500
 
 const _fmtHoraManaus = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'America/Porto_Velho',
@@ -725,13 +727,12 @@ const _fmtHoraManaus = new Intl.DateTimeFormat('en-GB', {
 });
 
 // Hora local de Porto Velho/Manaus (0-23) a partir de timestamp em ms.
+// Se esta função já existir no arquivo, NÃO recoloque (evita declaração duplicada).
 function horaManaus(ms) {
   const partes = _fmtHoraManaus.formatToParts(new Date(ms));
   const h = partes.find(p => p.type === 'hour');
   return h ? Number(h.value) % 24 : -1;
 }
-
-const CHUNK_DELETE = 450; // margem sob o limite de 500/commit do Firestore
 
 // Apaga o documento do snapshot E todos os leitos da subcoleção.
 async function apagarSnapshot(snapshotRef) {
@@ -757,72 +758,70 @@ async function apagarSnapshot(snapshotRef) {
 }
 
 exports.limparBackupsAntigos = onSchedule({
-  schedule: "0 3 * * *",
+  schedule: "5 * * * *",   // a cada hora, no minuto 5 (o backup roda no minuto 0)
   timeZone: "America/Porto_Velho",
   memory: "512MiB",
   timeoutSeconds: 540
 }, async () => {
   const agora = Date.now();
-  const DIA = 24 * 60 * 60 * 1000;
-  const limite30 = agora - 30 * DIA; // > 30 dias: apaga tudo
-  const limite7  = agora - 7  * DIA; // 8 a 30 dias: mantém só o das 07h
+  const limite24h = agora - RETENCAO_HORARIA_MS;
+  const limite7d  = agora - RETENCAO_6H_MS;
 
-  const snap = await db.collection("backup_leitos").get();
-  console.log(`[BACKUP-LIMPEZA] ${snap.size} snapshot(s) encontrados`);
+  // .select() lê APENAS o campo necessário. Sem isso, cada snapshot doc é
+  // carregado por inteiro — foi um dos fatores do estouro de 256MiB.
+  const snap = await db.collection("backup_leitos").select("criadoEm").get();
 
-  let apagados = 0;
-  let mantidos = 0;
-  let erros = 0;
-  let elegiveis = 0;
-
-  for (const d of snap.docs) {
-    try {
+  const itens = snap.docs
+    .map((d) => {
       const criado = d.data().criadoEm;
       const t = criado && typeof criado.toMillis === "function"
         ? criado.toMillis()
         : (criado && criado.toDate ? criado.toDate().getTime() : NaN);
+      return { id: d.id, ref: d.ref, t };
+    })
+    .filter((x) => x.t && !isNaN(x.t))
+    .sort((a, b) => a.t - b.t); // mais antigo primeiro
 
-      if (!t || isNaN(t)) {
-        mantidos++;
-        continue;
-      }
+  const semData = snap.size - itens.length;
+  console.log(`[BACKUP-LIMPEZA] ${snap.size} snapshot(s) — ${itens.length} legíveis, ${semData} sem data válida`);
 
-      // > 30 dias: apaga o snapshot inteiro
-      if (t < limite30) {
-        elegiveis++;
-        const n = await apagarSnapshot(d.ref);
-        console.log(`[BACKUP-LIMPEZA] ${d.id}: APAGADO (>30 dias, ${n} leito(s))`);
-        apagados++;
-        continue;
-      }
+  let apagados = 0, mantidos = 0, elegiveis = 0, falhas = 0;
+  let interrompido = false;
 
-      // 8 a 30 dias: mantém só o das 07h
-      if (t < limite7) {
-        const hora = horaManaus(t);
-        if (hora !== 7) {
-          elegiveis++;
-          const n = await apagarSnapshot(d.ref);
-          console.log(`[BACKUP-LIMPEZA] ${d.id}: APAGADO (hora ${hora} ≠ 07h, ${n} leito(s))`);
-          apagados++;
-        } else {
-          mantidos++;
-        }
-        continue;
-      }
+  for (const item of itens) {
+    if (apagados >= MAX_APAGAR_POR_EXECUCAO) { interrompido = true; break; }
 
-      // ≤ 7 dias: mantém
-      mantidos++;
+    let motivo = null;
+    if (item.t < limite7d) {
+      motivo = "> 7 dias";
+    } else if (item.t < limite24h) {
+      const h = horaManaus(item.t);
+      if (h % INTERVALO_6H !== 0) motivo = `24h-7d, hora ${h} (fora de 0/6/12/18)`;
+    }
+    // item.t >= limite24h → janela de 24h: mantém tudo
+
+    if (!motivo) { mantidos++; continue; }
+
+    elegiveis++;
+    try {
+      const n = await apagarSnapshot(item.ref);
+      console.log(`[BACKUP-LIMPEZA] ${item.id}: APAGADO (${motivo}), ${n} leito(s)`);
+      apagados++;
     } catch (err) {
-      erros++;
-      console.error(`[BACKUP-LIMPEZA] ${d.id}: FALHA — ${err.message}`);
+      falhas++;
+      console.error(`[BACKUP-LIMPEZA] ${item.id}: FALHA — ${err.message}`);
     }
   }
 
-  console.log(`[BACKUP-LIMPEZA] Concluído — apagados=${apagados}, mantidos=${mantidos}, erros=${erros}, elegíveis=${elegiveis}`);
+  console.log(
+    `[BACKUP-LIMPEZA] Concluído — apagados=${apagados}, mantidos=${mantidos}, falhas=${falhas}` +
+    (interrompido ? ` (freio de ${MAX_APAGAR_POR_EXECUCAO} atingido; continua na próxima hora)` : "")
+  );
 
-  // Só marca falha se TODO snapshot elegível falhou (problema real de infra)
-  if (erros > 0 && apagados === 0 && erros === elegiveis) {
-    throw new Error(`Limpeza falhou em todos os ${erros} snapshot(s) elegíveis`);
+  // Falha explícita só se NADA pôde ser apagado tendo havido tentativa — indica
+  // problema real (permissão/quota), não um erro isolado de um snapshot.
+  if (falhas > 0 && apagados === 0 && elegiveis === falhas) {
+    throw new Error(`Limpeza falhou em todos os ${falhas} snapshot(s) elegíveis`);
   }
 });
 
