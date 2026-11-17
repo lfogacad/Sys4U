@@ -710,15 +710,14 @@ exports.backupLeitosHorario = onSchedule({
 //   • ≤ 7 dias    → mantém todos
 //
 // Correções aplicadas:
-//   1. memory 512MiB (o default de 256MiB causava OOM — 273MiB usados)
+//   1. memory 512MiB — o default de 256MiB causava OOM (273MiB usados),
+//      o container era morto pelo Cloud Run e o Scheduler registrava 503
 //   2. Intl.DateTimeFormat criado UMA vez no módulo, não a cada documento
-//   3. Exclusão em chunks de 450 (o Firestore limita 500 escritas por commit)
+//   3. Exclusão em chunks de 450 (Firestore limita 500 escritas por commit)
 //   4. Erro em um snapshot não aborta o job inteiro
-//   5. Log por snapshot para diagnóstico
+//   5. Log por snapshot (docId, motivo, contagem) para diagnóstico
 // ============================================================================
 
-// Formatter único. Criar Intl.DateTimeFormat dentro do loop consome memória
-// e CPU desnecessariamente — foi um dos fatores do estouro de 256MiB.
 const _fmtHoraManaus = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'America/Porto_Velho',
   hour: '2-digit',
@@ -732,7 +731,7 @@ function horaManaus(ms) {
   return h ? Number(h.value) % 24 : -1;
 }
 
-const CHUNK_DELETE = 450; // margem de segurança sob o limite de 500/commit
+const CHUNK_DELETE = 450; // margem sob o limite de 500/commit do Firestore
 
 // Apaga o documento do snapshot E todos os leitos da subcoleção.
 async function apagarSnapshot(snapshotRef) {
@@ -821,7 +820,7 @@ exports.limparBackupsAntigos = onSchedule({
 
   console.log(`[BACKUP-LIMPEZA] Concluído — apagados=${apagados}, mantidos=${mantidos}, erros=${erros}, elegíveis=${elegiveis}`);
 
-  // Só marca falha se TODO snapshot elegível falhou (indica problema real de infra)
+  // Só marca falha se TODO snapshot elegível falhou (problema real de infra)
   if (erros > 0 && apagados === 0 && erros === elegiveis) {
     throw new Error(`Limpeza falhou em todos os ${erros} snapshot(s) elegíveis`);
   }
