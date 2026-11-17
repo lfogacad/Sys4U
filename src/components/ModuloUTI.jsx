@@ -3371,6 +3371,63 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
         tgiIntercorrencias = ` Houve registro de ${partesTGI[0]} e ${partesTGI[1]}.`;
       }
 
+      // ---------- GLICEMIA (HGT) — episódios do BH atual do dia assistencial ----------
+      // Fonte: bh (dia assistencial em curso, 07h D-1 → 06h D).
+      // Chave do campo no BH: "HGT (mg/dL)".
+      // Limiares: hipoglicemia < 70 | hiperglicemia > 180 mg/dL.
+      const LIMIAR_HIPO = 70;
+      const LIMIAR_HIPER = 180;
+
+      const ehChaveHGT = (k) => /^hgt/i.test(String(k || "").trim());
+
+      // Varre gains, losses e vitals do BH e devolve um item por HORA
+      // com HGT preenchido (> 0). A deduplicação por hora evita contar duas
+      // vezes caso o campo apareça em mais de uma categoria na mesma hora.
+      const coletarHGTPorHora = (bh) => {
+        const achados = [];
+        if (!bh || typeof bh !== "object") return achados;
+        const horasVistas = new Set();
+        ["gains", "losses", "vitals"].forEach((cat) => {
+          const mapa = bh[cat];
+          if (!mapa || typeof mapa !== "object") return;
+          Object.keys(mapa).forEach((hora) => {
+            if (horasVistas.has(hora)) return;
+            const celulas = mapa[hora];
+            if (!celulas || typeof celulas !== "object") return;
+            const chaveHGT = Object.keys(celulas).find(ehChaveHGT);
+            if (!chaveHGT) return;
+            const v = safeNum(celulas[chaveHGT]);
+            if (!(v > 0)) return;
+            horasVistas.add(hora);
+            achados.push({ hora, valor: v });
+          });
+        });
+        return achados;
+      };
+
+      const hgtHoras = coletarHGTPorHora(currentPatient.bh);
+      const episodiosHipo = hgtHoras.filter((r) => r.valor < LIMIAR_HIPO).length;
+      const episodiosHiper = hgtHoras.filter((r) => r.valor > LIMIAR_HIPER).length;
+
+      let glicemiaStatus = "";
+      if (episodiosHipo > 0 && episodiosHiper > 0) {
+        // Tipos mistos: disglicemia tem precedência
+        glicemiaStatus = "apresentando disglicemia";
+      } else if (episodiosHipo >= 2) {
+        glicemiaStatus = isFem ? "manteve-se hipoglicêmica" : "manteve-se hipoglicêmico";
+      } else if (episodiosHiper >= 2) {
+        glicemiaStatus = isFem ? "manteve-se hiperglicêmica" : "manteve-se hiperglicêmico";
+      } else if (episodiosHipo === 1) {
+        glicemiaStatus = "apresentou um episódio de hipoglicemia";
+      } else if (episodiosHiper === 1) {
+        glicemiaStatus = "apresentou um episódio de hiperglicemia";
+      } else if (hgtHoras.length === 0) {
+        // Nenhum HGT registrado no dia → não afirma controle glicêmico
+        glicemiaStatus = "";
+      } else {
+        glicemiaStatus = isFem ? "manteve-se euglicêmica" : "manteve-se euglicêmico";
+      }
+
       const viaDieta = currentPatient.nutri?.via ? currentPatient.nutri.via.toLowerCase() : "zero";
 
       // 8. O PROMPT PARA A IA (APENAS O BLOCO DE EVOLUÇÃO)
@@ -3395,10 +3452,10 @@ const generateAIEvolution = async (dadosDoTimeout = null) => {
       - [TEMPERATURA]: ${tempStatus}
       - [LEUCOMETRIA]: ${leucoStatus}
       - [ATB]: ${atbsFinal}
-      - [VIA DIETA]: ${viaDieta}
+      - [VIA DIETA]: ${viaDieta}${glicemiaStatus ? `, ${glicemiaStatus}` : ''}
       - [EVACUAÇÃO]: ${evacTexto}
       - [TGI]: ${tgiIntercorrencias}
-      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO]. Se [FR] existir, inclua-o na primeira linha logo após a SpO2, sem quebra de linha.`;
+      INSTRUÇÃO FINAL: Se o campo [TGI] contiver texto, você DEVE transcrevê-lo exatamente após a última evacuação. Se [TGI] estiver vazio, finalize a frase após a [EVACUAÇÃO]. Se [FR] existir, inclua-o na primeira linha logo após a SpO2, sem quebra de linha. Se o campo [VIA DIETA] contiver a frase de glicemia, transcreva-a LITERALMENTE na MESMA frase da via de dieta, imediatamente após ela, antes de qualquer menção à evacuação ou ao [TGI]. Não altere as palavras dessa frase e não crie uma frase separada para a glicemia.`;
 
       // 9. LOOP DE MODELOS (GEMINI)
       const models = ["gemini-2.5-flash", "gemini-2.5-pro"];
