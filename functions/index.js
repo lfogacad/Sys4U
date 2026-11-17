@@ -701,62 +701,131 @@ exports.backupLeitosHorario = onSchedule({
   console.log(`[BACKUP] ${snapshotId} salvo com ${snap.size} leitos`);
 });
 
-/**
- * Limpeza — apaga snapshots de backup mais antigos que 30 dias (roda 1x/dia às 03h)
- */
+// ============================================================================
+// LIMPEZA DE BACKUPS — apaga snapshots com mais de 30 dias (roda 1x/dia às 03h)
+// ============================================================================
+// Política:
+//   • > 30 dias   → apaga o snapshot inteiro (doc + subcoleção)
+//   • 8 a 30 dias → mantém só o das 07h (Porto Velho); apaga os demais horários
+//   • ≤ 7 dias    → mantém todos
+//
+// Correções aplicadas:
+//   1. memory 512MiB (o default de 256MiB causava OOM — 273MiB usados)
+//   2. Intl.DateTimeFormat criado UMA vez no módulo, não a cada documento
+//   3. Exclusão em chunks de 450 (o Firestore limita 500 escritas por commit)
+//   4. Erro em um snapshot não aborta o job inteiro
+//   5. Log por snapshot para diagnóstico
+// ============================================================================
+
+// Formatter único. Criar Intl.DateTimeFormat dentro do loop consome memória
+// e CPU desnecessariamente — foi um dos fatores do estouro de 256MiB.
+const _fmtHoraManaus = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'America/Porto_Velho',
+  hour: '2-digit',
+  hour12: false
+});
+
+// Hora local de Porto Velho/Manaus (0-23) a partir de timestamp em ms.
+function horaManaus(ms) {
+  const partes = _fmtHoraManaus.formatToParts(new Date(ms));
+  const h = partes.find(p => p.type === 'hour');
+  return h ? Number(h.value) % 24 : -1;
+}
+
+const CHUNK_DELETE = 450; // margem de segurança sob o limite de 500/commit
+
+// Apaga o documento do snapshot E todos os leitos da subcoleção.
+async function apagarSnapshot(snapshotRef) {
+  let docs = [];
+  try {
+    const sub = await snapshotRef.collection('leitos').get();
+    docs = sub.docs;
+  } catch (e) {
+    console.error(`[BACKUP-LIMPEZA] ${snapshotRef.id}: erro ao listar leitos — ${e.message}`);
+  }
+
+  let apagados = 0;
+  for (let i = 0; i < docs.length; i += CHUNK_DELETE) {
+    const grupo = docs.slice(i, i + CHUNK_DELETE);
+    const batch = db.batch();
+    grupo.forEach(l => batch.delete(l.ref));
+    await batch.commit();
+    apagados += grupo.length;
+  }
+
+  await snapshotRef.delete();
+  return apagados;
+}
+
 exports.limparBackupsAntigos = onSchedule({
   schedule: "0 3 * * *",
-  timeZone: "America/Porto_Velho"
+  timeZone: "America/Porto_Velho",
+  memory: "512MiB",
+  timeoutSeconds: 540
 }, async () => {
   const agora = Date.now();
   const DIA = 24 * 60 * 60 * 1000;
   const limite30 = agora - 30 * DIA; // > 30 dias: apaga tudo
-  const limite7  = agora - 7  * DIA; // dias 8 a 30: mantém só o das 07h
+  const limite7  = agora - 7  * DIA; // 8 a 30 dias: mantém só o das 07h
 
   const snap = await db.collection("backup_leitos").get();
+  console.log(`[BACKUP-LIMPEZA] ${snap.size} snapshot(s) encontrados`);
+
+  let apagados = 0;
+  let mantidos = 0;
+  let erros = 0;
+  let elegiveis = 0;
 
   for (const d of snap.docs) {
-    const criado = d.data().criadoEm;
-    const t = criado && typeof criado.toMillis === "function"
-      ? criado.toMillis()
-      : (criado && criado.toDate ? criado.toDate().getTime() : NaN);
-    if (!t) continue;
+    try {
+      const criado = d.data().criadoEm;
+      const t = criado && typeof criado.toMillis === "function"
+        ? criado.toMillis()
+        : (criado && criado.toDate ? criado.toDate().getTime() : NaN);
 
-    // > 30 dias: apaga o snapshot inteiro (doc + subcoleção)
-    if (t < limite30) {
-      await apagarSnapshot(d.ref);
-      continue;
-    }
-
-    // dias 8 a 30: mantém só o das 07h (Manaus), apaga os demais horários
-    if (t < limite7) {
-      const hora = horaManaus(t);
-      if (hora !== 7) {
-        await apagarSnapshot(d.ref);
+      if (!t || isNaN(t)) {
+        mantidos++;
+        continue;
       }
+
+      // > 30 dias: apaga o snapshot inteiro
+      if (t < limite30) {
+        elegiveis++;
+        const n = await apagarSnapshot(d.ref);
+        console.log(`[BACKUP-LIMPEZA] ${d.id}: APAGADO (>30 dias, ${n} leito(s))`);
+        apagados++;
+        continue;
+      }
+
+      // 8 a 30 dias: mantém só o das 07h
+      if (t < limite7) {
+        const hora = horaManaus(t);
+        if (hora !== 7) {
+          elegiveis++;
+          const n = await apagarSnapshot(d.ref);
+          console.log(`[BACKUP-LIMPEZA] ${d.id}: APAGADO (hora ${hora} ≠ 07h, ${n} leito(s))`);
+          apagados++;
+        } else {
+          mantidos++;
+        }
+        continue;
+      }
+
+      // ≤ 7 dias: mantém
+      mantidos++;
+    } catch (err) {
+      erros++;
+      console.error(`[BACKUP-LIMPEZA] ${d.id}: FALHA — ${err.message}`);
     }
   }
-  console.log("[BACKUP] Limpeza concluída");
+
+  console.log(`[BACKUP-LIMPEZA] Concluído — apagados=${apagados}, mantidos=${mantidos}, erros=${erros}, elegíveis=${elegiveis}`);
+
+  // Só marca falha se TODO snapshot elegível falhou (indica problema real de infra)
+  if (erros > 0 && apagados === 0 && erros === elegiveis) {
+    throw new Error(`Limpeza falhou em todos os ${erros} snapshot(s) elegíveis`);
+  }
 });
-
-// Apaga o documento do snapshot E todos os leitos da subcoleção
-async function apagarSnapshot(snapshotRef) {
-  const leitosSub = await snapshotRef.collection("leitos").get();
-  const batch = db.batch();
-  leitosSub.forEach(l => batch.delete(l.ref));
-  batch.delete(snapshotRef);
-  await batch.commit();
-}
-
-// Hora local de Manaus (UTC-4) a partir de um timestamp em ms — usada para
-// preservar só o backup das 07h na janela 8–30 dias, independente do formato do ID.
-function horaManaus(ms) {
-  const partes = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Porto_Velho',
-    hour: '2-digit', hour12: false
-  }).formatToParts(new Date(ms));
-  return Number(partes.find(p => p.type === 'hour').value) % 24;
-}
 
 // ============================================================================
 // VIRADA DIÁRIA DO BALANÇO HÍDRICO — roda às 07:01 (após o backup das 07:00)
