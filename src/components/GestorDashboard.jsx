@@ -4794,9 +4794,11 @@ const imprimirRelatorioGeladeira = () => {
     // 💡 A MÁGICA ESTÁ AQUI: Extrai o leito limpíssimo (apenas o número/texto)
     const leitoLimpo = p.id.replace('bed_', '');
 
-    // --- 🚨 BLOQUEIO DE SEGURANÇA: DATA DE INTUBAÇÃO ---
-    if (!p.dataIntubacao || p.dataIntubacao.trim() === '') {
-      return alert("❌ Bloqueado: Este paciente não possui data de intubação registrada. Não é possível calcular o tempo de VM.");
+    // 🚨 BLOQUEIO DE SEGURANÇA: DATA DE INTUBAÇÃO OU TRAQUEOSTOMIA
+    // Aceita TQT direta (mesma regra da varredura automática).
+    const dataViaAerea = p.dataIntubacao || p.dataTraqueostomia;
+    if (!dataViaAerea || String(dataViaAerea).trim() === '') {
+      return alert("❌ Bloqueado: Este paciente não possui data de intubação nem de traqueostomia registrada. Não é possível calcular o tempo de VM.");
     }
 
     // Contagem de Sinais
@@ -4840,7 +4842,7 @@ const imprimirRelatorioGeladeira = () => {
     const dataEventoDOE = new Date(Math.min(...timestamps)).toISOString().split('T')[0];
 
     // Lógica de Bloqueio VM
-    let dataIntStr = p.dataIntubacao.includes('/') ? p.dataIntubacao.split('/').reverse().join('-') : p.dataIntubacao;
+    let dataIntStr = String(dataViaAerea).includes('/') ? String(dataViaAerea).split('/').reverse().join('-') : String(dataViaAerea);
     const dataInt = new Date(`${dataIntStr}T12:00:00`);
     const dataEvento = new Date(`${dataEventoDOE}T12:00:00`);
     const diffVM = Math.floor((dataEvento - dataInt) / (1000 * 60 * 60 * 24));
@@ -4855,7 +4857,7 @@ const imprimirRelatorioGeladeira = () => {
     if (aprovado) {
       try {
         const mesRef = dataEventoDOE.slice(0, 7);
-        const idAuditoria = `manual_pav_${Date.now()}`;
+        const idAuditoria = `${p.cpf || p.id}_pav_${dataEventoDOE}`;
         
         await setDoc(doc(db, "auditorias_pav", idAuditoria), {
           id: idAuditoria, pacienteId: formManualPAV.pacienteId,
@@ -4933,7 +4935,7 @@ const imprimirRelatorioGeladeira = () => {
       const dataEventoDOE = formManualIPCSC.dataColeta;
       const dataInfeccao = formManualIPCSC.dataInfeccao;
       const mesRef = dataInfeccao.slice(0, 7); // mês de referência = mês da data da infecção
-      const idAuditoria = `manual_ipcsc_${Date.now()}`;
+      const idAuditoria = `${p.cpf || p.id}_ipcsc_${dataEventoDOE}`;
 
       await setDoc(doc(db, "auditorias_ipcsl", idAuditoria), {
         id: idAuditoria, pacienteId: formManualIPCSC.pacienteId,
@@ -4999,7 +5001,7 @@ const imprimirRelatorioGeladeira = () => {
 
     try {
       const mesRef = formManualITU.dataColeta.slice(0, 7);
-      const idAuditoria = `manual_itu_${Date.now()}`;
+      const idAuditoria = `${p.cpf || p.id}_itu_${dataEventoDOE}`;
       
       await setDoc(doc(db, "auditorias_itu", idAuditoria), {
         id: idAuditoria, pacienteId: formManualITU.pacienteId,
@@ -5291,7 +5293,7 @@ const imprimirRelatorioGeladeira = () => {
           }
 
           if (atendeCriterioVM) {
-            const idAuditoria = `${p.cpf || p.id}_pav_${mesCorrente}`;
+            const idAuditoria = `${p.cpf || p.id}_pav_${dataEventoFormatada}`;
             const docAuditoriaRef = doc(db, "auditorias_pav", idAuditoria);
             const audDoc = await getDocs(query(collection(db, "auditorias_pav"), where("id", "==", idAuditoria)));
             
@@ -5707,12 +5709,76 @@ const imprimirRelatorioGeladeira = () => {
     }
   }, [activeView, abaIrasAtiva, mesFiltroIrasCompartilhado]);
 
-  const salvarNotaCCIH = async (firebaseId, colecao, textoNota) => {
+  // =========================================================================
+  // CCIH: CLASSIFICAÇÃO DA CULTURA PELO MODAL DE AUDITORIA
+  // A classificação saiu da Visão Geral. Agora vive aqui, atrelada ao caso.
+  // =========================================================================
+  // Formata data ISO (AAAA-MM-DD) para exibição em DD/MM/AAAA.
+  // Mantém o mesmo padrão dos cabeçalhos dos modais e do resto do sistema,
+  // para não haver dois formatos na mesma tela.
+  const fmtDataBR = (iso) => {
+    if (!iso) return "—";
+    const s = String(iso).trim();
+    if (s.includes("/")) return s;                    // já está em BR
+    const [a, m, d] = s.slice(0, 10).split("-");
+    return a && m && d ? `${d}/${m}/${a}` : s;
+  };
+
+  // Localiza a cultura do prontuário que originou o caso auditado.
+  // 1º tenta pelo id embutido no idAuditoria (IPCS e ITU carregam o id da cultura)
+  // 2º cai para data de coleta + germe
+  const localizarCulturaDoCaso = (caso) => {
+    if (!caso) return null;
+    const pac = leitosConfig.find(l => l.id === caso.pacienteId);
+    const lista = pac?.culturas?.lista || [];
+    if (lista.length === 0) return null;
+
+    const idAud = String(caso.id || caso.firebaseId || "");
+    const porId = lista.find(c => c.id && idAud.includes(c.id));
+    if (porId) return porId;
+
+    const dataRef = caso.dataEventoDOE || caso.dataSuspeita || "";
+    const germeCaso = String(caso.germe || "").trim().toLowerCase();
+    const mesmaData = lista.filter(c => c.dataColeta === dataRef);
+    if (mesmaData.length === 1) return mesmaData[0];
+    if (germeCaso) {
+      const porGerme = mesmaData.find(c => String(c.germe || "").trim().toLowerCase() === germeCaso);
+      if (porGerme) return porGerme;
+    }
+    return mesmaData[0] || null;
+  };
+
+  // Grava a classificação APENAS no campo culturas.lista — sem setDoc do
+  // prontuário inteiro (o classificarCulturaIRAS antigo reescrevia o paciente
+  // todo com o estado em memória e podia ressuscitar dado velho).
+  const salvarClassificacaoCultura = async (caso, novaClassificacao) => {
+    if (!db || !caso) return;
+    const cultura = localizarCulturaDoCaso(caso);
+    if (!cultura) return alert("Nenhuma cultura vinculada a este caso para classificar.");
+    const pac = leitosConfig.find(l => l.id === caso.pacienteId);
+    if (!pac?.culturas?.lista) return alert("Culturas do paciente não encontradas no estado atual.");
+
+    const listaNova = pac.culturas.lista.map(c =>
+      c.id === cultura.id ? { ...c, irasAssociada: novaClassificacao } : c
+    );
+
+    try {
+      // 1) coleção imortal da CCIH
+      await setDoc(doc(db, "culturas_globais", cultura.id), { irasAssociada: novaClassificacao }, { merge: true });
+      // 2) prontuário: só a lista de culturas
+      const docId = String(caso.pacienteId).startsWith("bed_") ? caso.pacienteId : `bed_${caso.pacienteId}`;
+      await updateDoc(doc(db, "leitos_uti", docId), { "culturas.lista": listaNova });
+      carregarCulturasGlobais();
+    } catch (err) {
+      console.error("Erro ao classificar cultura:", err);
+      alert("Falha ao salvar a classificação da cultura.");
+    }
+  };
+
+  const salvarNotaCCIH = async (firebaseId, textoNota) => {
     if (!db || !firebaseId) return;
     try {
-      const docRef = doc(db, colecao, firebaseId);
-      await updateDoc(docRef, { notaCCIH: textoNota });
-      console.log(`Nota salva com sucesso na coleção ${colecao}`);
+      await updateDoc(doc(db, "auditorias_iras", firebaseId), { notaCCIH: textoNota });
     } catch (error) {
       console.error("Erro ao salvar nota da CCIH:", error);
     }
@@ -8941,23 +9007,16 @@ const imprimirRelatorioGeladeira = () => {
                               )}
                             </td>
                             <td className="p-3 text-center">
-                              {cultura.status === "Positivo" ? (
-                                <select 
-                                  className={`p-1.5 text-xs font-bold border rounded outline-none transition-colors w-full cursor-pointer ${cultura.irasAssociada ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-slate-300 text-slate-600'}`}
-                                  value={cultura.irasAssociada || ""}
-                                  onChange={(e) => {
-                                    classificarCulturaIRAS(cultura.pacienteId, cultura.leito, cultura.id, e.target.value);
-                                  }}
-                                >
-                                  <option value="">Não classificado</option>
-                                  <option value="Colonizacao">Apenas Colonização</option>
-                                  <option value="PAV">PAV (Pneumonia)</option>
-                                  <option value="IPCS-C">IPCS-C (Corrente Sanguínea)</option>
-                                  <option value="ITU-AC">ITU-AC (Trato Urinário)</option>
-                                  <option value="Outra">Outra</option>
-                                </select>
-                              ) : (
+                              {cultura.status !== "Positivo" ? (
                                 <span className="text-[10px] text-slate-300">Não aplicável</span>
+                              ) : cultura.irasAssociada ? (
+                                <span className="inline-block bg-purple-50 border border-purple-300 text-purple-700 px-2 py-1 rounded text-[10px] font-black uppercase">
+                                  {cultura.irasAssociada}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">
+                                  Classificar na aba da IRA
+                                </span>
                               )}
                             </td>
                           </tr>
@@ -9133,6 +9192,44 @@ const imprimirRelatorioGeladeira = () => {
                         )}
                       </div>
 
+                      {/* CLASSIFICAÇÃO DA CULTURA (ANVISA) — decisão acontece aqui */}
+                      <div className="mt-6 bg-purple-50 border border-purple-200 p-3 rounded-lg shadow-sm">
+                        <label className="text-xs font-black text-purple-800 uppercase flex items-center gap-1 mb-2">
+                          <Microscope size={14} /> Classificação da Cultura (ANVISA)
+                        </label>
+                        {(() => {
+                          const cult = localizarCulturaDoCaso(modalAuditoriaPAV);
+                          if (!cult) {
+                            return (
+                              <p className="text-[11px] text-slate-400 italic">
+                                Nenhuma cultura positiva localizada para este caso. Caso clínico sem confirmação microbiológica.
+                              </p>
+                            );
+                          }
+                          return (
+                            <>
+                              <p className="text-[11px] text-purple-900 font-bold mb-2">
+                                {cult.tipo || "Cultura"} · {cult.germe || "sem germe"} · coleta {fmtDataBR(cult.dataColeta)}
+                              </p>
+                              <select
+                                value={cult.irasAssociada || ""}
+                                onChange={(e) => salvarClassificacaoCultura(modalAuditoriaPAV, e.target.value)}
+                                className={`w-full p-2.5 border-2 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200 transition-all cursor-pointer ${
+                                  cult.irasAssociada ? "border-purple-400 bg-white text-purple-800" : "border-amber-300 bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                <option value="">Não classificado</option>
+                                <option value="Colonizacao">Apenas Colonização</option>
+                                <option value="PAV">PAV (Pneumonia)</option>
+                                <option value="IPCS-C">IPCS-C (Corrente Sanguínea)</option>
+                                <option value="ITU-AC">ITU-AC (Trato Urinário)</option>
+                                <option value="Outra">Outra</option>
+                              </select>
+                            </>
+                          );
+                        })()}
+                      </div>
+
                       {/* NOVO CAMPO DE ANOTAÇÕES DA CCIH */}
                       <div className="mt-6 bg-slate-50 border border-slate-200 p-3 rounded-lg shadow-sm">
                         <label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1 mb-2">
@@ -9143,7 +9240,7 @@ const imprimirRelatorioGeladeira = () => {
                           rows="3"
                           placeholder="Descreva os motivos clínicos para confirmar ou descartar este caso (Ex: Paciente já apresentava infiltrado prévio à intubação)..."
                           defaultValue={modalAuditoriaPAV.notaCCIH || ""}
-                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaPAV.firebaseId, "auditorias_pav", e.target.value)}
+                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaPAV.firebaseId, e.target.value)}
                         ></textarea>
                         <p className="text-[10px] text-slate-400 mt-1 italic text-right">* A nota é salva automaticamente ao sair do campo.</p>
                       </div>
@@ -9547,9 +9644,8 @@ const imprimirRelatorioGeladeira = () => {
 
                               const idAuditoria = `${p.cpf || p.id}_ipcsc_${hemo.id || dColetaStr}`;
                               const docRef = doc(db, "auditorias_ipcsl", idAuditoria);
-                              const audDoc = await getDocs(query(collection(db, "auditorias_ipcsl"), where("id", "==", idAuditoria)));
-
-                              if (audDoc.empty) {
+                              const audSnap = await getDoc(docRef);
+                              if (!audSnap.exists()) {
                                 await setDoc(docRef, {
                                   id: idAuditoria, pacienteId: p.id, nome: p.nome, leito: p.leito, mesReferencia: mesCorrenteHemo,
                                   dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
@@ -9787,7 +9883,7 @@ const imprimirRelatorioGeladeira = () => {
                           rows="3"
                           placeholder="Ex: Confirmo infecção por patógeno verdadeiro. / Descarto pois é apenas uma amostra de comensal..."
                           defaultValue={modalAuditoriaIPCSL.notaCCIH || ""}
-                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaIPCSL.firebaseId, "auditorias_ipcsl", e.target.value)}
+                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaIPCSL.firebaseId, e.target.value)}
                         ></textarea>
                         <p className="text-[10px] text-slate-400 mt-1 italic text-right">* A nota é salva automaticamente ao sair do campo.</p>
                       </div>
@@ -10186,6 +10282,9 @@ const imprimirRelatorioGeladeira = () => {
                               
                               const ufc = Number(uro.contagemUFC) || 0;
                               const qtdEsp = Number(uro.qtdEspecies) || 1;
+                              // Critério ANVISA — mesma regra do lançamento manual
+                              if (ufc > 0 && ufc < 100000) continue;
+                              if (qtdEsp > 2) continue;
 
                               // --- CRIAÇÃO DA JANELA DE 7 DIAS (D-3 a D+3) ---
                               const datasJanela = [];
@@ -10245,9 +10344,9 @@ const imprimirRelatorioGeladeira = () => {
                               // --- 3. CRIAÇÃO DO CASO SUSPEITO ---
                               const idAuditoria = `${p.cpf || p.id}_itu_${uro.id || dColetaStr}`;
                               const docRef = doc(db, "auditorias_itu", idAuditoria);
-                              const audDoc = await getDocs(query(collection(db, "auditorias_itu"), where("id", "==", idAuditoria)));
+                              const audSnap = await getDoc(docRef);
                               
-                              if (audDoc.empty) {
+                              if (!audSnap.exists()) {
                                 await setDoc(docRef, {
                                   id: idAuditoria, pacienteId: p.id, nome: p.nome, leito: p.leito, mesReferencia: mesCorrenteUro,
                                   dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
@@ -10384,6 +10483,44 @@ const imprimirRelatorioGeladeira = () => {
                         </div>
                       </div>
 
+                      {/* CLASSIFICAÇÃO DA CULTURA (ANVISA) — decisão acontece aqui */}
+                      <div className="mt-6 bg-purple-50 border border-purple-200 p-3 rounded-lg shadow-sm">
+                        <label className="text-xs font-black text-purple-800 uppercase flex items-center gap-1 mb-2">
+                          <Microscope size={14} /> Classificação da Cultura (ANVISA)
+                        </label>
+                        {(() => {
+                          const cult = localizarCulturaDoCaso(modalAuditoriaITU);
+                          if (!cult) {
+                            return (
+                              <p className="text-[11px] text-slate-400 italic">
+                                Nenhuma cultura positiva localizada para este caso. Caso clínico sem confirmação microbiológica.
+                              </p>
+                            );
+                          }
+                          return (
+                            <>
+                              <p className="text-[11px] text-purple-900 font-bold mb-2">
+                                {cult.tipo || "Cultura"} · {cult.germe || "sem germe"} · coleta {fmtDataBR(cult.dataColeta)}
+                              </p>
+                              <select
+                                value={cult.irasAssociada || ""}
+                                onChange={(e) => salvarClassificacaoCultura(modalAuditoriaITU, e.target.value)}
+                                className={`w-full p-2.5 border-2 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200 transition-all cursor-pointer ${
+                                  cult.irasAssociada ? "border-purple-400 bg-white text-purple-800" : "border-amber-300 bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                <option value="">Não classificado</option>
+                                <option value="Colonizacao">Apenas Colonização</option>
+                                <option value="PAV">PAV (Pneumonia)</option>
+                                <option value="IPCS-C">IPCS-C (Corrente Sanguínea)</option>
+                                <option value="ITU-AC">ITU-AC (Trato Urinário)</option>
+                                <option value="Outra">Outra</option>
+                              </select>
+                            </>
+                          );
+                        })()}
+                      </div>
+
                       {/* NOVO CAMPO DE ANOTAÇÕES DA CCIH (ITU-AC) */}
                       <div className="mt-6 bg-slate-50 border border-slate-200 p-3 rounded-lg shadow-sm">
                         <label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1 mb-2">
@@ -10394,7 +10531,7 @@ const imprimirRelatorioGeladeira = () => {
                           rows="3"
                           placeholder="Ex: Confirmo infecção por presença de febre associada. / Descarto pois paciente está assintomático (apenas colonização)..."
                           defaultValue={modalAuditoriaITU.notaCCIH || ""}
-                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaITU.firebaseId, "auditorias_itu", e.target.value)}
+                          onBlur={(e) => salvarNotaCCIH(modalAuditoriaITU.firebaseId, e.target.value)}
                         ></textarea>
                         <p className="text-[10px] text-slate-400 mt-1 italic text-right">* A nota é salva automaticamente ao sair do campo.</p>
                       </div>

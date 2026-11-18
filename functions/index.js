@@ -209,24 +209,27 @@ exports.gerarCensoUTI = onSchedule({
   try {
     const leitosSnapshot = await db.collection("leitos_uti").get();
 
-    // Ajuste de fuso horário para Rondônia (UTC-4)
-    const agora = new Date();
-    agora.setHours(agora.getHours() - 4);
-
-    // 🔥 VARIÁVEL DE PROTEÇÃO: Define se é a rodada da noite
-    const horaAtual = agora.getHours(); // Será 11 ou 23
+    // ========================================================
+    // MOTOR DE TEMPO — fuso Porto Velho, sem aritmética em UTC
+    // ========================================================
+    // formatManausHour já resolve o fuso. A versão anterior
+    // (setHours(-4) sobre um Date em UTC) funcionava por
+    // coincidência e errava de dia quando o mês virava.
+    const _stamp = formatManausHour(new Date());   // "2026-11-18T23"
+    const d0 = _stamp.split('T')[0];
+    const horaAtual = Number(_stamp.split('T')[1]);
     const isFechamentoDiario = horaAtual === 23;
+    const mesCorrente = d0.slice(0, 7);
 
-    // ========================================================
-    // MOTOR DE TEMPO GERAL (D0 de análise da Madrugada)
-    // ========================================================
+    // Janelas derivadas de d0, ancoradas ao meio-dia para não
+    // escorregar de dia em fuso nenhum.
+    const _baseD0 = new Date(`${d0}T12:00:00`);
     const datasJanelaPAV = [];
     for (let i = 0; i <= 3; i++) {
-      const d = new Date(agora.getTime() - i * 86400000);
-      datasJanelaPAV.push(d.toISOString().split('T')[0]);
+      datasJanelaPAV.push(
+        new Date(_baseD0.getTime() - i * 86400000).toISOString().split('T')[0]
+      );
     }
-    const d0 = datasJanelaPAV[0]; // Hoje
-    const mesCorrente = d0.slice(0, 7);
     const datasBR_PAV = datasJanelaPAV.map(d => d.split('-').reverse().join('/'));
     const datasBRCurtas_PAV = datasBR_PAV.map(d => d.substring(0, 5));
 
@@ -287,17 +290,20 @@ exports.gerarCensoUTI = onSchedule({
                 contadores.pacientesEmVM++;
             }
 
-            // CVC: inserido e não retirado
-            const temCVC = !!(p.enfermagem?.cvcData && !p.enfermagem?.cvcRetiradaData);
+            // Usa o mesmo extrator do sniffer — cobre p.dispositivos,
+            // p.medical.dispositivos, p.nursing.dispositivos e o legado
+            // enfermagem.*Data. Sem isso o denominador fica menor que o
+            // real e a densidade de incidência sai inflada.
+            const temCVC = hasDispositivoAtivo(p, ["cvc", "cateter venoso central", "cateter central"]);
             if (temCVC) contadores.pacientesComCVC++;
-            // SVD: inserido e não retirado
-            if (p.enfermagem?.svdData && !p.enfermagem?.svdRetiradaData) {
-              contadores.pacientesComSVD++;
-            }
-            // Shiley: inserido e não retirado
-            const temShiley = !!(p.enfermagem?.shileyData && !p.enfermagem?.shileyRetiradaData);
+
+            const temSVD = hasDispositivoAtivo(p, ["svd", "sonda vesical de demora", "sonda vesical"]);
+            if (temSVD) contadores.pacientesComSVD++;
+
+            const temShiley = hasDispositivoAtivo(p, ["shiley", "cateter de hemodialise", "cateter de hemodiálise", "cdl"]);
             if (temShiley) contadores.pacientesComShiley++;
-            // 📌 Cateter central-dia (ANVISA): CVC OU Shiley — conta 1 por paciente
+
+            // Cateter central-dia (ANVISA): CVC OU Shiley — 1 por paciente
             if (temCVC || temShiley) contadores.pacientesComAcessoCentral++;
             if (temCVC && temShiley) contadores.pacientesComAmbos++;
           } // 🔚 Fim do filtro de morador
@@ -393,13 +399,19 @@ exports.gerarCensoUTI = onSchedule({
                 }
 
                 if (atendeCriterioVM) {
-                  const idAuditoria = `${p.cpf || leitoId}_pav_${mesCorrente}`;
+                  // Chave por D.O.E., não por competência. Com mesCorrente,
+                  // uma segunda PAV no mesmo mês era descartada em silêncio
+                  // pelo `if (!audDoc.exists)` e o contador não subia.
+                  const idAuditoria = `${p.cpf || leitoId}_pav_${dataEventoFormatada}`;
                   const docAuditoriaRef = db.collection("auditorias_pav").doc(idAuditoria);
                   const promessaPAV = docAuditoriaRef.get().then(async (audDoc) => {
                     if (!audDoc.exists) {
                       await docAuditoriaRef.set({
                         id: idAuditoria, pacienteId: leitoId, cpf: p.cpf || "000.000.000-00", nome: p.nome,
-                        leito: leitoNumero, mesReferencia: mesCorrente, dataSuspeita: d0, dataEventoDOE: dataEventoFormatada,
+                        leito: leitoNumero, mesReferencia: mesCorrente,
+                        dataSuspeita: d0, dataEventoDOE: dataEventoFormatada,
+                        dataInfeccao: dataEventoFormatada, mesInfeccao: dataEventoFormatada.slice(0, 7),
+                        tipo: "PAV",
                         status: "Suspeito",
                         evidencias: {
                           radiologia: `Sim (Novo infiltrado) avaliado em ${datasBR_PAV[0]}`,
@@ -499,67 +511,88 @@ exports.gerarCensoUTI = onSchedule({
                 "cdl", "cateter de diálise", "cateter de dialise",
                 "hemodialise", "hemodiálise"
               ];
+              // Dispositivo é INFORMATIVO, não bloqueia. A classificação
+              // (IPCSL / NaoRelacionada / Importada) é decidida no modal,
+              // que já calcula cateter/dia e dia de internação.
               const dispIPCSC = getDispositivoParaAuditoria(p, gruposCVCShiley, dataColetaObj);
+              let infoDispositivo = "Sem registro de CVC/Shiley — avaliar no modal";
+              let diffDispColeta = null;
 
-              if (!dispIPCSC || !dispIPCSC.dataInsercao) continue;
-
-              let dDispStr = dispIPCSC.dataInsercao;
-              let dRetiradaStr = dispIPCSC.dataRetirada || null;
-
-              let dDispStrNorm = dDispStr.includes('/') ? dDispStr.split('/').reverse().join('-') : dDispStr;
-              const dataDispObj = new Date(`${dDispStrNorm}T12:00:00`);
-              const diffDispColeta = Math.floor((dataColetaObj - dataDispObj) / (1000 * 60 * 60 * 24));
-              let associadoDispositivo = diffDispColeta >= 2;
-
-              if (associadoDispositivo && dRetiradaStr) {
-                let dRetStrNorm = dRetiradaStr.includes('/') ? dRetiradaStr.split('/').reverse().join('-') : dRetiradaStr;
-                if (Math.floor((dataColetaObj - new Date(`${dRetStrNorm}T12:00:00`)) / (1000 * 60 * 60 * 24)) > 1) associadoDispositivo = false;
+              if (dispIPCSC && dispIPCSC.dataInsercao) {
+                const dDispNorm = dispIPCSC.dataInsercao.includes('/')
+                  ? dispIPCSC.dataInsercao.split('/').reverse().join('-')
+                  : dispIPCSC.dataInsercao;
+                diffDispColeta = Math.floor(
+                  (dataColetaObj - new Date(`${dDispNorm}T12:00:00`)) / 86400000
+                );
+                let retiradoAntes = false;
+                if (dispIPCSC.dataRetirada) {
+                  const dRetNorm = dispIPCSC.dataRetirada.includes('/')
+                    ? dispIPCSC.dataRetirada.split('/').reverse().join('-')
+                    : dispIPCSC.dataRetirada;
+                  retiradoAntes = Math.floor(
+                    (dataColetaObj - new Date(`${dRetNorm}T12:00:00`)) / 86400000
+                  ) > 1;
+                }
+                infoDispositivo = retiradoAntes
+                  ? `${dispIPCSC.tipoOriginal} retirado antes da coleta — revisar`
+                  : `${dispIPCSC.tipoOriginal} inserido em ${dDispNorm.split('-').reverse().join('/')} (D${diffDispColeta >= 0 ? diffDispColeta + 1 : '?'} na coleta)`;
               }
 
-              if (associadoDispositivo) {
-                const idAuditoria = `${p.cpf || leitoId}_ipcsc_${hemo.id || dColetaStr}`;
-                const docRefIPCSC = db.collection("auditorias_ipcsl").doc(idAuditoria);
-                const promessaIPCSC = docRefIPCSC.get().then(async (audDoc) => {
-                  // 📌 AVISO DE EPISÓDIO (14 DIAS): mesmo paciente com auditoria IPCS recente
-                  let temAuditoriaRecente = false;
-                  let dataAuditoriaRecente = null;
-                  try {
-                    const snapAuditados = await db.collection("auditorias_ipcsl").where("pacienteId", "==", leitoId).get();
-                    snapAuditados.forEach(docAud => {
-                      const aud = docAud.data();
-                      if (!aud.dataEventoDOE) return;
-                      const evStr = aud.dataEventoDOE.includes('/') ? aud.dataEventoDOE.split('/').reverse().join('-') : aud.dataEventoDOE;
-                      const evDate = new Date(`${evStr}T12:00:00`);
-                      const diffDias = Math.floor((dataColetaObj - evDate) / (1000 * 60 * 60 * 24));
-                      if (diffDias >= 0 && diffDias <= 14) {
-                        temAuditoriaRecente = true;
-                        dataAuditoriaRecente = aud.dataEventoDOE;
-                      }
-                    });
-                  } catch (e) { console.error("Erro ao verificar repetição IPCS:", e); }
+              const idAuditoria = `${p.cpf || leitoId}_ipcsc_${hemo.id || dColetaStr}`;
+              const docRefIPCSC = db.collection("auditorias_ipcsl").doc(idAuditoria);
+              const promessaIPCSC = docRefIPCSC.get().then(async (audDoc) => {
+                let temAuditoriaRecente = false;
+                let dataAuditoriaRecente = null;
+                try {
+                  const snapAuditados = await db.collection("auditorias_ipcsl")
+                    .where("pacienteId", "==", leitoId).get();
+                  snapAuditados.forEach(docAud => {
+                    const aud = docAud.data();
+                    if (!aud.dataEventoDOE || aud.id === idAuditoria) return;
+                    const evStr = aud.dataEventoDOE.includes('/')
+                      ? aud.dataEventoDOE.split('/').reverse().join('-')
+                      : aud.dataEventoDOE;
+                    const diffDias = Math.floor(
+                      (dataColetaObj - new Date(`${evStr}T12:00:00`)) / 86400000
+                    );
+                    if (diffDias >= 0 && diffDias <= 14) {
+                      temAuditoriaRecente = true;
+                      dataAuditoriaRecente = aud.dataEventoDOE;
+                    }
+                  });
+                } catch (e) { console.error("Erro ao verificar repetição IPCS:", e); }
 
-                  if (!audDoc.exists) {
-                    await docRefIPCSC.set({
-                      id: idAuditoria, pacienteId: leitoId, cpf: p.cpf || "000.000.000-00",
-                      nome: p.nome, leito: leitoNumero, mesReferencia: mesCorrenteHemo,
-                      dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
-                      repeticaoInfeccao: temAuditoriaRecente,
-                      dataEpisodioAnterior: dataAuditoriaRecente,
-                      evidencias: {
-                        microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
-                        sistemicos: evidenciasSistemicasIPCS.length > 0 ? evidenciasSistemicasIPCS : ['Critério Clínico dispensado (Patógeno Reconhecido)'],
-                        dispositivo: `Dispositivo (${dispIPCSC.tipoOriginal}) inserido em ${dDispStrNorm.split('-').reverse().join('/')} (D${diffDispColeta >= 0 ? diffDispColeta + 1 : '?'} no dia da coleta)`,
-                        justificativa: temAuditoriaRecente
-                          ? `Cruzamento automatizado: Hemocultura + Janela 7D + Dispositivo Central. ⚠️ ATENÇÃO: há outra IPCS deste paciente dentro do Prazo de Infecção de Repetição (14 dias) — episódio anterior em ${dataAuditoriaRecente}.`
-                          : "Cruzamento automatizado: Hemocultura + Janela 7D + Dispositivo Central."
-                      },
-                      timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                    novosCasosIPCSC++;
-                  }
-                });
-                promessasAuditoria.push(promessaIPCSC);
-              }
+                if (!audDoc.exists) {
+                  await docRefIPCSC.set({
+                    id: idAuditoria, tipo: "IPCSL",
+                    pacienteId: leitoId, cpf: p.cpf || "000.000.000-00",
+                    nome: p.nome, leito: leitoNumero, mesReferencia: mesCorrenteHemo,
+                    dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr,
+                    dataInfeccao: dColetaStr, mesInfeccao: mesCorrenteHemo,
+                    status: "Suspeito",
+                    tipoCriterio: isComensal ? "comensal" : "patogeno",
+                    germe: hemo.germe || "",
+                    repeticaoInfeccao: temAuditoriaRecente,
+                    dataEpisodioAnterior: dataAuditoriaRecente,
+                    evidencias: {
+                      microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${hemo.germe} (${isComensal ? 'Comensal em amostras múltiplas' : 'Patógeno Reconhecido'})`,
+                      sistemicos: evidenciasSistemicasIPCS.length > 0
+                        ? evidenciasSistemicasIPCS
+                        : ['Critério laboratorial — sem sinal clínico na janela de 7 dias'],
+                      dispositivo: infoDispositivo,
+                      justificativa: temAuditoriaRecente
+                        ? `Cruzamento automatizado: Hemocultura Positiva. ⚠️ Há outra IPCS deste paciente dentro do Prazo de Infecção de Repetição (14 dias) — episódio anterior em ${dataAuditoriaRecente}.`
+                        : "Cruzamento automatizado: Hemocultura Positiva (critério IPCSL)."
+                    },
+                    inseridoManualmente: false,
+                    origem: "cloud",
+                    timestampCriacao: admin.firestore.FieldValue.serverTimestamp()
+                  });
+                  novosCasosIPCSC++;
+                }
+              });
+              promessasAuditoria.push(promessaIPCSC);
             }
           }
 
@@ -572,7 +605,11 @@ exports.gerarCensoUTI = onSchedule({
 
               const ufc = Number(uro.contagemUFC) || 0;
               const qtdEsp = Number(uro.qtdEspecies) || 1;
-              if (ufc < 100000 || qtdEsp > 2) continue;
+              // ufc === 0 significa "não informado" (o ModuloCulturas grava 0
+              // quando o enfermeiro não digita a contagem). Bloquear por isso
+              // matava TODA urocultura e deixava a ITU-AC sem numerador.
+              if (ufc > 0 && ufc < 100000) continue;
+              if (qtdEsp > 2) continue;
 
               let dColetaStr = uro.dataColeta.includes('/') ? uro.dataColeta.split('/').reverse().join('-') : uro.dataColeta;
               const dataColetaObj = new Date(`${dColetaStr}T12:00:00`);
@@ -632,7 +669,9 @@ exports.gerarCensoUTI = onSchedule({
                 if (!audDoc.exists) {
                   await docRefITU.set({
                     id: idAuditoria, pacienteId: leitoId, nome: p.nome, leito: leitoNumero, mesReferencia: mesCorrenteUro,
-                    dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr, status: "Suspeito",
+                    dataSuspeita: dColetaStr, dataEventoDOE: dColetaStr,
+                    dataInfeccao: dColetaStr, mesInfeccao: mesCorrenteUro,
+                    tipo: "ITU-AC", status: "Suspeito",
                     evidencias: {
                       microbiologia: `Coleta em: ${dColetaStr.split('-').reverse().join('/')} | ${uro.germe} (UFC: ${ufc})`,
                       sistemicos: evidenciasSistemicasITU.length > 0 ? evidenciasSistemicasITU : ["Nenhuma febre >38ºC detectada na janela de 7 dias"],
