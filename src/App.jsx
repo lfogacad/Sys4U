@@ -128,7 +128,10 @@ const AppRouter = () => {
       const userProfile = userDocSnap.data();
 
       // Passo 3: 🚨 A CATRACA (Cruza com a Escala e Exceções) 🚨
-      const analiseAcesso = await verificarCatraca(userProfile);
+      // O UID confiável vem do Auth (user.uid), não do corpo do documento.
+      // Sem isso, se o cadastro não tiver o campo 'uid' gravado, o match
+      // por UID na catraca falha silenciosamente e resta apenas o nome.
+      const analiseAcesso = await verificarCatraca({ ...userProfile, uid: user.uid });
 
       if (!analiseAcesso.liberado) {
         // Acesso negado: limpa a sessão e desloga silenciosamente

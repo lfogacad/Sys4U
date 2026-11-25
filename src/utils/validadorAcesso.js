@@ -14,20 +14,47 @@ const PERFIS_EXCECAO = [
   "Nutricionista",
 ];
 
-// Mapa perfil do usuário → slug da profissão (MESMO do importador/leitor)
+// =========================================================================
+// PERFIL → LISTA DE ESCALAS QUE ESSE PERFIL PODE OCUPAR
+// Um perfil pode estar escalado em mais de uma profissão: o mesmo técnico de
+// enfermagem cobre plantão regular (tec-enfermagem) e hemodiálise
+// (tec-hemodialise). A catraca precisa consultar TODAS as escalas do perfil,
+// senão o plantão de HD fica invisível para quem tem perfil de enfermagem.
+// Os slugs batem com o CATEGORIA_SLUGS do ImportadorEscala.
+// =========================================================================
 const PERFIL_SLUGS = {
-  'Médico': 'medico',
-  'Médico Plantonista': 'medico',
-  'Enfermeiro': 'enfermeiro',
-  'Téc. em Enf.': 'tec-enfermagem',
-  'Téc. Hemodiálise': 'tec-hemodialise',
-  'Fisioterapeuta': 'fisioterapeuta',
-  'Fonoaudiólogo': 'fonoaudiologo',
-  'Nutricionista': 'nutricionista',
-  'Psicólogo': 'psicologo',
-  'Motorista': 'motorista',
-  'Recepção': 'recepcao',
+  'Médico': ['medico'],
+  'Médico Plantonista': ['medico'],
+  'Enfermeiro': ['enfermeiro'],
+  'Téc. em Enf.': ['tec-enfermagem', 'tec-hemodialise'],
+  'Téc. Enfermagem': ['tec-enfermagem', 'tec-hemodialise'],
+  'Téc. Hemodiálise': ['tec-hemodialise', 'tec-enfermagem'],
+  'Fisioterapeuta': ['fisioterapeuta'],
+  'Fonoaudiólogo': ['fonoaudiologo'],
+  'Nutricionista': ['nutricionista'],
+  'Psicólogo': ['psicologo'],
+  'Motorista': ['motorista'],
+  'Recepção': ['recepcao'],
+  'Central de Nutrição': ['central-nutricao'],
+  'Administrativo': ['administrativo'],
+  'Farmácia': ['farmacia'],
 };
+
+// Chave tolerante: acha o perfil mesmo com acento, ponto ou caixa diferente,
+// para não depender de o texto em `usuarios.perfil` ser idêntico ao daqui.
+const chavePerfil = (v) => String(v ?? '')
+  .toUpperCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^A-Z0-9 ]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const PERFIL_INDEX = Object.fromEntries(
+  Object.entries(PERFIL_SLUGS).map(([perfil, slugs]) => [chavePerfil(perfil), slugs])
+);
+
+const resolverSlugsDoPerfil = (perfil) =>
+  PERFIL_SLUGS[perfil] || PERFIL_INDEX[chavePerfil(perfil)] || null;
 
 // Helper: Calcula a janela de acesso (-1h antes, +1h depois) com base na sigla
 const verificarJanelaDeTempo = (dataPlantao, sigla, dataHoraAtual) => {
@@ -53,6 +80,39 @@ const verificarJanelaDeTempo = (dataPlantao, sigla, dataHoraAtual) => {
   return dataHoraAtual >= inicioAcesso && dataHoraAtual <= fimAcesso;
 };
 
+// =========================================================================
+// NORMALIZAÇÃO E MATCH DE IDENTIDADE — SOMENTE UID E NOME
+// =========================================================================
+const normalizarNome = (v) => String(v ?? '')
+  .toUpperCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')            // remove acentos
+  .replace(/\[(EXTRA|FALTOU|ATESTADO|FERIAS|FÉRIAS|LICENCA|LICENÇA|SUBSTITUTO)\]/gi, ' ')
+  .replace(/\b(DR|DRA|ENF|ENFA|TEC|TECN|FT|FISIO|PROF|SR|SRA)\.?\b/g, ' ')
+  // ⚠️ O importador COLA a matrícula no nome ("LUCIANO FOGAÇA DIAS 108278").
+  // Esta linha é o que faz o nome casar: remove dígitos e pontuação.
+  .replace(/[^A-Z ]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+// Match de nome SEGURO: exige igualdade ou o nome menor inteiro como bloco de
+// palavras (mín. 2 tokens). Sem o includes() bidirecional antigo, que deixava
+// "SILVA" casar com "JOAO DA SILVA".
+const nomesCorrespondem = (a, b) => {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const menor = a.length <= b.length ? a : b;
+  const maior = a.length <= b.length ? b : a;
+  if (menor.split(' ').filter(Boolean).length < 2) return false;
+  const escapado = menor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escapado}\\b`).test(maior);
+};
+
+// Data ISO (AAAA-MM-DD) → DD/MM/AAAA
+const dataParaExibicao = (iso) => {
+  const s = String(iso ?? '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split('-').reverse().join('/') : s;
+};
+
 export const verificarCatraca = async (userProfile) => {
   if (!userProfile || !userProfile.nome) {
     return { liberado: false, motivo: "Perfil incompleto. Entre em contato com a administração." };
@@ -66,8 +126,8 @@ export const verificarCatraca = async (userProfile) => {
   const now = new Date();
 
   // Determina a profissão (slug) do usuário a partir do perfil
-  const slugUsuario = PERFIL_SLUGS[userProfile.perfil];
-  if (!slugUsuario) {
+  const slugsUsuario = resolverSlugsDoPerfil(userProfile.perfil);
+  if (!slugsUsuario || slugsUsuario.length === 0) {
     return { liberado: false, motivo: "Profissão não reconhecida no cadastro. Entre em contato com a administração." };
   }
 
@@ -87,12 +147,22 @@ export const verificarCatraca = async (userProfile) => {
 
   let plantonistaEncontradoEJanelaAtiva = false;
   let turnosAchados = [];
-  const uidUsuario = userProfile.uid;
-  const nomeBanco = userProfile.nome.toUpperCase().trim();
+
+  const uidUsuario = userProfile.uid || null;
+  const nomeBanco  = normalizarNome(userProfile.nome);
+
+  // Monta todas as combinações escala × mês. Ex.: técnico de enfermagem em
+  // novembro → tec-enfermagem/2026-11, tec-enfermagem/2026-10,
+  // tec-hemodialise/2026-11, tec-hemodialise/2026-10. Basta UM turno válido
+  // em qualquer par para liberar a entrada.
+  const alvos = [];
+  slugsUsuario.forEach((slug) => {
+    mesRefs.forEach((anoMes) => alvos.push({ slug, anoMes }));
+  });
 
   try {
-    for (const anoMes of mesRefs) {
-      const mesRef = doc(db, "escalas", slugUsuario, "meses", anoMes);
+    for (const { slug, anoMes } of alvos) {
+      const mesRef = doc(db, "escalas", slug, "meses", anoMes);
       const snap = await getDoc(mesRef);
       if (!snap.exists()) continue; // profissão/mês ainda não importado
 
@@ -102,26 +172,32 @@ export const verificarCatraca = async (userProfile) => {
       Object.entries(dias).forEach(([dia, turnosDoDia]) => {
         Object.values(turnosDoDia || {}).forEach((turno) => {
           if (!turno || !turno.sigla) return;
-          const dataTurno = turno.data || `${anoMes}-${dia}`;
+          // padStart evita "2026-11-1" (não casa com "2026-11-01")
+          const dataTurno = turno.data || `${anoMes}-${String(dia).padStart(2, '0')}`;
 
           // Considera apenas ONTEM e HOJE (mesmo critério da versão antiga)
           if (dataTurno !== dataHojeStr && dataTurno !== dataOntemStr) return;
 
-          // Match por UID (chave primária) — fallback por nome
+          // Prioridade de match: UID (chave forte) → NOME normalizado
           let corresponde = false;
-          if (uidUsuario && turno.uid && turno.uid === uidUsuario) {
+
+          // 1) UID — quando o campo estiver preenchido no turno
+          if (uidUsuario && turno.uid && String(turno.uid) === String(uidUsuario)) {
             corresponde = true;
-          } else if (turno.nome) {
-            const nomeEscala = turno.nome.toUpperCase()
-              .replace('[EXTRA]', '').replace('[FALTOU]', '').replace('[ATESTADO]', '').trim();
-            corresponde = nomeBanco.includes(nomeEscala) || nomeEscala.includes(nomeBanco);
           }
+
+          // 2) NOME normalizado — normalizarNome já remove a matrícula
+          //    que o importador cola no final do nome.
+          if (!corresponde && turno.nome) {
+            corresponde = nomesCorrespondem(nomeBanco, normalizarNome(turno.nome));
+          }
+
           if (!corresponde) return;
 
           if (verificarJanelaDeTempo(dataTurno, turno.sigla, now)) {
             plantonistaEncontradoEJanelaAtiva = true;
           } else {
-            turnosAchados.push(`${turno.sigla} (Data base: ${dataTurno})`);
+            turnosAchados.push(`${turno.sigla} (Data base: ${dataParaExibicao(dataTurno)})`);
           }
         });
       });

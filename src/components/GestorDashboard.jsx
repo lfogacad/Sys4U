@@ -1337,6 +1337,39 @@ useEffect(() => {
     buscarEquipeMultiprofissional();
   }, []);
 
+  // =========================================================================
+  // QUADRO DE PESSOAL COMPARTILHADO ENTRE CATEGORIAS
+  // O técnico de enfermagem também cobre hemodiálise (e vice-versa). Ao
+  // adicionar servidor na grade de uma dessas categorias, a lista precisa
+  // mostrar as duas — senão o profissional fica invisível na aba "errada".
+  // =========================================================================
+  const CATEGORIAS_DO_QUADRO = {
+    'Téc. Hemodiálise': ['Téc. Hemodiálise', 'Téc. Enfermagem'],
+    'Téc. Enfermagem':  ['Téc. Enfermagem', 'Téc. Hemodiálise'],
+  };
+
+  const categoriasPermitidas = (catAtiva) => {
+    const quadro = CATEGORIAS_DO_QUADRO[catAtiva] || [catAtiva];
+    // Regra que já existia: na Farmácia, a Gerência de Farmácia também aparece
+    return catAtiva === 'Farmácia' ? [...quadro, 'Gerência de Farmácia'] : quadro;
+  };
+
+  // Monta as opções do <select>, sem duplicar nome e sem quem já está na grade
+  const opcoesServidor = (catAtiva, jaNaGrade) => {
+    const permitidas = categoriasPermitidas(catAtiva);
+    const vistos = new Set();
+    return (listaProfissionais || [])
+      .filter(p => p && p.nome && permitidas.includes(p.categoria))
+      .filter(p => !jaNaGrade?.[String(p.nome).toUpperCase()])
+      .filter(p => {
+        const chave = String(p.nome).toUpperCase();
+        if (vistos.has(chave)) return false;
+        vistos.add(chave);
+        return true;
+      })
+      .sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+  };
+
   // Inicializa o formulário de auditoria parseando as respostas existentes
   const inicializarAuditSAPS3 = (respostas) => {
     const form = {};
@@ -14489,8 +14522,8 @@ const imprimirRelatorioGeladeira = () => {
                      <button onClick={() => {
                        // 🚀 Inicia com TODOS os servidores da profissão ativa pré-selecionados
                        const nomesServidores = [...new Set(
-                         listaProfissionais
-                           .filter(prof => prof.categoria === categoriaAtiva && prof.nome)
+                         (listaProfissionais || [])
+                           .filter(prof => categoriasPermitidas(categoriaAtiva).includes(prof.categoria) && prof.nome)
                            .map(prof => prof.nome)
                        )];
                        setServidoresGerados(nomesServidores);
@@ -14516,12 +14549,9 @@ const imprimirRelatorioGeladeira = () => {
                      title="Adicionar um servidor à grade (linha com células vazias)"
                    >
                      <option value="">＋ Adicionar servidor</option>
-                     {listaProfissionais
-                       .filter(prof => prof.categoria === categoriaAtiva)
-                       .filter(prof => !plantoesDoMes[prof.nome.toUpperCase()])
-                       .map((prof) => (
-                         <option key={prof.id} value={prof.nome}>{prof.nome}</option>
-                       ))}
+                     {opcoesServidor(categoriaAtiva, plantoesDoMes).map((prof) => (
+                       <option key={prof.id} value={prof.nome}>{prof.nome}</option>
+                     ))}
                    </select>
                  </div>
 
@@ -14665,13 +14695,9 @@ const imprimirRelatorioGeladeira = () => {
                            title="Adicionar um servidor à tabela de extras (linha com células vazias)"
                          >                          
                            <option value="">＋ Adicionar servidor ao extras</option>
-                           {listaProfissionais
-                             .filter(prof => prof.categoria === categoriaAtiva
-                               || (categoriaAtiva === 'Farmácia' && prof.categoria === 'Gerência de Farmácia'))
-                             .filter(prof => !extrasDoMes[prof.nome.toUpperCase()])
-                             .map((prof) => (
-                               <option key={prof.id} value={prof.nome}>{prof.nome}</option>
-                             ))}
+                           {opcoesServidor(categoriaAtiva, extrasDoMes).map((prof) => (
+                             <option key={prof.id} value={prof.nome}>{prof.nome}</option>
+                           ))}
                          </select>                  
                        </div>
                      </div>
