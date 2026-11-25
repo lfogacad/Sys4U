@@ -88,16 +88,45 @@ const getDiaSemana = (anoMes, diaStr) => {
   return ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'][d.getDay()];
 };
 
+// =========================================================================
+// CARGA HORÁRIA DAS SIGLAS DE HERANÇA (FE / FA)
+// somarHorasMes recebe apenas { dia: sigla } — sem o slot cru não há como
+// saber qual turno foi substituído. Por isso a herança de FE/FA precisa de
+// uma tabela fixa AQUI, no escopo de módulo, acima de somarHorasMes.
+// Apenas as tabelas Visitador / RT / Gerência chegam neste ponto com FE/FA;
+// na grade regular a herança é resolvida por siglaOriginal antes da chamada.
+// ⚠️ Ajuste os dois valores conforme a regra real de horas. 0 = não soma,
+//    que é o comportamento neutro e evita o crash.
+// =========================================================================
+const horasHerdadasPorSigla = {
+  FE: 0,
+  FA: 0,
+};
+
 // ===== SOMA DE HORAS DE PLANTÃO DO MÊS =====
 // Correspondência: D, N = 12h · DN = 24h · M, T, V = 6h
-// Combinações somam as partes (VT=12h, VN=18h, TN=18h) — valores
-// já calculados no DICIONARIO_SIGLAS_DASH.horas. Célula vazia não soma.
-const somarHorasMes = (dias) => {
+// Combinações somam as partes (VT=12h, VN=18h, TN=18h) — valores já
+// calculados no DICIONARIO_SIGLAS_DASH.horas. Célula vazia não soma.
+//
+// FE / FA herdam a carga do turno substituído. Esta função recebe apenas
+// { dia: sigla } — sem o slot cru não há como saber o turno original.
+// Por isso a herança chega pelo 2º parâmetro:
+//   heranca(dia, sigla) → número de horas do turno substituído, ou null
+// Sem o parâmetro (ou quando devolve null), FE/FA não somam nada.
+const somarHorasMes = (dias, heranca) => {
   let total = 0;
-  Object.values(dias || {}).forEach(sigla => {
+  Object.entries(dias || {}).forEach(([dia, valor]) => {
+    if (!valor || typeof valor !== 'string') return;
+    const sigla = valor.trim().toUpperCase();
     if (!sigla) return;
-    // 🆕 FE/FA usam as horas herdadas do turno substituído (definidas no slot)
-    if (sigla === 'FE' || sigla === 'FA') { total += (horasHerdadasPorSigla[sigla] || 0); return; }
+
+    // FE / FA: carga do turno substituído, resolvida pelo chamador
+    if (sigla === 'FE' || sigla === 'FA') {
+      const horas = typeof heranca === 'function' ? heranca(dia, sigla) : null;
+      total += Number(horas) || 0;
+      return;
+    }
+
     const turno = DICIONARIO_SIGLAS_DASH[sigla];
     if (turno) total += turno.horas;
   });
@@ -6230,13 +6259,14 @@ const imprimirRelatorioGeladeira = () => {
     return residuo.length === 0;
   };
 
-  // Horas COMBINADAS: tabela regular (via slots crus) + Visitador + RT.
-  // 🆕 ATM mantém a carga do plantão original (resolvida por siglaOriginal);
-  //    F zera o plantão; extras não contam.
+  // Horas COMBINADAS: tabela regular (via slots crus) + Visitador + RT + Gerência.
+  // FE/FA herdam a carga do turno substituído (resolvida por siglaOriginal);
+  // ATM mantém a carga do plantão original; F zera; extras não contam.
   const horasCombinadasPessoa = (nomeExibido) => {
     const buscaP = normalizarBuscaEscala(nomeExibido);
     if (!buscaP) return 0;
     let total = 0;
+
     // Tabela regular — soma direto dos slots crus (fonte da verdade)
     Object.values(slotsCruPorDia).forEach(slots => {
       Object.values(slots || {}).forEach(s => {
@@ -6245,12 +6275,12 @@ const imprimirRelatorioGeladeira = () => {
         const nomeStr = String(s?.nome || '');
         const siglaSlot = String(s?.sigla || '');
         if (!siglaSlot && !nomeStr) return;               // placeholder vazio
-        if (nomeStr.includes('[FALTOU]') || siglaSlot === 'F') return;   // 🆕 falta zera
+        if (nomeStr.includes('[FALTOU]') || siglaSlot === 'F') return;   // falta zera
         if (nomeStr.includes('[ATESTADO]') || siglaSlot === 'ATM') {     // atestado mantém carga
           total += calcularHorasSigla(s.siglaOriginal || siglaSlot);
           return;
         }
-        // 🆕 FE/FA mantêm a carga do turno substituído (siglaOriginal)
+        // FE/FA mantêm a carga do turno substituído (siglaOriginal)
         if (siglaSlot === 'FE' || siglaSlot === 'FA') {
           total += calcularHorasSigla(s.siglaOriginal || '');
           return;
@@ -6258,6 +6288,33 @@ const imprimirRelatorioGeladeira = () => {
         total += calcularHorasSigla(siglaSlot);
       });
     });
+
+    // 🆕 Herança de FE/FA para as tabelas especiais (Visitador, RT, Gerência).
+    // Procura no slot cru do MESMO nome e do MESMO dia o turno substituído e
+    // devolve a carga dele. Sem slot correspondente, devolve null (não soma).
+    const herancaFE_FA = (nomeRef) => {
+      const alvo = normalizarBuscaEscala(nomeRef);
+      return (dia, sigla) => {
+        let horas = null;
+        Object.values(slotsCruPorDia || {}).forEach(slots => {
+          Object.values(slots || {}).forEach(s => {
+            if (!s) return;
+            if (String(s.sigla || '').toUpperCase() !== sigla) return;
+            if (String(s.busca || '') !== alvo) return;
+            // Confere o dia, quando o slot carrega a data ISO (AAAA-MM-DD)
+            if (s.data && dia) {
+              const diaSlot = String(s.data).slice(8, 10);
+              if (diaSlot && diaSlot !== String(dia).padStart(2, '0')) return;
+            }
+            const orig = String(s.siglaOriginal || '').toUpperCase();
+            const turno = DICIONARIO_SIGLAS_DASH[orig];
+            if (turno) horas = turno.horas;
+          });
+        });
+        return horas;
+      };
+    };
+
     // Visitador e RT — dias de férias não contam (regra mantida)
     if (visitadorMes?.nome && normalizarBuscaEscala(visitadorMes.nome) === buscaP) {
       const feriasVis = diasDeFerias(visitadorMes.nome);
@@ -6265,7 +6322,7 @@ const imprimirRelatorioGeladeira = () => {
       Object.entries(visitadorMes.dias || {}).forEach(([dia, val]) => {
         if (!feriasVis[dia]) diasValidos[dia] = val;
       });
-      total += somarHorasMes(diasValidos);
+      total += somarHorasMes(diasValidos, herancaFE_FA(visitadorMes.nome));
     }
     if (responsavelTecnicoMes?.nome && normalizarBuscaEscala(responsavelTecnicoMes.nome) === buscaP) {
       const feriasRT = diasDeFerias(responsavelTecnicoMes.nome);
@@ -6273,16 +6330,16 @@ const imprimirRelatorioGeladeira = () => {
       Object.entries(responsavelTecnicoMes.dias || {}).forEach(([dia, val]) => {
         if (!feriasRT[dia]) diasValidos[dia] = val;
       });
-      total += somarHorasMes(diasValidos);
+      total += somarHorasMes(diasValidos, herancaFE_FA(responsavelTecnicoMes.nome));
     }
-    // 🆕 Gerência de Enfermagem — mesma regra do Visitador/RT (férias não contam)
+    // Gerência de Enfermagem — mesma regra do Visitador/RT (férias não contam)
     if (gerenciaEnfermagemMes?.nome && normalizarBuscaEscala(gerenciaEnfermagemMes.nome) === buscaP) {
       const feriasGer = diasDeFerias(gerenciaEnfermagemMes.nome);
       const diasValidosGer = {};
       Object.entries(gerenciaEnfermagemMes.dias || {}).forEach(([dia, val]) => {
         if (!feriasGer[dia]) diasValidosGer[dia] = val;
       });
-      total += somarHorasMes(diasValidosGer);
+      total += somarHorasMes(diasValidosGer, herancaFE_FA(gerenciaEnfermagemMes.nome));
     }
     return total;
   };
