@@ -192,6 +192,70 @@ const unirMapasBH = (localBH, serverBH) => {
   return saida;
 };
 
+// =========================================================================
+// CASAMENTO DE NOME PARA O UPLOAD DE EXAMES
+// Regras: nome completo idêntico primeiro; só depois tolerância por tokens.
+// Ambiguidade NUNCA vira chute — devolve 'ambiguo' e o chamador não grava.
+// =========================================================================
+const STOPWORDS_NOME = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'E']);
+const SUFIXOS_NOME = new Set(['FILHO', 'NETO', 'JUNIOR', 'SOBRINHO', 'SEGUNDO']);
+
+// Maiúsculas, sem acento, sem pontuação/dígitos, espaços colapsados
+const normNomeCompleto = (s) =>
+  String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+// Tokens relevantes: ignora conectivos (DE/DA/DO...) e letras soltas
+const tokensRelevantes = (s) =>
+  normNomeCompleto(s).split(' ')
+    .filter(t => t.length > 1 && !STOPWORDS_NOME.has(t));
+
+// Resolve o paciente pela nome do laudo.
+// status: 'ok' | 'ambiguo' | 'nao_encontrado' | 'vazio'
+const encontrarPacientePorNome = (lista, nomeLaudo) => {
+  const alvo = normNomeCompleto(nomeLaudo);
+  if (alvo.length < 4) return { status: 'vazio' };
+
+  const candidatos = (lista || [])
+    .map((p, idx) => ({ p, idx, norm: normNomeCompleto(p?.nome) }))
+    .filter(c => c.norm.length > 3);
+
+  // 1) Nome completo idêntico (normalizado)
+  const exatos = candidatos.filter(c => c.norm === alvo);
+  if (exatos.length === 1) return { status: 'ok', idx: exatos[0].idx, criterio: 'exato' };
+  if (exatos.length > 1) return { status: 'ambiguo', criterio: 'exato', candidatos: exatos.map(c => c.p.nome) };
+
+  // 2) Conjunto de tokens igual (ignora conectivos) — exige unicidade
+  const tokensLaudo = tokensRelevantes(nomeLaudo);
+  if (tokensLaudo.length < 2) return { status: 'nao_encontrado', motivo: 'nome do laudo insuficiente' };
+
+  const mesmoConjunto = candidatos.filter(c => {
+    const toks = tokensRelevantes(c.p.nome);
+    if (toks.length !== tokensLaudo.length) return false;
+    return tokensLaudo.every(t => toks.includes(t));
+  });
+  if (mesmoConjunto.length === 1) return { status: 'ok', idx: mesmoConjunto[0].idx, criterio: 'tokens' };
+  if (mesmoConjunto.length > 1) return { status: 'ambiguo', criterio: 'tokens', candidatos: mesmoConjunto.map(c => c.p.nome) };
+
+  // 3) Tolerância restrita: laudo contido no leito + no máximo 1 token extra,
+  //    e esse extra precisa ser sufixo de nome (FILHO, NETO, JUNIOR...).
+  const quaseIgual = candidatos.filter(c => {
+    const toks = tokensRelevantes(c.p.nome);
+    if (toks.length < tokensLaudo.length) return false;
+    if (!tokensLaudo.every(t => toks.includes(t))) return false;
+    const extras = toks.filter(t => !tokensLaudo.includes(t));
+    return extras.length <= 1 && (extras.length === 0 || SUFIXOS_NOME.has(extras[0]));
+  });
+  if (quaseIgual.length === 1) return { status: 'ok', idx: quaseIgual[0].idx, criterio: 'aproximado' };
+  if (quaseIgual.length > 1) return { status: 'ambiguo', criterio: 'aproximado', candidatos: quaseIgual.map(c => c.p.nome) };
+
+  return { status: 'nao_encontrado' };
+};
+
 // --- MOTOR DE TEMPO DA UTI ---
 
 // 1. O "Hoje" da UTI vai das 07:00 de um dia até as 06:59 do dia seguinte.
@@ -577,120 +641,103 @@ const ModuloUTI = ({ user, userProfile, unidadeAtiva, handleLogout }) => {
   const hoje = new Date();
   const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
+  // ===== UPLOAD EM LOTE DE EXAMES (PDF) — casamento por NOME COMPLETO =====
   const handleBulkUpload = async (e) => {
-    console.log(">>> handleBulkUpload DISPARADO, arquivos:", e.target.files.length);
-    const files = Array.from(e.target.files);
+    const files = Array.from(e.target.files || []);
     e.target.value = null;
-
     if (files.length === 0) return;
 
     setIsProcessingBulk(true);
     setShowBulkModal(true);
+    setBulkUploadLogs(files.map(f => ({ status: 'loading', msg: `Iniciando leitura de ${f.name}...` })));
 
-    const initialProgress = files.map((f) => ({
-      status: "loading",
-      msg: `Iniciando leitura de ${f.name}...`,
-    }));
-    setBulkUploadLogs(initialProgress);
-
-    const promessasDeLeitura = files.map(async (file, fileIndex) => {
-      try {
-        setBulkUploadLogs((prev) => {
-          const n = [...prev];
-          n[fileIndex] = { status: "loading", msg: `IA Lendo ${file.name}...` };
-          return n;
-        });
-
-        const txt = await extractTextFromPdf(file);
-        const json = await analyzeTextWithGemini(txt);
-
-        // Proteção caso a IA falhe e retorne nulo
-        if (!json) throw new Error("Falha ao analisar o texto do exame com a IA.");
-
-        const extName = normalizeName(json.patientName || "");
-        const date = json.date || getManausDateStr();
-        let matchIdx = -1;
-
-        patientsRef.current.forEach((p, idx) => {
-          const bedName = normalizeName(p.nome);
-          if (bedName.length > 3 && extName.length > 3) {
-            if (extName.includes(bedName) || bedName.includes(extName)) {
-              matchIdx = idx;
-            } else {
-              const parts = bedName.split(" ");
-              if (
-                parts.length >= 2 &&
-                extName.includes(parts[0]) &&
-                extName.includes(parts[parts.length - 1])
-              ) {
-                matchIdx = idx;
-              }
-            }
-          }
-        });
-
-        if (matchIdx !== -1) {
-          // 1. Calcula o paciente alterado FORA do updater (a partir do ref mais recente)
-          const listAtual = [...patientsRef.current];
-          const target = JSON.parse(JSON.stringify(listAtual[matchIdx]));
-
-          if (!target.examHistory) target.examHistory = {};
-          if (!target.examHistory[date]) target.examHistory[date] = {};
-
-          Object.keys(json.results || {}).forEach((k) => {
-            if (json.results[k]) target.examHistory[date][k] = json.results[k];
-          });
-
-          const finalTarget = syncLabsFromHistory(target);
-
-          // 2. Atualiza o estado (updater puro, sem efeito colateral)
-          setPatients((curr) => {
-            const list = [...curr];
-            list[matchIdx] = finalTarget;
-            return list;
-          });
-
-          // 3. Salva DEPOIS, uma vez por chamada — fora do updater
-          if (typeof user !== 'undefined' && typeof db !== 'undefined') {
-            const docId = String(finalTarget.id).startsWith("bed_") ? finalTarget.id : `bed_${finalTarget.id}`;
-            auditarEscrita("uploader-exames", docId, { examHistory: finalTarget.examHistory, labs: finalTarget.labs }, { merge: true, nota: `paciente=${json.patientName || "?"} data=${date}` });
-            await setDoc(doc(db, "leitos_uti", docId), {
-              examHistory: finalTarget.examHistory || {},
-              labs: finalTarget.labs || {}
-            }, { merge: true });
-          }
-          setBulkUploadLogs((prev) => {
-            const n = [...prev];
-            n[fileIndex] = {
-              status: json.isFallback ? "error" : "success",
-              msg: `${json.isFallback ? `⚠️ IA Offline (${json.errorReason}):` : "✅"
-                } ${json.patientName} (${formatDateDDMM(date)}) -> Leito ${matchIdx + 1}`,
-            };
-            return n;
-          });
-        } else {
-          setBulkUploadLogs((prev) => {
-            const n = [...prev];
-            n[fileIndex] = {
-              status: "error",
-              msg: `⚠️ ${json.patientName || "?"}: Não encontrado na UTI.`,
-            };
-            return n;
-          });
-        }
-      } catch (e) {
-        console.error(`Erro ao processar ${file.name}:`, e);
-        setBulkUploadLogs((prev) => {
-          const n = [...prev];
-          // 🔥 CORREÇÃO: Agora ele mostra o motivo real do erro na tela!
-          n[fileIndex] = { status: "error", msg: `❌ Erro: ${e.message}` };
-          return n;
-        });
-      }
+    const logar = (i, status, msg) => setBulkUploadLogs(prev => {
+      const n = [...prev];
+      n[i] = { status, msg };
+      return n;
     });
 
-    await Promise.all(promessasDeLeitura);
-    setIsProcessingBulk(false);
+    try {
+      // 1) LEITURA EM PARALELO — só extrai texto e chama a IA, sem tocar no estado
+      const leituras = await Promise.all(files.map(async (file, i) => {
+        logar(i, 'loading', `IA lendo ${file.name}...`);
+        try {
+          const txt = await extractTextFromPdf(file);
+          const json = await analyzeTextWithGemini(txt);
+          if (!json) throw new Error('a IA não retornou dados do exame.');
+          return { file, i, json };
+        } catch (err) {
+          console.error(`Erro ao processar ${file.name}:`, err);
+          return { file, i, erro: err.message };
+        }
+      }));
+
+      // 2) APLICAÇÃO SEQUENCIAL — impede que duas gravações no mesmo leito
+      //    partam da mesma base antiga e uma sobrescreva a outra.
+      const listaTrabalho = [...patientsRef.current];
+
+      for (const leitura of leituras) {
+        const { i, json } = leitura;
+
+        if (leitura.erro) { logar(i, 'error', `❌ ${leitura.file.name}: ${leitura.erro}`); continue; }
+
+        const nomeLaudo = json.patientName || '';
+        const date = json.date || getManausDateStr();
+        const match = encontrarPacientePorNome(listaTrabalho, nomeLaudo);
+
+        if (match.status === 'vazio') {
+          logar(i, 'error', `⚠️ ${leitura.file.name}: a IA não identificou o nome do paciente.`);
+          continue;
+        }
+        if (match.status === 'ambiguo') {
+          logar(i, 'warn', `⛔ ${nomeLaudo}: homônimo/ambíguo — casou com ${match.candidatos.length} leitos (${match.candidatos.join(' | ')}). Nada foi gravado.`);
+          continue;
+        }
+        if (match.status !== 'ok') {
+          logar(i, 'error', `⚠️ ${nomeLaudo || '?'}: não encontrado na UTI.`);
+          continue;
+        }
+
+        const idx = match.idx;
+        const alvo = JSON.parse(JSON.stringify(listaTrabalho[idx]));
+
+        if (!alvo.examHistory) alvo.examHistory = {};
+        if (!alvo.examHistory[date]) alvo.examHistory[date] = {};
+        Object.keys(json.results || {}).forEach(k => {
+          if (json.results[k]) alvo.examHistory[date][k] = json.results[k];
+        });
+
+        const finalTarget = syncLabsFromHistory(alvo);
+        listaTrabalho[idx] = finalTarget;
+
+        const docId = String(finalTarget.id).startsWith('bed_') ? finalTarget.id : `bed_${finalTarget.id}`;
+
+        if (typeof user !== 'undefined' && typeof db !== 'undefined') {
+          auditarEscrita(
+            'uploader-exames',
+            docId,
+            { examHistory: finalTarget.examHistory, labs: finalTarget.labs },
+            { merge: true, nota: `paciente=${nomeLaudo} data=${date} criterio=${match.criterio}` }
+          );
+          await setDoc(doc(db, 'leitos_uti', docId), {
+            examHistory: finalTarget.examHistory || {},
+            labs: finalTarget.labs || {}
+          }, { merge: true });
+        }
+
+        const leitoTxt = finalTarget.leito ?? docId.replace('bed_', '');
+        const tag = json.isFallback ? `⚠️ IA offline (${json.errorReason}):` : '✅';
+        const obs = match.criterio === 'exato' ? '' : ` [nome ${match.criterio}]`;
+        logar(i, json.isFallback ? 'error' : 'success',
+          `${tag} ${nomeLaudo} (${formatDateDDMM(date)}) → Leito ${leitoTxt}${obs}`);
+
+        setPatients([...listaTrabalho]);
+      }
+    } catch (err) {
+      console.error('Erro geral no upload em lote:', err);
+    } finally {
+      setIsProcessingBulk(false);
+    }
   };
 
   const salvarNotificacaoEvento = async () => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, X, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Bot, X, Loader2, CheckCircle, AlertTriangle, Ban } from 'lucide-react';
 
 const BulkProcessingModal = ({
   showBulkModal,
@@ -9,6 +9,12 @@ const BulkProcessingModal = ({
 }) => {
   if (!showBulkModal) return null;
 
+  const estilo = (status) =>
+    status === 'loading' ? 'bg-white border-blue-100 text-blue-700'
+    : status === 'success' ? 'bg-green-50 border-green-200 text-green-800 font-medium'
+    : status === 'warn' ? 'bg-amber-50 border-amber-200 text-amber-800 font-medium'
+    : 'bg-red-50 border-red-200 text-red-800 font-medium';
+
   return (
     <div className="fixed inset-0 bg-slate-900/80 z-[90] flex items-center justify-center p-4 animate-fadeIn">
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[80vh] overflow-hidden">
@@ -17,44 +23,35 @@ const BulkProcessingModal = ({
             <Bot size={20} /> Processamento em Lote (IA)
           </h2>
           {!isProcessingBulk && (
-            <button
-              onClick={() => setShowBulkModal(false)}
-              className="hover:text-blue-200"
-            >
+            <button onClick={() => setShowBulkModal(false)} className="hover:text-blue-200">
               <X size={24} />
             </button>
           )}
         </div>
+
         <div className="p-4 overflow-y-auto flex-1 bg-slate-50 space-y-2">
           {bulkUploadLogs.map((l, i) => (
             <div
               key={i}
-              className={`p-3 rounded-lg text-sm flex items-center gap-2 border shadow-sm ${
-                l.status === "loading"
-                  ? "bg-white border-blue-100 text-blue-700"
-                  : l.status === "success"
-                  ? "bg-green-50 border-green-200 text-green-800 font-medium"
-                  : "bg-red-50 border-red-200 text-red-800 font-medium"
-              }`}
+              className={`p-3 rounded-lg text-sm flex items-start gap-2 border shadow-sm ${estilo(l.status)}`}
             >
-              {l.status === "loading" && (
-                <Loader2 className="animate-spin" size={16} />
-              )}
-              {l.status === "success" && (
-                <CheckCircle size={16} className="text-green-600" />
-              )}
-              {l.status === "error" && (
-                <AlertTriangle size={16} className="text-red-600" />
-              )}
-              {l.msg}
+              <span className="mt-0.5 shrink-0">
+                {l.status === 'loading' && <Loader2 className="animate-spin" size={16} />}
+                {l.status === 'success' && <CheckCircle size={16} className="text-green-600" />}
+                {l.status === 'warn' && <Ban size={16} className="text-amber-600" />}
+                {l.status !== 'loading' && l.status !== 'success' && l.status !== 'warn' && (
+                  <AlertTriangle size={16} className="text-red-600" />
+                )}
+              </span>
+              <span className="leading-snug">{l.msg}</span>
             </div>
           ))}
         </div>
+
         <div className="p-4 border-t bg-white">
           {isProcessingBulk ? (
             <div className="flex justify-center items-center gap-2 text-blue-600 font-bold">
-              <Loader2 className="animate-spin" /> Lendo e Distribuindo
-              Dados...
+              <Loader2 className="animate-spin" /> Lendo e Distribuindo Dados...
             </div>
           ) : (
             <button
