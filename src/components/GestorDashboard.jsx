@@ -90,8 +90,12 @@ const getDiaSemana = (anoMes, diaStr) => {
 
 // ===== SOMA DE HORAS DE PLANTÃO DO MÊS =====
 // D, N = 12h · DN = 24h · M, T, V = 6h — valores de DICIONARIO_SIGLAS_DASH.horas.
-// FE / FA herdam a carga do turno substituído, gravada no mapa companheiro
-// `siglaOriginalPorDia` ({ dia: 'D' }). Sem esse mapa, FE/FA não somam.
+// F  : falta — o dia não soma nada (0h), por decisão, sem aviso.
+// FE / FA / ATM : preservam a carga do turno que ocupava a célula, guardado em
+//                 siglaOriginalPorDia[dia]. Sem origem registrada, somam 0h.
+const SIGLAS_QUE_HERDAM = ['FE', 'FA', 'ATM'];
+const SIGLAS_QUE_ZERAM = ['F'];
+
 const somarHorasMes = (dias, siglaOriginalPorDia) => {
   let total = 0;
   Object.entries(dias || {}).forEach(([dia, valor]) => {
@@ -99,8 +103,11 @@ const somarHorasMes = (dias, siglaOriginalPorDia) => {
     const sigla = valor.trim().toUpperCase();
     if (!sigla) return;
 
-    // FE / FA — herda a carga do turno que ocupava a célula antes
-    if (sigla === 'FE' || sigla === 'FA') {
+    // Falta — não soma
+    if (SIGLAS_QUE_ZERAM.includes(sigla)) return;
+
+    // Siglas de preservação — herdam a carga do turno que estava na célula
+    if (SIGLAS_QUE_HERDAM.includes(sigla)) {
       const original = String(siglaOriginalPorDia?.[dia] || '').trim().toUpperCase();
       const turnoOriginal = original ? DICIONARIO_SIGLAS_DASH[original] : null;
       if (turnoOriginal) total += turnoOriginal.horas;
@@ -111,6 +118,26 @@ const somarHorasMes = (dias, siglaOriginalPorDia) => {
     if (turno) total += turno.horas;
   });
   return total;
+};
+
+// =========================================================================
+// DIAS COM SIGLA DE PRESERVAÇÃO SEM HERANÇA — somam 0h
+// FE / FA / ATM herdam a carga de siglaOriginalPorDia[dia]. Sem essa entrada
+// não há turno de origem e o dia entra no total como zero. F fica de fora:
+// falta zerar é intencional e não deve gerar aviso.
+// =========================================================================
+const diasSemHeranca = (registro) => {
+  const dias = registro?.dias || {};
+  const orig = registro?.siglaOriginalPorDia || {};
+  const faltando = [];
+  Object.entries(dias).forEach(([dia, valor]) => {
+    const sigla = String(valor || '').trim().toUpperCase();
+    if (!SIGLAS_QUE_HERDAM.includes(sigla)) return;
+    const origem = String(orig?.[dia] || '').trim().toUpperCase();
+    if (origem && DICIONARIO_SIGLAS_DASH[origem]) return;   // herança válida
+    faltando.push({ dia, sigla, origem: origem || null });
+  });
+  return faltando.sort((a, b) => parseInt(a.dia, 10) - parseInt(b.dia, 10));
 };
 
 // ===== DICIONÁRIO DE SIGLAS PARA EDIÇÃO NA GRADE (mesma lógica do importador) =====
@@ -6298,6 +6325,30 @@ const imprimirRelatorioGeladeira = () => {
     return total;
   };
 
+  // =========================================================================
+  // ADAPTADOR: registro no formato de diasSemHeranca a partir da grade REGULAR
+  // Na regular o turno de origem vive no slot cru (siglaOriginal), não num mapa
+  // por dia. Aqui ele é achatado em { dia: siglaOriginal } para reaproveitar
+  // diasSemHeranca sem duplicar a regra.
+  // =========================================================================
+  const registroRegularComOrigem = (nomeExibido, diasDoNome) => {
+    const busca = normalizarBuscaEscala(nomeExibido);
+    const orig = {};
+    if (busca) {
+      Object.entries(slotsCruPorDia || {}).forEach(([dia, slots]) => {
+        const slot = Object.values(slots || {}).find(s =>
+          s
+          && s.busca === busca
+          && s.extra !== true
+          && !String(s.nome || '').includes('[EXTRA]')
+        );
+        const siglaOrig = String(slot?.siglaOriginal || '').trim().toUpperCase();
+        if (siglaOrig) orig[dia] = siglaOrig;
+      });
+    }
+    return { dias: diasDoNome || {}, siglaOriginalPorDia: orig };
+  };
+
   // 🚩 Predicado: o slot é EXTRA? (flag nova OU tag legada no nome)
   const isSlotExtra = (s) =>
     s?.extra === true || String(s?.nome || '').includes('[EXTRA]');
@@ -6412,19 +6463,25 @@ const imprimirRelatorioGeladeira = () => {
     return mapa;
   };
 
-  // ===== SALVAR CAMPOS ESPECIAIS (Visitador / RT / Gerência de Enfermagem) =====
+  // ===== SALVAR CAMPOS ESPECIAIS (Visitador / RT / Gerência) =====
   // ⚠️ setDoc com merge faz MERGE PROFUNDO: chaves ausentes NÃO são apagadas do
   // servidor. Para remover dia/limpar tudo é obrigatório deleteField() explícito.
   //
-  // FE / FA: ao gravar uma dessas siglas, o turno que ocupava a célula é
-  // preservado em `siglaOriginalPorDia[dia]`. Esse mapa é a única fonte de
-  // onde somarHorasMes pode herdar a carga, porque estas tabelas guardam
-  // apenas a sigla (sem o slot cru da grade regular).
+  // FE / FA / ATM preservam a carga do turno que ocupava a célula: ele é
+  // guardado em `siglaOriginalPorDia[dia]`. F (falta) zera o dia e não guarda
+  // origem. É a única fonte de herança destas tabelas, porque elas guardam
+  // apenas a sigla — sem o slot cru da grade regular.
   const SETTERS_ESPECIAIS = {
     visitador: setVisitadorMes,
     responsavelTecnico: setResponsavelTecnicoMes,
     gerenciaEnfermagem: setGerenciaEnfermagemMes,
     gerenciaFarmacia: setGerenciaFarmaciaMes
+  };
+
+  // Turno real = sigla que representa carga horária e serve de origem
+  const ehTurnoReal = (s) => {
+    const u = String(s || '').trim().toUpperCase();
+    return !!u && !SIGLAS_QUE_HERDAM.includes(u) && !SIGLAS_QUE_ZERAM.includes(u);
   };
 
   const salvarEspecial = async (campo, { nome, dia, valor } = {}) => {
@@ -6435,7 +6492,7 @@ const imprimirRelatorioGeladeira = () => {
     const setEstado = SETTERS_ESPECIAIS[campo];
     if (!setEstado) return;
 
-    // Apagar o nome limpa o registro inteiro deste campo (deleteField em cada dia)
+    // Apagar o nome limpa o registro inteiro deste campo
     if (nome !== undefined && !String(nome).trim()) {
       const diasLimpos = {};
       Object.keys(atual?.dias || {}).forEach(d => { diasLimpos[d] = deleteField(); });
@@ -6464,17 +6521,17 @@ const imprimirRelatorioGeladeira = () => {
       return;
     }
 
-    // Versões que vão ao Firebase (podem conter deleteField) e ao estado (limpas)
+    // Versões para o Firebase (podem conter deleteField) e para o estado (limpas)
     const diasNovos = { ...(atual?.dias || {}) };
     const origNovo = { ...(atual?.siglaOriginalPorDia || {}) };
     const estadoDias = { ...(atual?.dias || {}) };
     const estadoOrig = { ...(atual?.siglaOriginalPorDia || {}) };
+    let avisoSemHeranca = null;
 
     if (dia !== undefined) {
       const siglaNova = String(valor || '').trim().toUpperCase();
       const anterior = String(atual?.dias?.[dia] || '').trim().toUpperCase();
       const origAnterior = String(atual?.siglaOriginalPorDia?.[dia] || '').trim().toUpperCase();
-      const naoHeranca = (s) => !!s && s !== 'FE' && s !== 'FA';
 
       if (!siglaNova) {
         // Célula apagada: limpa sigla e herança
@@ -6486,18 +6543,27 @@ const imprimirRelatorioGeladeira = () => {
         diasNovos[dia] = siglaNova;
         estadoDias[dia] = siglaNova;
 
-        if (siglaNova === 'FE' || siglaNova === 'FA') {
-          // Herda do turno que estava na célula; se a célula já era FE/FA,
-          // mantém a herança anterior (evita perder ao regravar).
-          const herdado = naoHeranca(anterior) ? anterior
-            : naoHeranca(origAnterior) ? origAnterior
+        if (SIGLAS_QUE_HERDAM.includes(siglaNova)) {
+          // Herda do turno que ocupava a célula. Se a célula já era uma sigla
+          // de preservação, mantém a herança anterior (não perde ao regravar).
+          const herdado = ehTurnoReal(anterior) ? anterior
+            : ehTurnoReal(origAnterior) ? origAnterior
             : '';
           if (herdado) {
             origNovo[dia] = herdado;
             estadoOrig[dia] = herdado;
+          } else {
+            // Célula vazia / origem inexistente: nada a herdar → 0h
+            origNovo[dia] = deleteField();
+            delete estadoOrig[dia];
+            avisoSemHeranca = `${siglaNova} no dia ${String(dia).padStart(2, '0')}`;
           }
+        } else if (SIGLAS_QUE_ZERAM.includes(siglaNova)) {
+          // F (falta): zera o dia e não guarda origem
+          origNovo[dia] = deleteField();
+          delete estadoOrig[dia];
         } else {
-          // Sigla normal: não há mais herança neste dia
+          // Turno real: não há mais herança neste dia
           origNovo[dia] = deleteField();
           delete estadoOrig[dia];
         }
@@ -6523,6 +6589,17 @@ const imprimirRelatorioGeladeira = () => {
       }, { merge: true });
       setEstado({ nome: dados.nome, dias: estadoDias, siglaOriginalPorDia: estadoOrig });
       console.log(`✅ ${campo} atualizado no Firebase!`);
+
+      // Sinalização: sigla de preservação sem turno de origem soma 0h
+      if (avisoSemHeranca) {
+        alert(
+          `⚠️ ${campo} — ${avisoSemHeranca}:\n\n` +
+          `FE, FA e ATM herdam a carga do turno que estava na célula. Como não ` +
+          `havia turno registrado, este dia está somando 0h.\n\n` +
+          `Para corrigir: digite o turno real (D, N, DN, M, T, V...) e depois ` +
+          `marque a sigla novamente.`
+        );
+      }
     } catch (error) {
       console.error(`Erro ao salvar ${campo}:`, error);
       alert("Erro ao salvar. Verifique o console.");
@@ -6947,6 +7024,23 @@ const imprimirRelatorioGeladeira = () => {
 
       const dadosGravacao = {};
       const slotBase = slotsAfetados.length > 0 ? slotsAfetados[0][1] : null; // 🆕 herança p/ ATM
+
+      // 🆕 Turno REAL de origem, para a herança de carga de FE / FA / ATM.
+      // Resolve em CADEIA: se a própria célula já estava em FE/FA/ATM, usa a
+      // herança que ela carrega — sem isso, editar FE → FA perderia o turno.
+      const SIGLAS_HERANCA = ['FE', 'FA', 'ATM'];
+      const siglaDireta = String(slotBase?.sigla || '').trim().toUpperCase();
+      const siglaHerdada = String(slotBase?.siglaOriginal || '').trim().toUpperCase();
+      const turnoOrigem = (() => {
+        if (siglaDireta && siglaDireta !== 'F'
+            && !SIGLAS_HERANCA.includes(siglaDireta)
+            && DICIONARIO_SIGLAS_DASH[siglaDireta]) return siglaDireta;
+        if (siglaHerdada && DICIONARIO_SIGLAS_DASH[siglaHerdada]) return siglaHerdada;
+        return '';
+      })();
+
+      // Sinalização a disparar depois do salvamento (sigla de herança sem turno)
+      let avisoSemHeranca = null;
       // 1. Remove os slots antigos que formavam o valor atual da célula
       slotsAfetados.forEach(([id]) => { dadosGravacao[id] = deleteField(); });
 
@@ -7005,12 +7099,18 @@ const imprimirRelatorioGeladeira = () => {
 
         // Carga original preservada para soma de horas (mesma lógica do ATM)
         if (ehFeriado || ehFolgaAniv) {
-          slotNovo.siglaOriginal = slotBase?.sigla || '';
+          slotNovo.siglaOriginal = turnoOrigem;
           slotNovo.statusAlteracao = ehFeriado ? 'Feriado' : 'Folga Aniversário';
         } else if (ehTagNoNome) {
           slotNovo.nomeOriginal = slotBase?.nome || nomeProfissional.toUpperCase();
           slotNovo.statusAlteracao = ehAtestado ? 'Atestado' : 'Falta';
-          if (ehAtestado) slotNovo.siglaOriginal = slotBase?.sigla || '';
+          if (ehAtestado) slotNovo.siglaOriginal = turnoOrigem;
+        }
+
+        // FE / FA / ATM sem turno de origem → o dia soma 0h. F nunca entra:
+        // zerar por falta é intencional.
+        if ((ehAtestado || ehFeriado || ehFolgaAniv) && !turnoOrigem) {
+          avisoSemHeranca = `${novaSigla} no dia ${dia}`;
         }
 
         dadosGravacao[idNovo] = slotNovo;
@@ -7035,6 +7135,17 @@ const imprimirRelatorioGeladeira = () => {
       const { regulares, extras } = processarSlotsCru(slotsCruNovo);
       setPlantoesDoMes(regulares);
       setExtrasDoMes(extras);
+
+      // 🆕 Sinalização explícita: sigla de herança sobre célula vazia → 0h
+      if (avisoSemHeranca) {
+        alert(
+          `⚠️ ${avisoSemHeranca}:\n\n` +
+          `FE, FA e ATM herdam a carga do turno que estava na célula. Como ela ` +
+          `estava vazia, este dia está somando 0h.\n\n` +
+          `Para corrigir: digite o turno real (D, N, DN, M, T...) e depois ` +
+          `marque a sigla novamente.`
+        );
+      }
     } catch (error) {
       console.error("Erro ao editar célula da grade:", error);
       alert("Erro ao salvar a edição. Verifique o console.");
@@ -14641,7 +14752,15 @@ const imprimirRelatorioGeladeira = () => {
 
                       {!isLoadingMes && Object.entries(plantoesDoMes).map(([nome, dias]) => {
                         const totalHoras = horasCombinadasPessoa(nome);
-                        const feriasDias = diasDeFerias(nome);                        
+                        const feriasDias = diasDeFerias(nome);
+                        // FE / FA / ATM sem turno de origem somam 0h — sinaliza
+                        const semHerancaReg = diasSemHeranca(registroRegularComOrigem(nome, dias));
+                        const diasSemHerancaSet = new Set(semHerancaReg.map(d => d.dia));
+                        // Dias de férias/licença cobrem a célula — não sinaliza neles
+                        const diasEmFerias = new Set(
+                          Object.keys(feriasDias || {}).filter(d => feriasDias[d])
+                        );
+                        const avisosVisiveis = semHerancaReg.filter(d => !diasEmFerias.has(d.dia));
                         return (
                         <tr key={nome} className="group hover:bg-slate-50/60 border-b border-slate-100 transition-colors">
                           <td className="p-2 border-r border-slate-200 font-bold text-slate-700 whitespace-nowrap text-[10px] uppercase">
@@ -14671,6 +14790,7 @@ const imprimirRelatorioGeladeira = () => {
                             const diaStr = (i + 1).toString().padStart(2, '0');
                             const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
                             const sigla = dias[diaStr];
+                            const semHerancaCelula = diasSemHerancaSet.has(diaStr);
                             let corLetra = 'text-slate-300'; let corFundo = '';
                             if (sigla) {
                               if (sigla === 'FE') { corLetra = 'text-cyan-700'; corFundo = 'bg-cyan-100'; }
@@ -14693,7 +14813,9 @@ const imprimirRelatorioGeladeira = () => {
                               if (!corFundo) corFundo = 'bg-slate-100';
                             }
                             return (
-                              <td key={i} className={`p-0 border-r border-slate-200 text-center ${corFundo}`}>
+                              <td key={i} className={`p-0 border-r border-slate-200 text-center ${
+                                semHerancaCelula ? 'bg-amber-100 ring-2 ring-inset ring-amber-400' : corFundo
+                              }`}>
                                 <input
                                   type="text"
                                   key={`${nome}-${diaStr}-${sigla || 'vazio'}-${refreshChave}`}
@@ -14709,15 +14831,30 @@ const imprimirRelatorioGeladeira = () => {
                                   }}
                                   onKeyDown={moverFocoGrade}
                                   placeholder="—"
-                                  className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${corLetra}`}
-                                  title="Digite a sigla e clique fora ou use as setas para navegar (salva automaticamente)"
+                                  className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${
+                                    semHerancaCelula ? 'text-amber-700' : corLetra
+                                  }`}
+                                  title={semHerancaCelula
+                                    ? `${String(sigla || '').toUpperCase()} sem turno de origem — este dia soma 0h. Digite o turno real (D, N, M...) e marque a sigla novamente.`
+                                    : 'Digite a sigla e clique fora ou use as setas para navegar (salva automaticamente)'}
                                 />
                               </td>
                             );
                           })}
-                          <td className="p-1 border-l-2 border-l-slate-300 border-r border-slate-200 text-center bg-slate-100">
-                            <span className={`font-black text-sm ${totalHoras === 144 ? 'text-emerald-600' : totalHoras > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
+                          <td className={`p-1 border-l-2 border-l-slate-300 border-r border-slate-200 text-center ${
+                            avisosVisiveis.length > 0 ? 'bg-amber-100' : 'bg-slate-100'
+                          }`}>
+                            <span className={`font-black text-sm inline-flex items-center justify-center gap-0.5 ${
+                              avisosVisiveis.length > 0 ? 'text-amber-700'
+                              : totalHoras === 144 ? 'text-emerald-600'
+                              : totalHoras > 0 ? 'text-slate-800' : 'text-slate-300'
+                            }`}>
                               {totalHoras}h
+                              {avisosVisiveis.length > 0 && (
+                                <span title={`Sem turno de origem (0h): ${avisosVisiveis.map(d => `dia ${d.dia} (${d.sigla})`).join(', ')}`}>
+                                  ⚠
+                                </span>
+                              )}
                             </span>
                           </td>
                         </tr>
@@ -14927,6 +15064,7 @@ const imprimirRelatorioGeladeira = () => {
                      ).map(cfg => {
                        const totalEsp = horasCombinadasPessoa(cfg.dados?.nome || '');
                        const feriasEsp = diasDeFerias(cfg.dados?.nome || '');
+                       const semHerancaEsp = diasSemHeranca(cfg.dados);
                        return (
                          <div key={cfg.campo} className="mb-6">
                            <table className="w-full text-xs border-collapse table-fixed">
@@ -15007,22 +15145,37 @@ const imprimirRelatorioGeladeira = () => {
                                    const diaStr = (i + 1).toString().padStart(2, '0');
                                    const fimSemana = ['SÁB', 'DOM'].includes(getDiaSemana(dataSelecionada.substring(0, 7), diaStr));
                                    const marca = cfg.dados?.dias?.[diaStr] || '';
+                                   const siglaMarca = String(marca).trim().toUpperCase();
+                                   // FE/FA herdam a carga do turno que estava na célula. Sem origem
+                                   // registrada o dia soma 0h — sinaliza para não passar em silêncio.
+                                   const origemHeranca = String(cfg.dados?.siglaOriginalPorDia?.[diaStr] || '').trim().toUpperCase();
+                                   const semHeranca = SIGLAS_QUE_HERDAM.includes(siglaMarca)
+                                     && !DICIONARIO_SIGLAS_DASH[origemHeranca];
+                                   const corSigla = siglaMarca === 'F' ? 'bg-red-50'
+                                     : siglaMarca === 'ATM' ? 'bg-orange-50'
+                                     : '';
                                    return (
-                                     <td key={i} className={`p-0 border-r border-slate-200 text-center ${marca ? cfg.bgCell : fimSemana ? cfg.bgCellFS : ''}`}>
+                                     <td key={i} className={`p-0 border-r border-slate-200 text-center ${
+                                       semHeranca
+                                         ? 'bg-amber-100 ring-2 ring-inset ring-amber-400'
+                                         : marca ? (corSigla || cfg.bgCell) : fimSemana ? cfg.bgCellFS : ''
+                                     }`}>
                                        <input
                                          type="text"
                                          key={`${cfg.campo}-${diaStr}-${marca}-${dataSelecionada}`}
                                          defaultValue={marca}
-                                         maxLength={2}
+                                         maxLength={3}
                                          onFocus={(e) => {
                                            e.target.dataset.original = String(e.target.value || '').trim().toUpperCase();
                                          }}
                                          onBlur={(e) => {
                                            const digitado = String(e.target.value || '').trim().toUpperCase();
                                            if (digitado === e.target.dataset.original) return;
-                                           // 🆕 Aceita qualquer sigla válida (D, N, M, T, DN...) — a soma de horas resolve pelo dicionário
-                                           if (digitado && !DICIONARIO_SIGLAS_DASH[digitado]) {
-                                             alert(`Sigla "${digitado}" inválida. Use: ${Object.keys(DICIONARIO_SIGLAS_DASH).join(', ')}.`);
+                                           // Aceita turnos do dicionário + as siglas especiais:
+                                           // F = falta (zera) · FE/FA/ATM = preservam a carga anterior.
+                                           const SIGLAS_ESPECIAIS = [...SIGLAS_QUE_HERDAM, ...SIGLAS_QUE_ZERAM];
+                                           if (digitado && !SIGLAS_ESPECIAIS.includes(digitado) && !DICIONARIO_SIGLAS_DASH[digitado]) {
+                                             alert(`Sigla "${digitado}" inválida.\n\nUse um turno (${Object.keys(DICIONARIO_SIGLAS_DASH).join(', ')}) ou ${SIGLAS_ESPECIAIS.join(' / ')}.`);
                                              e.target.value = marca;
                                              return;
                                            }
@@ -15030,16 +15183,36 @@ const imprimirRelatorioGeladeira = () => {
                                          }}
                                          onKeyDown={moverFocoGrade}
                                          placeholder="—"
-                                         className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${marca ? 'text-slate-700' : 'text-slate-300'}`}
-                                         title={`Digite "${cfg.letra}" e clique fora ou use as setas para navegar (salva automaticamente)`}
+                                         className={`w-full h-8 text-center font-black text-xs bg-transparent cursor-text outline-none hover:brightness-95 placeholder:text-slate-300 ${
+                                           siglaMarca === 'F' ? 'text-red-600'
+                                           : siglaMarca === 'ATM' ? 'text-orange-600'
+                                           : semHeranca ? 'text-amber-700'
+                                           : marca ? 'text-slate-700' : 'text-slate-300'
+                                         }`}
+                                         title={semHeranca
+                                           ? `${siglaMarca} sem turno de origem — este dia soma 0h. Digite o turno real (D, N, M...) e marque ${siglaMarca} novamente.`
+                                           : siglaMarca === 'F'
+                                           ? 'Falta — este dia não soma horas'
+                                           : `Digite "${cfg.letra}" e clique fora ou use as setas para navegar (salva automaticamente)`}
                                        />
                                      </td>
                                    );
                                  })}
 
                                  {/* Total de horas combinadas (regular + este campo) */}
-                                 <td className={`p-0 border-l border-slate-200 text-center font-black text-xs ${totalEsp === 144 ? 'text-green-600 bg-green-50' : 'text-slate-700'}`}>
-                                   <div className="h-8 flex items-center justify-center">{totalEsp}h</div>
+                                 <td className={`p-0 border-l border-slate-200 text-center font-black text-xs ${
+                                   semHerancaEsp.length > 0
+                                     ? 'text-amber-600 bg-amber-50'
+                                     : totalEsp === 144 ? 'text-green-600 bg-green-50' : 'text-slate-700'
+                                 }`}>
+                                   <div className="h-8 flex items-center justify-center gap-0.5">
+                                     {totalEsp}h
+                                     {semHerancaEsp.length > 0 && (
+                                       <span title={`FE/FA sem turno de origem (0h): ${semHerancaEsp.map(d => `dia ${d.dia} (${d.sigla})`).join(', ')}`}>
+                                         ⚠
+                                       </span>
+                                     )}
+                                   </div>
                                  </td>
                                </tr>
                              </tbody>
