@@ -18,7 +18,7 @@ import {
 import { collection, onSnapshot, getDocs, getDoc, doc, deleteDoc, setDoc, orderBy, limit, updateDoc, 
          query, where, deleteField, arrayUnion } from "firebase/firestore";
 import { db } from "../config/firebase";
-import { gerarSnapshotLeitos, listarSnapshots, restaurarSnapshot } from '../utils/backupLeitos';
+import { gerarSnapshotLeitos, listarSnapshots, listarLeitosDoSnapshot, restaurarSnapshot } from '../utils/backupLeitos';
 
 import ModuloAdmin from './ModuloAdmin';
 import ImportadorEscala from './ImportadorEscala';
@@ -1034,6 +1034,7 @@ useEffect(() => {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [msgBackup, setMsgBackup] = useState('');
+  const [leitosDoSnapshot, setLeitosDoSnapshot] = useState([]); // leitos reais do backup escolhido
 
   const [listaEventosAdversos, setListaEventosAdversos] = useState([]);
   const [listaHistorico, setListaHistorico] = useState([]);
@@ -1549,6 +1550,20 @@ useEffect(() => {
     if (subViewEquipe === 'config') carregarSnapshots();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subViewEquipe]);
+
+  // Carrega os leitos existentes no snapshot selecionado — o seletor passa a
+  // mostrar o que o backup realmente contém, em vez de 12 fixos.
+  useEffect(() => {
+    let cancelado = false;
+    if (!snapshotSelecionado) { setLeitosDoSnapshot([]); return undefined; }
+    listarLeitosDoSnapshot(snapshotSelecionado)
+      .then(lista => { if (!cancelado) setLeitosDoSnapshot(Array.isArray(lista) ? lista : []); })
+      .catch(err => {
+        console.error('Erro ao listar leitos do snapshot:', err);
+        if (!cancelado) setLeitosDoSnapshot([]);
+      });
+    return () => { cancelado = true; };
+  }, [snapshotSelecionado]);
 
   // Salva a auditoria no Firebase
   const salvarAuditoriaSAPS3 = async () => {
@@ -15517,9 +15532,14 @@ const imprimirRelatorioGeladeira = () => {
                     className="w-full mt-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700"
                   >
                     <option value="">Todos os leitos</option>
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
-                      <option key={n} value={`bed_${n}`}>Leito {n}</option>
+                    {leitosDoSnapshot.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        Leito {l.numero}{l.ocupado ? ` — ${l.nome}` : ' (vazio no backup)'}
+                      </option>
                     ))}
+                    {leitosDoSnapshot.length === 0 && (
+                      <option value="" disabled>Selecione um backup para listar os leitos</option>
+                    )}
                   </select>
 
                   <div className="mt-3 space-y-1.5">
