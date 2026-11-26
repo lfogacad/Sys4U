@@ -88,42 +88,22 @@ const getDiaSemana = (anoMes, diaStr) => {
   return ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'][d.getDay()];
 };
 
-// =========================================================================
-// CARGA HORÁRIA DAS SIGLAS DE HERANÇA (FE / FA)
-// somarHorasMes recebe apenas { dia: sigla } — sem o slot cru não há como
-// saber qual turno foi substituído. Por isso a herança de FE/FA precisa de
-// uma tabela fixa AQUI, no escopo de módulo, acima de somarHorasMes.
-// Apenas as tabelas Visitador / RT / Gerência chegam neste ponto com FE/FA;
-// na grade regular a herança é resolvida por siglaOriginal antes da chamada.
-// ⚠️ Ajuste os dois valores conforme a regra real de horas. 0 = não soma,
-//    que é o comportamento neutro e evita o crash.
-// =========================================================================
-const horasHerdadasPorSigla = {
-  FE: 0,
-  FA: 0,
-};
-
 // ===== SOMA DE HORAS DE PLANTÃO DO MÊS =====
-// Correspondência: D, N = 12h · DN = 24h · M, T, V = 6h
-// Combinações somam as partes (VT=12h, VN=18h, TN=18h) — valores já
-// calculados no DICIONARIO_SIGLAS_DASH.horas. Célula vazia não soma.
-//
-// FE / FA herdam a carga do turno substituído. Esta função recebe apenas
-// { dia: sigla } — sem o slot cru não há como saber o turno original.
-// Por isso a herança chega pelo 2º parâmetro:
-//   heranca(dia, sigla) → número de horas do turno substituído, ou null
-// Sem o parâmetro (ou quando devolve null), FE/FA não somam nada.
-const somarHorasMes = (dias, heranca) => {
+// D, N = 12h · DN = 24h · M, T, V = 6h — valores de DICIONARIO_SIGLAS_DASH.horas.
+// FE / FA herdam a carga do turno substituído, gravada no mapa companheiro
+// `siglaOriginalPorDia` ({ dia: 'D' }). Sem esse mapa, FE/FA não somam.
+const somarHorasMes = (dias, siglaOriginalPorDia) => {
   let total = 0;
   Object.entries(dias || {}).forEach(([dia, valor]) => {
     if (!valor || typeof valor !== 'string') return;
     const sigla = valor.trim().toUpperCase();
     if (!sigla) return;
 
-    // FE / FA: carga do turno substituído, resolvida pelo chamador
+    // FE / FA — herda a carga do turno que ocupava a célula antes
     if (sigla === 'FE' || sigla === 'FA') {
-      const horas = typeof heranca === 'function' ? heranca(dia, sigla) : null;
-      total += Number(horas) || 0;
+      const original = String(siglaOriginalPorDia?.[dia] || '').trim().toUpperCase();
+      const turnoOriginal = original ? DICIONARIO_SIGLAS_DASH[original] : null;
+      if (turnoOriginal) total += turnoOriginal.horas;
       return;
     }
 
@@ -6289,32 +6269,6 @@ const imprimirRelatorioGeladeira = () => {
       });
     });
 
-    // 🆕 Herança de FE/FA para as tabelas especiais (Visitador, RT, Gerência).
-    // Procura no slot cru do MESMO nome e do MESMO dia o turno substituído e
-    // devolve a carga dele. Sem slot correspondente, devolve null (não soma).
-    const herancaFE_FA = (nomeRef) => {
-      const alvo = normalizarBuscaEscala(nomeRef);
-      return (dia, sigla) => {
-        let horas = null;
-        Object.values(slotsCruPorDia || {}).forEach(slots => {
-          Object.values(slots || {}).forEach(s => {
-            if (!s) return;
-            if (String(s.sigla || '').toUpperCase() !== sigla) return;
-            if (String(s.busca || '') !== alvo) return;
-            // Confere o dia, quando o slot carrega a data ISO (AAAA-MM-DD)
-            if (s.data && dia) {
-              const diaSlot = String(s.data).slice(8, 10);
-              if (diaSlot && diaSlot !== String(dia).padStart(2, '0')) return;
-            }
-            const orig = String(s.siglaOriginal || '').toUpperCase();
-            const turno = DICIONARIO_SIGLAS_DASH[orig];
-            if (turno) horas = turno.horas;
-          });
-        });
-        return horas;
-      };
-    };
-
     // Visitador e RT — dias de férias não contam (regra mantida)
     if (visitadorMes?.nome && normalizarBuscaEscala(visitadorMes.nome) === buscaP) {
       const feriasVis = diasDeFerias(visitadorMes.nome);
@@ -6322,7 +6276,7 @@ const imprimirRelatorioGeladeira = () => {
       Object.entries(visitadorMes.dias || {}).forEach(([dia, val]) => {
         if (!feriasVis[dia]) diasValidos[dia] = val;
       });
-      total += somarHorasMes(diasValidos, herancaFE_FA(visitadorMes.nome));
+      total += somarHorasMes(diasValidos, visitadorMes.siglaOriginalPorDia);
     }
     if (responsavelTecnicoMes?.nome && normalizarBuscaEscala(responsavelTecnicoMes.nome) === buscaP) {
       const feriasRT = diasDeFerias(responsavelTecnicoMes.nome);
@@ -6330,7 +6284,7 @@ const imprimirRelatorioGeladeira = () => {
       Object.entries(responsavelTecnicoMes.dias || {}).forEach(([dia, val]) => {
         if (!feriasRT[dia]) diasValidos[dia] = val;
       });
-      total += somarHorasMes(diasValidos, herancaFE_FA(responsavelTecnicoMes.nome));
+      total += somarHorasMes(diasValidos, responsavelTecnicoMes.siglaOriginalPorDia);
     }
     // Gerência de Enfermagem — mesma regra do Visitador/RT (férias não contam)
     if (gerenciaEnfermagemMes?.nome && normalizarBuscaEscala(gerenciaEnfermagemMes.nome) === buscaP) {
@@ -6339,7 +6293,7 @@ const imprimirRelatorioGeladeira = () => {
       Object.entries(gerenciaEnfermagemMes.dias || {}).forEach(([dia, val]) => {
         if (!feriasGer[dia]) diasValidosGer[dia] = val;
       });
-      total += somarHorasMes(diasValidosGer, herancaFE_FA(gerenciaEnfermagemMes.nome));
+      total += somarHorasMes(diasValidosGer, gerenciaEnfermagemMes.siglaOriginalPorDia);
     }
     return total;
   };
@@ -6461,6 +6415,11 @@ const imprimirRelatorioGeladeira = () => {
   // ===== SALVAR CAMPOS ESPECIAIS (Visitador / RT / Gerência de Enfermagem) =====
   // ⚠️ setDoc com merge faz MERGE PROFUNDO: chaves ausentes NÃO são apagadas do
   // servidor. Para remover dia/limpar tudo é obrigatório deleteField() explícito.
+  //
+  // FE / FA: ao gravar uma dessas siglas, o turno que ocupava a célula é
+  // preservado em `siglaOriginalPorDia[dia]`. Esse mapa é a única fonte de
+  // onde somarHorasMes pode herdar a carga, porque estas tabelas guardam
+  // apenas a sigla (sem o slot cru da grade regular).
   const SETTERS_ESPECIAIS = {
     visitador: setVisitadorMes,
     responsavelTecnico: setResponsavelTecnicoMes,
@@ -6480,7 +6439,14 @@ const imprimirRelatorioGeladeira = () => {
     if (nome !== undefined && !String(nome).trim()) {
       const diasLimpos = {};
       Object.keys(atual?.dias || {}).forEach(d => { diasLimpos[d] = deleteField(); });
-      const limpo = { nome: '', dias: diasLimpos, atualizadoEm: new Date().toISOString() };
+      const origLimpos = {};
+      Object.keys(atual?.siglaOriginalPorDia || {}).forEach(d => { origLimpos[d] = deleteField(); });
+      const limpo = {
+        nome: '',
+        dias: diasLimpos,
+        siglaOriginalPorDia: origLimpos,
+        atualizadoEm: new Date().toISOString()
+      };
       try {
         const anoMes = dataSelecionada.substring(0, 7);
         const slug = getSlugCategoria(categoriaAtiva);
@@ -6490,7 +6456,7 @@ const imprimirRelatorioGeladeira = () => {
           mes: parseInt(anoMes.split('-')[1], 10),
           [campo]: limpo
         }, { merge: true });
-        setEstado({ nome: '', dias: {} });
+        setEstado({ nome: '', dias: {}, siglaOriginalPorDia: {} });
       } catch (error) {
         console.error(`Erro ao limpar ${campo}:`, error);
         alert("Erro ao limpar. Verifique o console.");
@@ -6498,25 +6464,53 @@ const imprimirRelatorioGeladeira = () => {
       return;
     }
 
+    // Versões que vão ao Firebase (podem conter deleteField) e ao estado (limpas)
     const diasNovos = { ...(atual?.dias || {}) };
+    const origNovo = { ...(atual?.siglaOriginalPorDia || {}) };
+    const estadoDias = { ...(atual?.dias || {}) };
+    const estadoOrig = { ...(atual?.siglaOriginalPorDia || {}) };
+
     if (dia !== undefined) {
-      if (valor) diasNovos[dia] = String(valor).toUpperCase();
-      else diasNovos[dia] = deleteField(); // remove do SERVIDOR
+      const siglaNova = String(valor || '').trim().toUpperCase();
+      const anterior = String(atual?.dias?.[dia] || '').trim().toUpperCase();
+      const origAnterior = String(atual?.siglaOriginalPorDia?.[dia] || '').trim().toUpperCase();
+      const naoHeranca = (s) => !!s && s !== 'FE' && s !== 'FA';
+
+      if (!siglaNova) {
+        // Célula apagada: limpa sigla e herança
+        diasNovos[dia] = deleteField();
+        origNovo[dia] = deleteField();
+        delete estadoDias[dia];
+        delete estadoOrig[dia];
+      } else {
+        diasNovos[dia] = siglaNova;
+        estadoDias[dia] = siglaNova;
+
+        if (siglaNova === 'FE' || siglaNova === 'FA') {
+          // Herda do turno que estava na célula; se a célula já era FE/FA,
+          // mantém a herança anterior (evita perder ao regravar).
+          const herdado = naoHeranca(anterior) ? anterior
+            : naoHeranca(origAnterior) ? origAnterior
+            : '';
+          if (herdado) {
+            origNovo[dia] = herdado;
+            estadoOrig[dia] = herdado;
+          }
+        } else {
+          // Sigla normal: não há mais herança neste dia
+          origNovo[dia] = deleteField();
+          delete estadoOrig[dia];
+        }
+      }
     }
 
     const dados = {
       nome: nome !== undefined ? String(nome).trim().toUpperCase() : String(atual?.nome || ''),
       dias: diasNovos,
+      siglaOriginalPorDia: origNovo,
       atualizadoEm: new Date().toISOString()
     };
     if (!dados.nome) { alert("Digite o nome do profissional antes de marcar os dias."); return; }
-
-    // Estado local limpo (sentinel não pode viver no estado)
-    const estadoLocal = { nome: dados.nome, dias: { ...(atual?.dias || {}) } };
-    if (dia !== undefined) {
-      if (valor) estadoLocal.dias[dia] = String(valor).toUpperCase();
-      else delete estadoLocal.dias[dia];
-    }
 
     try {
       const anoMes = dataSelecionada.substring(0, 7);
@@ -6527,7 +6521,7 @@ const imprimirRelatorioGeladeira = () => {
         mes: parseInt(anoMes.split('-')[1], 10),
         [campo]: dados
       }, { merge: true });
-      setEstado(estadoLocal);
+      setEstado({ nome: dados.nome, dias: estadoDias, siglaOriginalPorDia: estadoOrig });
       console.log(`✅ ${campo} atualizado no Firebase!`);
     } catch (error) {
       console.error(`Erro ao salvar ${campo}:`, error);
