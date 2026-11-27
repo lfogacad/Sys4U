@@ -1176,7 +1176,11 @@ const salvarFralda = () => {
     </style></head><body>`;
 
     const age = calculateAge(currentPatient.dataNascimento) || "__";
-    const dateStr = viewingPreviousBH ? displayedBH.date : getManausDateStr();
+    // A data impressa é a da ABERTURA do BH, não a do momento da impressão.
+    // O BH corrente corre 07:00 → 06:00 do dia seguinte: quem imprime às 03:00
+    // do dia 16 deve ver 15. Só cai no relógio se o registro ainda não tem data
+    // (BH novo, jamais salvo).
+    const dateStr = displayedBH?.date || getManausDateStr();
     
     html += `<div class="header">
       <span>PACIENTE: ${currentPatient.nome?.toUpperCase() || "___________________"}</span>
